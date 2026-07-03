@@ -351,7 +351,7 @@ public:
     static bool HandleLearnAllRecipesCommand(ChatHandler* handler, char const* args)
     {
         //  Learns all recipes of specified profession and sets skill to max
-        //  Example: .learn all_recipes enchanting
+        //  Example: .learn all recipes enchanting
 
         Player* target = handler->getSelectedPlayer();
         if (!target)
@@ -363,12 +363,17 @@ public:
         if (!*args)
             return false;
 
-        std::wstring namePart;
+        std::string namePart = args;
+        std::wstring wNamePart;
 
         // converting string that we try to find to lower case
-        wstrToLower(namePart);
+        if (!Utf8toWStr(namePart, wNamePart))
+            return false;
+
+        wstrToLower(wNamePart);
 
         std::string name;
+        std::string matchedName;
 
         SkillLineEntry const* targetSkillInfo = NULL;
         for (uint32 i = 1; i < sSkillLineStore.GetNumRows(); ++i)
@@ -386,10 +391,12 @@ public:
             if (name.empty())
                 continue;
 
-            if (!Utf8FitTo(name, namePart))
+            if (!Utf8FitTo(name, wNamePart))
                 continue;
 
             targetSkillInfo = skillInfo;
+            matchedName = name;
+            break;
         }
 
         if (!targetSkillInfo)
@@ -399,7 +406,7 @@ public:
 
         uint16 maxLevel = target->GetPureMaxSkillValue(targetSkillInfo->id);
         target->SetSkill(targetSkillInfo->id, target->GetSkillStep(targetSkillInfo->id), maxLevel, maxLevel);
-        handler->PSendSysMessage(LANG_COMMAND_LEARN_ALL_RECIPES, name.c_str());
+        handler->PSendSysMessage(LANG_COMMAND_LEARN_ALL_RECIPES, matchedName.c_str());
         return true;
     }
 
