@@ -26,12 +26,12 @@ DELETE FROM `creature` WHERE `guid` IN (505704, 511897)
 
 -- Remove wild battle pet source spawns that produce invalid runtime Z coordinates.
 DELETE FROM `creature_addon` WHERE `guid` IN (
-  240186, 240214, 240261,
+  240095, 240186, 240214, 240261,
   527565, 527567, 527568, 527577, 527582
 );
 
 DELETE FROM `creature` WHERE `guid` IN (
-  240186, 240214, 240261,
+  240095, 240186, 240214, 240261,
   527565, 527567, 527568, 527577, 527582
 )
   AND `id` IN (49842, 63980);
