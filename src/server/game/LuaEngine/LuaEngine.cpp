@@ -91,6 +91,7 @@ void StartEluna(bool restart)
             sEluna->playerGossipBindings->Clear();
 
             lua_close(sEluna->L);
+            sEluna->L = NULL;
         }
     }
     else

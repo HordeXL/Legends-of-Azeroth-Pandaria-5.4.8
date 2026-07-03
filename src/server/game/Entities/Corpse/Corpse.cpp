@@ -103,7 +103,11 @@ void Corpse::SaveToDB()
 
     uint16 index = 0;
     CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_INS_CORPSE);
-    stmt->setUInt32(index++, GetGUID().GetCounter());                                 // corpseGuid
+    // Corpse low GUIDs are generated per map, but the character DB table has a
+    // global primary key. Use the owner GUID for persisted corpse rows because
+    // each character can only have one saved corpse and DB loading regenerates
+    // the runtime corpse GUID anyway.
+    stmt->setUInt32(index++, GetOwnerGUID().GetCounter());                            // corpseGuid
     stmt->setUInt32(index++, GetOwnerGUID().GetCounter());                            // guid
     stmt->setFloat (index++, GetPositionX());                                         // posX
     stmt->setFloat (index++, GetPositionY());                                         // posY
