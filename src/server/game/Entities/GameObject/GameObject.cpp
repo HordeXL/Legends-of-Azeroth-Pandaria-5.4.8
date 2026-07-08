@@ -138,7 +138,11 @@ void GameObject::RemoveFromOwner()
     else if (ownerGUID.IsPet())
         ownerType = "pet";
 
-    TC_LOG_FATAL("misc", "Removed GameObject (GUID: %u Entry: %u SpellId: %u LinkedGO: %u) that just lost any reference to the owner (GUID: %u Type: '%s') GO list",
+    // The owner can already be gone while a spell-created GO is still queued
+    // for deletion. Do not abort cleanup here; clear the stale owner link so
+    // the GO can finish despawning without leaving GAMEOBJECT_FIELD_CREATED_BY
+    // pointing at a non-existing unit.
+    TC_LOG_ERROR("misc", "Removed GameObject (GUID: %u Entry: %u SpellId: %u LinkedGO: %u) that just lost any reference to the owner (GUID: %u Type: '%s') GO list",
         GetGUID().GetCounter(), GetGOInfo()->entry, m_spellId, GetGOInfo()->GetLinkedGameObjectEntry(), ownerGUID.GetCounter(), ownerType);
     SetOwnerGUID(ObjectGuid::Empty);
 }
