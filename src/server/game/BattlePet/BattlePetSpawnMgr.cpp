@@ -338,8 +338,32 @@ void BattlePetSpawnZoneMgr::SpawnCreature(Map* map, ObjectGuid guid, BattlePetSp
     Creature* replacementCreature = new Creature();
     replacementCreature->m_isTempWorldObject = true;
 
+    float x = creature->GetPositionX();
+    float y = creature->GetPositionY();
+    float z = creature->GetPositionZ();
+    float o = creature->GetOrientation();
+
+    if (z <= INVALID_HEIGHT)
+    {
+        if (CreatureData const* data = creature->GetCreatureData())
+        {
+            x = data->posX;
+            y = data->posY;
+            z = data->posZ;
+            o = data->orientation;
+        }
+    }
+
+    if (z <= INVALID_HEIGHT)
+    {
+        TC_LOG_ERROR("entities.unit", "BattlePetSpawnMgr: skipped wild battle pet replacement for creature guid %u entry %u with invalid position (X: %f, Y: %f, Z: %f, O: %f)",
+            creature->GetSpawnId(), creature->GetEntry(), x, y, z, o);
+        delete replacementCreature;
+        return;
+    }
+
     if (!replacementCreature->Create(map->GenerateLowGuid<HighGuid::Unit>(), creature->GetMap(), creature->GetPhaseMask(),
-        speciesEntry->NpcId, 0, 0, creature->m_positionX, creature->m_positionY, creature->m_positionZ, creature->GetOrientation()))
+        speciesEntry->NpcId, 0, 0, x, y, z, o))
     {
         // something went wrong, delete newly created creature
         delete replacementCreature;
