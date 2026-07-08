@@ -142,8 +142,13 @@ void GameObject::RemoveFromOwner()
     // for deletion. Do not abort cleanup here; clear the stale owner link so
     // the GO can finish despawning without leaving GAMEOBJECT_FIELD_CREATED_BY
     // pointing at a non-existing unit.
-    TC_LOG_ERROR("misc", "Removed GameObject (GUID: %u Entry: %u SpellId: %u LinkedGO: %u) that just lost any reference to the owner (GUID: %u Type: '%s') GO list",
-        GetGUID().GetCounter(), GetGOInfo()->entry, m_spellId, GetGOInfo()->GetLinkedGameObjectEntry(), ownerGUID.GetCounter(), ownerType);
+    if (World::IsStopped())
+        TC_LOG_DEBUG("misc", "Removed GameObject (GUID: %u Entry: %u SpellId: %u LinkedGO: %u) that just lost any reference to the owner (GUID: %u Type: '%s') GO list during shutdown",
+            GetGUID().GetCounter(), GetGOInfo()->entry, m_spellId, GetGOInfo()->GetLinkedGameObjectEntry(), ownerGUID.GetCounter(), ownerType);
+    else
+        TC_LOG_ERROR("misc", "Removed GameObject (GUID: %u Entry: %u SpellId: %u LinkedGO: %u) that just lost any reference to the owner (GUID: %u Type: '%s') GO list",
+            GetGUID().GetCounter(), GetGOInfo()->entry, m_spellId, GetGOInfo()->GetLinkedGameObjectEntry(), ownerGUID.GetCounter(), ownerType);
+
     SetOwnerGUID(ObjectGuid::Empty);
 }
 
