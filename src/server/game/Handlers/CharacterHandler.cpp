@@ -848,6 +848,10 @@ void WorldSession::HandleCharDeleteOpcode(WorldPacket& recvData)
     WorldPacket data(SMSG_CHAR_DELETE, 1);
     data << uint8(CHAR_DELETE_SUCCESS);
     SendPacket(&data);
+
+    // Refresh the character list since the client does not request it again automatically.
+    WorldPackets::Character::EnumCharacters enumCharacters(WorldPacket(CMSG_ENUM_CHARACTERS, 0));
+    HandleCharEnumOpcode(enumCharacters);
 }
 
 void WorldSession::HandlePlayerLoginOpcode(WorldPackets::Character::PlayerLogin& packet)
