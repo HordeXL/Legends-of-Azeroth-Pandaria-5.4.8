@@ -6789,6 +6789,11 @@ void Player::SendCinematicStart(uint32 CinematicSequenceId)
         _cinematicMgr->BeginCinematic(sequence);
 }
 
+bool Player::IsInCinematic() const
+{
+    return _cinematicMgr && _cinematicMgr->IsOnCinematic();
+}
+
 void Player::SendMovieStart(uint32 movieId)
 {
     SetMovie(movieId);

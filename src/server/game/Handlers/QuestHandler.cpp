@@ -36,6 +36,9 @@
 
 void WorldSession::HandleQuestgiverStatusQueryOpcode(WorldPacket& recvData)
 {
+    if (!_player || _player->IsInCinematic() || isLogingOut())
+        return;
+
     ObjectGuid guid;
 
     guid[4] = recvData.ReadBit();
