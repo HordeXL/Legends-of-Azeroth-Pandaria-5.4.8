@@ -175,6 +175,7 @@ set(scripts_STAT_SRCS
   EasternKingdoms/Deadmines/instance_deadmines.cpp
   EasternKingdoms/zone_duskwood.cpp
   EasternKingdoms/ScarletMonastery/boss_brother_korloff.cpp
+  EasternKingdoms/ScarletMonastery/boss_herod.cpp
   EasternKingdoms/ScarletMonastery/boss_high_inqusitior_whitemane.cpp
   EasternKingdoms/ScarletMonastery/boss_thalnos_the_soulrender.cpp
   EasternKingdoms/ScarletMonastery/boss_headless_horseman.cpp

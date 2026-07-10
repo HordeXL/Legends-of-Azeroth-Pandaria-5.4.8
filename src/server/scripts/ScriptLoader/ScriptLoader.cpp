@@ -224,6 +224,7 @@ void AddSC_the_scarlet_enclave_c1();
 void AddSC_the_scarlet_enclave_c2();
 void AddSC_the_scarlet_enclave_c5();
 void AddSC_boss_brother_korloff();             //Scarlet Monastery
+void AddSC_boss_herod();
 void AddSC_boss_whitemane_and_durand();
 void AddSC_boss_thalnos_the_soulrender();
 void AddSC_boss_headless_horseman();
@@ -1257,6 +1258,7 @@ void AddEasternKingdomsScripts()
     AddSC_the_scarlet_enclave_c2();
     AddSC_the_scarlet_enclave_c5();
     AddSC_boss_brother_korloff();             //Scarlet Monastery
+    AddSC_boss_herod();
     AddSC_boss_whitemane_and_durand();
     AddSC_boss_thalnos_the_soulrender();
     AddSC_boss_headless_horseman();
