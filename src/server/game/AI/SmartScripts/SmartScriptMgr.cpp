@@ -827,6 +827,14 @@ bool SmartAIMgr::IsEventValid(SmartScriptHolder& e)
                 return false;
             }
             break;
+        case SMART_ACTION_LOAD_EQUIPMENT:
+            TC_SAI_IS_BOOLEAN_VALID(e, e.action.loadEquipment.force);
+            if (e.action.loadEquipment.id > 127)
+            {
+                TC_LOG_ERROR("sql.sql", "SmartAIMgr: SMART_ACTION_LOAD_EQUIPMENT id %u exceeds the supported int8 range, skipped.", e.action.loadEquipment.id);
+                return false;
+            }
+            break;
         case SMART_ACTION_FAIL_QUEST:
         case SMART_ACTION_ADD_QUEST:
             if (!e.action.quest.quest || !IsQuestValid(e, e.action.quest.quest))

@@ -2301,6 +2301,19 @@ void SmartScript::ProcessAction(SmartScriptHolder& e, Unit* unit, uint32 var0, u
             CAST_AI(SmartAI, me->AI())->SetEvadeDisabled(e.action.disableEvade.disable != 0);
             break;
         }
+        case SMART_ACTION_LOAD_EQUIPMENT:
+        {
+            ObjectList* targets = GetTargets(e, unit);
+            if (!targets)
+                break;
+
+            for (ObjectList::const_iterator itr = targets->begin(); itr != targets->end(); ++itr)
+                if (IsCreature(*itr))
+                    (*itr)->ToCreature()->LoadEquipment(int8(e.action.loadEquipment.id), e.action.loadEquipment.force != 0);
+
+            delete targets;
+            break;
+        }
         case SMART_ACTION_PLAY_ANIMKIT:
         {
             ObjectList* targets = GetTargets(e, unit);
