@@ -16,6 +16,7 @@
 */
 
 #include "ScriptPCH.h"
+#include "ScriptedEscortAI.h"
 #include "LFGMgr.h"
 #include "Group.h"
 #include "shadowfang_keep.h"
@@ -1584,6 +1585,90 @@ class AreaTrigger_at_shadowfang_keep_godfrey : public AreaTriggerScript
         }
 };
 
+enum ShadowfangPrisonerTexts
+{
+    SAY_FREE_ASHCROMBE = 0,
+    SAY_OPEN_ASHCROMBE = 1,
+    SAY_POST_ASHCROMBE = 2,
+    SAY_FREE_ADAMANT = 0,
+    SAY_OPEN_ADAMANT = 1,
+    SAY_POST1_ADAMANT = 2,
+    SAY_POST2_ADAMANT = 3
+};
+
+uint32 const NPC_SORCERER_ASHCROMBE = 3850;
+uint32 const NPC_RETHILGORE_CLASSIC = 3914;
+uint32 const SPELL_ASHCROMBE_UNLOCK = 6421;
+
+class npc_shadowfang_prisoner : public CreatureScript
+{
+public:
+    npc_shadowfang_prisoner() : CreatureScript("npc_shadowfang_prisoner") { }
+
+    struct npc_shadowfang_prisonerAI : public npc_escortAI
+    {
+        npc_shadowfang_prisonerAI(Creature* creature) : npc_escortAI(creature) { }
+
+        void Reset() override { }
+
+        void WaypointReached(uint32 waypointId) override
+        {
+            bool ashcrombe = me->GetEntry() == NPC_SORCERER_ASHCROMBE;
+            switch (waypointId)
+            {
+                case 0:
+                    Talk(ashcrombe ? SAY_FREE_ASHCROMBE : SAY_FREE_ADAMANT);
+                    break;
+                case 10:
+                    Talk(ashcrombe ? SAY_OPEN_ASHCROMBE : SAY_OPEN_ADAMANT);
+                    break;
+                case 11:
+                    if (ashcrombe)
+                        DoCast(me, SPELL_ASHCROMBE_UNLOCK);
+                    break;
+                case 12:
+                    Talk(ashcrombe ? SAY_POST_ASHCROMBE : SAY_POST1_ADAMANT);
+                    if (GameObject* door = me->FindNearestGameObject(GO_COURTYARD_DOOR, 50.0f))
+                        door->UseDoorOrButton();
+                    break;
+                case 13:
+                    if (!ashcrombe)
+                        Talk(SAY_POST2_ADAMANT);
+                    break;
+            }
+        }
+    };
+
+    bool OnGossipHello(Player* player, Creature* creature) override
+    {
+        // The old instance state fields no longer exist in the MoP instance
+        // script. Preserve the original gate by requiring Rethilgore to be dead.
+        if (!creature->FindNearestCreature(NPC_RETHILGORE_CLASSIC, 100.0f, true))
+            player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "Thanks, I'll follow you to the door.", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
+
+        player->SEND_GOSSIP_MENU(player->GetGossipTextId(creature), creature->GetGUID());
+        return true;
+    }
+
+    bool OnGossipSelect(Player* player, Creature* creature, uint32 /*sender*/, uint32 action) override
+    {
+        player->PlayerTalkClass->ClearMenus();
+        if (action == GOSSIP_ACTION_INFO_DEF + 1)
+        {
+            player->CLOSE_GOSSIP_MENU();
+            creature->RemoveFlag(UNIT_FIELD_NPC_FLAGS, UNIT_NPC_FLAG_GOSSIP);
+            if (npc_shadowfang_prisonerAI* escortAI = CAST_AI(npc_shadowfang_prisoner::npc_shadowfang_prisonerAI, creature->AI()))
+                escortAI->Start(false, false);
+        }
+        return true;
+    }
+
+    CreatureAI* GetAI(Creature* creature) const override
+    {
+        return new npc_shadowfang_prisonerAI(creature);
+    }
+};
+
 void AddSC_shadowfang_keep()
 {
     new npc_apothecary_hummel();
@@ -1599,4 +1684,5 @@ void AddSC_shadowfang_keep()
     new npc_haunted_stable_hand_portal();
     new AreaTrigger_at_shadowfang_keep();
     new AreaTrigger_at_shadowfang_keep_godfrey();
+    new npc_shadowfang_prisoner();
 }
