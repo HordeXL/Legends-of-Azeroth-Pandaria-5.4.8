@@ -143,7 +143,167 @@ public:
     };
 };
 
+enum Rinji
+{
+    SAY_RIN_BY_OUTRUNNER = 0,
+    SAY_RIN_FREE         = 0,
+    SAY_RIN_HELP         = 1,
+    SAY_RIN_COMPLETE     = 2,
+    SAY_RIN_PROGRESS_1   = 3,
+    SAY_RIN_PROGRESS_2   = 4,
+    QUEST_RINJI_TRAPPED  = 2742,
+    NPC_RANGER           = 2694,
+    NPC_OUTRUNNER        = 2691,
+    GO_RINJI_CAGE        = 142036
+};
+
+Position const RinjiAmbushSpawn[] =
+{
+    { 191.296204f, -2839.329346f, 107.388f, 0.0f },
+    { 70.972466f,  -2848.674805f, 109.459f, 0.0f }
+};
+
+Position const RinjiAmbushMoveTo[] =
+{
+    { 166.630386f, -2824.780273f, 108.153f, 0.0f },
+    { 70.886589f,  -2874.335449f, 116.675f, 0.0f }
+};
+
+class npc_rinji : public CreatureScript
+{
+public:
+    npc_rinji() : CreatureScript("npc_rinji") { }
+
+    bool OnQuestAccept(Player* player, Creature* creature, Quest const* quest) override
+    {
+        if (quest->GetQuestId() == QUEST_RINJI_TRAPPED)
+        {
+            if (GameObject* cage = creature->FindNearestGameObject(GO_RINJI_CAGE, INTERACTION_DISTANCE))
+                cage->UseDoorOrButton();
+
+            if (npc_rinjiAI* escortAI = CAST_AI(npc_rinji::npc_rinjiAI, creature->AI()))
+                escortAI->Start(false, false, player->GetGUID(), quest);
+        }
+        return true;
+    }
+
+    struct npc_rinjiAI : public npc_escortAI
+    {
+        npc_rinjiAI(Creature* creature) : npc_escortAI(creature), _postEventCount(0), _postEventTimer(3000), _spawnId(0), _isByOutrunner(false) { }
+
+        void Reset() override
+        {
+            _postEventCount = 0;
+            _postEventTimer = 3000;
+            _isByOutrunner = false;
+            _spawnId = 0;
+        }
+
+        void JustEngagedWith(Unit* who) override
+        {
+            if (!HasEscortState(STATE_ESCORT_ESCORTING))
+                return;
+
+            if (who->GetEntry() == NPC_OUTRUNNER && !_isByOutrunner)
+            {
+                if (Creature* talker = who->ToCreature())
+                    talker->AI()->Talk(SAY_RIN_BY_OUTRUNNER);
+                _isByOutrunner = true;
+            }
+
+            if (rand32() % 4 == 0)
+                Talk(SAY_RIN_HELP);
+        }
+
+        void SpawnAmbush(bool first)
+        {
+            _spawnId = first ? 0 : 1;
+            me->SummonCreature(NPC_RANGER, RinjiAmbushSpawn[_spawnId], TEMPSUMMON_TIMED_OR_CORPSE_DESPAWN, 60000);
+            for (uint8 i = 0; i < 2; ++i)
+                me->SummonCreature(NPC_OUTRUNNER, RinjiAmbushSpawn[_spawnId], TEMPSUMMON_TIMED_OR_CORPSE_DESPAWN, 60000);
+        }
+
+        void JustSummoned(Creature* summoned) override
+        {
+            summoned->SetWalk(false);
+            summoned->GetMotionMaster()->MovePoint(0, RinjiAmbushMoveTo[_spawnId]);
+        }
+
+        void WaypointReached(uint32 waypointId) override
+        {
+            Player* player = GetPlayerForEscort();
+            if (!player)
+                return;
+
+            switch (waypointId)
+            {
+                case 1:
+                    Talk(SAY_RIN_FREE, player);
+                    break;
+                case 7:
+                    SpawnAmbush(true);
+                    break;
+                case 13:
+                    SpawnAmbush(false);
+                    break;
+                case 17:
+                    Talk(SAY_RIN_COMPLETE, player);
+                    player->GroupEventHappens(QUEST_RINJI_TRAPPED, me);
+                    SetRun();
+                    _postEventCount = 1;
+                    break;
+            }
+        }
+
+        void UpdateEscortAI(uint32 const diff) override
+        {
+            if (!UpdateVictim())
+            {
+                if (HasEscortState(STATE_ESCORT_ESCORTING) && _postEventCount)
+                {
+                    if (_postEventTimer <= diff)
+                    {
+                        _postEventTimer = 3000;
+                        if (Player* player = GetPlayerForEscort())
+                        {
+                            if (_postEventCount == 1)
+                            {
+                                Talk(SAY_RIN_PROGRESS_1, player);
+                                ++_postEventCount;
+                            }
+                            else
+                            {
+                                Talk(SAY_RIN_PROGRESS_2, player);
+                                _postEventCount = 0;
+                            }
+                        }
+                        else
+                            me->DespawnOrUnsummon();
+                    }
+                    else
+                        _postEventTimer -= diff;
+                }
+                return;
+            }
+
+            DoMeleeAttackIfReady();
+        }
+
+    private:
+        uint32 _postEventCount;
+        uint32 _postEventTimer;
+        uint8 _spawnId;
+        bool _isByOutrunner;
+    };
+
+    CreatureAI* GetAI(Creature* creature) const override
+    {
+        return new npc_rinjiAI(creature);
+    }
+};
+
 void AddSC_hinterlands()
 {
     new npc_00x09hl();
+    new npc_rinji();
 }
