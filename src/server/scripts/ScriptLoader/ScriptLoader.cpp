@@ -2150,7 +2150,7 @@ void AddCustomScripts()
 #ifdef SCRIPTS
     /* This is where custom scripts should be added. */
 //AddSC_npc_teleport();
-//AddSC_wow_token();
+    AddSC_wow_token();
 //AddSC_custom_reward();
 //AddSC_boost_profession();
 //AddSC_custom_items();
