@@ -114,7 +114,10 @@ WHERE `entryorguid` = 46425
   AND `action_param1` = 3;
 
 UPDATE `smart_scripts`
-SET `action_type` = 0,
+SET `event_type` = 61,
+    `action_type` = 22,
+    `action_param1` = 0,
+    `action_param6` = 46425,
     `comment` = CONCAT(`comment`, ' - Disabled; waypoint now starts after text group 2')
 WHERE `entryorguid` = 46425
   AND `source_type` = 0

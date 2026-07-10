@@ -3,7 +3,9 @@
 
 -- Blackrock Soldier: spell 89568 already grants kill credit 48195.
 UPDATE `smart_scripts`
-SET `action_type` = 0,
+SET `action_type` = 22,
+    `action_param1` = 0,
+    `action_param6` = 48195,
     `comment` = CONCAT(`comment`, ' - Disabled duplicate kill credit; spell 89568 already grants credit 48195')
 WHERE `entryorguid` IN (48119, 48121)
   AND `source_type` = 0
@@ -13,7 +15,9 @@ WHERE `entryorguid` IN (48119, 48121)
 
 -- Master Shang Xi: spell 109335 already summons creature 57874.
 UPDATE `smart_scripts`
-SET `action_type` = 0,
+SET `action_type` = 22,
+    `action_param1` = 0,
+    `action_param6` = 57874,
     `comment` = CONCAT(`comment`, ' - Disabled duplicate summon; spell 109335 already summons creature 57874')
 WHERE `entryorguid` = 56686
   AND `source_type` = 0
