@@ -12,7 +12,10 @@
 -- per-creature 5.4.8 action.
 
 UPDATE `smart_scripts`
-SET `action_type` = 0,
+SET `event_type` = 61,
+    `action_type` = 22,
+    `action_param1` = 0,
+    `action_param6` = 223971,
     `comment` = 'Pterrorwing Skyscreamer - Disabled foreign Hunter''s Rush spell 223971 (not in 5.4.8)'
 WHERE `entryorguid` = 70021
   AND `source_type` = 0
@@ -22,7 +25,10 @@ WHERE `entryorguid` = 70021
   AND `action_param1` = 223971;
 
 UPDATE `smart_scripts`
-SET `action_type` = 0,
+SET `event_type` = 61,
+    `action_type` = 22,
+    `action_param1` = 0,
+    `action_param6` = 215377,
     `comment` = 'Arnold Raygun - Disabled foreign The Maw Must Feed spell 215377 (not in 5.4.8)'
 WHERE `entryorguid` = 70034
   AND `source_type` = 0
