@@ -106,17 +106,8 @@ class npc_mandori_escort : public CreatureScript
                 if (!Is(NPC_AYSA))
                     return;
 
-                if (GameObject* mandoriDoor = me->SummonGameObject(211294, 695.26f, 3600.99f, 142.38f, 3.04f, { }, 0))
-                {
-                    mandoriDoor->SetExplicitSeerGuid(playerGuid);
+                if (GameObject* mandoriDoor = me->FindNearestGameObject(210965, 20.0f))
                     mandoriDoorGuid = mandoriDoor->GetGUID();
-                }
-
-                if (GameObject* peiwuDoor = me->SummonGameObject(211298, 566.52f, 3583.46f, 92.16f, 3.14f, { }, 0))
-                {
-                    peiwuDoor->SetExplicitSeerGuid(playerGuid);
-                    peiwuDoorGuid = peiwuDoor->GetGUID();
-                }
             }
 
             bool Is(uint32 npc_entry)
@@ -151,9 +142,9 @@ class npc_mandori_escort : public CreatureScript
                 if (Is(NPC_AYSA))
                 {
                     if (GameObject* mandoriDoor = me->GetMap()->GetGameObject(mandoriDoorGuid))
-                        mandoriDoor->Delete();
+                        mandoriDoor->SetGoState(GO_STATE_READY);
                     if (GameObject* peiwuDoor = me->GetMap()->GetGameObject(peiwuDoorGuid))
-                        peiwuDoor->Delete();
+                        peiwuDoor->SetGoState(GO_STATE_READY);
                 }
             }
 
@@ -224,8 +215,13 @@ class npc_mandori_escort : public CreatureScript
                                 break;
                             case 6:
                                 if (Is(NPC_AYSA))
-                                    if (GameObject* peiwuDoor = me->GetMap()->GetGameObject(peiwuDoorGuid))
+                                {
+                                    if (GameObject* peiwuDoor = me->FindNearestGameObject(210964, 30.0f))
+                                    {
+                                        peiwuDoorGuid = peiwuDoor->GetGUID();
                                         peiwuDoor->SetGoState(GO_STATE_ACTIVE);
+                                    }
+                                }
                                 doorEventTimer = 2000;
                                 break;
                             case 7:
