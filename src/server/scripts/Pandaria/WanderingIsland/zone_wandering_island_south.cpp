@@ -200,13 +200,12 @@ class npc_mandori_escort : public CreatureScript
                                 {
                                     if (GameObject* mandoriDoor = me->GetMap()->GetGameObject(mandoriDoorGuid))
                                     {
-                                        mandoriDoor->SetGoState(GO_STATE_READY);
+                                        mandoriDoor->SetGoState(GO_STATE_ACTIVE);
                                         mandoriDoor->EnableCollision(false);
                                     }
                                     if (GameObject* mandoriPhasedDoor = me->GetMap()->GetGameObject(mandoriPhasedDoorGuid))
                                     {
-                                        mandoriPhasedDoor->SetLootState(GO_READY);
-                                        mandoriPhasedDoor->UseDoorOrButton(120, false, ObjectAccessor::FindPlayer(playerGuid));
+                                        mandoriPhasedDoor->SetGoState(GO_STATE_READY);
                                         mandoriPhasedDoor->EnableCollision(false);
                                     }
 
@@ -262,14 +261,13 @@ class npc_mandori_escort : public CreatureScript
                                     if (GameObject* peiwuDoor = FindDoorBySpawnId(540026))
                                     {
                                         peiwuDoorGuid = peiwuDoor->GetGUID();
-                                        peiwuDoor->SetGoState(GO_STATE_READY);
+                                        peiwuDoor->SetGoState(GO_STATE_ACTIVE);
                                         peiwuDoor->EnableCollision(false);
                                     }
                                     if (GameObject* peiwuPhasedDoor = FindDoorBySpawnId(539997))
                                     {
                                         peiwuPhasedDoorGuid = peiwuPhasedDoor->GetGUID();
-                                        peiwuPhasedDoor->SetLootState(GO_READY);
-                                        peiwuPhasedDoor->UseDoorOrButton(120, false, ObjectAccessor::FindPlayer(playerGuid));
+                                        peiwuPhasedDoor->SetGoState(GO_STATE_READY);
                                         peiwuPhasedDoor->EnableCollision(false);
                                     }
                                 }
