@@ -856,7 +856,7 @@ class npc_shang_xi_air_balloon : public CreatureScript
                         if (passenger && passenger->GetTypeId() == TYPEID_PLAYER)
                         {
                             passenger->ToPlayer()->KilledMonsterCredit(55939);
-                            passenger->AddAura(50550, passenger);
+                            passenger->CastSpell(passenger, 45472, true);
                         }
 
                         me->GetVehicleKit()->RemoveAllPassengers();
