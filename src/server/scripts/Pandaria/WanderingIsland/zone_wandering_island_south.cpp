@@ -160,13 +160,25 @@ class npc_mandori_escort : public CreatureScript
                 if (Is(NPC_AYSA))
                 {
                     if (GameObject* mandoriDoor = me->GetMap()->GetGameObject(mandoriDoorGuid))
+                    {
                         mandoriDoor->SetGoState(GO_STATE_ACTIVE);
+                        mandoriDoor->EnableCollision(true);
+                    }
                     if (GameObject* mandoriPhasedDoor = me->GetMap()->GetGameObject(mandoriPhasedDoorGuid))
+                    {
                         mandoriPhasedDoor->ResetDoorOrButton();
+                        mandoriPhasedDoor->EnableCollision(true);
+                    }
                     if (GameObject* peiwuDoor = me->GetMap()->GetGameObject(peiwuDoorGuid))
+                    {
                         peiwuDoor->SetGoState(GO_STATE_ACTIVE);
+                        peiwuDoor->EnableCollision(true);
+                    }
                     if (GameObject* peiwuPhasedDoor = me->GetMap()->GetGameObject(peiwuPhasedDoorGuid))
+                    {
                         peiwuPhasedDoor->ResetDoorOrButton();
+                        peiwuPhasedDoor->EnableCollision(true);
+                    }
                 }
             }
 
@@ -187,11 +199,15 @@ class npc_mandori_escort : public CreatureScript
                                 if (Is(NPC_AYSA))
                                 {
                                     if (GameObject* mandoriDoor = me->GetMap()->GetGameObject(mandoriDoorGuid))
+                                    {
                                         mandoriDoor->SetGoState(GO_STATE_READY);
+                                        mandoriDoor->EnableCollision(false);
+                                    }
                                     if (GameObject* mandoriPhasedDoor = me->GetMap()->GetGameObject(mandoriPhasedDoorGuid))
                                     {
                                         mandoriPhasedDoor->SetLootState(GO_READY);
                                         mandoriPhasedDoor->UseDoorOrButton(120, false, ObjectAccessor::FindPlayer(playerGuid));
+                                        mandoriPhasedDoor->EnableCollision(false);
                                     }
 
                                     if (Player* player = ObjectAccessor::FindPlayer(playerGuid))
@@ -247,12 +263,14 @@ class npc_mandori_escort : public CreatureScript
                                     {
                                         peiwuDoorGuid = peiwuDoor->GetGUID();
                                         peiwuDoor->SetGoState(GO_STATE_READY);
+                                        peiwuDoor->EnableCollision(false);
                                     }
                                     if (GameObject* peiwuPhasedDoor = FindDoorBySpawnId(539997))
                                     {
                                         peiwuPhasedDoorGuid = peiwuPhasedDoor->GetGUID();
                                         peiwuPhasedDoor->SetLootState(GO_READY);
                                         peiwuPhasedDoor->UseDoorOrButton(120, false, ObjectAccessor::FindPlayer(playerGuid));
+                                        peiwuPhasedDoor->EnableCollision(false);
                                     }
                                 }
                                 doorEventTimer = 2000;
