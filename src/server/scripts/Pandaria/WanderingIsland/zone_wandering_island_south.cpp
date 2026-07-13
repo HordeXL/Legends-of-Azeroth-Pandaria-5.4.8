@@ -86,6 +86,12 @@ class npc_mandori_escort : public CreatureScript
             ObjectGuid peiwuDoorGuid;
             ObjectGuid peiwuPhasedDoorGuid;
 
+            GameObject* FindDoorBySpawnId(ObjectGuid::LowType spawnId)
+            {
+                auto bounds = me->GetMap()->GetGameObjectBySpawnIdStore().equal_range(spawnId);
+                return bounds.first != bounds.second ? bounds.first->second : nullptr;
+            }
+
             void Reset() override
             {
                 IntroTimer      = 250;
@@ -110,9 +116,9 @@ class npc_mandori_escort : public CreatureScript
                 if (!Is(NPC_AYSA))
                     return;
 
-                if (GameObject* mandoriDoor = me->FindNearestGameObject(210965, 20.0f))
+                if (GameObject* mandoriDoor = FindDoorBySpawnId(540359))
                     mandoriDoorGuid = mandoriDoor->GetGUID();
-                if (GameObject* mandoriPhasedDoor = me->FindNearestGameObject(211282, 20.0f))
+                if (GameObject* mandoriPhasedDoor = FindDoorBySpawnId(540346))
                     mandoriPhasedDoorGuid = mandoriPhasedDoor->GetGUID();
             }
 
@@ -228,12 +234,12 @@ class npc_mandori_escort : public CreatureScript
                             case 6:
                                 if (Is(NPC_AYSA))
                                 {
-                                    if (GameObject* peiwuDoor = me->FindNearestGameObject(210964, 30.0f))
+                                    if (GameObject* peiwuDoor = FindDoorBySpawnId(540026))
                                     {
                                         peiwuDoorGuid = peiwuDoor->GetGUID();
                                         peiwuDoor->SetGoState(GO_STATE_READY);
                                     }
-                                    if (GameObject* peiwuPhasedDoor = me->FindNearestGameObject(211283, 30.0f))
+                                    if (GameObject* peiwuPhasedDoor = FindDoorBySpawnId(539997))
                                     {
                                         peiwuPhasedDoorGuid = peiwuPhasedDoor->GetGUID();
                                         peiwuPhasedDoor->SetGoState(GO_STATE_ACTIVE);
