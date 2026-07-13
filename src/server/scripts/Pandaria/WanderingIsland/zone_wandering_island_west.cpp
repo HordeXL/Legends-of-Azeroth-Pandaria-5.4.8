@@ -847,10 +847,10 @@ class npc_shang_xi_air_balloon : public CreatureScript
             {
                 switch (waypointId)
                 {
-                    case 11:
+                    case 20:
                         RemoveNpcPassengers();
                         break;
-                    case 12:
+                    case 21:
                     {
                         auto const passenger = me->GetVehicleKit()->GetPassenger(0);
                         if (passenger && passenger->GetTypeId() == TYPEID_PLAYER)
