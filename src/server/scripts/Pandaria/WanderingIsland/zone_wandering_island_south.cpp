@@ -33,6 +33,12 @@ class AreaTrigger_at_mandori : public AreaTriggerScript
            if (player->GetQuestStatus(29792) != QUEST_STATUS_INCOMPLETE)
                return true;
 
+           // The area trigger can fire repeatedly while the player remains on its edge.
+           // Do not start a second personal escort group that would race the first one
+           // and open/reset the same pair of phased gates out of sequence.
+           if (player->FindNearestCreature(59986, 100.0f, true))
+               return true;
+
            ObjectGuid playerGuid = player->GetGUID();
 
             auto const aysa = player->SummonCreature(59986, 698.04f, 3601.79f, 142.82f, 3.254830f, TEMPSUMMON_MANUAL_DESPAWN, 0); // Aysa
@@ -156,11 +162,11 @@ class npc_mandori_escort : public CreatureScript
                     if (GameObject* mandoriDoor = me->GetMap()->GetGameObject(mandoriDoorGuid))
                         mandoriDoor->SetGoState(GO_STATE_ACTIVE);
                     if (GameObject* mandoriPhasedDoor = me->GetMap()->GetGameObject(mandoriPhasedDoorGuid))
-                        mandoriPhasedDoor->SetGoState(GO_STATE_READY);
+                        mandoriPhasedDoor->ResetDoorOrButton();
                     if (GameObject* peiwuDoor = me->GetMap()->GetGameObject(peiwuDoorGuid))
                         peiwuDoor->SetGoState(GO_STATE_ACTIVE);
                     if (GameObject* peiwuPhasedDoor = me->GetMap()->GetGameObject(peiwuPhasedDoorGuid))
-                        peiwuPhasedDoor->SetGoState(GO_STATE_READY);
+                        peiwuPhasedDoor->ResetDoorOrButton();
                 }
             }
 
@@ -183,7 +189,10 @@ class npc_mandori_escort : public CreatureScript
                                     if (GameObject* mandoriDoor = me->GetMap()->GetGameObject(mandoriDoorGuid))
                                         mandoriDoor->SetGoState(GO_STATE_READY);
                                     if (GameObject* mandoriPhasedDoor = me->GetMap()->GetGameObject(mandoriPhasedDoorGuid))
-                                        mandoriPhasedDoor->SetGoState(GO_STATE_ACTIVE);
+                                    {
+                                        mandoriPhasedDoor->SetLootState(GO_READY);
+                                        mandoriPhasedDoor->UseDoorOrButton(120, false, ObjectAccessor::FindPlayer(playerGuid));
+                                    }
 
                                     if (Player* player = ObjectAccessor::FindPlayer(playerGuid))
                                         player->KilledMonsterCredit(59946);
@@ -242,7 +251,8 @@ class npc_mandori_escort : public CreatureScript
                                     if (GameObject* peiwuPhasedDoor = FindDoorBySpawnId(539997))
                                     {
                                         peiwuPhasedDoorGuid = peiwuPhasedDoor->GetGUID();
-                                        peiwuPhasedDoor->SetGoState(GO_STATE_ACTIVE);
+                                        peiwuPhasedDoor->SetLootState(GO_READY);
+                                        peiwuPhasedDoor->UseDoorOrButton(120, false, ObjectAccessor::FindPlayer(playerGuid));
                                     }
                                 }
                                 doorEventTimer = 2000;
