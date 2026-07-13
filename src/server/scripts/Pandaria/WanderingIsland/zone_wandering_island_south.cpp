@@ -82,7 +82,9 @@ class npc_mandori_escort : public CreatureScript
             ObjectGuid playerGuid;
 
             ObjectGuid mandoriDoorGuid;
+            ObjectGuid mandoriPhasedDoorGuid;
             ObjectGuid peiwuDoorGuid;
+            ObjectGuid peiwuPhasedDoorGuid;
 
             void Reset() override
             {
@@ -94,7 +96,9 @@ class npc_mandori_escort : public CreatureScript
 
                 playerGuid = ObjectGuid::Empty;
                 mandoriDoorGuid = ObjectGuid::Empty;
+                mandoriPhasedDoorGuid = ObjectGuid::Empty;
                 peiwuDoorGuid = ObjectGuid::Empty;
+                peiwuPhasedDoorGuid = ObjectGuid::Empty;
 
                 me->SetReactState(REACT_PASSIVE);
             }
@@ -108,6 +112,8 @@ class npc_mandori_escort : public CreatureScript
 
                 if (GameObject* mandoriDoor = me->FindNearestGameObject(210965, 20.0f))
                     mandoriDoorGuid = mandoriDoor->GetGUID();
+                if (GameObject* mandoriPhasedDoor = me->FindNearestGameObject(211282, 20.0f))
+                    mandoriPhasedDoorGuid = mandoriPhasedDoor->GetGUID();
             }
 
             bool Is(uint32 npc_entry)
@@ -142,9 +148,13 @@ class npc_mandori_escort : public CreatureScript
                 if (Is(NPC_AYSA))
                 {
                     if (GameObject* mandoriDoor = me->GetMap()->GetGameObject(mandoriDoorGuid))
-                        mandoriDoor->SetGoState(GO_STATE_READY);
+                        mandoriDoor->SetGoState(GO_STATE_ACTIVE);
+                    if (GameObject* mandoriPhasedDoor = me->GetMap()->GetGameObject(mandoriPhasedDoorGuid))
+                        mandoriPhasedDoor->SetGoState(GO_STATE_READY);
                     if (GameObject* peiwuDoor = me->GetMap()->GetGameObject(peiwuDoorGuid))
-                        peiwuDoor->SetGoState(GO_STATE_READY);
+                        peiwuDoor->SetGoState(GO_STATE_ACTIVE);
+                    if (GameObject* peiwuPhasedDoor = me->GetMap()->GetGameObject(peiwuPhasedDoorGuid))
+                        peiwuPhasedDoor->SetGoState(GO_STATE_READY);
                 }
             }
 
@@ -165,7 +175,9 @@ class npc_mandori_escort : public CreatureScript
                                 if (Is(NPC_AYSA))
                                 {
                                     if (GameObject* mandoriDoor = me->GetMap()->GetGameObject(mandoriDoorGuid))
-                                        mandoriDoor->SetGoState(GO_STATE_ACTIVE);
+                                        mandoriDoor->SetGoState(GO_STATE_READY);
+                                    if (GameObject* mandoriPhasedDoor = me->GetMap()->GetGameObject(mandoriPhasedDoorGuid))
+                                        mandoriPhasedDoor->SetGoState(GO_STATE_ACTIVE);
 
                                     if (Player* player = ObjectAccessor::FindPlayer(playerGuid))
                                         player->KilledMonsterCredit(59946);
@@ -219,7 +231,12 @@ class npc_mandori_escort : public CreatureScript
                                     if (GameObject* peiwuDoor = me->FindNearestGameObject(210964, 30.0f))
                                     {
                                         peiwuDoorGuid = peiwuDoor->GetGUID();
-                                        peiwuDoor->SetGoState(GO_STATE_ACTIVE);
+                                        peiwuDoor->SetGoState(GO_STATE_READY);
+                                    }
+                                    if (GameObject* peiwuPhasedDoor = me->FindNearestGameObject(211283, 30.0f))
+                                    {
+                                        peiwuPhasedDoorGuid = peiwuPhasedDoor->GetGUID();
+                                        peiwuPhasedDoor->SetGoState(GO_STATE_ACTIVE);
                                     }
                                 }
                                 doorEventTimer = 2000;
