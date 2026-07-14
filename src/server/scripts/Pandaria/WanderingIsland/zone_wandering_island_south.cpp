@@ -88,15 +88,7 @@ class npc_mandori_escort : public CreatureScript
             ObjectGuid playerGuid;
 
             ObjectGuid mandoriDoorGuid;
-            ObjectGuid mandoriPhasedDoorGuid;
             ObjectGuid peiwuDoorGuid;
-            ObjectGuid peiwuPhasedDoorGuid;
-
-            GameObject* FindDoorBySpawnId(ObjectGuid::LowType spawnId)
-            {
-                auto bounds = me->GetMap()->GetGameObjectBySpawnIdStore().equal_range(spawnId);
-                return bounds.first != bounds.second ? bounds.first->second : nullptr;
-            }
 
             void Reset() override
             {
@@ -108,9 +100,7 @@ class npc_mandori_escort : public CreatureScript
 
                 playerGuid = ObjectGuid::Empty;
                 mandoriDoorGuid = ObjectGuid::Empty;
-                mandoriPhasedDoorGuid = ObjectGuid::Empty;
                 peiwuDoorGuid = ObjectGuid::Empty;
-                peiwuPhasedDoorGuid = ObjectGuid::Empty;
 
                 me->SetReactState(REACT_PASSIVE);
             }
@@ -122,10 +112,8 @@ class npc_mandori_escort : public CreatureScript
                 if (!Is(NPC_AYSA))
                     return;
 
-                if (GameObject* mandoriDoor = FindDoorBySpawnId(540359))
+                if (GameObject* mandoriDoor = me->FindNearestGameObject(210965, 20.0f))
                     mandoriDoorGuid = mandoriDoor->GetGUID();
-                if (GameObject* mandoriPhasedDoor = FindDoorBySpawnId(540346))
-                    mandoriPhasedDoorGuid = mandoriPhasedDoor->GetGUID();
             }
 
             bool Is(uint32 npc_entry)
@@ -160,25 +148,9 @@ class npc_mandori_escort : public CreatureScript
                 if (Is(NPC_AYSA))
                 {
                     if (GameObject* mandoriDoor = me->GetMap()->GetGameObject(mandoriDoorGuid))
-                    {
-                        mandoriDoor->SetGoState(GO_STATE_ACTIVE);
-                        mandoriDoor->EnableCollision(true);
-                    }
-                    if (GameObject* mandoriPhasedDoor = me->GetMap()->GetGameObject(mandoriPhasedDoorGuid))
-                    {
-                        mandoriPhasedDoor->ResetDoorOrButton();
-                        mandoriPhasedDoor->EnableCollision(true);
-                    }
+                        mandoriDoor->SetGoState(GO_STATE_READY);
                     if (GameObject* peiwuDoor = me->GetMap()->GetGameObject(peiwuDoorGuid))
-                    {
-                        peiwuDoor->SetGoState(GO_STATE_ACTIVE);
-                        peiwuDoor->EnableCollision(true);
-                    }
-                    if (GameObject* peiwuPhasedDoor = me->GetMap()->GetGameObject(peiwuPhasedDoorGuid))
-                    {
-                        peiwuPhasedDoor->ResetDoorOrButton();
-                        peiwuPhasedDoor->EnableCollision(true);
-                    }
+                        peiwuDoor->SetGoState(GO_STATE_READY);
                 }
             }
 
@@ -199,15 +171,7 @@ class npc_mandori_escort : public CreatureScript
                                 if (Is(NPC_AYSA))
                                 {
                                     if (GameObject* mandoriDoor = me->GetMap()->GetGameObject(mandoriDoorGuid))
-                                    {
                                         mandoriDoor->SetGoState(GO_STATE_ACTIVE);
-                                        mandoriDoor->EnableCollision(false);
-                                    }
-                                    if (GameObject* mandoriPhasedDoor = me->GetMap()->GetGameObject(mandoriPhasedDoorGuid))
-                                    {
-                                        mandoriPhasedDoor->SetGoState(GO_STATE_READY);
-                                        mandoriPhasedDoor->EnableCollision(false);
-                                    }
 
                                     if (Player* player = ObjectAccessor::FindPlayer(playerGuid))
                                         player->KilledMonsterCredit(59946);
@@ -258,17 +222,10 @@ class npc_mandori_escort : public CreatureScript
                             case 6:
                                 if (Is(NPC_AYSA))
                                 {
-                                    if (GameObject* peiwuDoor = FindDoorBySpawnId(540026))
+                                    if (GameObject* peiwuDoor = me->FindNearestGameObject(210964, 30.0f))
                                     {
                                         peiwuDoorGuid = peiwuDoor->GetGUID();
                                         peiwuDoor->SetGoState(GO_STATE_ACTIVE);
-                                        peiwuDoor->EnableCollision(false);
-                                    }
-                                    if (GameObject* peiwuPhasedDoor = FindDoorBySpawnId(539997))
-                                    {
-                                        peiwuPhasedDoorGuid = peiwuPhasedDoor->GetGUID();
-                                        peiwuPhasedDoor->SetGoState(GO_STATE_READY);
-                                        peiwuPhasedDoor->EnableCollision(false);
                                     }
                                 }
                                 doorEventTimer = 2000;
