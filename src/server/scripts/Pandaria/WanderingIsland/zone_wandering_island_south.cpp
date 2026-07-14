@@ -59,12 +59,15 @@ class AreaTrigger_at_mandori : public AreaTriggerScript
             player->RemoveAurasDueToSpell(59073);
             player->RemoveAurasDueToSpell(59074);
 
-            // The removed pre-quest phase contains the permanent closed gates
-            // (210965/210964).  Refresh visibility immediately so the client
-            // drops those copies before the personal scene gates animate.
-            // Without this, the stale Mandori copy remains clickable and the
-            // Pei-Wu copy disappears only on a later visibility update.
-            player->UpdateObjectVisibility();
+            // The removed pre-quest phase contains the permanent closed gates.
+            // A normal visibility refresh does not discard them immediately on
+            // this client build, leaving their collision over the personal scene
+            // gates. Explicitly destroy only those two DB spawns for this player;
+            // the world objects remain available to every other player.
+            if (GameObject* mandoriGate = player->GetMap()->GetGameObjectBySpawnId(540359))
+                mandoriGate->DestroyForPlayer(player);
+            if (GameObject* peiwuGate = player->GetMap()->GetGameObjectBySpawnId(540026))
+                peiwuGate->DestroyForPlayer(player);
 
             return true;
         }
