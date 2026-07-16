@@ -1,10 +1,10 @@
--- Exact affected-field backup before aligning Galleon with the final
--- matching-version SkyFire 5.4.8 personal-loot configuration.
+-- Exact affected-field backup before restoring the preserved Galleon
+-- skinning-loot reference after the first _07 application set it to zero.
 
 START TRANSACTION;
 
 UPDATE `creature_template`
-SET `lootid` = 62346
+SET `skinloot` = 0
 WHERE `entry` = 62346
   AND `name` = 'Galleon'
   AND `lootid` = 0

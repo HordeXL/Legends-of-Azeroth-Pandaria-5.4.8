@@ -1,14 +1,14 @@
--- Galleon's old Build-17688 template used ordinary lootid/skinloot 62346.
--- The final matching SkyFire 5.4.8 template has both fields set to zero and
--- uses personal loot. The active world already has the complete personal
--- loot owner row and 46 personal_loot_item rows.
+-- Galleon's old template used ordinary lootid 62346. Later matching SkyFire
+-- 5.4.8 data uses personal loot, and the active world already has the complete
+-- personal-loot owner row and 46 personal_loot_item rows.
+-- Keep skinloot 62346 because this project's two preserved pre-fix databases
+-- and active world contain the same complete three-row skinning loot set.
 -- No loot/template row is deleted or overwritten.
 
 START TRANSACTION;
 
 UPDATE `creature_template` AS ct
-SET ct.`lootid` = 0,
-    ct.`skinloot` = 0
+SET ct.`lootid` = 0
 WHERE ct.`entry` = 62346
   AND ct.`name` = 'Galleon'
   AND ct.`lootid` = 62346
