@@ -5,6 +5,28 @@ Rule: do not delete content to hide errors. Prefer filling missing data, linking
 
 Database environment rule: this project uses Wampserver 3.4.2 with MySQL 5.7.44. Do not use MariaDB 11.4.9 or any newer installed MySQL/MariaDB version to select, inspect, import, migrate, or draw schema conclusions for this project's databases. Other installed versions may contain unrelated schemas. Before applying SQL, confirm that the client/server is MySQL 5.7.44 and that the configured target is this project's `world` database.
 
+## Local SQL Source Locations
+
+These local sources may be searched before using the internet or inventing replacement data:
+
+- `C:\wamp64\www\TDB_full_1200.26021_2026_02_06`
+  - `TDB_full_world_1200.26021_2026_02_06.sql`
+  - `TDB_full_hotfixes_1200.26021_2026_02_06.sql`
+  - This is a newer TrinityDB 12.0.0 dataset. Use it only to identify names, relationships, historical intent, or a lead to older data. Do not directly import its rows, IDs, table layouts, flags, or loot into the 5.4.8 Build-18414 database without independent matching-version confirmation and explicit schema conversion.
+- `C:\wamp64\www\TrinityCore\sql`
+  - Search `old`, `updates`, `base`, `custom`, and the other relevant subdirectories for historical fixes and the evolution of an affected row.
+  - Current TrinityCore data may target a later expansion. Treat it as supporting evidence, not automatically compatible 5.4.8 SQL; verify the client build, IDs, schema, and surrounding quest/script chain before reuse.
+- `C:\wamp64\www\SkyFire_548\sql`
+  - Search `base`, `old`, `pending_updates`, `updates`, and `create`.
+  - This is the closest local 5.4.8 source and should normally be checked first. Even here, confirm `VerifiedBuild`, schema compatibility, parent/child relationships, dependent rows, and local custom changes before applying anything.
+  - Pre-update Git comparison baseline recorded on 2026-07-16: branch `main`, commit `8fd50ef0ddc67c02d5a41146742493e77efad637` (`Create mmap output directory automatically`, commit date 2026-07-06). Use this full hash as the lower boundary for every later SkyFire review, regardless of commit author date.
+  - At the time this baseline was recorded, local `main` was 63 commits behind the already-known local `origin/main` reference `d07245f94cd6907e311abf31bdf5e33fd358f031`. The remote reference had not yet been freshly fetched during this check, so it must not be treated as the final current upstream state.
+  - The repository has an untracked local data directory `sql/base/SFDB_full_548_24.001_2024_09_04_Release/`. Preserve it. Before any update, use `git fetch origin` and review `8fd50ef0ddc67c02d5a41146742493e77efad637..origin/main`; use `git pull --ff-only` only after confirming that upstream does not collide with this untracked directory.
+  - SkyFire update verified on 2026-07-16 after a fresh fetch at 11:21:36. Local `main` and `origin/main` both point to `d07245f94cd6907e311abf31bdf5e33fd358f031`, with ahead/behind `0/0`; the untracked SFDB release directory remains present. The review range is therefore exactly `8fd50ef0ddc67c02d5a41146742493e77efad637..d07245f94cd6907e311abf31bdf5e33fd358f031` (63 commits).
+  - The newest fetched upstream commit is dated 2026-07-14, not 2026-07-16. Review every commit in the saved range rather than filtering only by today's date; the range contains changes authored from 2026-07-06 through 2026-07-14.
+
+Source-selection rule: a newer TDB/Trinity row is not proof that the same row belongs in 5.4.8. Prefer a complete matching-version chain from SkyFire 5.4.8 or the project's pre-fix backups. When only later-version evidence exists, document the candidate and leave the startup warning unresolved rather than deleting data or importing an unverified replacement.
+
 ## Already Fixed
 
 - Added empty optional `AiPlayerbot.PremadeSpecName.*` config keys in `Build/bin/RelWithDebInfo/worldserver.conf`.
@@ -792,6 +814,45 @@ This section is the short authoritative status view. The dated investigation not
 - Restart verification completed on 2026-07-16 at 10:46. This time `DBErrors.log` was truncated normally and contains only the new start (7,624 lines); `Server.log` reports `World initialized in 0 minutes 27 seconds`. The `different npcflag in difficulty 1 mode` warning and all eight missing difficulty-template warnings are gone.
 - The matching `npcflag` exposed the dependent data that had also been absent with template `33909`: the validator reported that `33909` had `UNIT_NPC_FLAG_SPELLCLICK` but no spell-click row. Active data and all three checked 5.4.8 sources consistently define parent `32930` with spell `65343`, cast flags `0`, and user type `0`. Those sources do not contain `33909` at all, which explains why no child spell-click row could previously exist. The flag was not removed.
 - Exact pre-change spell-click rows were saved to `world_npc_spellclick_32930_33909_before_20260716.sql`. Added and applied guarded update `2026_07_16_02_world_restore_kologarn_difficulty_spellclick.sql`; it copies the linked parent's existing spell, cast flags, and user type to child `33909` only when the exact Build-15595 parent/child relation and matching spell-click flags exist. `ROLLBACK` validation passed first, and the post-apply query confirms identical `65343,0,0` rows for `32930` and `33909`. No row was deleted or overwritten. A restart is required to verify that the new spell-click warning is gone.
+- Final restart verification completed on 2026-07-16 at 11:03. `DBErrors.log` was freshly truncated and contains 7,623 lines; `Server.log` reports `World initialized in 0 minutes 29 seconds`. There are zero matches for `33909`, the missing spell-click warning, the difficulty `npcflag` mismatch, all four restored-template IDs, and every `ObjectEntryGuid condition has non existing creature template` warning. The complete `31317`/`33906`/`33909`/`40684` restoration batch and its dependent Kologarn spell-click repair are therefore verified complete.
+- Previously repaired `27754`, Shoeshine/`9603600`, and `UNIT_NPC_FLAG_QUESTGIVER` groups also remain at zero in this final restart. Known deliberately unresolved groups (`32592`, `60491`, `62346`, GameObject loot `218197`/`218577`/`220196`/`221776`, conditions `35431`/`35433`, and pool `12268`) still reproduce and must continue to be handled only from authoritative matching-version evidence.
+
+## SkyFire 5.4.8 upstream review (2026-07-16)
+
+The local SkyFire repository was updated from the saved baseline `8fd50ef0ddc67c02d5a41146742493e77efad637` to `d07245f94cd6907e311abf31bdf5e33fd358f031`. The range contains 63 commits, but many are merges, SQL promotions, reverts, or follow-up corrections rather than 63 independent fixes. Every final-state change in this range was classified before importing anything.
+
+### Adapted and applied
+
+- SkyFire `e160430ae2` identifies 31 tameable quest beasts whose `type_flags=2147483649` unknown high bit causes a skull portrait and incorrect aggro behavior. The active local database contained all 31 entries with exactly the same faulty pair `type_flags=2147483649, dynamicflags=0`: 24 Build-15595 and 7 Build-18414 rows. Exact pre-change rows are in `world_creature_template_tameable_quest_beast_flags_before_20260716.sql`. Added and applied guarded migration `2026_07_16_03_world_fix_tameable_quest_beast_flags.sql`; a transaction test first matched 31 rows and was rolled back, then the real apply produced `31 fixed, 0 old, 31 total`. No row was deleted. In-game portrait/aggro/taming verification is still required.
+- SkyFire `982acc6e8d` changes evade-time creature-addon loading to reload mode. The local `Creature::LoadCreaturesAddon(bool reload=false)` API supports the same behavior, so both `CreatureAI::_EnterEvadeMode` and `SmartAI::EnterEvadeMode` now call `LoadCreaturesAddon(true)`. This prevents an existing addon aura from being treated as a duplicate while evade state is restored.
+- SkyFire `b207a14d32` fixes live spell-click and quest-object refresh. It was adapted to the local ObjectGuid/update-field API: spell learning and skill changes now refresh quest-dependent world objects outside character loading; gameobjects force public-field refresh; spell-click creatures use the vehicle base entry, viewer-dependent fields, and send no empty packet; multiple spell-click definitions now continue past an inapplicable row instead of rejecting the entire creature. The local `Unit::HandleSpellClick` already used the vehicle base entry, so the visibility path now agrees with the actual click path.
+- SkyFire `b9406d0f70` fixes the Stormwind Charger. The local database already had Marshal Dughan gossip menu `11611`, its quest-35 condition, spell `78854`, vehicle `42260` with `VehicleId=882`/`speed_run=2`, and the complete five-row SmartAI that starts and ends path `42260`. Only `waypoint_data` was empty. The upstream C++ duplicate and destructive gossip/SmartAI cleanup were therefore not imported. Exact pre-change empty-path evidence is in `world_waypoint_data_42260_before_20260716.sql`. Added and applied guarded migration `2026_07_16_04_world_restore_stormwind_charger_waypoints.sql`, which inserts all 38 source points only if the route is entirely empty and the expected local vehicle/SmartAI controller exists. Rollback validation produced 38 rows and returned to 0; the real apply has 38 distinct points, first `1`, last `38`. In-game ride verification is pending.
+- SkyFire `512f6c9372` proves that dual specialization costs 10 gold. The active gossip data uses `BoxMoney=100000`, `MinDualSpecLevel=30`, but the local custom rogue-trainer script charged `10000000` copper (1000 gold). Only that C++ path was corrected to check/deduct `100000` and display congratulations menu `10373`. The large upstream trainer SQL was not imported.
+- Both C++ batches compiled successfully as `RelWithDebInfo`; the final incremental build regenerated `Build/bin/RelWithDebInfo/worldserver.exe` without errors.
+
+### Already present or equivalent; no import needed
+
+- Questgiver-marker condition handling from `a3821dd5e7`, fishing fixes from `aabf17edb9`/`256174668f`, auth feature-status sending from `562debea6d`, and Bear in Mind loot from `fa815f14b0` are already present or semantically stronger in this project.
+- SmartAI random range/timer corrections bundled with the Mistmantle change are already implemented through the local validated `urand(min,max)` paths.
+- The new `battle_pet_item_to_species` dataset contains exactly 364 unique source pairs. The active local table also contains exactly the same 364 pairs: source-only `0`, local-only `0`. No table replacement was performed.
+- The GUID serialization refactor does not map to this project's newer ByteBuffer/ObjectGuid architecture and was not applied.
+- The cinematic quest-marker change targets a different SkyFire cinematic manager. This project already has its own cinematic visibility/range handling; no matching defect or startup error has been established.
+
+### Deliberately not imported
+
+- Do not import SkyFire's battle-pet implementation wholesale. This project already has a different and more extensive `PetBattle`, `BattlePetAura`, ability-effect, spawn-manager, and packet architecture. The upstream series also converts and seeds wild spawns, then its final commit `d07245f94c` deletes the promoted conversion files as bad data and recommends rebuilding the world database. None of those converted/seeded spawn rows belongs in the active database. Individual battle-pet gameplay defects must be reproduced and adapted against the local implementation separately.
+- Do not import the large class-trainer SQL from `512f6c9372`. It rewrites hundreds of gossip/trainer/template rows and would overwrite local trainer data. Only the independently proven 10-gold code mismatch was corrected.
+- Blackrock Battle Worg loot already matches upstream. Blackrock Spy loot differs, but the upstream change is a balance replacement rather than a missing-reference repair; it remains unchanged until a concrete gameplay requirement establishes which loot distribution is intended.
+- Mistmantle's Revenge (`4800a8fbb4`) is a real partial-content candidate but its SQL is not safe to apply directly. It deletes all entry `315` texts and SmartAI, while the active world has permanent Stalvan spawn GUID `316904` at the same manor coordinates with three existing combat SmartAI rows and three broadcast-text-backed lines. It also inserts a second Stalvan summon at essentially that position. A correct port must separate the quest-specific summoned RP behavior from the normal permanent Stalvan instead of replacing both globally. No Mistmantle DB or C++ change was made in this batch.
+- Global terrain-height changes bundled with the Stormwind Charger commit target movement code that is structurally different here. They were not transplanted merely to support one route; the existing SmartAI path must first be tested in game.
+
+### Required verification after this batch
+
+1. Start the newly built worldserver and review the fresh `Server.log`/`DBErrors.log` for new script, spell-click, waypoint, or addon-aura warnings.
+2. Test one tameable quest beast (for example King Bangalash `731`) for normal portrait, aggro, and tame behavior.
+3. Complete quest `35`, use Marshal Dughan's Stormwind Charger option, and verify the 38-point ride reaches the endpoint and despawns normally.
+4. With a level-30+ rogue that has one specialization, verify that buying dual specialization removes exactly 10 gold and shows menu `10373`.
+5. Verify at least one quest-conditioned spell-click object updates immediately after accepting/completing its quest and after learning a required spell/skill.
 
 ## Recommended Order
 

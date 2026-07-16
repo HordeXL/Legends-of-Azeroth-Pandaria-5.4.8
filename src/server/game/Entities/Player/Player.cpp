@@ -3945,6 +3945,8 @@ bool Player::IsCurrentSpecMasterySpell(SpellInfo const* spellInfo) const
 
 void Player::LearnSpell(uint32 spell_id, bool dependent)
 {
+    WorldSession* session = GetSession();
+    bool const refreshQuestObjects = IsInWorld() && session && !session->PlayerLoading();
     PlayerSpellMap::iterator itr = m_spells.find(spell_id);
 
     bool disabled = (itr != m_spells.end()) ? itr->second->disabled : false;
@@ -3985,6 +3987,9 @@ void Player::LearnSpell(uint32 spell_id, bool dependent)
                 LearnSpell(itr2->second, false);
         }
     }
+
+    if (refreshQuestObjects)
+        UpdateForQuestWorldObjects();
 }
 
 void Player::RemoveSpell(uint32 spell_id, bool disabled, bool learn_low_rank)
@@ -6266,6 +6271,8 @@ void Player::SetSkill(uint16 id, uint16 step, uint16 newVal, uint16 maxVal)
     if (!id)
         return;
 
+    WorldSession* session = GetSession();
+    bool const refreshQuestObjects = IsInWorld() && session && !session->PlayerLoading();
     uint16 currVal;
     SkillStatusMap::iterator itr = mSkillStatus.find(id);
 
@@ -6297,6 +6304,9 @@ void Player::SetSkill(uint16 id, uint16 step, uint16 newVal, uint16 maxVal)
 
             UpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_REACH_SKILL_LEVEL, id);
             UpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_LEARN_SKILL_LEVEL, id);
+
+            if (refreshQuestObjects)
+                UpdateForQuestWorldObjects();
         }
         else                                                //remove
         {
@@ -6330,6 +6340,9 @@ void Player::SetSkill(uint16 id, uint16 step, uint16 newVal, uint16 maxVal)
                 SetUInt32Value(PLAYER_FIELD_PROFESSION_SKILL_LINE, 0);
             else if (GetUInt32Value(PLAYER_FIELD_PROFESSION_SKILL_LINE + 1) == id)
                 SetUInt32Value(PLAYER_FIELD_PROFESSION_SKILL_LINE + 1, 0);
+
+            if (refreshQuestObjects)
+                UpdateForQuestWorldObjects();
         }
     }
     else if (newVal)                                        //add
@@ -6393,6 +6406,10 @@ void Player::SetSkill(uint16 id, uint16 step, uint16 newVal, uint16 maxVal)
 
                 // Learn all spells for skill
                 LearnSkillRewardedSpells(id, newVal);
+
+                if (refreshQuestObjects)
+                    UpdateForQuestWorldObjects();
+
                 return;
             }
         }
@@ -26270,7 +26287,11 @@ void Player::UpdateForQuestWorldObjects()
         if ((*itr).IsGameObject())
         {
             if (GameObject* obj = GetMap()->GetGameObject(*itr))
+            {
+                obj->SetFieldNotifyFlag(UF_FLAG_PUBLIC);
                 obj->BuildValuesUpdateBlockForPlayer(&udata, this);
+                obj->RemoveFieldNotifyFlag(UF_FLAG_PUBLIC);
+            }
         }
         else if ((*itr).IsCreatureOrVehicle())
         {
@@ -26282,17 +26303,20 @@ void Player::UpdateForQuestWorldObjects()
             if (!obj->HasFlag(UNIT_FIELD_NPC_FLAGS, UNIT_NPC_FLAG_SPELLCLICK))
                 continue;
 
-            SpellClickInfoMapBounds clickPair = sObjectMgr->GetSpellClickInfoMapBounds(obj->GetEntry());
-            for (SpellClickInfoContainer::const_iterator _itr = clickPair.first; _itr != clickPair.second; ++_itr)
-            {
-                if (sConditionMgr->GetConditionsForSpellClickEvent(obj->GetEntry(), _itr->second.spellId))
-                {
-                    obj->BuildValuesUpdateBlockForPlayer(&udata, this);
-                    break;
-                }                
-            }
+            uint32 spellClickEntry = obj->GetVehicleKit() ? obj->GetVehicleKit()->GetCreatureEntry() : obj->GetEntry();
+            SpellClickInfoMapBounds clickPair = sObjectMgr->GetSpellClickInfoMapBounds(spellClickEntry);
+            if (clickPair.first == clickPair.second)
+                continue;
+
+            obj->SetFieldNotifyFlag(UF_FLAG_VIEWER_DEPENDENT);
+            obj->BuildValuesUpdateBlockForPlayer(&udata, this);
+            obj->RemoveFieldNotifyFlag(UF_FLAG_VIEWER_DEPENDENT);
         }
     }
+
+    if (!udata.HasData())
+        return;
+
     udata.BuildPacket(&packet);
     GetSession()->SendPacket(&packet);
 }
@@ -28206,16 +28230,17 @@ bool Player::CanSeeSpellClickOn(Creature const* c) const
     if (!c->HasFlag(UNIT_FIELD_NPC_FLAGS, UNIT_NPC_FLAG_SPELLCLICK))
         return false;
 
-    SpellClickInfoMapBounds clickPair = sObjectMgr->GetSpellClickInfoMapBounds(c->GetEntry());
+    uint32 spellClickEntry = c->GetVehicleKit() ? c->GetVehicleKit()->GetCreatureEntry() : c->GetEntry();
+    SpellClickInfoMapBounds clickPair = sObjectMgr->GetSpellClickInfoMapBounds(spellClickEntry);
     if (clickPair.first == clickPair.second)
-        return true;
+        return false;
 
     for (SpellClickInfoContainer::const_iterator itr = clickPair.first; itr != clickPair.second; ++itr)
     {
         if (!itr->second.IsFitToRequirements(this, c))
-            return false;
+            continue;
 
-        if (sConditionMgr->IsObjectMeetingSpellClickConditions(c->GetEntry(), itr->second.spellId, const_cast<Player*>(this), const_cast<Creature*>(c)))            
+        if (sConditionMgr->IsObjectMeetingSpellClickConditions(spellClickEntry, itr->second.spellId, const_cast<Player*>(this), const_cast<Creature*>(c)))
             return true;
     }
 
