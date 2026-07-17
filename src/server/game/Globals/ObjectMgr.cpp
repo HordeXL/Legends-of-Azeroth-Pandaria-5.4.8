@@ -6131,7 +6131,7 @@ void ObjectMgr::LoadQuestAreaTriggers()
     {
         QuestObjective const* objective = pair.second;
         if (objective->Type == QUEST_OBJECTIVE_AREATRIGGER)
-            _questAreaTriggerStore[objective->ID].insert(objective->QuestID);
+            _questAreaTriggerStore[objective->ObjectID].insert(objective->QuestID);
     }
 
     TC_LOG_INFO("server.loading", ">> Loaded %u quest trigger points in %u ms", count, GetMSTimeDiffToNow(oldMSTime));
