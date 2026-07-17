@@ -16130,6 +16130,13 @@ bool Player::IsQuestObjectiveComplete(Quest const* quest, QuestObjective const& 
                 return false;
             break;
         case QUEST_OBJECTIVE_AREATRIGGER:
+            // In the original SFDB/SkyFire 5.4.8 quest schema, type 10 is a
+            // dummy objective. Zero/zero rows are informational and do not
+            // track progress; any real completion condition is handled by the
+            // quest's other objectives, script, spell, or exploration flag.
+            if (objective.ObjectID == 0 && objective.Amount == 0)
+                break;
+
             if (GetQuestObjectiveCounter(objective.ID) == 0)
                 return false;
             break;
