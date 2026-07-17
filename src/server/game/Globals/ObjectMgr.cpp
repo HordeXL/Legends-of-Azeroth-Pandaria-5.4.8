@@ -3340,7 +3340,8 @@ void ObjectMgr::LoadVehicleTemplateAccessories()
         uint8  uiSummonType = fields[4].GetUInt8();
         uint32 uiSummonTimer= fields[5].GetUInt32();
 
-        if (!sObjectMgr->GetCreatureTemplate(uiEntry))
+        CreatureTemplate const* vehicleTemplate = sObjectMgr->GetCreatureTemplate(uiEntry);
+        if (!vehicleTemplate)
         {
             TC_LOG_ERROR("sql.sql", "Table `vehicle_template_accessory`: creature template entry %u does not exist.", uiEntry);
             continue;
@@ -3352,9 +3353,13 @@ void ObjectMgr::LoadVehicleTemplateAccessories()
             continue;
         }
 
-        if (_spellClickInfoStore.find(uiEntry) == _spellClickInfoStore.end())
+        // Template accessories are also used by internal, non-clickable vehicles
+        // (for example nested balloon and hanging-hozen vehicle seats).  A
+        // client VehicleId is sufficient to create a VehicleKit; spell-click
+        // data is required only for vehicles entered through NPC interaction.
+        if (!vehicleTemplate->VehicleId && _spellClickInfoStore.find(uiEntry) == _spellClickInfoStore.end())
         {
-            TC_LOG_ERROR("sql.sql", "Table `vehicle_template_accessory`: creature template entry %u has no data in npc_spellclick_spells", uiEntry);
+            TC_LOG_ERROR("sql.sql", "Table `vehicle_template_accessory`: creature template entry %u is not a vehicle and has no data in npc_spellclick_spells", uiEntry);
             continue;
         }
 
