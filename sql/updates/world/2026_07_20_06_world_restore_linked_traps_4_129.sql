@@ -49,8 +49,10 @@ UPDATE `gameobject_template`
 SET `type` = 6,
     `displayId` = 0,
     `name` = 'Bonfire Damage',
-    `data0` = 3,
-    `data1` = 7902,
+    `data0` = 0,
+    `data1` = 1,
+    `data2` = 3,
+    `data3` = 7902,
     `VerifiedBuild` = 0
 WHERE `entry` = 4 AND @linked_trap_original_state_ok = 1;
 
@@ -59,7 +61,9 @@ SET `type` = 6,
     `displayId` = 0,
     `name` = 'Naxx Teleporter trap',
     `data0` = 0,
-    `data1` = 64446,
+    `data1` = 1,
+    `data2` = 0,
+    `data3` = 64446,
     `VerifiedBuild` = 0
 WHERE `entry` = 129 AND @linked_trap_original_state_ok = 1;
 
@@ -68,4 +72,3 @@ SET `faction` = 14
 WHERE `entry` = 4 AND @linked_trap_original_state_ok = 1;
 
 COMMIT;
-

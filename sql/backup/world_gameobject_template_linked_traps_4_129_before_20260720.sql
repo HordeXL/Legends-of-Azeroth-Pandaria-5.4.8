@@ -12,13 +12,13 @@ SET @linked_trap_templates_corrected :=
         (`entry` = 4
          AND `type` = 6 AND `displayId` = 0 AND `name` = 'Bonfire Damage'
          AND `size` = 1
-         AND `data0` = 3 AND `data1` = 7902 AND `data2` = 0
+         AND `data0` = 0 AND `data1` = 1 AND `data2` = 3 AND `data3` = 7902
          AND `AIName` = '' AND `ScriptName` = '' AND `VerifiedBuild` = 0)
         OR
         (`entry` = 129
          AND `type` = 6 AND `displayId` = 0 AND `name` = 'Naxx Teleporter trap'
          AND `size` = 1
-         AND `data0` = 0 AND `data1` = 64446 AND `data2` = 0
+         AND `data0` = 0 AND `data1` = 1 AND `data2` = 0 AND `data3` = 64446
          AND `AIName` = '' AND `ScriptName` = '' AND `VerifiedBuild` = 0)
 );
 
@@ -39,6 +39,8 @@ SET `type` = 0,
     `name` = 'unk name',
     `data0` = 0,
     `data1` = 0,
+    `data2` = 0,
+    `data3` = 0,
     `VerifiedBuild` = 18414
 WHERE `entry` = 4 AND @linked_trap_corrected_state_ok = 1;
 
@@ -48,6 +50,8 @@ SET `type` = 0,
     `name` = 'unk name',
     `data0` = 0,
     `data1` = 0,
+    `data2` = 0,
+    `data3` = 0,
     `VerifiedBuild` = 18414
 WHERE `entry` = 129 AND @linked_trap_corrected_state_ok = 1;
 
@@ -56,4 +60,3 @@ SET `faction` = 0
 WHERE `entry` = 4 AND @linked_trap_corrected_state_ok = 1;
 
 COMMIT;
-
