@@ -1241,7 +1241,16 @@ void Spell::SelectImplicitAreaTargets(SpellEffIndex effIndex, SpellImplicitTarge
     }
     std::list<WorldObject*> targets;
     float radius = m_spellInfo->Effects[effIndex].CalcRadius(m_caster) * m_spellValue->RadiusMod;
-    SearchAreaTargets(targets, radius, center, referer, targetType, m_spellInfo->Effects[effIndex].ImplicitTargetConditions);
+    if (targetType.GetTarget() == TARGET_UNIT_CASTER_AND_PASSENGERS)
+    {
+        targets.push_back(m_caster);
+        if (Vehicle* vehicleKit = m_caster->GetVehicleKit())
+            for (int8 seat = 0; seat < MAX_VEHICLE_SEATS; ++seat)
+                if (Unit* passenger = vehicleKit->GetPassenger(seat))
+                    targets.push_back(passenger);
+    }
+    else
+        SearchAreaTargets(targets, radius, center, referer, targetType, m_spellInfo->Effects[effIndex].ImplicitTargetConditions);
 
     // Custom entries
     /// @todo remove those
