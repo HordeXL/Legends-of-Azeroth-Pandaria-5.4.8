@@ -2170,7 +2170,9 @@ bool ConditionMgr::isConditionTypeValid(Condition* cond) const
                 return false;
             }
 
-            if (cond->ConditionValue2 > 1)
+            // Quest state stores a bitmask in value2; it is not the optional
+            // boolean field used by the other quest condition types.
+            if (cond->ConditionType != CONDITION_QUESTSTATE && cond->ConditionValue2 > 1)
                 TC_LOG_ERROR("sql.sql", "Quest condition has useless data in value2 (%u)!", cond->ConditionValue2);
             if (cond->ConditionValue3)
                 TC_LOG_ERROR("sql.sql", "Quest condition has useless data in value3 (%u)!", cond->ConditionValue3);
