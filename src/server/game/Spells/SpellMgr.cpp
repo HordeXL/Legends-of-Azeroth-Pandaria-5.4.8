@@ -3320,6 +3320,7 @@ void SpellMgr::LoadSpellInfoCorrections()
                 case 64024: // Conservatory Teleport
                 case 64025: // Halls of Invention Teleport
                 case 64027: // Descent into Madness Teleport
+                case 65042: // Prison of Yogg-Saron Teleport
                     spellInfo->Effects[EFFECT_0].TargetA = SpellImplicitTargetInfo(TARGET_DEST_DB);
                     break;
                 case 62374: // Pursued (Flame Leviathan)
