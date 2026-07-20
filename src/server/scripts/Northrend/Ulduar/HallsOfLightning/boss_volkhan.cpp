@@ -70,7 +70,8 @@ enum Misc
 
     MAX_GOLEM                               = 2,
 
-    ACHIEVEMENT_SHATTER_RESISTANT           = 2042
+    ACHIEVEMENT_SHATTER_RESISTANT           = 2042,
+    DATA_SHATTER_RESISTANT                  = 2042
 };
 
 class boss_volkhan : public CreatureScript
@@ -175,6 +176,11 @@ class boss_volkhan : public CreatureScript
             void KilledUnit(Unit* /*victim*/) override
             {
                 Talk(SAY_SLAY);
+            }
+
+            uint32 GetData(uint32 type) const override
+            {
+                return type == DATA_SHATTER_RESISTANT ? GolemsShattered : 0;
             }
 
             void DespawnGolem()
@@ -501,8 +507,20 @@ class npc_molten_golem : public CreatureScript
         }
 };
 
+class achievement_shatter_resistant : public AchievementCriteriaScript
+{
+    public:
+        achievement_shatter_resistant() : AchievementCriteriaScript("achievement_shatter_resistant") { }
+
+        bool OnCheck(Player* /*source*/, Unit* target) override
+        {
+            return target && target->IsAIEnabled && target->GetAI()->GetData(DATA_SHATTER_RESISTANT) < 5;
+        }
+};
+
 void AddSC_boss_volkhan()
 {
     new boss_volkhan();
     new npc_molten_golem();
+    new achievement_shatter_resistant();
 }

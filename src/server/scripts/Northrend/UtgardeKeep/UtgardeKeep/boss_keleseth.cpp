@@ -54,6 +54,7 @@ enum Creatures
 enum Misc
 {
     ACHIEVEMENT_ON_THE_ROCKS                 = 1919,
+    DATA_ON_THE_ROCKS                        = 1920,
 };
 
 #define SKELETONSPAWN_Z                          42.8668f
@@ -69,8 +70,6 @@ float SkeletonSpawnPoint[5][5]=
 
 float AttackLoc[3] = { 197.636f, 194.046f, 40.8164f };
 
-bool ShatterFrostTomb; // needed for achievement: On The Rocks(1919)
-
 class npc_frost_tomb : public CreatureScript
 {
     public:
@@ -80,9 +79,11 @@ class npc_frost_tomb : public CreatureScript
         {
             npc_frost_tombAI(Creature* creature) : ScriptedAI(creature)
             {
+                instance = creature->GetInstanceScript();
                 FrostTombGUID = ObjectGuid::Empty;
             }
 
+            InstanceScript* instance;
             ObjectGuid FrostTombGUID;
 
             void SetPrisoner(Unit* uPrisoner)
@@ -104,7 +105,9 @@ class npc_frost_tomb : public CreatureScript
             void JustDied(Unit* killer) override
             {
                 if (killer->GetGUID() != me->GetGUID())
-                    ShatterFrostTomb = true;
+                    if (instance)
+                        if (Creature* keleseth = ObjectAccessor::GetCreature(*me, instance->GetGuidData(DATA_PRINCEKELESETH)))
+                            keleseth->AI()->SetData(DATA_ON_THE_ROCKS, 0);
 
                 if (FrostTombGUID)
                 {
@@ -149,13 +152,14 @@ class boss_keleseth : public CreatureScript
             ObjectGuid SkeletonGUID[5];
             bool Skeletons;
             bool RespawnSkeletons;
+            bool OnTheRocks;
 
             void Reset() override
             {
                 ShadowboltTimer = 0;
                 Skeletons = false;
 
-                ShatterFrostTomb = false;
+                OnTheRocks = true;
 
                 ResetTimer();
 
@@ -175,7 +179,7 @@ class boss_keleseth : public CreatureScript
             {
                 Talk(SAY_DEATH);
 
-                if (IsHeroic() && !ShatterFrostTomb)
+                if (IsHeroic() && OnTheRocks)
                 {
                     AchievementEntry const* AchievOnTheRocks = sAchievementStore.LookupEntry(ACHIEVEMENT_ON_THE_ROCKS);
                     if (AchievOnTheRocks)
@@ -200,6 +204,17 @@ class boss_keleseth : public CreatureScript
 
                 if (instance)
                     instance->SetData(DATA_PRINCEKELESETH_EVENT, IN_PROGRESS);
+            }
+
+            void SetData(uint32 type, uint32 data) override
+            {
+                if (type == DATA_ON_THE_ROCKS)
+                    OnTheRocks = data != 0;
+            }
+
+            uint32 GetData(uint32 type) const override
+            {
+                return type == DATA_ON_THE_ROCKS && OnTheRocks;
             }
 
             void ResetTimer(uint32 inc = 0)
@@ -378,9 +393,21 @@ class npc_vrykul_skeleton : public CreatureScript
         }
 };
 
+class achievement_on_the_rocks : public AchievementCriteriaScript
+{
+    public:
+        achievement_on_the_rocks() : AchievementCriteriaScript("achievement_on_the_rocks") { }
+
+        bool OnCheck(Player* /*source*/, Unit* target) override
+        {
+            return target && target->IsAIEnabled && target->GetAI()->GetData(DATA_ON_THE_ROCKS);
+        }
+};
+
 void AddSC_boss_keleseth()
 {
     new boss_keleseth();
     new npc_frost_tomb();
     new npc_vrykul_skeleton();
+    new achievement_on_the_rocks();
 }
