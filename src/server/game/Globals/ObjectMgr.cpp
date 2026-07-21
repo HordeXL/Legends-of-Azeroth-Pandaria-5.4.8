@@ -5434,6 +5434,7 @@ void ObjectMgr::LoadSpellScriptNames()
     }
 
     uint32 count = 0;
+    std::map<std::pair<uint32, std::string>, std::set<uint32>> positiveRankedScriptAssignments;
 
     do
     {
@@ -5476,7 +5477,7 @@ void ObjectMgr::LoadSpellScriptNames()
         else
         {
             if (spellInfo->IsRanked())
-                TC_LOG_ERROR("sql.sql", "Scriptname: `%s` spell (Id: %d) is ranked spell. Perhaps not all ranks are assigned to this script.", scriptName.c_str(), spellId);
+                positiveRankedScriptAssignments[std::make_pair(spellInfo->GetFirstRankSpell()->Id, scriptName)].insert(spellInfo->Id);
 
             _spellScriptsStore.insert(SpellScriptsContainer::value_type(spellInfo->Id, GetScriptId(scriptName)));
         }
@@ -5484,6 +5485,31 @@ void ObjectMgr::LoadSpellScriptNames()
         ++count;
     }
     while (result->NextRow());
+
+    // Positive spell ids are valid when the database explicitly assigns the
+    // same script to every member of a rank chain.  Delay the diagnostic until
+    // all rows are loaded so complete explicit chains are not reported as
+    // potentially incomplete.
+    for (auto const& assignment : positiveRankedScriptAssignments)
+    {
+        SpellInfo const* rankSpell = sSpellMgr->GetSpellInfo(assignment.first.first);
+        bool allRanksAssigned = true;
+
+        while (rankSpell)
+        {
+            if (assignment.second.find(rankSpell->Id) == assignment.second.end())
+            {
+                allRanksAssigned = false;
+                break;
+            }
+
+            rankSpell = rankSpell->GetNextRankSpell();
+        }
+
+        if (!allRanksAssigned)
+            for (uint32 assignedSpellId : assignment.second)
+                TC_LOG_ERROR("sql.sql", "Scriptname: `%s` spell (Id: %u) is ranked spell. Perhaps not all ranks are assigned to this script.", assignment.first.second.c_str(), assignedSpellId);
+    }
 
     TC_LOG_INFO("server.loading", ">> Loaded %u spell script names in %u ms", count, GetMSTimeDiffToNow(oldMSTime));
 }
