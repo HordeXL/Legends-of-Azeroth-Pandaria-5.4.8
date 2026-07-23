@@ -842,6 +842,14 @@ class npc_howling_gale : public CreatureScript
                 }
             }
 
+            uint32 GetData(uint32 type) const override
+            {
+                if (type == TYPE_HOWLING_GALE)
+                    return HasDeactivate ? 1 : 0;
+
+                return 0;
+            }
+
             void UpdateAI(uint32 diff) override
             {
                 if (bCombat)
@@ -1360,6 +1368,27 @@ class spell_howling_gale_howling_gale : public SpellScriptLoader
         }
 };
 
+// Howling Gale damage/knockback effect 85159.
+// Once the gale has been struck, suppress any effects that arrive during its
+// short deactivation wind-down.
+class spell_vortex_pinnacle_howling_gale_eff : public SpellScript
+{
+    PrepareSpellScript(spell_vortex_pinnacle_howling_gale_eff);
+
+    void HandleEffectHitTarget(SpellEffIndex effIndex)
+    {
+        if (Creature* caster = GetCaster()->ToCreature())
+            if (caster->AI()->GetData(TYPE_HOWLING_GALE))
+                PreventHitEffect(effIndex);
+    }
+
+    void Register() override
+    {
+        OnEffectHitTarget += SpellEffectFn(spell_vortex_pinnacle_howling_gale_eff::HandleEffectHitTarget, EFFECT_0, SPELL_EFFECT_KNOCK_BACK);
+        OnEffectHitTarget += SpellEffectFn(spell_vortex_pinnacle_howling_gale_eff::HandleEffectHitTarget, EFFECT_1, SPELL_EFFECT_APPLY_AURA);
+    }
+};
+
 // Lurk 85467
 class spell_vp_lurk : public AuraScript
 {
@@ -1428,6 +1457,7 @@ void AddSC_the_vortex_pinnacle()
     new npc_fall_catcher_5();
     new spell_minister_of_air_lightning_lash();
     //new spell_howling_gale_howling_gale();
+    new spell_script<spell_vortex_pinnacle_howling_gale_eff>("spell_vortex_pinnacle_howling_gale_eff");
     new aura_script<spell_vp_lurk>("spell_vp_lurk");
     new at_catch_fall_5();
 };

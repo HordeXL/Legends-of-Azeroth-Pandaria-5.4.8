@@ -54,6 +54,7 @@ enum Data
     DATA_ASAAD      = 3,
 
     DATA_GOLDEN_ORB = 4,
+    TYPE_HOWLING_GALE = 5,
 };
 
 enum CreatureIds
