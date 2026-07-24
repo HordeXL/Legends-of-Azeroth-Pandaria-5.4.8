@@ -2152,8 +2152,8 @@ void AddCustomScripts()
 //AddSC_npc_teleport();
     AddSC_wow_token();
 //AddSC_custom_reward();
-//AddSC_boost_profession();
-//AddSC_custom_items();
+    AddSC_boost_profession();
+    AddSC_custom_items();
 	AddSC_solocraft_system();
     AddSC_vip_utility_master();
 

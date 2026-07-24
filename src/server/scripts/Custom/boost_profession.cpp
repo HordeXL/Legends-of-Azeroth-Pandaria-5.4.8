@@ -43,7 +43,7 @@ enum spellId_600
 class Boost_Profession : public ItemScript
 {
 public:
-    Boost_Profession() : ItemScript("Boost_Profession") {}
+	Boost_Profession() : ItemScript("battle_pay_boost_profession") {}
 
     bool OnUse(Player* player, Item* item, SpellCastTargets const& targets) override
     {
@@ -240,7 +240,7 @@ public:
 class Boost_Profession_Small : public ItemScript
 {
 public:
-	Boost_Profession_Small() : ItemScript("Boost_Profession_Small") {}
+	Boost_Profession_Small() : ItemScript("battle_pay_boost_profession_small") {}
 
     bool OnUse(Player* player, Item* item, SpellCastTargets const& targets) override
     {
@@ -311,7 +311,7 @@ public:
     }
 };
 
-void AddSC_Boost_Profession()
+void AddSC_boost_profession()
 {
     new Boost_Profession();
     new Boost_Profession_Small();
