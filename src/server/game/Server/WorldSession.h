@@ -1128,6 +1128,7 @@ class TC_GAME_API WorldSession
         void HandleBattlePetSetFlags(WorldPacket& recvData);
         void HandleBattlePetQueryName(WorldPacket& recvData);
         void HandleBattlePetRequestJournal(WorldPacket& recvData);
+        void HandleBattlePetRequestJournalLock(WorldPacket& recvData);
         void HandleBattlePetSummonCompanion(WorldPacket& recvData);
         void HandleBattlePetCage(WorldPacket& recvData);
         void HandleBattlePetLearn(WorldPacket& recvData);

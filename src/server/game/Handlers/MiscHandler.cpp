@@ -2694,14 +2694,34 @@ void WorldSession::HandleSelectFactionOpcode(WorldPacket& recvPacket)
     if (_player->GetRace() != RACE_PANDAREN_NEUTRAL)
         return;
 
+    if (choice != JOIN_THE_HORDE && choice != JOIN_THE_ALLIANCE)
+        return;
+
     if (_player->GetQuestStatus(31450) == QUEST_STATUS_INCOMPLETE)
         _player->KilledMonsterCredit(64594);
 
+    uint8 newRace = choice == JOIN_THE_HORDE
+        ? RACE_PANDAREN_HORDE
+        : RACE_PANDAREN_ALLIANCE;
+
+    _player->SetRace(newRace);
+    _player->setFactionForRace(newRace);
+
+    // A far teleport removes the player from the current map before its
+    // queued field update is broadcast. Send the changed race and faction
+    // fields to the player immediately so the client fires
+    // NEUTRAL_FACTION_SELECT_RESULT and unlocks PvP, Guild Finder, and LFD
+    // without requiring a relog.
+    UpdateData updateData(_player->GetMapId());
+    WorldPacket updatePacket;
+    _player->BuildValuesUpdateBlockForPlayer(&updateData, _player);
+    updateData.BuildPacket(&updatePacket);
+    SendPacket(&updatePacket);
+
+    _player->SaveToDB();
+
     if (choice == JOIN_THE_HORDE)
     {
-        _player->SetByteValue(UNIT_FIELD_BYTES_0, 0, RACE_PANDAREN_HORDE);
-        _player->setFactionForRace(RACE_PANDAREN_HORDE);
-        _player->SaveToDB();
         WorldLocation location(1, 1357.62f, -4373.55f, 26.13f, 0.13f);
         _player->TeleportTo(location);
         _player->SetHomebind(location, 363);
@@ -2710,14 +2730,21 @@ void WorldSession::HandleSelectFactionOpcode(WorldPacket& recvPacket)
     }
     else if (choice == JOIN_THE_ALLIANCE)
     {
-        _player->SetByteValue(UNIT_FIELD_BYTES_0, 0, RACE_PANDAREN_ALLIANCE);
-        _player->setFactionForRace(RACE_PANDAREN_ALLIANCE);
-        _player->SaveToDB();
         WorldLocation location(0, -8960.02f, 516.10f, 96.36f, 0.67f);
         _player->TeleportTo(location);
         _player->SetHomebind(location, 9);
         _player->LearnSpell(668, false); // Language Common
         _player->LearnSpell(108127, false); // Language Pandaren
+    }
+
+    // LFG stores the player's team when the character logs in. A neutral
+    // Pandaren changes team without logging out, so refresh that cached state
+    // and the client lock information immediately after the faction choice.
+    if (sLFGMgr->isOptionEnabled(lfg::LFG_OPTION_ENABLE_DUNGEON_FINDER | lfg::LFG_OPTION_ENABLE_RAID_BROWSER))
+    {
+        sLFGMgr->SetTeam(_player->GetGUID(), _player->GetTeam());
+        sLFGMgr->InitializeLockedDungeons(_player);
+        SendLfgPlayerLockInfo();
     }
 
     _player->SendMovieStart(116);
