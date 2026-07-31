@@ -69,8 +69,18 @@ class spell_spicy_explosion : public SpellScriptLoader
             void Register() override
             {
                 AfterCast += SpellCastFn(spell_spicy_explosion_SpellScript::OnAfterCast);
-                OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_spicy_explosion_SpellScript::SelectTargets, EFFECT_1, TARGET_UNIT_SRC_AREA_ENTRY);
-                OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_spicy_explosion_SpellScript::SelectTargets, EFFECT_3, TARGET_UNIT_SRC_AREA_ENTRY);
+                SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(m_scriptSpellId);
+                auto hasSourceAreaEntryTarget = [spellInfo](SpellEffIndex effect)
+                {
+                    return spellInfo &&
+                        (spellInfo->Effects[effect].TargetA.GetTarget() == TARGET_UNIT_SRC_AREA_ENTRY ||
+                         spellInfo->Effects[effect].TargetB.GetTarget() == TARGET_UNIT_SRC_AREA_ENTRY);
+                };
+
+                if (hasSourceAreaEntryTarget(EFFECT_1))
+                    OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_spicy_explosion_SpellScript::SelectTargets, EFFECT_1, TARGET_UNIT_SRC_AREA_ENTRY);
+                if (hasSourceAreaEntryTarget(EFFECT_3))
+                    OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_spicy_explosion_SpellScript::SelectTargets, EFFECT_3, TARGET_UNIT_SRC_AREA_ENTRY);
             }
         };
 

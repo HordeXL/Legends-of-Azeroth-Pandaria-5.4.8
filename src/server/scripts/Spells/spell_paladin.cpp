@@ -1953,7 +1953,9 @@ class spell_pal_divine_shield : public SpellScript
     void Register() override
     {
         OnCheckCast += SpellCheckCastFn(spell_pal_divine_shield::CheckCast);
-        OnEffectHitTarget += SpellEffectFn(spell_pal_divine_shield::CalculateHeal, EFFECT_3, SPELL_EFFECT_HEAL_PCT);
+        if (SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(m_scriptSpellId))
+            if (spellInfo->Effects[EFFECT_3].Effect == SPELL_EFFECT_HEAL_PCT)
+                OnEffectHitTarget += SpellEffectFn(spell_pal_divine_shield::CalculateHeal, EFFECT_3, SPELL_EFFECT_HEAL_PCT);
         OnHit += SpellHitFn(spell_pal_divine_shield::HandleHit);
     }
 };

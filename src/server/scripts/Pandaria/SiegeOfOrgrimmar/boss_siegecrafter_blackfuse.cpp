@@ -2295,9 +2295,20 @@ class spell_soo_shockwave_missle : public SpellScript
     void Register() override
     {
         AfterCast += SpellCastFn(spell_soo_shockwave_missle::HandleAfterCast);
-        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_soo_shockwave_missle::FilterTargets, EFFECT_1, TARGET_UNIT_DEST_AREA_ENEMY);
-        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_soo_shockwave_missle::FilterShredderTargets, EFFECT_2, TARGET_UNIT_DEST_AREA_ENTRY);
-        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_soo_shockwave_missle::FilterTargets, EFFECT_3, TARGET_UNIT_DEST_AREA_ENEMY);
+        SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(m_scriptSpellId);
+        auto hasTarget = [spellInfo](SpellEffIndex effect, Targets target)
+        {
+            return spellInfo &&
+                (spellInfo->Effects[effect].TargetA.GetTarget() == target ||
+                 spellInfo->Effects[effect].TargetB.GetTarget() == target);
+        };
+
+        if (hasTarget(EFFECT_1, TARGET_UNIT_DEST_AREA_ENEMY))
+            OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_soo_shockwave_missle::FilterTargets, EFFECT_1, TARGET_UNIT_DEST_AREA_ENEMY);
+        if (hasTarget(EFFECT_2, TARGET_UNIT_DEST_AREA_ENTRY))
+            OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_soo_shockwave_missle::FilterShredderTargets, EFFECT_2, TARGET_UNIT_DEST_AREA_ENTRY);
+        if (hasTarget(EFFECT_3, TARGET_UNIT_DEST_AREA_ENEMY))
+            OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_soo_shockwave_missle::FilterTargets, EFFECT_3, TARGET_UNIT_DEST_AREA_ENEMY);
     }
 };
 
