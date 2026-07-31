@@ -3723,17 +3723,28 @@ class spell_warl_demonic_gateway : public SpellScript
     }
 };
 
-// 113890 - Demonic Gateway (purple), 113886 - Demonic Gateway (green)
-class spell_warl_demonic_gateway_summon : public SpellScript
+// 113890 - Demonic Gateway (purple)
+class spell_warl_demonic_gateway_summon_purple : public SpellScript
 {
-    PrepareSpellScript(spell_warl_demonic_gateway_summon);
+    PrepareSpellScript(spell_warl_demonic_gateway_summon_purple);
 
-    void SelectDestPurple(SpellDestination& dest)
+    void SelectDest(SpellDestination& dest)
     {
         dest.Relocate(*GetCaster());
     }
 
-    void SelectDestGreen(SpellDestination& dest)
+    void Register() override
+    {
+        OnDestinationTargetSelect += SpellDestinationTargetSelectFn(spell_warl_demonic_gateway_summon_purple::SelectDest, EFFECT_0, TARGET_UNK_125);
+    }
+};
+
+// 113886 - Demonic Gateway (green)
+class spell_warl_demonic_gateway_summon_green : public SpellScript
+{
+    PrepareSpellScript(spell_warl_demonic_gateway_summon_green);
+
+    void SelectDest(SpellDestination& dest)
     {
         Position pos = GetExplTargetDest()->GetPosition();
         pos.SetOrientation(GetCaster()->GetOrientation());
@@ -3742,10 +3753,7 @@ class spell_warl_demonic_gateway_summon : public SpellScript
 
     void Register() override
     {
-        if (GetSpellInfo()->Id == 113890)
-            OnDestinationTargetSelect += SpellDestinationTargetSelectFn(spell_warl_demonic_gateway_summon::SelectDestPurple, EFFECT_0, TARGET_UNK_125);
-        else if (GetSpellInfo()->Id == 113886)
-            OnDestinationTargetSelect += SpellDestinationTargetSelectFn(spell_warl_demonic_gateway_summon::SelectDestGreen, EFFECT_0, TARGET_UNK_138);
+        OnDestinationTargetSelect += SpellDestinationTargetSelectFn(spell_warl_demonic_gateway_summon_green::SelectDest, EFFECT_0, TARGET_UNK_138);
     }
 };
 
@@ -5021,7 +5029,8 @@ void AddSC_warlock_spell_scripts()
     new spell_script<spell_warl_hand_of_guldan>("spell_warl_hand_of_guldan");
     new spell_script<spell_warl_hand_of_guldan_glyphed>("spell_warl_hand_of_guldan_glyphed");
     new spell_script<spell_warl_demonic_gateway>("spell_warl_demonic_gateway");
-    new spell_script<spell_warl_demonic_gateway_summon>("spell_warl_demonic_gateway_summon");
+    new spell_script<spell_warl_demonic_gateway_summon_purple>("spell_warl_demonic_gateway_summon_purple");
+    new spell_script<spell_warl_demonic_gateway_summon_green>("spell_warl_demonic_gateway_summon_green");
     new aura_script<spell_warl_demonic_gateway_aura>("spell_warl_demonic_gateway_aura");
     new creature_script<npc_demonic_gateway>("npc_demonic_gateway");
     new aura_script<spell_warl_drain_life>("spell_warl_drain_life");
