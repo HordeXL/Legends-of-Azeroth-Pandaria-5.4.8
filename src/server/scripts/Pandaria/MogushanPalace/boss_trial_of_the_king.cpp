@@ -794,8 +794,7 @@ class boss_kuai_the_brute : public CreatureScript
             TALK_KILLING,
             TALK_POSTCOMBAT_1,
             TALK_POSTCOMBAT_2,
-            TALK_IDLE_1,
-            TALK_SHOCKWAVE
+            TALK_IDLE_1
         };
 
         struct boss_kuai_the_brute_AI : public BossAI
@@ -946,7 +945,6 @@ class boss_kuai_the_brute : public CreatureScript
                     switch (eventId)
                     {
                         case EVENT_SHOCKWAVE:
-                            Talk(TALK_SHOCKWAVE);
                             DoCast(SPELL_PICK_SHOCKWAVE_TARGET);
                             events.ScheduleEvent(EVENT_SHOCKWAVE, 15000);
                             break;

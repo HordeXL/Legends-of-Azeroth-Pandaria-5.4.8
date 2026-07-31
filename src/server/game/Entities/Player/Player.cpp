@@ -15551,7 +15551,9 @@ void Player::PrepareGossipMenu(WorldObject* source, uint32 menuId /*= 0*/, bool 
                     canTalk = false;
                     break;
                 case GOSSIP_OPTION_TRAINER:
-                    if (GetClass() != creature->GetCreatureTemplate()->trainer_class && creature->GetCreatureTemplate()->trainer_type == TRAINER_TYPE_CLASS)
+                    // A zero trainer_class denotes a universal trainer (for
+                    // example, battle-pet trainers), not an invalid class.
+                    if (creature->GetCreatureTemplate()->trainer_class && GetClass() != creature->GetCreatureTemplate()->trainer_class && creature->GetCreatureTemplate()->trainer_type == TRAINER_TYPE_CLASS)
                         TC_LOG_ERROR("sql.sql", "GOSSIP_OPTION_TRAINER:: Player %s (GUID: %u) request wrong gossip menu: %u with wrong class: %u at Creature: %s (Entry: %u, Trainer Class: %u)",
                         GetName().c_str(), GetGUID().GetCounter(), PlayerTalkClass->GetGossipMenu().GetMenuId(), GetClass(), creature->GetName().c_str(), creature->GetEntry(), creature->GetCreatureTemplate()->trainer_class);
                     // no break;
@@ -26843,12 +26845,12 @@ void Player::SetClientControl(Unit* target, bool allowMove)
     data.WriteByteSeq(guid[0]);
     GetSession()->SendPacket(&data);
 
-    if (this != target)
-        SetViewpoint(target, allowMove);
-
-    if (allowMove)
+    // Possession and vehicle code manage their viewpoint and mover explicitly.
+    // Changing either one here duplicates the viewpoint update and can replace
+    // a possessed unit with the player as the active mover.
+    if (target == this && allowMove)
         SetMover(this);
-    else
+    else if (!allowMove && m_clientMoverGuid == guid)
         m_clientMoverGuid = 0;
 }
 
