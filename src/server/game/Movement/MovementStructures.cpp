@@ -6618,7 +6618,12 @@ bool Movement::PrintInvalidSequenceElement(MovementStatusElements const element,
 Movement::PacketSender::PacketSender(Unit* unit, uint16 serverControl, uint16 playerControl, uint16 broadcast /*= SMSG_PLAYER_MOVE*/, ExtraMovementStatusElement* extras /*= NULL*/)
     : _extraElements(extras), _unit(unit)
 {
-    if (unit->GetTypeId() == TYPEID_PLAYER && unit->ToPlayer()->m_mover->GetTypeId() == TYPEID_PLAYER)
+    // The active mover can be a possessed creature or a vehicle, not only the
+    // Player object. Such a unit must receive the player-control opcode through
+    // the Player that is currently moving it; spline opcodes alone only update
+    // observers and leave the controller unable to use movement modes such as
+    // flight.
+    if (unit->m_movedPlayer && unit->m_movedPlayer->m_mover == unit)
     {
         _selfOpcode = playerControl;
         _broadcast = unit->IsSplineEnabled() ? serverControl : broadcast;
@@ -6632,16 +6637,13 @@ Movement::PacketSender::PacketSender(Unit* unit, uint16 serverControl, uint16 pl
 
 void Movement::PacketSender::Send() const
 {
-    bool isPlayerMovement = false;
-    if (Player* player = _unit->ToPlayer())
+    Player* playerMover = _unit->m_movedPlayer;
+    bool isPlayerMovement = playerMover && playerMover->m_mover == _unit;
+    if (isPlayerMovement && _selfOpcode != NULL_OPCODE)
     {
-        isPlayerMovement = player->m_mover->GetTypeId() == TYPEID_PLAYER;
-        if (isPlayerMovement && _selfOpcode != NULL_OPCODE)
-        {
-            WorldPacket data(_selfOpcode);
-            _unit->WriteMovementInfo(data, _extraElements);
-            player->SendDirectMessage(&data);
-        }
+        WorldPacket data(_selfOpcode);
+        _unit->WriteMovementInfo(data, _extraElements);
+        playerMover->SendDirectMessage(&data);
     }
 
     if (_broadcast != NULL_OPCODE)
