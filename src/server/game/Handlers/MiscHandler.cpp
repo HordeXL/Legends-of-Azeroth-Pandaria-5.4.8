@@ -2709,14 +2709,21 @@ void WorldSession::HandleSelectFactionOpcode(WorldPacket& recvPacket)
 
     // A far teleport removes the player from the current map before its
     // queued field update is broadcast. Send the changed race and faction
-    // fields to the player immediately so the client fires
-    // NEUTRAL_FACTION_SELECT_RESULT and unlocks PvP, Guild Finder, and LFD
-    // without requiring a relog.
+    // fields to the player immediately so UnitFactionGroup("player") stops
+    // reporting Neutral before the transfer.
     UpdateData updateData(_player->GetMapId());
     WorldPacket updatePacket;
     _player->BuildValuesUpdateBlockForPlayer(&updateData, _player);
     updateData.BuildPacket(&updatePacket);
     SendPacket(&updatePacket);
+
+    // Build 18414's stock UI normally reruns UpdateMicroButtons when it
+    // receives NEUTRAL_FACTION_SELECT_RESULT. That result opcode is not
+    // identified in this core, but PLAYER_TALENT_UPDATE follows the same
+    // stock UI refresh path. Resending the unchanged talent state after the
+    // race update therefore refreshes PvP, Guild Finder, and LFD without
+    // inventing an opcode or modifying any talent data.
+    _player->SendTalentsInfoData();
 
     _player->SaveToDB();
 
