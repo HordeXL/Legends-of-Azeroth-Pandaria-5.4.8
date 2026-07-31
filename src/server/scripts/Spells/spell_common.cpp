@@ -310,8 +310,23 @@ class spell_common_smart_heal_one_target : public spell_smart_heal
 
     void Register() override
     {
-        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_common_smart_heal_one_target::FilterTargets, EFFECT_ALL, TARGET_UNIT_CASTER_AREA_RAID);
-        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_common_smart_heal_one_target::FilterTargets, EFFECT_ALL, TARGET_UNIT_DEST_AREA_ALLY);
+        SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(m_scriptSpellId);
+        auto hasTarget = [spellInfo](Targets target)
+        {
+            if (!spellInfo)
+                return false;
+
+            for (SpellEffectInfo const& effect : spellInfo->Effects)
+                if (effect.TargetA.GetTarget() == target || effect.TargetB.GetTarget() == target)
+                    return true;
+
+            return false;
+        };
+
+        if (hasTarget(TARGET_UNIT_CASTER_AREA_RAID))
+            OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_common_smart_heal_one_target::FilterTargets, EFFECT_ALL, TARGET_UNIT_CASTER_AREA_RAID);
+        if (hasTarget(TARGET_UNIT_DEST_AREA_ALLY))
+            OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_common_smart_heal_one_target::FilterTargets, EFFECT_ALL, TARGET_UNIT_DEST_AREA_ALLY);
     }
 };
 
@@ -331,8 +346,23 @@ class spell_common_smart_heal_six_targets : public spell_smart_heal
 
     void Register() override
     {
-        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_common_smart_heal_six_targets::FilterTargets, EFFECT_ALL, TARGET_UNIT_DEST_AREA_ALLY);
-        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_common_smart_heal_six_targets::FilterTargets, EFFECT_ALL, TARGET_UNIT_SRC_AREA_ALLY);
+        SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(m_scriptSpellId);
+        auto hasTarget = [spellInfo](Targets target)
+        {
+            if (!spellInfo)
+                return false;
+
+            for (SpellEffectInfo const& effect : spellInfo->Effects)
+                if (effect.TargetA.GetTarget() == target || effect.TargetB.GetTarget() == target)
+                    return true;
+
+            return false;
+        };
+
+        if (hasTarget(TARGET_UNIT_DEST_AREA_ALLY))
+            OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_common_smart_heal_six_targets::FilterTargets, EFFECT_ALL, TARGET_UNIT_DEST_AREA_ALLY);
+        if (hasTarget(TARGET_UNIT_SRC_AREA_ALLY))
+            OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_common_smart_heal_six_targets::FilterTargets, EFFECT_ALL, TARGET_UNIT_SRC_AREA_ALLY);
     }
 };
 
