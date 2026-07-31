@@ -727,8 +727,14 @@ class spell_warr_revenge_shield_slam : public SpellScriptLoader
 
             void Register() override
             {
-                OnEffectHitTarget += SpellEffectFn(spell_warr_revenge_shield_slam_SpellScript::HandleCast, EFFECT_1, SPELL_EFFECT_ENERGIZE);
-                OnEffectHitTarget += SpellEffectFn(spell_warr_revenge_shield_slam_SpellScript::HandleCast, EFFECT_2, SPELL_EFFECT_ENERGIZE);
+                SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(m_scriptSpellId);
+                if (!spellInfo)
+                    return;
+
+                if (spellInfo->Effects[EFFECT_1].Effect == SPELL_EFFECT_ENERGIZE)
+                    OnEffectHitTarget += SpellEffectFn(spell_warr_revenge_shield_slam_SpellScript::HandleCast, EFFECT_1, SPELL_EFFECT_ENERGIZE);
+                if (spellInfo->Effects[EFFECT_2].Effect == SPELL_EFFECT_ENERGIZE)
+                    OnEffectHitTarget += SpellEffectFn(spell_warr_revenge_shield_slam_SpellScript::HandleCast, EFFECT_2, SPELL_EFFECT_ENERGIZE);
             }
         };
 

@@ -851,10 +851,18 @@ class spell_dk_deaths_advance: public SpellScriptLoader
 
             void Register() override
             {
-                 DoEffectCalcAmount += AuraEffectCalcAmountFn(spell_dk_deaths_advance_AuraScript::CalculateEffect, EFFECT_0, SPELL_AURA_MOD_SPEED_NOT_STACK);
-                 DoEffectCalcAmount += AuraEffectCalcAmountFn(spell_dk_deaths_advance_AuraScript::CalculateEffect, EFFECT_1, SPELL_AURA_MOD_MINIMUM_SPEED);
-                 DoEffectCalcAmount += AuraEffectCalcAmountFn(spell_dk_deaths_advance_AuraScript::CalculateEffect, EFFECT_1, SPELL_AURA_MOD_SPEED_NOT_STACK);
-                 DoEffectCalcAmount += AuraEffectCalcAmountFn(spell_dk_deaths_advance_AuraScript::CalculateEffect, EFFECT_0, SPELL_AURA_MOD_MINIMUM_SPEED);
+                 SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(m_scriptSpellId);
+                 if (!spellInfo)
+                     return;
+
+                 if (spellInfo->Effects[EFFECT_0].ApplyAuraName == SPELL_AURA_MOD_SPEED_NOT_STACK)
+                     DoEffectCalcAmount += AuraEffectCalcAmountFn(spell_dk_deaths_advance_AuraScript::CalculateEffect, EFFECT_0, SPELL_AURA_MOD_SPEED_NOT_STACK);
+                 if (spellInfo->Effects[EFFECT_1].ApplyAuraName == SPELL_AURA_MOD_MINIMUM_SPEED)
+                     DoEffectCalcAmount += AuraEffectCalcAmountFn(spell_dk_deaths_advance_AuraScript::CalculateEffect, EFFECT_1, SPELL_AURA_MOD_MINIMUM_SPEED);
+                 if (spellInfo->Effects[EFFECT_1].ApplyAuraName == SPELL_AURA_MOD_SPEED_NOT_STACK)
+                     DoEffectCalcAmount += AuraEffectCalcAmountFn(spell_dk_deaths_advance_AuraScript::CalculateEffect, EFFECT_1, SPELL_AURA_MOD_SPEED_NOT_STACK);
+                 if (spellInfo->Effects[EFFECT_0].ApplyAuraName == SPELL_AURA_MOD_MINIMUM_SPEED)
+                     DoEffectCalcAmount += AuraEffectCalcAmountFn(spell_dk_deaths_advance_AuraScript::CalculateEffect, EFFECT_0, SPELL_AURA_MOD_MINIMUM_SPEED);
             }
         };
 

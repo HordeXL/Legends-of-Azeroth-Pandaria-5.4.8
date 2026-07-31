@@ -3024,8 +3024,22 @@ class spell_hunt_deterrence : public AuraScript
 
     void Register() override
     {
-        DoEffectCalcAmount += AuraEffectCalcAmountFn(spell_hunt_deterrence::CalculateAmount, EFFECT_ALL, SPELL_AURA_MOD_ATTACKER_MELEE_HIT_CHANCE);
-        DoEffectCalcAmount += AuraEffectCalcAmountFn(spell_hunt_deterrence::CalculateAmount, EFFECT_ALL, SPELL_AURA_MOD_ATTACKER_RANGED_HIT_CHANCE);
+        SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(m_scriptSpellId);
+        if (!spellInfo)
+            return;
+
+        bool hasMeleeHitChance = false;
+        bool hasRangedHitChance = false;
+        for (SpellEffectInfo const& effect : spellInfo->Effects)
+        {
+            hasMeleeHitChance |= effect.ApplyAuraName == SPELL_AURA_MOD_ATTACKER_MELEE_HIT_CHANCE;
+            hasRangedHitChance |= effect.ApplyAuraName == SPELL_AURA_MOD_ATTACKER_RANGED_HIT_CHANCE;
+        }
+
+        if (hasMeleeHitChance)
+            DoEffectCalcAmount += AuraEffectCalcAmountFn(spell_hunt_deterrence::CalculateAmount, EFFECT_ALL, SPELL_AURA_MOD_ATTACKER_MELEE_HIT_CHANCE);
+        if (hasRangedHitChance)
+            DoEffectCalcAmount += AuraEffectCalcAmountFn(spell_hunt_deterrence::CalculateAmount, EFFECT_ALL, SPELL_AURA_MOD_ATTACKER_RANGED_HIT_CHANCE);
     }
 };
 

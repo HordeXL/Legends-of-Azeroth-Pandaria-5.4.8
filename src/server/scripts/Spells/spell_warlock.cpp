@@ -3577,7 +3577,9 @@ class spell_warl_command_demon : public SpellScript
     void Register() override
     {
         OnCheckCast += SpellCheckCastFn(spell_warl_command_demon::CheckCast);
-        OnEffectHitTarget += SpellEffectFn(spell_warl_command_demon::SuppressDefault, EFFECT_0, SPELL_EFFECT_FORCE_CAST);
+        if (SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(m_scriptSpellId))
+            if (spellInfo->Effects[EFFECT_0].Effect == SPELL_EFFECT_FORCE_CAST)
+                OnEffectHitTarget += SpellEffectFn(spell_warl_command_demon::SuppressDefault, EFFECT_0, SPELL_EFFECT_FORCE_CAST);
     }
 };
 
