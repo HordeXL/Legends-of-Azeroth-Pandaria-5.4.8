@@ -3742,8 +3742,10 @@ class spell_warl_demonic_gateway_summon : public SpellScript
 
     void Register() override
     {
-        OnDestinationTargetSelect += SpellDestinationTargetSelectFn(spell_warl_demonic_gateway_summon::SelectDestPurple, EFFECT_0, TARGET_UNK_125);
-        OnDestinationTargetSelect += SpellDestinationTargetSelectFn(spell_warl_demonic_gateway_summon::SelectDestGreen,  EFFECT_0, TARGET_UNK_138);
+        if (GetSpellInfo()->Id == 113890)
+            OnDestinationTargetSelect += SpellDestinationTargetSelectFn(spell_warl_demonic_gateway_summon::SelectDestPurple, EFFECT_0, TARGET_UNK_125);
+        else if (GetSpellInfo()->Id == 113886)
+            OnDestinationTargetSelect += SpellDestinationTargetSelectFn(spell_warl_demonic_gateway_summon::SelectDestGreen, EFFECT_0, TARGET_UNK_138);
     }
 };
 
