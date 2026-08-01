@@ -302,38 +302,39 @@ class spell_omega_stance : public SpellScriptLoader
         }
 };
 
-// Omega Stance 77127
-class spell_omega_stance_spider : public SpellScriptLoader
+// Omega Stance Spider Effect 77127
+class spell_omega_stance_spider_effect : public SpellScriptLoader
 {
     public:
-        spell_omega_stance_spider() : SpellScriptLoader("spell_omega_stance_spider") { }
+        spell_omega_stance_spider_effect() : SpellScriptLoader("spell_omega_stance_spider_effect") { }
 
-        class spell_omega_stance_spider_SpellScript : public SpellScript
+        class spell_omega_stance_spider_effect_SpellScript : public SpellScript
         {
-            PrepareSpellScript(spell_omega_stance_spider_SpellScript);
+            PrepareSpellScript(spell_omega_stance_spider_effect_SpellScript);
 
-            void SelectTargets(SpellDestination& dest)
+            void SetDestPosition(SpellEffIndex effIndex)
             {
-                if (Unit* m_caster = GetCaster())
-                {
-                    GetPositionWithDistInOrientation(m_caster, frand(2.0f, 40.0f), frand(0.0f, 2 * M_PI), x, y);
-                    Position newPos = { x, y, m_caster->GetPositionZ(), 0 };
-                    dest.Relocate(newPos);
-                }
+                Unit* caster = GetCaster();
+                float angle = float(rand_norm()) * static_cast<float>(2 * M_PI);
+                uint32 dist = caster->GetObjectSize() + GetSpellInfo()->Effects[effIndex].CalcRadius(caster) * float(rand_norm());
+
+                float x = caster->GetPositionX() + dist * std::cos(angle);
+                float y = caster->GetPositionY() + dist * std::sin(angle);
+                float z = caster->GetMap()->GetHeight(x, y, caster->GetPositionZ());
+
+                const_cast<WorldLocation*>(GetExplTargetDest())->Relocate(x, y, z);
+                GetHitDest()->Relocate(x, y, z);
             }
 
             void Register() override
             {
-                OnDestinationTargetSelect += SpellDestinationTargetSelectFn(spell_omega_stance_spider_SpellScript::SelectTargets, EFFECT_0, TARGET_DEST_DEST_RANDOM);
+                OnEffectLaunch += SpellEffectFn(spell_omega_stance_spider_effect_SpellScript::SetDestPosition, EFFECT_0, SPELL_EFFECT_DUMMY);
             }
-
-            private:
-                float x, y;
         };
 
         SpellScript* GetSpellScript() const override
         {
-            return new spell_omega_stance_spider_SpellScript();
+            return new spell_omega_stance_spider_effect_SpellScript();
         }
 };
 
@@ -370,6 +371,6 @@ void AddSC_boss_anraphet()
     new boss_anraphet();
     new npc_alpha_beam();
     new spell_omega_stance();
-    new spell_omega_stance_spider();
+    new spell_omega_stance_spider_effect();
     new spell_alpha_beam();
 }
