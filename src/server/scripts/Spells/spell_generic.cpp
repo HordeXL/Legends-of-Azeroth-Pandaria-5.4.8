@@ -2349,10 +2349,11 @@ class spell_gen_replenishment : public SpellScriptLoader
 
             bool Validate(SpellInfo const* /*spellInfo*/) override
             {
-                if (!sSpellMgr->GetSpellInfo(SPELL_REPLENISHMENT) ||
-                    !sSpellMgr->GetSpellInfo(SPELL_INFINITE_REPLENISHMENT))
-                    return false;
-                return true;
+                // Infinite Replenishment is not present in the 5.4.8
+                // Build-18414 spell data. Do not reject the valid, separately
+                // bound Replenishment aura because that legacy variant is
+                // unavailable.
+                return sSpellMgr->GetSpellInfo(SPELL_REPLENISHMENT) != nullptr;
             }
 
             bool Load() override
