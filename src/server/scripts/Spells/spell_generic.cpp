@@ -4603,9 +4603,10 @@ class spell_gen_water_strider_water_walking : public AuraScript
 {
     PrepareAuraScript(spell_gen_water_strider_water_walking);
 
-    bool CheckArea(Unit* target)
+    void HandleApply(AuraEffect const*, AuraEffectHandleModes)
     {
-        return target->GetBattlegorund() == nullptr;
+        if (GetUnitOwner()->GetBattlegorund())
+            Remove();
     }
 
     void HandleProc(ProcEventInfo& eventInfo)
@@ -4616,7 +4617,7 @@ class spell_gen_water_strider_water_walking : public AuraScript
 
     void Register() override
     {
-        DoCheckAreaTarget += AuraCheckAreaTargetFn(spell_gen_water_strider_water_walking::CheckArea);
+        AfterEffectApply += AuraEffectApplyFn(spell_gen_water_strider_water_walking::HandleApply, EFFECT_0, SPELL_AURA_WATER_WALK, AURA_EFFECT_HANDLE_REAL);
         OnProc += AuraProcFn(spell_gen_water_strider_water_walking::HandleProc);
     }
 };
