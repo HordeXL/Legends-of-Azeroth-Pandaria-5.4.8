@@ -132,6 +132,7 @@ enum MageSpells
     SPELL_MAGE_T16_4P_BONUS                      = 145257,
     SPELL_MAGE_FIERY_ADEPT                       = 145261,
     SPELL_MAGE_FRIGID_BLAST                      = 145264,
+    SPELL_MAGE_FROSTBOLT                         = 116,
     SPELL_MAGE_FROSTBOLT_HEAL                    = 126201,
     SPELL_MAGE_GLYPH_OF_INFERNO_BLAST            = 89926,
     SPELL_MAGE_INVISIBILITY                      = 32612,
@@ -2958,7 +2959,11 @@ class spell_mage_frostbolt : public SpellScript
     void Register() override
     {
         OnCheckCast += SpellCheckCastFn(spell_mage_frostbolt::CheckCast);
-        OnEffectLaunchTarget += SpellEffectFn(spell_mage_frostbolt::HandleDamage, EFFECT_0, SPELL_EFFECT_APPLY_AURA);
+        // Build 18414 glyph Frostbolt 131079 has damage in effect 0 and its
+        // script effect in effect 1. Only regular Frostbolt 116 owns the
+        // effect-0 slow aura that also needs to be suppressed for pet healing.
+        if (m_scriptSpellId == SPELL_MAGE_FROSTBOLT)
+            OnEffectLaunchTarget += SpellEffectFn(spell_mage_frostbolt::HandleDamage, EFFECT_0, SPELL_EFFECT_APPLY_AURA);
         OnEffectLaunchTarget += SpellEffectFn(spell_mage_frostbolt::HandleDamage, EFFECT_ALL, SPELL_EFFECT_SCHOOL_DAMAGE);
         OnEffectHitTarget += SpellEffectFn(spell_mage_frostbolt::HandleHeal, EFFECT_ALL, SPELL_EFFECT_SCRIPT_EFFECT);
     }
