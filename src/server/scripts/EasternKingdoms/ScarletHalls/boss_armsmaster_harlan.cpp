@@ -306,15 +306,14 @@ class spell_heavy_armor : public AuraScript
 {
     PrepareAuraScript(spell_heavy_armor);
 
-    void OnRemove(AuraEffect const* aurEff, AuraEffectHandleModes /*mode*/)
+    void OnRemove(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
     {
-        if (Unit* caster = GetCaster())
-            caster->CastSpell(caster, SPELL_UNARMORED, false);
+        GetTarget()->CastSpell(GetTarget(), SPELL_UNARMORED, false);
     }
 
     void Register() override
     {
-        OnEffectRemove += AuraEffectRemoveFn(spell_heavy_armor::OnRemove, EFFECT_0, SPELL_AURA_PERIODIC_DAMAGE, AURA_EFFECT_HANDLE_REAL);
+        AfterEffectRemove += AuraEffectRemoveFn(spell_heavy_armor::OnRemove, EFFECT_1, SPELL_AURA_SCHOOL_ABSORB, AURA_EFFECT_HANDLE_REAL);
     }
 };
 
