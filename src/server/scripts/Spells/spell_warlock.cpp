@@ -593,7 +593,7 @@ class spell_warl_unbound_will : public SpellScript
     }
 };
 
-// Kil'Jaeden's Cunning (passive with cooldown) - 119048
+// Kil'Jaeden's Cunning (active) - 137587
 class spell_warl_kil_jaedens_cunning : public SpellScriptLoader
 {
     public:
@@ -617,8 +617,8 @@ class spell_warl_kil_jaedens_cunning : public SpellScriptLoader
 
             void Register() override
             {
-                OnEffectApply += AuraEffectApplyFn(spell_warl_kil_jaedens_cunning_AuraScript::HandleApply, EFFECT_0, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL);
-                OnEffectRemove += AuraEffectRemoveFn(spell_warl_kil_jaedens_cunning_AuraScript::HandleRemove, EFFECT_0, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL);
+                OnEffectApply += AuraEffectApplyFn(spell_warl_kil_jaedens_cunning_AuraScript::HandleApply, EFFECT_0, SPELL_AURA_CAST_WHILE_WALKING, AURA_EFFECT_HANDLE_REAL);
+                OnEffectRemove += AuraEffectRemoveFn(spell_warl_kil_jaedens_cunning_AuraScript::HandleRemove, EFFECT_0, SPELL_AURA_CAST_WHILE_WALKING, AURA_EFFECT_HANDLE_REAL);
             }
         };
 
