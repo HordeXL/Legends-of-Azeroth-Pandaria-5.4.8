@@ -4659,7 +4659,6 @@ void SpellMgr::LoadSpellInfoCorrections()
                     spellInfo->AttributesEx5 |= SPELL_ATTR5_USABLE_WHILE_STUNNED;
                     break;
                 case 79504: // Flamethrower
-                    spellInfo->Effects[EFFECT_0].TargetA = TARGET_UNIT_CONE_ENEMY_24;
                     spellInfo->AttributesEx5 |= SPELL_ATTR5_USABLE_WHILE_STUNNED;
                     break;
                 case 79617: // Backdraft
