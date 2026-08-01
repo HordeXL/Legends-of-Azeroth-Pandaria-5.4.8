@@ -311,32 +311,46 @@ SpellScript::~SpellScript() = default;
 
 bool SpellScript::_Validate(SpellInfo const* entry)
 {
+    // Spell scripts are registered by spell ID, while an effect layout can
+    // legitimately exist only in one of that spell's difficulty variants.
+    // Validate hooks against every loaded variant so a heroic-only handler is
+    // not reported as dead merely because the regular layout lacks its effect.
+    auto hookMatchesAnyDifficulty = [entry](auto& hook)
+    {
+        for (uint32 difficulty = REGULAR_DIFFICULTY; difficulty < MAX_DIFFICULTY; ++difficulty)
+            if (SpellInfo const* difficultyEntry = sSpellMgr->GetSpellInfo(entry->Id, Difficulty(difficulty)))
+                if (hook.GetAffectedEffectsMask(difficultyEntry))
+                    return true;
+
+        return false;
+    };
+
     for (std::list<EffectHandler>::iterator itr = OnEffectLaunch.begin(); itr != OnEffectLaunch.end(); ++itr)
-        if (!(*itr).GetAffectedEffectsMask(entry))
+        if (!hookMatchesAnyDifficulty(*itr))
             TC_LOG_ERROR("scripts", "Spell `%u` Effect `%s` of script `%s` did not match dbc effect data - handler bound to hook `OnEffectLaunch` of SpellScript won't be executed", entry->Id, (*itr).ToString().c_str(), m_scriptName->c_str());
 
     for (std::list<EffectHandler>::iterator itr = OnEffectLaunchTarget.begin(); itr != OnEffectLaunchTarget.end(); ++itr)
-        if (!(*itr).GetAffectedEffectsMask(entry))
+        if (!hookMatchesAnyDifficulty(*itr))
             TC_LOG_ERROR("scripts", "Spell `%u` Effect `%s` of script `%s` did not match dbc effect data - handler bound to hook `OnEffectLaunchTarget` of SpellScript won't be executed", entry->Id, (*itr).ToString().c_str(), m_scriptName->c_str());
 
     for (std::list<EffectHandler>::iterator itr = OnEffectHit.begin(); itr != OnEffectHit.end(); ++itr)
-        if (!(*itr).GetAffectedEffectsMask(entry))
+        if (!hookMatchesAnyDifficulty(*itr))
             TC_LOG_ERROR("scripts", "Spell `%u` Effect `%s` of script `%s` did not match dbc effect data - handler bound to hook `OnEffectHit` of SpellScript won't be executed", entry->Id, (*itr).ToString().c_str(), m_scriptName->c_str());
 
     for (std::list<EffectHandler>::iterator itr = OnEffectHitTarget.begin(); itr != OnEffectHitTarget.end(); ++itr)
-        if (!(*itr).GetAffectedEffectsMask(entry))
+        if (!hookMatchesAnyDifficulty(*itr))
             TC_LOG_ERROR("scripts", "Spell `%u` Effect `%s` of script `%s` did not match dbc effect data - handler bound to hook `OnEffectHitTarget` of SpellScript won't be executed", entry->Id, (*itr).ToString().c_str(), m_scriptName->c_str());
 
     for (std::list<ObjectAreaTargetSelectHandler>::iterator itr = OnObjectAreaTargetSelect.begin(); itr != OnObjectAreaTargetSelect.end(); ++itr)
-        if (!(*itr).GetAffectedEffectsMask(entry))
+        if (!hookMatchesAnyDifficulty(*itr))
             TC_LOG_ERROR("scripts", "Spell `%u` Effect `%s` of script `%s` did not match dbc effect data - handler bound to hook `OnObjectAreaTargetSelect` of SpellScript won't be executed", entry->Id, (*itr).ToString().c_str(), m_scriptName->c_str());
 
     for (std::list<ObjectTargetSelectHandler>::iterator itr = OnObjectTargetSelect.begin(); itr != OnObjectTargetSelect.end(); ++itr)
-        if (!(*itr).GetAffectedEffectsMask(entry))
+        if (!hookMatchesAnyDifficulty(*itr))
             TC_LOG_ERROR("scripts", "Spell `%u` Effect `%s` of script `%s` did not match dbc effect data - handler bound to hook `OnObjectTargetSelect` of SpellScript won't be executed", entry->Id, (*itr).ToString().c_str(), m_scriptName->c_str());
 
     for (std::list<DestinationTargetSelectHandler>::iterator itr = OnDestinationTargetSelect.begin(); itr != OnDestinationTargetSelect.end(); ++itr)
-        if (!(*itr).GetAffectedEffectsMask(entry))
+        if (!hookMatchesAnyDifficulty(*itr))
             TC_LOG_ERROR("scripts", "Spell `%u` Effect `%s` of script `%s` did not match dbc effect data - handler bound to hook `OnDestinationTargetSelect` of SpellScript won't be executed", entry->Id, (*itr).ToString().c_str(), m_scriptName->c_str());
 
     return _SpellScript::_Validate(entry);
