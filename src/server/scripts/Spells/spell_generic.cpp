@@ -650,6 +650,7 @@ class spell_gen_chaos_blast : public SpellScript
 
 enum Clone
 {
+    SPELL_CLONE_ME                         = 45204,
     SPELL_NIGHTMARE_FIGMENT_MIRROR_IMAGE    = 57528
 };
 
@@ -660,7 +661,7 @@ class spell_gen_clone : public SpellScript
     void HandleScriptEffect(SpellEffIndex effIndex)
     {
         PreventHitDefaultEffect(effIndex);
-        GetCaster()->CastSpell(GetHitUnit(), GetEffectValue(), true);
+        GetHitUnit()->CastSpell(GetCaster(), GetEffectValue(), true);
     }
 
     void Register() override
@@ -672,7 +673,11 @@ class spell_gen_clone : public SpellScript
         }
         else
         {
-            OnEffectHitTarget += SpellEffectFn(spell_gen_clone::HandleScriptEffect, EFFECT_1, SPELL_EFFECT_SCRIPT_EFFECT);
+            // Build 18414 Clone Me! already applies its clone auras through
+            // effects 0 and 1; only effect 2 is a script effect. Other clone
+            // variants retain script effects in both slots.
+            if (m_scriptSpellId != SPELL_CLONE_ME)
+                OnEffectHitTarget += SpellEffectFn(spell_gen_clone::HandleScriptEffect, EFFECT_1, SPELL_EFFECT_SCRIPT_EFFECT);
             OnEffectHitTarget += SpellEffectFn(spell_gen_clone::HandleScriptEffect, EFFECT_2, SPELL_EFFECT_SCRIPT_EFFECT);
         }
     }
