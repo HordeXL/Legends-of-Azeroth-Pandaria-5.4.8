@@ -4875,7 +4875,7 @@ class spell_brawlers_guild_illusionist : public SpellScript
     }
 };
 
-// Rain Dance 124860
+// Rain Dance trigger 124864 (periodic parent aura: 124860)
 class spell_brawlers_guild_rain_dance : public SpellScript
 {
     PrepareSpellScript(spell_brawlers_guild_rain_dance);
@@ -4888,8 +4888,6 @@ class spell_brawlers_guild_rain_dance : public SpellScript
     void Register() override
     {
         OnDestinationTargetSelect += SpellDestinationTargetSelectFn(spell_brawlers_guild_rain_dance::SelectTargets, EFFECT_0, TARGET_DEST_CASTER_RANDOM);
-        OnDestinationTargetSelect += SpellDestinationTargetSelectFn(spell_brawlers_guild_rain_dance::SelectTargets, EFFECT_2, TARGET_DEST_CASTER_RANDOM);
-        OnDestinationTargetSelect += SpellDestinationTargetSelectFn(spell_brawlers_guild_rain_dance::SelectTargets, EFFECT_3, TARGET_DEST_CASTER_RANDOM);
     }
 };
 

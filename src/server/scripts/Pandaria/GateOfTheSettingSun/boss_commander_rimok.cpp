@@ -389,29 +389,36 @@ class spell_rimok_saboteur_bombard : public SpellScriptLoader
             }
         };
 
-        class spell_bombard_rimok_SpellScript : public SpellScript
+        AuraScript* GetAuraScript() const override
         {
-            PrepareSpellScript(spell_bombard_rimok_SpellScript);
+            return new spell_rimok_saboteur_bombard_AuraScript();
+        }
+};
+
+// 120202 - Bombard (triggered by the periodic aura 120559)
+class spell_rimok_saboteur_bombard_target : public SpellScriptLoader
+{
+    public:
+        spell_rimok_saboteur_bombard_target() : SpellScriptLoader("spell_rimok_saboteur_bombard_target") { }
+
+        class spell_rimok_saboteur_bombard_target_SpellScript : public SpellScript
+        {
+            PrepareSpellScript(spell_rimok_saboteur_bombard_target_SpellScript);
 
             void FilterTargets(std::list<WorldObject*>& targets)
             {
-                targets.remove_if (PlayerTargetSelector());
+                targets.remove_if(PlayerTargetSelector());
             }
 
             void Register() override
             {
-                OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_bombard_rimok_SpellScript::FilterTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENTRY);
+                OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_rimok_saboteur_bombard_target_SpellScript::FilterTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENTRY);
             }
         };
 
         SpellScript* GetSpellScript() const override
         {
-            return new spell_bombard_rimok_SpellScript();
-        }
-
-        AuraScript* GetAuraScript() const override
-        {
-            return new spell_rimok_saboteur_bombard_AuraScript();
+            return new spell_rimok_saboteur_bombard_target_SpellScript();
         }
 };
 
@@ -450,5 +457,6 @@ void AddSC_boss_commander_rimok()
     new npc_krikthik_saboteur();
     new npc_add_generator();
     new spell_rimok_saboteur_bombard();
+    new spell_rimok_saboteur_bombard_target();
     new spell_rimok_viscous_fluid();
 }
