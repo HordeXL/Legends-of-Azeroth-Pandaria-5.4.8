@@ -1488,31 +1488,36 @@ class spell_su_dummy : public SpellScriptLoader
     public:
         spell_su_dummy() : SpellScriptLoader("spell_su_dummy") { }
 
-        class spell_su_dummyAuraScript : public AuraScript
+        class spell_su_dummySpellScript : public SpellScript
         {
-            PrepareAuraScript(spell_su_dummyAuraScript);
+            PrepareSpellScript(spell_su_dummySpellScript);
 
-            void Apply(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
+            void FilterTargets(std::list<WorldObject*>& targets)
+            {
+                targets.remove_if([](WorldObject* object)
+                {
+                    Creature* creature = object ? object->ToCreature() : nullptr;
+                    return !creature || creature->GetEntry() != NPC_GALE_WINDS_STALKER;
+                });
+            }
+
+            void HandleDummy(SpellEffIndex /*effIndex*/)
             {
                 if (Unit* caster = GetCaster())
-                {
-                    std::list<Creature*> galeList;
-                    GetCreatureListWithEntryInGrid(galeList, caster, NPC_GALE_WINDS_STALKER, 15.0f);
-
-                    for (auto&& gale : galeList)
-                        caster->AddAura(SPELL_SU_DUMMY_CRAP, gale);
-                }
+                    if (Unit* target = GetHitUnit())
+                        caster->AddAura(SPELL_SU_DUMMY_CRAP, target);
             }
 
             void Register() override
             {
-                OnEffectApply += AuraEffectApplyFn(spell_su_dummyAuraScript::Apply, EFFECT_0, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL);
+                OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_su_dummySpellScript::FilterTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENTRY);
+                OnEffectHitTarget += SpellEffectFn(spell_su_dummySpellScript::HandleDummy, EFFECT_0, SPELL_EFFECT_DUMMY);
             }
         };
 
-        AuraScript* GetAuraScript() const override
+        SpellScript* GetSpellScript() const override
         {
-            return new spell_su_dummyAuraScript();
+            return new spell_su_dummySpellScript();
         }
 };
 

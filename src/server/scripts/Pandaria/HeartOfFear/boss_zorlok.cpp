@@ -1718,22 +1718,6 @@ class spell_pheromones_of_zeal : public SpellScriptLoader
     public:
         spell_pheromones_of_zeal() : SpellScriptLoader("spell_pheromones_of_zeal") { }
 
-        class spell_pheromones_of_zeal_AuraScript : public AuraScript
-        {
-            PrepareAuraScript(spell_pheromones_of_zeal_AuraScript);
-
-            void Apply(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
-            {
-                if (Unit* caster = GetCaster())
-                    caster->AddAura(SPELL_INHALE_PHEROMONES, caster);
-            }
-
-            void Register() override
-            {
-                OnEffectApply += AuraEffectApplyFn(spell_pheromones_of_zeal_AuraScript::Apply, EFFECT_0, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL);
-            }
-        };
-
         class spell_pheromones_of_zeal_SpellScript : public SpellScript
         {
             PrepareSpellScript(spell_pheromones_of_zeal_SpellScript);
@@ -1762,11 +1746,6 @@ class spell_pheromones_of_zeal : public SpellScriptLoader
                 OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_pheromones_of_zeal_SpellScript::FilterTargets, EFFECT_1, TARGET_UNIT_SRC_AREA_ENTRY);
             }
         };
-
-        AuraScript* GetAuraScript() const override
-        {
-            return new spell_pheromones_of_zeal_AuraScript();
-        }
 
         SpellScript* GetSpellScript() const override
         {

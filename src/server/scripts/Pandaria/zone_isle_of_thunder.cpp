@@ -273,6 +273,7 @@ enum Spells
     SPELL_CHARGED_BOLT_PERIODIC     = 137543,
     SPELL_MIGHTY_LOA                = 136749,
     SPELL_BOOP_ACHIEV               = 139323,
+    SPELL_GURA_AWAKENING            = 123625,
 };
 
 enum Events
@@ -350,6 +351,7 @@ enum Creatures
     NPC_ADDIT_SHANZE_SOULRIPPER = 69903,
     NPC_GEN_CONTROLLER_BUNNY    = 40789,
     NPC_PUZZLE_BUNNY            = 70311,
+    NPC_GURA_THE_RECLAIMED      = 69241,
 
     /*Credits*/
     CREDIT_LORTHEMAR_THERON     = 70365,
@@ -3827,25 +3829,27 @@ class spell_incantation_of_gura : public SpellScriptLoader
         {
             PrepareSpellScript(spell_incantation_of_gura_SpellScript);
 
-            void HandleEffectHitTarget(SpellEffIndex /*eff_idx*/)
+            void HandleAfterCast()
             {
-                Creature* creature = GetHitCreature();
                 Unit* caster = GetCaster();
 
-                if (!creature || !caster)
+                if (!caster)
                     return;
 
-                creature->RemoveAllAuras();
+                if (Creature* creature = caster->FindNearestCreature(NPC_GURA_THE_RECLAIMED, 50.0f, true))
+                {
+                    creature->RemoveAllAuras();
 
-                if (creature->AI())
-                    creature->AI()->AttackStart(caster);
+                    if (creature->AI())
+                        creature->AI()->AttackStart(caster);
 
-                creature->CastSpell(creature, 123625, true);
+                    creature->CastSpell(creature, SPELL_GURA_AWAKENING, true);
+                }
             }
 
             void Register() override
             {
-                OnEffectHitTarget += SpellEffectFn(spell_incantation_of_gura_SpellScript::HandleEffectHitTarget, EFFECT_0, SPELL_EFFECT_DUMMY);
+                AfterCast += SpellCastFn(spell_incantation_of_gura_SpellScript::HandleAfterCast);
             }
         };
 
