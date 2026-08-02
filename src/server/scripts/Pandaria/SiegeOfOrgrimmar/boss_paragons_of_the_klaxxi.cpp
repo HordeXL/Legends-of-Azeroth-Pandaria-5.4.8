@@ -4717,7 +4717,7 @@ class spell_paragons_award : public AuraScript
     }
 };
 
-// Explosive Ring Visual 144191, 144192, 144193, 144194
+// Explosive Ring Visual 144191, 144192, 144193, 144195
 class spell_paragon_explosive_ring_visual : public SpellScript
 {
     PrepareSpellScript(spell_paragon_explosive_ring_visual);
