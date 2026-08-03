@@ -251,6 +251,11 @@ void LFGMgr::LoadLFGDungeons(bool reload /* = false */)
     {
         LFGDungeonData& dungeon = itr->second;
 
+        // Disabled LFG entries can remain in the client DBC as historical or
+        // removed content. Do not resolve entrances or expose them in caches.
+        if (DisableMgr::IsDisabledFor(DISABLE_TYPE_LFG_DUNGEON, dungeon.id, nullptr))
+            continue;
+
         // No teleport coords in database, load from areatriggers
         if (dungeon.type != LFG_TYPE_RANDOM && dungeon.x == 0.0f && dungeon.y == 0.0f && dungeon.z == 0.0f &&
             dungeon.group != 38 && dungeon.group != 43) // scenarios should not have entrance trigger
