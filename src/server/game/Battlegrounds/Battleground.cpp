@@ -2741,8 +2741,8 @@ void Battleground::RemovePlayer(Player* player, ObjectGuid guid, uint32 team)
     {
         player->setFactionForRace(player->GetRace());
         player->InitDisplayIds();
-        player->RemoveAurasDueToSpell(200002);
-        player->RemoveAurasDueToSpell(200003);
+        player->RemoveAurasDueToSpell(SPELL_BG_HORDE);
+        player->RemoveAurasDueToSpell(SPELL_BG_ALLIANCE);
     }
 }
 
