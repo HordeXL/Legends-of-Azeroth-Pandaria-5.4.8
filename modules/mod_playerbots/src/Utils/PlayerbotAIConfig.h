@@ -71,6 +71,9 @@ public:
     bool randomBotRandomPassword;
     std::vector<uint32> randomBotAccounts;
 
+    bool autoQueueEnabled, autoQueueDryRun, autoQueueLfg, autoQueueBattleground, autoQueueArena;
+    uint32 autoQueueCheckInterval, autoQueueMaxBotsPerCycle;
+
     std::string premadeSpecName[MAX_CLASSES][MAX_SPECIALIZATIONS - 1];
     std::vector<uint16> premadeSpecLink[MAX_CLASSES][MAX_SPECIALIZATIONS - 1];
 

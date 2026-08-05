@@ -131,6 +131,7 @@ private:
     uint32 AddRandomBots();
     bool ProcessBot(uint32 bot);
     void ScheduleRandomize(uint32 bot, uint32 time);
+    void UpdateAutoQueueObserver(uint32 elapsed);
     const farm_spot* GetFarmZoneForPlayer(Player* player);
     const city* GetCityForPlayer(Player* player);
     uint32 GetEventValue(uint32 bot, std::string const event);
@@ -146,6 +147,7 @@ private:
     time_t _playersCheckTimer;
     typedef void (RandomPlayerbotMgr::* ConsoleCommandHandler)(Player*);
     std::vector<Player*> _players;
+    uint32 _autoQueueElapsed;
     uint32 _processTicks;
     uint32 _playersLevel;
 

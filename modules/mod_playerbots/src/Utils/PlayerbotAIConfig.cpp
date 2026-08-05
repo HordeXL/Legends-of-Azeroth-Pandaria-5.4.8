@@ -162,6 +162,16 @@ bool PlayerbotAIConfig::Initialize()
     randomBotLoginAtStartup = sConfigMgr->GetBoolDefault("AiPlayerbot.RandomBotLoginAtStartup", true);
     openGoSpell = sConfigMgr->GetIntDefault("AiPlayerbot.OpenGoSpell", 6477);
 
+    autoQueueEnabled = sConfigMgr->GetBoolDefault("AiPlayerbot.AutoQueue.Enabled", false);
+    autoQueueDryRun = sConfigMgr->GetBoolDefault("AiPlayerbot.AutoQueue.DryRun", true);
+    autoQueueLfg = sConfigMgr->GetBoolDefault("AiPlayerbot.AutoQueue.LFG", false);
+    autoQueueBattleground = sConfigMgr->GetBoolDefault("AiPlayerbot.AutoQueue.Battleground", false);
+    autoQueueArena = sConfigMgr->GetBoolDefault("AiPlayerbot.AutoQueue.Arena", false);
+    autoQueueCheckInterval = sConfigMgr->GetIntDefault("AiPlayerbot.AutoQueue.CheckInterval", 5) * IN_MILLISECONDS;
+    if (!autoQueueCheckInterval)
+        autoQueueCheckInterval = IN_MILLISECONDS;
+    autoQueueMaxBotsPerCycle = sConfigMgr->GetIntDefault("AiPlayerbot.AutoQueue.MaxBotsPerCycle", 4);
+
     randomChangeMultiplier = sConfigMgr->GetFloatDefault("AiPlayerbot.RandomChangeMultiplier", 1.0);
 
     randomBotCombatStrategies = sConfigMgr->GetStringDefault("AiPlayerbot.RandomBotCombatStrategies", "-threat");

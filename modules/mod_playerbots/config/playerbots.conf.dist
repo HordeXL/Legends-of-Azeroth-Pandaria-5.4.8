@@ -773,6 +773,21 @@ AiPlayerbot.RandomBotJoinBG = 1
 # Enable Auto join BG - have bots start BG's and Arenas on their own
 AiPlayerbot.RandomBotAutoJoinBG = 0
 
+# Experimental MoP 5.4.8 queue filler. Patch 0001 is observer-only:
+# it reports real-player and random-bot demand but never joins a queue.
+# Keep all values disabled until the observer output has been verified.
+AiPlayerbot.AutoQueue.Enabled = 0
+AiPlayerbot.AutoQueue.DryRun = 1
+AiPlayerbot.AutoQueue.LFG = 0
+AiPlayerbot.AutoQueue.Battleground = 0
+AiPlayerbot.AutoQueue.Arena = 0
+
+# Observer interval in seconds. Values below 1 are clamped to 1 second.
+AiPlayerbot.AutoQueue.CheckInterval = 5
+
+# Reserved for later functional patches. Patch 0001 only reports this setting.
+AiPlayerbot.AutoQueue.MaxBotsPerCycle = 4
+
 # Required Configuration for RandomBotAutoJoinBG
 #
 # Known issue: When enabling a lot of brackats in combination with multiple instances,

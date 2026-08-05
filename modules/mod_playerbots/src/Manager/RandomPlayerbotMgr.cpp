@@ -40,6 +40,7 @@
 #include "GuildMgr.h"
 #include "LFGMgr.h"
 #include "MapManager.h"
+#include "ObjectAccessor.h"
 #include "Player.h"
 #include "PlayerbotAI.h"
 #include "PlayerbotAIConfig.h"
@@ -53,6 +54,7 @@
 
 RandomPlayerbotMgr::RandomPlayerbotMgr()
     : PlayerbotHolder(),
+    _autoQueueElapsed(0),
     _processTicks(0)
 {
     _playersLevel = 1;// sPlayerbotAIConfig->randombotStartingLevel;
@@ -93,6 +95,8 @@ void RandomPlayerbotMgr::UpdateAIInternal(uint32 elapsed, bool /*minimal*/)
 
     if (!sPlayerbotAIConfig->randomBotAutologin || !sPlayerbotAIConfig->enabled)
         return;
+
+    UpdateAutoQueueObserver(elapsed);
 
     uint32 maxAllowedBotCount = GetEventValue(0, "bot_count");
     if (!maxAllowedBotCount || (maxAllowedBotCount < sPlayerbotAIConfig->minRandomBots ||
@@ -179,6 +183,85 @@ void RandomPlayerbotMgr::UpdateAIInternal(uint32 elapsed, bool /*minimal*/)
 
     if (pmo)
         pmo->finish();
+}
+
+void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
+{
+    if (!sPlayerbotAIConfig->autoQueueEnabled)
+        return;
+
+    _autoQueueElapsed += elapsed;
+    if (_autoQueueElapsed < sPlayerbotAIConfig->autoQueueCheckInterval)
+        return;
+
+    _autoQueueElapsed = 0;
+
+    uint32 realLfg = 0;
+    uint32 botLfg = 0;
+    if (sPlayerbotAIConfig->autoQueueLfg)
+    {
+        for (auto const& managerPair : sLFGMgr->GetQueueManagers())
+        {
+            for (auto const& queuePair : managerPair.second.GetQueuerData())
+            {
+                bool hasRealPlayer = false;
+                bool hasRandomBot = false;
+                for (ObjectGuid const& guid : queuePair.second.Players)
+                {
+                    Player* player = ObjectAccessor::FindConnectedPlayer(guid);
+                    if (!player)
+                        continue;
+
+                    if (IsRandomBot(player))
+                        hasRandomBot = true;
+                    else
+                        hasRealPlayer = true;
+                }
+
+                if (hasRealPlayer)
+                    ++realLfg;
+                if (hasRandomBot)
+                    ++botLfg;
+            }
+        }
+    }
+
+    uint32 realBg = 0;
+    uint32 realArena = 0;
+    uint32 botBg = 0;
+    uint32 botArena = 0;
+    auto countPvpQueues = [](Player* player, uint32& bgCount, uint32& arenaCount)
+    {
+        if (!player || !player->IsInWorld())
+            return;
+
+        for (uint8 slot = 0; slot < PLAYER_MAX_BATTLEGROUND_QUEUES; ++slot)
+        {
+            BattlegroundQueueTypeId queueType = player->GetBattlegroundQueueTypeId(slot);
+            if (queueType == BATTLEGROUND_QUEUE_NONE)
+                continue;
+
+            if (BattlegroundMgr::BGArenaType(queueType))
+                ++arenaCount;
+            else
+                ++bgCount;
+        }
+    };
+
+    if (sPlayerbotAIConfig->autoQueueBattleground || sPlayerbotAIConfig->autoQueueArena)
+    {
+        for (Player* player : _players)
+            countPvpQueues(player, realBg, realArena);
+
+        for (auto const& botPair : playerBots)
+            if (IsRandomBot(botPair.second))
+                countPvpQueues(botPair.second, botBg, botArena);
+    }
+
+    TC_LOG_INFO("playerbots",
+        "AutoQueue observer (dry-run=%u, max-bots=%u): LFG real/bot=%u/%u, BG real/bot=%u/%u, Arena real/bot=%u/%u",
+        sPlayerbotAIConfig->autoQueueDryRun ? 1 : 0, sPlayerbotAIConfig->autoQueueMaxBotsPerCycle,
+        realLfg, botLfg, realBg, botBg, realArena, botArena);
 }
 
 uint32 RandomPlayerbotMgr::AddRandomBots()
