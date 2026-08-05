@@ -16,6 +16,7 @@
 #include "Chat.h"
 #include "DatabaseEnv.h"
 #include "ItemPrototype.h"
+#include "ObjectAccessor.h"
 #include "ObjectMgr.h"
 #include "Player.h"
 #include "PlayerbotMgr.h"
@@ -25,11 +26,14 @@
 #include "ScriptMgr.h"
 
 #include <algorithm>
+#include <map>
 #include <sstream>
 #include <vector>
 
 namespace
 {
+std::map<uint32, std::string> SoloArenaStagedBots;
+
 enum class SoloArenaPreviewRole : uint8
 {
     None,
@@ -217,9 +221,13 @@ public:
 
     static bool HandleSoloArenaCommand(ChatHandler* handler, char const* args)
     {
-        if (!args || strcmp(args, "preview"))
+        bool preview = args && !strcmp(args, "preview");
+        bool login = args && !strcmp(args, "login");
+        bool status = args && !strcmp(args, "status");
+        bool logout = args && !strcmp(args, "logout");
+        if (!preview && !login && !status && !logout)
         {
-            handler->SendSysMessage("Usage: .soloarena preview");
+            handler->SendSysMessage("Usage: .soloarena preview|login|status|logout");
             return true;
         }
 
@@ -227,10 +235,109 @@ public:
         if (!player)
             return false;
 
+        if (status)
+        {
+            if (SoloArenaStagedBots.empty())
+            {
+                handler->SendSysMessage("Solo Arena has no staged bots in this WorldServer process.");
+                return true;
+            }
+
+            uint32 loadingCount = 0;
+            uint32 onlineCount = 0;
+            uint32 offlineCount = 0;
+            for (auto const& staged : SoloArenaStagedBots)
+            {
+                ObjectGuid guid = ObjectGuid::Create<HighGuid::Player>(staged.first);
+                bool loadingBot = sRandomPlayerbotMgr->IsBotLoading(guid);
+                Player* bot = sRandomPlayerbotMgr->GetPlayerBot(guid);
+                char const* state = loadingBot ? "loading" : (bot ? "online" : "offline");
+                loadingCount += loadingBot ? 1 : 0;
+                onlineCount += bot ? 1 : 0;
+                offlineCount += (!loadingBot && !bot) ? 1 : 0;
+                handler->PSendSysMessage("Solo Arena staged bot %s (guid %u): %s, group=%s, queue=%s.",
+                    staged.second.c_str(), staged.first, state,
+                    bot && bot->GetGroup() ? "yes" : "no",
+                    bot && (bot->InBattlegroundQueue() || bot->InBattleground()) ? "yes" : "no");
+            }
+
+            handler->PSendSysMessage("Solo Arena staged status: total=%u, loading=%u, online=%u, offline=%u.",
+                uint32(SoloArenaStagedBots.size()), loadingCount, onlineCount, offlineCount);
+            return true;
+        }
+
+        if (logout)
+        {
+            if (SoloArenaStagedBots.empty())
+            {
+                handler->SendSysMessage("Solo Arena has no staged bots to log out.");
+                return true;
+            }
+
+            uint32 loggedOut = 0;
+            uint32 removedOffline = 0;
+            uint32 stillLoading = 0;
+            uint32 protectedBots = 0;
+            for (auto itr = SoloArenaStagedBots.begin(); itr != SoloArenaStagedBots.end();)
+            {
+                ObjectGuid guid = ObjectGuid::Create<HighGuid::Player>(itr->first);
+                if (sRandomPlayerbotMgr->IsBotLoading(guid))
+                {
+                    ++stillLoading;
+                    ++itr;
+                    continue;
+                }
+
+                Player* bot = sRandomPlayerbotMgr->GetPlayerBot(guid);
+                if (bot && (bot->GetGroup() || bot->InBattlegroundQueue() || bot->InBattleground()))
+                {
+                    ++protectedBots;
+                    handler->PSendSysMessage(
+                        "Refusing to log out staged bot %s: it is grouped or in a battleground/queue.",
+                        itr->second.c_str());
+                    ++itr;
+                    continue;
+                }
+
+                std::string name = itr->second;
+                bool wasOnline = bot != nullptr;
+                if (bot)
+                {
+                    sRandomPlayerbotMgr->LogoutPlayerBot(guid);
+                    ++loggedOut;
+                }
+                else
+                    ++removedOffline;
+
+                TC_LOG_INFO("server", "SoloArena staged logout name=%s guid=%u state=%s",
+                    name.c_str(), guid.GetCounter(), wasOnline ? "logged-out" : "already-offline");
+                itr = SoloArenaStagedBots.erase(itr);
+            }
+
+            handler->PSendSysMessage(
+                "Solo Arena staged cleanup: logged-out=%u, removed-offline=%u, still-loading=%u, protected=%u, remaining=%u.",
+                loggedOut, removedOffline, stillLoading, protectedBots, uint32(SoloArenaStagedBots.size()));
+            return true;
+        }
+
         if (!sPlayerbotAIConfig->autoQueueEnabled || !sPlayerbotAIConfig->autoQueueArena ||
             !sPlayerbotAIConfig->autoQueueDryRun)
         {
             handler->SendSysMessage("Solo Arena preview requires AutoQueue.Enabled=1, Arena=1 and DryRun=1.");
+            return true;
+        }
+
+        if (login && !sPlayerbotAIConfig->autoQueueArenaStageLogin)
+        {
+            handler->SendSysMessage(
+                "Solo Arena staged login is disabled. Set AiPlayerbot.AutoQueue.Arena.StageLogin=1 and restart.");
+            return true;
+        }
+
+        if (login && !SoloArenaStagedBots.empty())
+        {
+            handler->SendSysMessage(
+                "Solo Arena already has staged bots. Use .soloarena status and .soloarena logout first.");
             return true;
         }
 
@@ -371,8 +478,42 @@ public:
         report("opponent-healer", opponentHealer);
         report("opponent-damage", opponentDamage);
 
+        if (preview)
+        {
+            handler->PSendSysMessage(
+                "Dry-run only: teammate %s; opponents %s and %s. No bot was logged in, changed, grouped or queued.",
+                teammate->Name.c_str(), opponentHealer->Name.c_str(), opponentDamage->Name.c_str());
+            return true;
+        }
+
+        SoloArenaPreviewCandidate const* stagedCandidates[] = { teammate, opponentHealer, opponentDamage };
+        for (SoloArenaPreviewCandidate const* candidate : stagedCandidates)
+        {
+            ObjectGuid guid = ObjectGuid::Create<HighGuid::Player>(candidate->Guid);
+            if (ObjectAccessor::FindPlayer(guid) || sRandomPlayerbotMgr->GetPlayerBot(guid) ||
+                sRandomPlayerbotMgr->IsBotLoading(guid))
+            {
+                handler->PSendSysMessage(
+                    "Solo Arena staged login aborted: candidate %s is already online or loading. No new login was requested.",
+                    candidate->Name.c_str());
+                return true;
+            }
+        }
+
+        for (SoloArenaPreviewCandidate const* candidate : stagedCandidates)
+        {
+            ObjectGuid guid = ObjectGuid::Create<HighGuid::Player>(candidate->Guid);
+            SoloArenaStagedBots[candidate->Guid] = candidate->Name;
+            sRandomPlayerbotMgr->AddPlayerBot(guid, 0);
+            TC_LOG_INFO("server",
+                "SoloArena staged login requested name=%s guid=%u faction=%s role=%s; no group, teleport or queue requested",
+                candidate->Name.c_str(), candidate->Guid, SoloArenaTeamName(candidate->Team),
+                SoloArenaRoleName(candidate->Role));
+        }
+
         handler->PSendSysMessage(
-            "Dry-run only: teammate %s; opponents %s and %s. No bot was logged in, changed, grouped or queued.",
+            "Staged login requested for %s, %s and %s. Wait a few seconds, then use .soloarena status. "
+            "No group, teleport or queue was requested. Finish with .soloarena logout.",
             teammate->Name.c_str(), opponentHealer->Name.c_str(), opponentDamage->Name.c_str());
         return true;
     }

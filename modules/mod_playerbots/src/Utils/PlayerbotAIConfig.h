@@ -72,6 +72,7 @@ public:
     std::vector<uint32> randomBotAccounts;
 
     bool autoQueueEnabled, autoQueueDryRun, autoQueueLfg, autoQueueBattleground, autoQueueArena;
+    bool autoQueueArenaStageLogin;
     uint32 autoQueueCheckInterval, autoQueueMaxBotsPerCycle;
     uint32 autoQueueArenaMinEquippedItems, autoQueueArenaMinAverageItemLevel, autoQueueArenaMinPvpItems;
 

@@ -795,6 +795,12 @@ AiPlayerbot.AutoQueue.Arena.MinEquippedItems = 12
 AiPlayerbot.AutoQueue.Arena.MinAverageItemLevel = 450
 AiPlayerbot.AutoQueue.Arena.MinPvpItems = 2
 
+# Manual stage-2 diagnostic only. When enabled, an administrator can use
+# `.soloarena login`, `.soloarena status`, and `.soloarena logout` to load the
+# three screened candidates without grouping, teleporting, or queueing them.
+# Character login/logout uses the normal save path and can update character data.
+AiPlayerbot.AutoQueue.Arena.StageLogin = 0
+
 # Required Configuration for RandomBotAutoJoinBG
 #
 # Known issue: When enabling a lot of brackats in combination with multiple instances,

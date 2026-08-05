@@ -36,6 +36,7 @@ public:
     void DisablePlayerBot(ObjectGuid guid);
     Player* GetPlayerBot(ObjectGuid guid) const;
     Player* GetPlayerBot(ObjectGuid::LowType lowGuid) const;
+    bool IsBotLoading(ObjectGuid guid) const { return botLoading.find(guid) != botLoading.end(); }
     PlayerBotMap::const_iterator GetPlayerBotsBegin() const { return playerBots.begin(); }
     PlayerBotMap::const_iterator GetPlayerBotsEnd() const { return playerBots.end(); }
 
