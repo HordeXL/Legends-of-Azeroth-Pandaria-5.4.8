@@ -801,6 +801,11 @@ AiPlayerbot.AutoQueue.Arena.MinPvpItems = 2
 # Character login/logout uses the normal save path and can update character data.
 AiPlayerbot.AutoQueue.Arena.StageLogin = 0
 
+# Manual stage-3 diagnostic only. When enabled, `.soloarena group` may create
+# exactly two tracked two-player groups from the verified staged-login set.
+# It never teleports or queues them. Use `.soloarena ungroup` before logout.
+AiPlayerbot.AutoQueue.Arena.StageGroup = 0
+
 # Required Configuration for RandomBotAutoJoinBG
 #
 # Known issue: When enabling a lot of brackats in combination with multiple instances,

@@ -15,7 +15,10 @@
 
 #include "Chat.h"
 #include "DatabaseEnv.h"
+#include "Group.h"
+#include "GroupMgr.h"
 #include "ItemPrototype.h"
+#include "LFGMgr.h"
 #include "ObjectAccessor.h"
 #include "ObjectMgr.h"
 #include "Player.h"
@@ -33,6 +36,12 @@
 namespace
 {
 std::map<uint32, std::string> SoloArenaStagedBots;
+uint32 SoloArenaStagedRequester = 0;
+uint32 SoloArenaStagedTeammate = 0;
+uint32 SoloArenaStagedOpponentHealer = 0;
+uint32 SoloArenaStagedOpponentDamage = 0;
+uint32 SoloArenaRequesterGroup = 0;
+uint32 SoloArenaOpponentGroup = 0;
 
 enum class SoloArenaPreviewRole : uint8
 {
@@ -225,9 +234,11 @@ public:
         bool login = args && !strcmp(args, "login");
         bool status = args && !strcmp(args, "status");
         bool logout = args && !strcmp(args, "logout");
-        if (!preview && !login && !status && !logout)
+        bool formGroups = args && !strcmp(args, "group");
+        bool ungroup = args && !strcmp(args, "ungroup");
+        if (!preview && !login && !status && !logout && !formGroups && !ungroup)
         {
-            handler->SendSysMessage("Usage: .soloarena preview|login|status|logout");
+            handler->SendSysMessage("Usage: .soloarena preview|login|status|group|ungroup|logout");
             return true;
         }
 
@@ -261,8 +272,65 @@ public:
                     bot && (bot->InBattlegroundQueue() || bot->InBattleground()) ? "yes" : "no");
             }
 
-            handler->PSendSysMessage("Solo Arena staged status: total=%u, loading=%u, online=%u, offline=%u.",
-                uint32(SoloArenaStagedBots.size()), loadingCount, onlineCount, offlineCount);
+            Group* requesterGroup = SoloArenaRequesterGroup ? sGroupMgr->GetGroupByGUID(SoloArenaRequesterGroup) : nullptr;
+            Group* opponentGroup = SoloArenaOpponentGroup ? sGroupMgr->GetGroupByGUID(SoloArenaOpponentGroup) : nullptr;
+            handler->PSendSysMessage(
+                "Solo Arena staged status: total=%u, loading=%u, online=%u, offline=%u, "
+                "requester-group=%u/%u, opponent-group=%u/%u.",
+                uint32(SoloArenaStagedBots.size()), loadingCount, onlineCount, offlineCount,
+                SoloArenaRequesterGroup, requesterGroup ? requesterGroup->GetMembersCount() : 0,
+                SoloArenaOpponentGroup, opponentGroup ? opponentGroup->GetMembersCount() : 0);
+            return true;
+        }
+
+        if (ungroup)
+        {
+            if (!SoloArenaRequesterGroup && !SoloArenaOpponentGroup)
+            {
+                handler->SendSysMessage("Solo Arena has no tracked staged groups to remove.");
+                return true;
+            }
+
+            auto disbandTrackedGroup = [handler](uint32& groupId, uint32 firstGuid, uint32 secondGuid,
+                                                 char const* label) -> bool
+            {
+                if (!groupId)
+                    return true;
+
+                Group* stagedGroup = sGroupMgr->GetGroupByGUID(groupId);
+                if (!stagedGroup)
+                {
+                    handler->PSendSysMessage("Solo Arena %s group %u no longer exists; clearing its tracker.",
+                        label, groupId);
+                    groupId = 0;
+                    return true;
+                }
+
+                ObjectGuid first = ObjectGuid::Create<HighGuid::Player>(firstGuid);
+                ObjectGuid second = ObjectGuid::Create<HighGuid::Player>(secondGuid);
+                if (!firstGuid || !secondGuid || stagedGroup->GetMembersCount() != 2 ||
+                    !stagedGroup->IsMember(first) || !stagedGroup->IsMember(second))
+                {
+                    handler->PSendSysMessage(
+                        "Refusing to disband Solo Arena %s group %u: its membership changed.", label, groupId);
+                    return false;
+                }
+
+                uint32 removedGroupId = groupId;
+                stagedGroup->Disband();
+                groupId = 0;
+                TC_LOG_INFO("server", "SoloArena staged %s group disbanded group=%u", label, removedGroupId);
+                return true;
+            };
+
+            bool opponentRemoved = disbandTrackedGroup(SoloArenaOpponentGroup,
+                SoloArenaStagedOpponentHealer, SoloArenaStagedOpponentDamage, "opponent");
+            bool requesterRemoved = disbandTrackedGroup(SoloArenaRequesterGroup,
+                SoloArenaStagedRequester, SoloArenaStagedTeammate, "requester");
+            handler->PSendSysMessage(
+                "Solo Arena staged ungroup: requester=%s, opponent=%s, remaining-groups=%u.",
+                requesterRemoved ? "removed" : "protected", opponentRemoved ? "removed" : "protected",
+                uint32((SoloArenaRequesterGroup ? 1 : 0) + (SoloArenaOpponentGroup ? 1 : 0)));
             return true;
         }
 
@@ -271,6 +339,13 @@ public:
             if (SoloArenaStagedBots.empty())
             {
                 handler->SendSysMessage("Solo Arena has no staged bots to log out.");
+                return true;
+            }
+
+            if (SoloArenaRequesterGroup || SoloArenaOpponentGroup)
+            {
+                handler->SendSysMessage(
+                    "Solo Arena staged groups still exist. Use .soloarena ungroup before logout.");
                 return true;
             }
 
@@ -314,6 +389,14 @@ public:
                 itr = SoloArenaStagedBots.erase(itr);
             }
 
+            if (SoloArenaStagedBots.empty())
+            {
+                SoloArenaStagedRequester = 0;
+                SoloArenaStagedTeammate = 0;
+                SoloArenaStagedOpponentHealer = 0;
+                SoloArenaStagedOpponentDamage = 0;
+            }
+
             handler->PSendSysMessage(
                 "Solo Arena staged cleanup: logged-out=%u, removed-offline=%u, still-loading=%u, protected=%u, remaining=%u.",
                 loggedOut, removedOffline, stillLoading, protectedBots, uint32(SoloArenaStagedBots.size()));
@@ -324,6 +407,120 @@ public:
             !sPlayerbotAIConfig->autoQueueDryRun)
         {
             handler->SendSysMessage("Solo Arena preview requires AutoQueue.Enabled=1, Arena=1 and DryRun=1.");
+            return true;
+        }
+
+        if (formGroups && (!sPlayerbotAIConfig->autoQueueArenaStageLogin ||
+            !sPlayerbotAIConfig->autoQueueArenaStageGroup))
+        {
+            handler->SendSysMessage(
+                "Solo Arena staged grouping is disabled. StageLogin=1 and StageGroup=1 are both required.");
+            return true;
+        }
+
+        if (formGroups)
+        {
+            if (SoloArenaStagedBots.size() != 3 || !SoloArenaStagedRequester || !SoloArenaStagedTeammate ||
+                !SoloArenaStagedOpponentHealer || !SoloArenaStagedOpponentDamage)
+            {
+                handler->SendSysMessage(
+                    "Solo Arena needs one complete staged-login set before grouping. Use .soloarena login first.");
+                return true;
+            }
+
+            if (player->GetGUID().GetCounter() != SoloArenaStagedRequester)
+            {
+                handler->SendSysMessage(
+                    "Only the administrator character that created this staged set may form its groups.");
+                return true;
+            }
+
+            if (SoloArenaRequesterGroup || SoloArenaOpponentGroup)
+            {
+                handler->SendSysMessage(
+                    "Solo Arena staged groups already exist. Use .soloarena status or .soloarena ungroup.");
+                return true;
+            }
+
+            auto hasQueueState = [](Player* stagedPlayer) -> bool
+            {
+                return stagedPlayer->InBattlegroundQueue() || stagedPlayer->InBattleground() ||
+                    sLFGMgr->GetActiveState(stagedPlayer->GetGUID()) != lfg::LFG_STATE_NONE;
+            };
+
+            if (player->GetGroup() || hasQueueState(player))
+            {
+                handler->SendSysMessage(
+                    "Solo Arena grouping refused: the requester already has a group or queue state.");
+                return true;
+            }
+
+            ObjectGuid teammateGuid = ObjectGuid::Create<HighGuid::Player>(SoloArenaStagedTeammate);
+            ObjectGuid opponentHealerGuid = ObjectGuid::Create<HighGuid::Player>(SoloArenaStagedOpponentHealer);
+            ObjectGuid opponentDamageGuid = ObjectGuid::Create<HighGuid::Player>(SoloArenaStagedOpponentDamage);
+            Player* teammate = sRandomPlayerbotMgr->GetPlayerBot(teammateGuid);
+            Player* opponentHealer = sRandomPlayerbotMgr->GetPlayerBot(opponentHealerGuid);
+            Player* opponentDamage = sRandomPlayerbotMgr->GetPlayerBot(opponentDamageGuid);
+
+            Player* stagedPlayers[] = { teammate, opponentHealer, opponentDamage };
+            char const* stagedLabels[] = { "teammate", "opponent healer", "opponent damage" };
+            for (uint8 index = 0; index < 3; ++index)
+            {
+                Player* stagedPlayer = stagedPlayers[index];
+                if (!stagedPlayer || stagedPlayer->GetGroup() || hasQueueState(stagedPlayer))
+                {
+                    handler->PSendSysMessage(
+                        "Solo Arena grouping refused: %s is offline or already has a group/queue state.",
+                        stagedLabels[index]);
+                    return true;
+                }
+            }
+
+            Group* requesterGroup = new Group();
+            if (!requesterGroup->Create(player))
+            {
+                delete requesterGroup;
+                handler->SendSysMessage("Solo Arena could not create the requester group.");
+                return true;
+            }
+
+            if (!requesterGroup->AddMember(teammate))
+            {
+                requesterGroup->Disband();
+                handler->SendSysMessage(
+                    "Solo Arena could not add the teammate; the requester group was rolled back.");
+                return true;
+            }
+
+            Group* opponentGroup = new Group();
+            if (!opponentGroup->Create(opponentHealer))
+            {
+                delete opponentGroup;
+                requesterGroup->Disband();
+                handler->SendSysMessage(
+                    "Solo Arena could not create the opponent group; the requester group was rolled back.");
+                return true;
+            }
+
+            if (!opponentGroup->AddMember(opponentDamage))
+            {
+                opponentGroup->Disband();
+                requesterGroup->Disband();
+                handler->SendSysMessage(
+                    "Solo Arena could not add the opponent damage bot; both groups were rolled back.");
+                return true;
+            }
+
+            SoloArenaRequesterGroup = requesterGroup->GetLowGUID();
+            SoloArenaOpponentGroup = opponentGroup->GetLowGUID();
+            TC_LOG_INFO("server",
+                "SoloArena staged groups created requester-group=%u members=%s/%s opponent-group=%u members=%s/%s; no teleport or queue requested",
+                SoloArenaRequesterGroup, player->GetName().c_str(), teammate->GetName().c_str(),
+                SoloArenaOpponentGroup, opponentHealer->GetName().c_str(), opponentDamage->GetName().c_str());
+            handler->PSendSysMessage(
+                "Solo Arena created requester group %u and opponent group %u. No teleport or queue was requested. "
+                "Use .soloarena status, then .soloarena ungroup before logout.",
+                SoloArenaRequesterGroup, SoloArenaOpponentGroup);
             return true;
         }
 
@@ -499,6 +696,11 @@ public:
                 return true;
             }
         }
+
+        SoloArenaStagedRequester = player->GetGUID().GetCounter();
+        SoloArenaStagedTeammate = teammate->Guid;
+        SoloArenaStagedOpponentHealer = opponentHealer->Guid;
+        SoloArenaStagedOpponentDamage = opponentDamage->Guid;
 
         for (SoloArenaPreviewCandidate const* candidate : stagedCandidates)
         {
