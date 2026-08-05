@@ -73,6 +73,7 @@ public:
 
     bool autoQueueEnabled, autoQueueDryRun, autoQueueLfg, autoQueueBattleground, autoQueueArena;
     uint32 autoQueueCheckInterval, autoQueueMaxBotsPerCycle;
+    uint32 autoQueueArenaMinEquippedItems, autoQueueArenaMinAverageItemLevel, autoQueueArenaMinPvpItems;
 
     std::string premadeSpecName[MAX_CLASSES][MAX_SPECIALIZATIONS - 1];
     std::vector<uint16> premadeSpecLink[MAX_CLASSES][MAX_SPECIALIZATIONS - 1];

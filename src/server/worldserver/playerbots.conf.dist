@@ -788,6 +788,13 @@ AiPlayerbot.AutoQueue.CheckInterval = 5
 # Reserved for later functional patches. Patch 0001 only reports this setting.
 AiPlayerbot.AutoQueue.MaxBotsPerCycle = 4
 
+# Dry-run solo 2v2 candidate screening. These settings are read by the
+# administrator-only `.soloarena preview` command added in patch 0004.
+# The preview never logs in, groups, equips, queues, or teleports a bot.
+AiPlayerbot.AutoQueue.Arena.MinEquippedItems = 12
+AiPlayerbot.AutoQueue.Arena.MinAverageItemLevel = 450
+AiPlayerbot.AutoQueue.Arena.MinPvpItems = 2
+
 # Required Configuration for RandomBotAutoJoinBG
 #
 # Known issue: When enabling a lot of brackats in combination with multiple instances,

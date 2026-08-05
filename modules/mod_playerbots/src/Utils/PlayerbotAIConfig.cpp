@@ -171,6 +171,9 @@ bool PlayerbotAIConfig::Initialize()
     if (!autoQueueCheckInterval)
         autoQueueCheckInterval = IN_MILLISECONDS;
     autoQueueMaxBotsPerCycle = sConfigMgr->GetIntDefault("AiPlayerbot.AutoQueue.MaxBotsPerCycle", 4);
+    autoQueueArenaMinEquippedItems = sConfigMgr->GetIntDefault("AiPlayerbot.AutoQueue.Arena.MinEquippedItems", 12);
+    autoQueueArenaMinAverageItemLevel = sConfigMgr->GetIntDefault("AiPlayerbot.AutoQueue.Arena.MinAverageItemLevel", 450);
+    autoQueueArenaMinPvpItems = sConfigMgr->GetIntDefault("AiPlayerbot.AutoQueue.Arena.MinPvpItems", 2);
 
     randomChangeMultiplier = sConfigMgr->GetFloatDefault("AiPlayerbot.RandomChangeMultiplier", 1.0);
 
