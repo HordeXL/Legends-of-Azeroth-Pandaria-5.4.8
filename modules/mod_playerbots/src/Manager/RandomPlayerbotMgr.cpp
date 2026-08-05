@@ -258,7 +258,7 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
                 countPvpQueues(botPair.second, botBg, botArena);
     }
 
-    TC_LOG_INFO("playerbots",
+    TC_LOG_INFO("server",
         "AutoQueue observer (dry-run=%u, max-bots=%u): LFG real/bot=%u/%u, BG real/bot=%u/%u, Arena real/bot=%u/%u",
         sPlayerbotAIConfig->autoQueueDryRun ? 1 : 0, sPlayerbotAIConfig->autoQueueMaxBotsPerCycle,
         realLfg, botLfg, realBg, botBg, realArena, botArena);
