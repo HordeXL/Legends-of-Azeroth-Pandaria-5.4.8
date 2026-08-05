@@ -1088,8 +1088,15 @@ void RandomPlayerbotMgr::PrepareAddclassCache()
             {
                 Field* fields = results->Fetch();
                 ObjectGuid guid = ObjectGuid(HighGuid::Player, fields[0].GetUInt32());
-                uint32 race = fields[1].GetUInt32();
-                bool isAlliance = race == 1 || race == 3 || race == 4 || race == 7 || race == 11;
+                uint8 race = fields[1].GetUInt8();
+                uint32 team = Player::TeamForRace(race);
+
+                // Neutral pandaren do not belong in either faction-specific
+                // addclass cache until their faction has been selected.
+                if (team == PANDAREN_NEUTRAL)
+                    continue;
+
+                bool isAlliance = team == ALLIANCE;
                 AddclassCache()[GetTeamClassIdx(isAlliance, claz)].push_back(guid);
                 collected++;
             } while (results->NextRow());
