@@ -176,6 +176,7 @@ bool PlayerbotAIConfig::Initialize()
     autoQueueArenaMinPvpItems = sConfigMgr->GetIntDefault("AiPlayerbot.AutoQueue.Arena.MinPvpItems", 2);
     autoQueueArenaStageLogin = sConfigMgr->GetBoolDefault("AiPlayerbot.AutoQueue.Arena.StageLogin", false);
     autoQueueArenaStageGroup = sConfigMgr->GetBoolDefault("AiPlayerbot.AutoQueue.Arena.StageGroup", false);
+    autoQueueArenaStageQueue = sConfigMgr->GetBoolDefault("AiPlayerbot.AutoQueue.Arena.StageQueue", false);
 
     randomChangeMultiplier = sConfigMgr->GetFloatDefault("AiPlayerbot.RandomChangeMultiplier", 1.0);
 

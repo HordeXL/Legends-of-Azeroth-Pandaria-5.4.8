@@ -806,6 +806,12 @@ AiPlayerbot.AutoQueue.Arena.StageLogin = 0
 # It never teleports or queues them. Use `.soloarena ungroup` before logout.
 AiPlayerbot.AutoQueue.Arena.StageGroup = 0
 
+# Manual stage-4 diagnostic only. When enabled, `.soloarena queue` may place
+# both exact tracked groups in the core's non-rated 2v2 Arena queue. This stage
+# deliberately does not schedule matchmaking, invite, or teleport anyone.
+# Use `.soloarena unqueue` before `.soloarena ungroup`.
+AiPlayerbot.AutoQueue.Arena.StageQueue = 0
+
 # Required Configuration for RandomBotAutoJoinBG
 #
 # Known issue: When enabling a lot of brackats in combination with multiple instances,

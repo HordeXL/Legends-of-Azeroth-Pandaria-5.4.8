@@ -14,7 +14,10 @@
  */
 
 #include "Chat.h"
+#include "BattlegroundMgr.h"
+#include "BattlegroundQueue.h"
 #include "DatabaseEnv.h"
+#include "DisableMgr.h"
 #include "Group.h"
 #include "GroupMgr.h"
 #include "ItemPrototype.h"
@@ -42,6 +45,7 @@ uint32 SoloArenaStagedOpponentHealer = 0;
 uint32 SoloArenaStagedOpponentDamage = 0;
 uint32 SoloArenaRequesterGroup = 0;
 uint32 SoloArenaOpponentGroup = 0;
+bool SoloArenaQueuesStaged = false;
 
 enum class SoloArenaPreviewRole : uint8
 {
@@ -133,6 +137,32 @@ char const* SoloArenaRoleName(SoloArenaPreviewRole role)
 char const* SoloArenaTeamName(uint32 team)
 {
     return team == ALLIANCE ? "Alliance" : "Horde";
+}
+
+bool HasExactSoloArenaQueueGroup(BattlegroundQueue& queue, uint32 firstGuid, uint32 secondGuid,
+                                 bool& invited)
+{
+    GroupQueueInfo firstInfo;
+    GroupQueueInfo secondInfo;
+    ObjectGuid first = ObjectGuid::Create<HighGuid::Player>(firstGuid);
+    ObjectGuid second = ObjectGuid::Create<HighGuid::Player>(secondGuid);
+    if (!queue.GetPlayerGroupInfoData(first, &firstInfo) ||
+        !queue.GetPlayerGroupInfoData(second, &secondInfo))
+        return false;
+
+    auto isExact = [first, second](GroupQueueInfo const& info) -> bool
+    {
+        return info.BgTypeId == BATTLEGROUND_AA && info.ArenaType == ARENA_TYPE_2v2 &&
+            !info.IsRated && info.Players.size() == 2 &&
+            info.Players.find(first) != info.Players.end() &&
+            info.Players.find(second) != info.Players.end();
+    };
+
+    if (!isExact(firstInfo) || !isExact(secondInfo) || firstInfo.JoinTime != secondInfo.JoinTime)
+        return false;
+
+    invited = firstInfo.IsInvitedToBGInstanceGUID || secondInfo.IsInvitedToBGInstanceGUID;
+    return true;
 }
 
 void ReadSoloArenaGear(std::string const& cache, SoloArenaPreviewCandidate& candidate)
@@ -236,9 +266,13 @@ public:
         bool logout = args && !strcmp(args, "logout");
         bool formGroups = args && !strcmp(args, "group");
         bool ungroup = args && !strcmp(args, "ungroup");
-        if (!preview && !login && !status && !logout && !formGroups && !ungroup)
+        bool stageQueue = args && !strcmp(args, "queue");
+        bool unstageQueue = args && !strcmp(args, "unqueue");
+        if (!preview && !login && !status && !logout && !formGroups && !ungroup &&
+            !stageQueue && !unstageQueue)
         {
-            handler->SendSysMessage("Usage: .soloarena preview|login|status|group|ungroup|logout");
+            handler->SendSysMessage(
+                "Usage: .soloarena preview|login|status|group|queue|unqueue|ungroup|logout");
             return true;
         }
 
@@ -274,17 +308,121 @@ public:
 
             Group* requesterGroup = SoloArenaRequesterGroup ? sGroupMgr->GetGroupByGUID(SoloArenaRequesterGroup) : nullptr;
             Group* opponentGroup = SoloArenaOpponentGroup ? sGroupMgr->GetGroupByGUID(SoloArenaOpponentGroup) : nullptr;
+            bool requesterQueued = player->InBattlegroundQueueForBattlegroundQueueType(BATTLEGROUND_QUEUE_2v2);
             handler->PSendSysMessage(
                 "Solo Arena staged status: total=%u, loading=%u, online=%u, offline=%u, "
-                "requester-group=%u/%u, opponent-group=%u/%u.",
+                "requester-group=%u/%u, opponent-group=%u/%u, staged-queue=%s, requester-2v2=%s.",
                 uint32(SoloArenaStagedBots.size()), loadingCount, onlineCount, offlineCount,
                 SoloArenaRequesterGroup, requesterGroup ? requesterGroup->GetMembersCount() : 0,
-                SoloArenaOpponentGroup, opponentGroup ? opponentGroup->GetMembersCount() : 0);
+                SoloArenaOpponentGroup, opponentGroup ? opponentGroup->GetMembersCount() : 0,
+                SoloArenaQueuesStaged ? "yes" : "no", requesterQueued ? "yes" : "no");
+            return true;
+        }
+
+        if (unstageQueue)
+        {
+            if (!SoloArenaQueuesStaged)
+            {
+                handler->SendSysMessage("Solo Arena has no tracked staged 2v2 queue to remove.");
+                return true;
+            }
+
+            if (player->GetGUID().GetCounter() != SoloArenaStagedRequester)
+            {
+                handler->SendSysMessage(
+                    "Only the administrator character that staged this queue may remove it.");
+                return true;
+            }
+
+            ObjectGuid teammateGuid = ObjectGuid::Create<HighGuid::Player>(SoloArenaStagedTeammate);
+            ObjectGuid opponentHealerGuid = ObjectGuid::Create<HighGuid::Player>(SoloArenaStagedOpponentHealer);
+            ObjectGuid opponentDamageGuid = ObjectGuid::Create<HighGuid::Player>(SoloArenaStagedOpponentDamage);
+            Player* teammate = sRandomPlayerbotMgr->GetPlayerBot(teammateGuid);
+            Player* opponentHealer = sRandomPlayerbotMgr->GetPlayerBot(opponentHealerGuid);
+            Player* opponentDamage = sRandomPlayerbotMgr->GetPlayerBot(opponentDamageGuid);
+            Player* participants[] = { player, teammate, opponentHealer, opponentDamage };
+            char const* labels[] = { "requester", "teammate", "opponent healer", "opponent damage" };
+
+            uint32 onlineQueueSlots = 0;
+            for (uint8 index = 0; index < 4; ++index)
+            {
+                if (!participants[index])
+                {
+                    handler->PSendSysMessage(
+                        "Solo Arena unqueue refused: %s is offline.", labels[index]);
+                    return true;
+                }
+                if (participants[index]->InBattleground())
+                {
+                    handler->PSendSysMessage(
+                        "Solo Arena unqueue refused: %s has already entered a battleground/Arena.", labels[index]);
+                    return true;
+                }
+                if (participants[index]->InBattlegroundQueueForBattlegroundQueueType(BATTLEGROUND_QUEUE_2v2))
+                    ++onlineQueueSlots;
+            }
+
+            BattlegroundQueue& arenaQueue = sBattlegroundMgr->GetBattlegroundQueue(BATTLEGROUND_QUEUE_2v2);
+            bool requesterInvited = false;
+            bool opponentInvited = false;
+            bool requesterExact = HasExactSoloArenaQueueGroup(arenaQueue,
+                SoloArenaStagedRequester, SoloArenaStagedTeammate, requesterInvited);
+            bool opponentExact = HasExactSoloArenaQueueGroup(arenaQueue,
+                SoloArenaStagedOpponentHealer, SoloArenaStagedOpponentDamage, opponentInvited);
+
+            if (!onlineQueueSlots && !requesterExact && !opponentExact)
+            {
+                SoloArenaQueuesStaged = false;
+                handler->SendSysMessage(
+                    "Solo Arena staged 2v2 queue had already been removed; its tracker is now clear.");
+                return true;
+            }
+
+            if (onlineQueueSlots != 4 || !requesterExact || !opponentExact)
+            {
+                handler->PSendSysMessage(
+                    "Solo Arena unqueue refused: expected four exact staged queue members, found %u queue slots "
+                    "(requester-exact=%s, opponent-exact=%s).",
+                    onlineQueueSlots, requesterExact ? "yes" : "no", opponentExact ? "yes" : "no");
+                return true;
+            }
+
+            Player* removalOrder[] = { teammate, player, opponentDamage, opponentHealer };
+            for (Player* participant : removalOrder)
+                sBattlegroundMgr->RemovePlayerFromQueue(participant, BATTLEGROUND_QUEUE_2v2);
+
+            uint32 remainingQueueSlots = 0;
+            for (Player* participant : participants)
+                if (participant->InBattlegroundQueueForBattlegroundQueueType(BATTLEGROUND_QUEUE_2v2))
+                    ++remainingQueueSlots;
+
+            if (remainingQueueSlots)
+            {
+                handler->PSendSysMessage(
+                    "Solo Arena staged unqueue incomplete: %u tracked 2v2 queue slots remain.",
+                    remainingQueueSlots);
+                return true;
+            }
+
+            SoloArenaQueuesStaged = false;
+            TC_LOG_INFO("server",
+                "SoloArena staged 2v2 queue removed members=%s/%s versus %s/%s invited-before-cleanup=%s/%s",
+                player->GetName().c_str(), teammate->GetName().c_str(),
+                opponentHealer->GetName().c_str(), opponentDamage->GetName().c_str(),
+                requesterInvited ? "yes" : "no", opponentInvited ? "yes" : "no");
+            handler->SendSysMessage(
+                "Solo Arena removed all four staged 2v2 queue slots. Groups remain tracked; use .soloarena ungroup next.");
             return true;
         }
 
         if (ungroup)
         {
+            if (SoloArenaQueuesStaged)
+            {
+                handler->SendSysMessage(
+                    "Solo Arena staged queue still exists. Use .soloarena unqueue before ungroup.");
+                return true;
+            }
             if (!SoloArenaRequesterGroup && !SoloArenaOpponentGroup)
             {
                 handler->SendSysMessage("Solo Arena has no tracked staged groups to remove.");
@@ -316,6 +454,18 @@ public:
                     return false;
                 }
 
+                Player* firstPlayer = ObjectAccessor::FindConnectedPlayer(first);
+                Player* secondPlayer = ObjectAccessor::FindConnectedPlayer(second);
+                if (!firstPlayer || !secondPlayer || firstPlayer->InBattlegroundQueue() ||
+                    secondPlayer->InBattlegroundQueue() || firstPlayer->InBattleground() ||
+                    secondPlayer->InBattleground())
+                {
+                    handler->PSendSysMessage(
+                        "Refusing to disband Solo Arena %s group %u: a member is offline or has queue/Arena state.",
+                        label, groupId);
+                    return false;
+                }
+
                 uint32 removedGroupId = groupId;
                 stagedGroup->Disband();
                 groupId = 0;
@@ -339,6 +489,13 @@ public:
             if (SoloArenaStagedBots.empty())
             {
                 handler->SendSysMessage("Solo Arena has no staged bots to log out.");
+                return true;
+            }
+
+            if (SoloArenaQueuesStaged)
+            {
+                handler->SendSysMessage(
+                    "Solo Arena staged queue still exists. Use .soloarena unqueue before logout.");
                 return true;
             }
 
@@ -407,6 +564,121 @@ public:
             !sPlayerbotAIConfig->autoQueueDryRun)
         {
             handler->SendSysMessage("Solo Arena preview requires AutoQueue.Enabled=1, Arena=1 and DryRun=1.");
+            return true;
+        }
+
+        if (stageQueue && (!sPlayerbotAIConfig->autoQueueArenaStageLogin ||
+            !sPlayerbotAIConfig->autoQueueArenaStageGroup ||
+            !sPlayerbotAIConfig->autoQueueArenaStageQueue))
+        {
+            handler->SendSysMessage(
+                "Solo Arena staged queue is disabled. StageLogin=1, StageGroup=1 and StageQueue=1 are required.");
+            return true;
+        }
+
+        if (stageQueue)
+        {
+            if (SoloArenaQueuesStaged)
+            {
+                handler->SendSysMessage(
+                    "Solo Arena staged 2v2 queue already exists. Use .soloarena status or .soloarena unqueue.");
+                return true;
+            }
+
+            if (player->GetGUID().GetCounter() != SoloArenaStagedRequester ||
+                SoloArenaStagedBots.size() != 3 || !SoloArenaRequesterGroup || !SoloArenaOpponentGroup)
+            {
+                handler->SendSysMessage(
+                    "Solo Arena needs the complete tracked login and both tracked groups before queueing.");
+                return true;
+            }
+
+            Group* requesterGroup = sGroupMgr->GetGroupByGUID(SoloArenaRequesterGroup);
+            Group* opponentGroup = sGroupMgr->GetGroupByGUID(SoloArenaOpponentGroup);
+            ObjectGuid teammateGuid = ObjectGuid::Create<HighGuid::Player>(SoloArenaStagedTeammate);
+            ObjectGuid opponentHealerGuid = ObjectGuid::Create<HighGuid::Player>(SoloArenaStagedOpponentHealer);
+            ObjectGuid opponentDamageGuid = ObjectGuid::Create<HighGuid::Player>(SoloArenaStagedOpponentDamage);
+            Player* teammate = sRandomPlayerbotMgr->GetPlayerBot(teammateGuid);
+            Player* opponentHealer = sRandomPlayerbotMgr->GetPlayerBot(opponentHealerGuid);
+            Player* opponentDamage = sRandomPlayerbotMgr->GetPlayerBot(opponentDamageGuid);
+
+            auto exactGroup = [](Group* group, Player* leader, ObjectGuid first, ObjectGuid second) -> bool
+            {
+                return group && leader && group->GetMembersCount() == 2 &&
+                    group->GetLeaderGUID() == leader->GetGUID() &&
+                    group->IsMember(first) && group->IsMember(second);
+            };
+
+            if (!exactGroup(requesterGroup, player, player->GetGUID(), teammateGuid) ||
+                !exactGroup(opponentGroup, opponentHealer, opponentHealerGuid, opponentDamageGuid) ||
+                !teammate || !opponentHealer || !opponentDamage)
+            {
+                handler->SendSysMessage(
+                    "Solo Arena queueing refused: a tracked group, leader, member, or online bot changed.");
+                return true;
+            }
+
+            Battleground* arenaTemplate = sBattlegroundMgr->GetBattlegroundTemplate(BATTLEGROUND_AA);
+            if (!arenaTemplate || DisableMgr::IsDisabledFor(DISABLE_TYPE_BATTLEGROUND, BATTLEGROUND_AA, nullptr))
+            {
+                handler->SendSysMessage("Solo Arena queueing refused: the all-Arena template is absent or disabled.");
+                return true;
+            }
+
+            PvPDifficultyEntry const* requesterBracket =
+                GetBattlegroundBracketByLevel(arenaTemplate->GetMapId(), player->GetLevel());
+            PvPDifficultyEntry const* opponentBracket =
+                GetBattlegroundBracketByLevel(arenaTemplate->GetMapId(), opponentHealer->GetLevel());
+            if (!requesterBracket || requesterBracket != opponentBracket)
+            {
+                handler->SendSysMessage("Solo Arena queueing refused: the two groups are not in one Arena bracket.");
+                return true;
+            }
+
+            GroupJoinBattlegroundResult requesterError = requesterGroup->CanJoinBattlegroundQueue(
+                arenaTemplate, BATTLEGROUND_QUEUE_2v2, 2, 2, false, 0);
+            GroupJoinBattlegroundResult opponentError = opponentGroup->CanJoinBattlegroundQueue(
+                arenaTemplate, BATTLEGROUND_QUEUE_2v2, 2, 2, false, 0);
+            if (requesterError != ERR_BATTLEGROUND_NONE || opponentError != ERR_BATTLEGROUND_NONE)
+            {
+                handler->PSendSysMessage(
+                    "Solo Arena queueing refused by core validation: requester=%u, opponent=%u.",
+                    uint32(requesterError), uint32(opponentError));
+                return true;
+            }
+
+            BattlegroundQueue& arenaQueue = sBattlegroundMgr->GetBattlegroundQueue(BATTLEGROUND_QUEUE_2v2);
+            GroupQueueInfo* requesterInfo = arenaQueue.AddGroup(player, requesterGroup,
+                BATTLEGROUND_AA, requesterBracket, ARENA_TYPE_2v2, false, false, 0, 0);
+            GroupQueueInfo* opponentInfo = arenaQueue.AddGroup(opponentHealer, opponentGroup,
+                BATTLEGROUND_AA, opponentBracket, ARENA_TYPE_2v2, false, false, 0, 0);
+
+            BattlegroundBracketId bracketId = requesterBracket->GetBracketId();
+            auto sendQueuedStatus = [&arenaQueue, arenaTemplate, bracketId](Group* group, GroupQueueInfo* info)
+            {
+                uint32 averageWait = arenaQueue.GetAverageQueueWaitTime(info, bracketId);
+                for (auto&& member : *group)
+                {
+                    uint32 queueSlot = member->AddBattlegroundQueueId(BATTLEGROUND_QUEUE_2v2);
+                    member->AddBattlegroundQueueJoinTime(BATTLEGROUND_AA, info->JoinTime);
+                    WorldPacket data;
+                    sBattlegroundMgr->BuildBattlegroundStatusPacket(&data, arenaTemplate, member,
+                        queueSlot, STATUS_WAIT_QUEUE, averageWait, info->JoinTime, ARENA_TYPE_2v2);
+                    member->GetSession()->SendPacket(&data);
+                }
+            };
+
+            sendQueuedStatus(requesterGroup, requesterInfo);
+            sendQueuedStatus(opponentGroup, opponentInfo);
+            SoloArenaQueuesStaged = true;
+
+            TC_LOG_INFO("server",
+                "SoloArena staged non-rated 2v2 queue added members=%s/%s versus %s/%s; matchmaking not scheduled, no invite or teleport requested",
+                player->GetName().c_str(), teammate->GetName().c_str(),
+                opponentHealer->GetName().c_str(), opponentDamage->GetName().c_str());
+            handler->SendSysMessage(
+                "Solo Arena placed both exact groups in the non-rated 2v2 queue without scheduling matchmaking. "
+                "Use .soloarena status, then .soloarena unqueue before ungroup.");
             return true;
         }
 
