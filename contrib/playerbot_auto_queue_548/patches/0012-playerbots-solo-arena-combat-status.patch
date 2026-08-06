@@ -1,0 +1,218 @@
+diff --git a/modules/mod_playerbots/config/playerbots.conf.dist b/modules/mod_playerbots/config/playerbots.conf.dist
+index 90fd1a78..ef5639ed 100644
+--- a/modules/mod_playerbots/config/playerbots.conf.dist
++++ b/modules/mod_playerbots/config/playerbots.conf.dist
+@@ -829,6 +829,12 @@ AiPlayerbot.AutoQueue.Arena.StageEnter = 0
+ # participant finishes the return teleport and destination-map stat recalculation.
+ AiPlayerbot.AutoQueue.Arena.StageHealthRestore = 0
+ 
++# Manual stage-8 read-only diagnostic. Enables `.soloarena combatstatus` for the
++# exact tracked Arena instance. It reports countdown/status, team/alive counts,
++# and each exact participant's position, movement, combat, preparation aura,
++# Playerbot AI state, and current victim. It starts no combat and changes nothing.
++AiPlayerbot.AutoQueue.Arena.StageCombatStatus = 0
++
+ # Required Configuration for RandomBotAutoJoinBG
+ #
+ # Known issue: When enabling a lot of brackats in combination with multiple instances,
+diff --git a/modules/mod_playerbots/src/Utils/PlayerbotAIConfig.cpp b/modules/mod_playerbots/src/Utils/PlayerbotAIConfig.cpp
+index f59b89f3..69ec5461 100644
+--- a/modules/mod_playerbots/src/Utils/PlayerbotAIConfig.cpp
++++ b/modules/mod_playerbots/src/Utils/PlayerbotAIConfig.cpp
+@@ -180,6 +180,7 @@ bool PlayerbotAIConfig::Initialize()
+     autoQueueArenaStageMatch = sConfigMgr->GetBoolDefault("AiPlayerbot.AutoQueue.Arena.StageMatch", false);
+     autoQueueArenaStageEnter = sConfigMgr->GetBoolDefault("AiPlayerbot.AutoQueue.Arena.StageEnter", false);
+     autoQueueArenaStageHealthRestore = sConfigMgr->GetBoolDefault("AiPlayerbot.AutoQueue.Arena.StageHealthRestore", false);
++    autoQueueArenaStageCombatStatus = sConfigMgr->GetBoolDefault("AiPlayerbot.AutoQueue.Arena.StageCombatStatus", false);
+ 
+     randomChangeMultiplier = sConfigMgr->GetFloatDefault("AiPlayerbot.RandomChangeMultiplier", 1.0);
+ 
+diff --git a/modules/mod_playerbots/src/Utils/PlayerbotAIConfig.h b/modules/mod_playerbots/src/Utils/PlayerbotAIConfig.h
+index 482cfd19..fe4d5262 100644
+--- a/modules/mod_playerbots/src/Utils/PlayerbotAIConfig.h
++++ b/modules/mod_playerbots/src/Utils/PlayerbotAIConfig.h
+@@ -73,7 +73,7 @@ public:
+ 
+     bool autoQueueEnabled, autoQueueDryRun, autoQueueLfg, autoQueueBattleground, autoQueueArena;
+     bool autoQueueArenaStageLogin, autoQueueArenaStageGroup, autoQueueArenaStageQueue, autoQueueArenaStageMatch;
+-    bool autoQueueArenaStageEnter, autoQueueArenaStageHealthRestore;
++    bool autoQueueArenaStageEnter, autoQueueArenaStageHealthRestore, autoQueueArenaStageCombatStatus;
+     uint32 autoQueueCheckInterval, autoQueueMaxBotsPerCycle;
+     uint32 autoQueueArenaMinEquippedItems, autoQueueArenaMinAverageItemLevel, autoQueueArenaMinPvpItems;
+ 
+diff --git a/modules/mod_playerbots/src/cs_playerbots.cpp b/modules/mod_playerbots/src/cs_playerbots.cpp
+index 93f39788..6a6f1424 100644
+--- a/modules/mod_playerbots/src/cs_playerbots.cpp
++++ b/modules/mod_playerbots/src/cs_playerbots.cpp
+@@ -26,6 +26,7 @@
+ #include "ObjectMgr.h"
+ #include "Opcodes.h"
+ #include "Player.h"
++#include "Playerbots.h"
+ #include "PlayerbotMgr.h"
+ #include "PerformanceMonitor.h"
+ #include "PlayerbotAIConfig.h"
+@@ -143,6 +144,33 @@ char const* SoloArenaTeamName(uint32 team)
+     return team == ALLIANCE ? "Alliance" : "Horde";
+ }
+ 
++char const* SoloArenaBattlegroundStatusName(BattlegroundStatus status)
++{
++    switch (status)
++    {
++        case STATUS_NONE:        return "NONE";
++        case STATUS_WAIT_QUEUE:  return "WAIT_QUEUE";
++        case STATUS_WAIT_JOIN:   return "WAIT_JOIN";
++        case STATUS_IN_PROGRESS: return "IN_PROGRESS";
++        case STATUS_WAIT_LEAVE:  return "WAIT_LEAVE";
++        default:                 return "UNKNOWN";
++    }
++}
++
++char const* SoloArenaBotStateName(PlayerbotAI* botAI)
++{
++    if (!botAI)
++        return "real-player";
++
++    switch (botAI->GetState())
++    {
++        case BOT_STATE_COMBAT:     return "combat";
++        case BOT_STATE_NON_COMBAT: return "non-combat";
++        case BOT_STATE_DEAD:       return "dead";
++        default:                   return "unknown";
++    }
++}
++
+ bool HasExactSoloArenaQueueGroup(BattlegroundQueue& queue, uint32 firstGuid, uint32 secondGuid,
+                                  uint32& invitedInstance)
+ {
+@@ -312,13 +340,14 @@ public:
+         bool stageQueue = args && !strcmp(args, "queue");
+         bool stageMatch = args && !strcmp(args, "match");
+         bool stageEnter = args && !strcmp(args, "enter");
++        bool combatStatus = args && !strcmp(args, "combatstatus");
+         bool leaveArena = args && !strcmp(args, "leave");
+         bool unstageQueue = args && !strcmp(args, "unqueue");
+         if (!preview && !login && !status && !logout && !formGroups && !ungroup &&
+-            !stageQueue && !stageMatch && !stageEnter && !leaveArena && !unstageQueue)
++            !stageQueue && !stageMatch && !stageEnter && !combatStatus && !leaveArena && !unstageQueue)
+         {
+             handler->SendSysMessage(
+-                "Usage: .soloarena preview|login|status|group|queue|match|enter|leave|unqueue|ungroup|logout");
++                "Usage: .soloarena preview|login|status|group|queue|match|enter|combatstatus|leave|unqueue|ungroup|logout");
+             return true;
+         }
+ 
+@@ -402,6 +431,95 @@ public:
+             return true;
+         }
+ 
++        if (combatStatus)
++        {
++            if (!sPlayerbotAIConfig->autoQueueArenaStageCombatStatus)
++            {
++                handler->SendSysMessage(
++                    "Solo Arena combat-status diagnostic is disabled by AiPlayerbot.AutoQueue.Arena.StageCombatStatus.");
++                return true;
++            }
++            if (!SoloArenaEnteredInstance)
++            {
++                handler->SendSysMessage("Solo Arena has no tracked entered Arena instance to inspect.");
++                return true;
++            }
++            if (player->GetGUID().GetCounter() != SoloArenaStagedRequester)
++            {
++                handler->SendSysMessage(
++                    "Only the administrator character that entered this staged Arena may inspect it.");
++                return true;
++            }
++
++            Battleground* arena = sBattlegroundMgr->GetBattleground(
++                SoloArenaEnteredInstance, BATTLEGROUND_TYPE_NONE);
++            if (!arena || !arena->IsArena())
++            {
++                handler->PSendSysMessage(
++                    "Solo Arena combat-status diagnostic refused: tracked instance %u is unavailable or no longer an Arena.",
++                    SoloArenaEnteredInstance);
++                return true;
++            }
++
++            BattlegroundStatus arenaStatus = arena->GetStatus();
++            handler->PSendSysMessage(
++                "Solo Arena combat status: instance=%u, map=%u, status=%s(%u), start-delay-ms=%d, elapsed-ms=%u, "
++                "players Alliance/Horde=%u/%u, alive Alliance/Horde=%u/%u.",
++                arena->GetInstanceID(), arena->GetMapId(), SoloArenaBattlegroundStatusName(arenaStatus),
++                uint32(arenaStatus), arena->GetStartDelayTime(), arena->GetElapsedTime(),
++                arena->GetPlayersCountByTeam(ALLIANCE), arena->GetPlayersCountByTeam(HORDE),
++                arena->GetAlivePlayersCountByTeam(ALLIANCE), arena->GetAlivePlayersCountByTeam(HORDE));
++            TC_LOG_INFO("server",
++                "SoloArena combat status instance=%u map=%u status=%s(%u) start-delay-ms=%d elapsed-ms=%u players=%u/%u alive=%u/%u",
++                arena->GetInstanceID(), arena->GetMapId(), SoloArenaBattlegroundStatusName(arenaStatus),
++                uint32(arenaStatus), arena->GetStartDelayTime(), arena->GetElapsedTime(),
++                arena->GetPlayersCountByTeam(ALLIANCE), arena->GetPlayersCountByTeam(HORDE),
++                arena->GetAlivePlayersCountByTeam(ALLIANCE), arena->GetAlivePlayersCountByTeam(HORDE));
++
++            uint32 participantGuids[] = { SoloArenaStagedRequester, SoloArenaStagedTeammate,
++                SoloArenaStagedOpponentHealer, SoloArenaStagedOpponentDamage };
++            char const* labels[] = { "requester", "teammate", "opponent-healer", "opponent-damage" };
++            for (uint8 index = 0; index < 4; ++index)
++            {
++                Player* participant = participantGuids[index] ? ObjectAccessor::FindConnectedPlayer(
++                    ObjectGuid::Create<HighGuid::Player>(participantGuids[index])) : nullptr;
++                if (!participant)
++                {
++                    handler->PSendSysMessage("Solo Arena combat participant %s: offline.", labels[index]);
++                    TC_LOG_INFO("server", "SoloArena combat participant label=%s guid=%u state=offline",
++                        labels[index], participantGuids[index]);
++                    continue;
++                }
++
++                Unit* victim = participant->GetVictim();
++                PlayerbotAI* botAI = GET_PLAYERBOT_AI(participant);
++                bool inTrackedArena = participant->GetBattlegroundId() == SoloArenaEnteredInstance;
++                handler->PSendSysMessage(
++                    "Solo Arena combat participant %s: name=%s, guid=%u, present=%s, team=%s, alive=%s, "
++                    "combat=%s, moving=%s, preparation=%s, ai=%s, victim=%s, position=%.2f/%.2f/%.2f.",
++                    labels[index], participant->GetName().c_str(), participant->GetGUID().GetCounter(),
++                    inTrackedArena ? "yes" : "no", SoloArenaTeamName(participant->GetBGTeam()),
++                    participant->IsAlive() ? "yes" : "no", participant->IsInCombat() ? "yes" : "no",
++                    participant->isMoving() ? "yes" : "no",
++                    participant->HasAura(SPELL_ARENA_PREPARATION) ? "yes" : "no",
++                    SoloArenaBotStateName(botAI), victim ? victim->GetName().c_str() : "none",
++                    participant->GetPositionX(), participant->GetPositionY(), participant->GetPositionZ());
++                TC_LOG_INFO("server",
++                    "SoloArena combat participant label=%s name=%s guid=%u present=%u team=%s alive=%u combat=%u moving=%u preparation=%u ai=%s victim=%s position=%.2f/%.2f/%.2f",
++                    labels[index], participant->GetName().c_str(), participant->GetGUID().GetCounter(),
++                    inTrackedArena ? 1 : 0, SoloArenaTeamName(participant->GetBGTeam()),
++                    participant->IsAlive() ? 1 : 0, participant->IsInCombat() ? 1 : 0,
++                    participant->isMoving() ? 1 : 0,
++                    participant->HasAura(SPELL_ARENA_PREPARATION) ? 1 : 0,
++                    SoloArenaBotStateName(botAI), victim ? victim->GetName().c_str() : "none",
++                    participant->GetPositionX(), participant->GetPositionY(), participant->GetPositionZ());
++            }
++
++            handler->SendSysMessage(
++                "Solo Arena combat-status diagnostic made no queue, movement, combat, result, reward, or rating change.");
++            return true;
++        }
++
+         if (leaveArena)
+         {
+             if (!SoloArenaEnteredInstance)
+diff --git a/src/server/worldserver/playerbots.conf.dist b/src/server/worldserver/playerbots.conf.dist
+index afee8253..2a135d4c 100644
+--- a/src/server/worldserver/playerbots.conf.dist
++++ b/src/server/worldserver/playerbots.conf.dist
+@@ -829,6 +829,12 @@ AiPlayerbot.AutoQueue.Arena.StageEnter = 0
+ # participant finishes the return teleport and destination-map stat recalculation.
+ AiPlayerbot.AutoQueue.Arena.StageHealthRestore = 0
+ 
++# Manual stage-8 read-only diagnostic. Enables `.soloarena combatstatus` for the
++# exact tracked Arena instance. It reports countdown/status, team/alive counts,
++# and each exact participant's position, movement, combat, preparation aura,
++# Playerbot AI state, and current victim. It starts no combat and changes nothing.
++AiPlayerbot.AutoQueue.Arena.StageCombatStatus = 0
++
+ # Required Configuration for RandomBotAutoJoinBG
+ #
+ # Known issue: When enabling a lot of brackats in combination with multiple instances,

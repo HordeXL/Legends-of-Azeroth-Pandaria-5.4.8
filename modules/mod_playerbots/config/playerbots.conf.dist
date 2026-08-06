@@ -829,6 +829,12 @@ AiPlayerbot.AutoQueue.Arena.StageEnter = 0
 # participant finishes the return teleport and destination-map stat recalculation.
 AiPlayerbot.AutoQueue.Arena.StageHealthRestore = 0
 
+# Manual stage-8 read-only diagnostic. Enables `.soloarena combatstatus` for the
+# exact tracked Arena instance. It reports countdown/status, team/alive counts,
+# and each exact participant's position, movement, combat, preparation aura,
+# Playerbot AI state, and current victim. It starts no combat and changes nothing.
+AiPlayerbot.AutoQueue.Arena.StageCombatStatus = 0
+
 # Required Configuration for RandomBotAutoJoinBG
 #
 # Known issue: When enabling a lot of brackats in combination with multiple instances,

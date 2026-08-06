@@ -1,13 +1,15 @@
 # Playerbot auto-queue patches for MoP 5.4.8
 
-Status: experimental. Patches `0001`, `0004`, `0005`, `0006`, `0007`, `0008`, `0009`, `0010`, and `0011` are applied to
-the active source and compiled; patches `0002` and `0003` are not applied. None
+Status: experimental. Patches `0001`, `0004`, `0005`, `0006`, `0007`, `0008`, `0009`, `0010`, `0011`, and `0012` are applied to
+the active source, compiled, and runtime-verified. Patches
+`0002` and `0003` are not applied. None
 contains SQL. The explicitly gated `0005` login, `0006` grouping, and `0007`
 non-rated queue stages use normal core paths and can therefore save character/group
 state or temporarily change in-memory queue state. Patch `0009` adds an additional
 invite-only matchmaking diagnostic. Patch `0010` adds a separately gated staged
 accept/teleport diagnostic plus exact pre-countdown cleanup. Patch `0011` adds a
 separately gated post-return health refill after destination-map stat recalculation.
+Patch `0012` adds a separately gated, read-only countdown/combat-status snapshot.
 
 The active `Build/bin/RelWithDebInfo/playerbots.conf` currently enables the `0001`
 observer with `DryRun = 1`, all three queue categories visible, a five-second check
@@ -155,6 +157,16 @@ contained the LFG configuration key without the corresponding bot queue implemen
      destination map restores normal equipment item levels and maximum health;
    - restores health only for a living exact staged participant and changes no
      queue, combat, reward, rating, schema, or SQL behavior.
+12. `patches/0012-playerbots-solo-arena-combat-status.patch`
+   - adds the separately disabled `.soloarena combatstatus` diagnostic for only
+     the exact tracked Arena instance and original administrator requester;
+   - reports the Arena map, lifecycle status, start delay, elapsed time, team and
+     alive counts;
+   - reports each exact participant's presence, assigned Arena team, life/combat/
+     movement state, preparation aura, Playerbot AI state, current victim, and
+     coordinates to `Server.log` and the administrator's chat;
+   - performs no queue scheduling, invitation, teleport, movement, attack, result,
+     reward, rating, schema, or SQL operation.
 
 Arena combat, completion, rewards, and ratings remain unimplemented. An Arena must
 not be treated as an ordinary battleground. Manually entered
@@ -231,6 +243,12 @@ the LFG queue manager.
   groups were disbanded, the character database contained zero matching
   `group_member` and `groups` rows, the three selected bots were offline, and only
   the requester remained online.
+- Patch `0012` is applied locally with its active test gate enabled and both
+  distributed configurations retaining `StageCombatStatus = 0`. Its SHA-256 is
+  `9D3D575C058E2241D9004F9BDABD806010931DBC5A2C8C596BCF967557338FC3`;
+  `git diff --check` and reverse apply checking pass. The complete x64
+  RelWithDebInfo `worldserver` target compiled and linked successfully on
+  2026-08-06. Runtime countdown diagnostics are pending.
 
 The user confirmed fresh backups before `0005` was applied. Its first Alliance
 runtime test passed on 2026-08-05: the three screened candidates were requested,
@@ -552,6 +570,41 @@ restored` line for each exact participant. The real player must arrive alive at 
 health after world-map item levels are restored. Continue with the normal status,
 ungroup, logout, and database cleanup checks.
 
+Patch `0012` must be applied only after `0011` and its complete cleanup have passed.
+It adds no command that starts combat; its gate only enables read-only snapshots:
+
+```powershell
+git apply --check contrib/playerbot_auto_queue_548/patches/0012-playerbots-solo-arena-combat-status.patch
+git apply contrib/playerbot_auto_queue_548/patches/0012-playerbots-solo-arena-combat-status.patch
+```
+
+```ini
+AiPlayerbot.AutoQueue.Arena.StageCombatStatus = 1
+```
+
+Use the verified sequence through `.soloarena enter`, then run `.soloarena
+combatstatus` once after all four participants land. It must report `WAIT_JOIN`,
+four present/alive participants, and the preparation aura. Wait for the normal
+60-second countdown without issuing movement or attack commands. Run the diagnostic
+again immediately when the gates open; it must report `IN_PROGRESS`, no preparation
+aura, and new bot movement/combat/target evidence or coordinates. Immediately run
+`.soloarena leave`, verify all return teleports and health restorations, then perform
+the normal `ungroup`/`logout` and direct character-database cleanup checks. This test
+does not yet validate a completed match, rewards, or ratings.
+
+The controlled `0012` runtime test passed on 2026-08-06. The first snapshot
+reported `WAIT_JOIN`, `players=2/2`, `alive=2/2`, preparation on all four exact
+participants, and no movement or combat. After the normal countdown, the second
+snapshot reported `IN_PROGRESS`, no preparation aura, `ai=combat` for all three
+bots, and valid cross-team victims. The opponent bots initially waited until the
+real player approached, consistent with their current engagement range. Leaving
+removed all four participants, scheduled and completed four health restorations,
+and returned the observer to `Arena real/bot=0/0`. Final cleanup disbanded both
+groups; direct character-database checks found `groups=0`, no matching
+`group_member` rows, all three staged bots offline, and the requester online.
+Match completion, rewards, ratings, and proactive opponent engagement remain
+outside `0012`.
+
 Do not enable LFG and battleground functional testing simultaneously until each has passed
 separately. `MaxBotsPerCycle` is shared by both systems.
 
@@ -560,6 +613,9 @@ separately. `MaxBotsPerCycle` is shared by both systems.
 Stop WorldServer, remove only the patches that were applied, in reverse order, then rebuild:
 
 ```powershell
+git apply -R --check contrib/playerbot_auto_queue_548/patches/0012-playerbots-solo-arena-combat-status.patch
+git apply -R contrib/playerbot_auto_queue_548/patches/0012-playerbots-solo-arena-combat-status.patch
+
 git apply -R --check contrib/playerbot_auto_queue_548/patches/0011-playerbots-solo-arena-post-return-health.patch
 git apply -R contrib/playerbot_auto_queue_548/patches/0011-playerbots-solo-arena-post-return-health.patch
 
@@ -631,6 +687,9 @@ The active `playerbots.conf` entries may then be removed manually or left disabl
   state, normal group cleanup, and all three staged bots offline.
 - Arena post-return health: with `0011` explicitly enabled, repeat the `0010` cycle
   and verify four delayed restorations plus full real-player health after landing.
+- Arena countdown/combat status: with `0012` explicitly enabled, capture one exact
+  four-participant `WAIT_JOIN` snapshot, wait for the normal gates to open, capture
+  one `IN_PROGRESS` snapshot, and immediately leave and complete all normal cleanup.
 - Shutdown/restart: verify no bot remains stuck in LFG or battleground queue state.
 - Keep `AiPlayerbot.AutoQueue.Arena = 0` during functional LFG/BG testing; enable it
   only for the read-only `0004` preview while `DryRun = 1`.

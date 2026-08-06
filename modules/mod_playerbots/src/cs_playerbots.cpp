@@ -26,6 +26,7 @@
 #include "ObjectMgr.h"
 #include "Opcodes.h"
 #include "Player.h"
+#include "Playerbots.h"
 #include "PlayerbotMgr.h"
 #include "PerformanceMonitor.h"
 #include "PlayerbotAIConfig.h"
@@ -141,6 +142,33 @@ char const* SoloArenaRoleName(SoloArenaPreviewRole role)
 char const* SoloArenaTeamName(uint32 team)
 {
     return team == ALLIANCE ? "Alliance" : "Horde";
+}
+
+char const* SoloArenaBattlegroundStatusName(BattlegroundStatus status)
+{
+    switch (status)
+    {
+        case STATUS_NONE:        return "NONE";
+        case STATUS_WAIT_QUEUE:  return "WAIT_QUEUE";
+        case STATUS_WAIT_JOIN:   return "WAIT_JOIN";
+        case STATUS_IN_PROGRESS: return "IN_PROGRESS";
+        case STATUS_WAIT_LEAVE:  return "WAIT_LEAVE";
+        default:                 return "UNKNOWN";
+    }
+}
+
+char const* SoloArenaBotStateName(PlayerbotAI* botAI)
+{
+    if (!botAI)
+        return "real-player";
+
+    switch (botAI->GetState())
+    {
+        case BOT_STATE_COMBAT:     return "combat";
+        case BOT_STATE_NON_COMBAT: return "non-combat";
+        case BOT_STATE_DEAD:       return "dead";
+        default:                   return "unknown";
+    }
 }
 
 bool HasExactSoloArenaQueueGroup(BattlegroundQueue& queue, uint32 firstGuid, uint32 secondGuid,
@@ -312,13 +340,14 @@ public:
         bool stageQueue = args && !strcmp(args, "queue");
         bool stageMatch = args && !strcmp(args, "match");
         bool stageEnter = args && !strcmp(args, "enter");
+        bool combatStatus = args && !strcmp(args, "combatstatus");
         bool leaveArena = args && !strcmp(args, "leave");
         bool unstageQueue = args && !strcmp(args, "unqueue");
         if (!preview && !login && !status && !logout && !formGroups && !ungroup &&
-            !stageQueue && !stageMatch && !stageEnter && !leaveArena && !unstageQueue)
+            !stageQueue && !stageMatch && !stageEnter && !combatStatus && !leaveArena && !unstageQueue)
         {
             handler->SendSysMessage(
-                "Usage: .soloarena preview|login|status|group|queue|match|enter|leave|unqueue|ungroup|logout");
+                "Usage: .soloarena preview|login|status|group|queue|match|enter|combatstatus|leave|unqueue|ungroup|logout");
             return true;
         }
 
@@ -399,6 +428,95 @@ public:
                 SoloArenaMatchScheduled ? "yes" : "no", requesterExact ? "yes" : "no",
                 opponentExact ? "yes" : "no", requesterInvite, opponentInvite,
                 SoloArenaEnteredInstance, insideCount, teleportingCount, otherInstanceCount);
+            return true;
+        }
+
+        if (combatStatus)
+        {
+            if (!sPlayerbotAIConfig->autoQueueArenaStageCombatStatus)
+            {
+                handler->SendSysMessage(
+                    "Solo Arena combat-status diagnostic is disabled by AiPlayerbot.AutoQueue.Arena.StageCombatStatus.");
+                return true;
+            }
+            if (!SoloArenaEnteredInstance)
+            {
+                handler->SendSysMessage("Solo Arena has no tracked entered Arena instance to inspect.");
+                return true;
+            }
+            if (player->GetGUID().GetCounter() != SoloArenaStagedRequester)
+            {
+                handler->SendSysMessage(
+                    "Only the administrator character that entered this staged Arena may inspect it.");
+                return true;
+            }
+
+            Battleground* arena = sBattlegroundMgr->GetBattleground(
+                SoloArenaEnteredInstance, BATTLEGROUND_TYPE_NONE);
+            if (!arena || !arena->IsArena())
+            {
+                handler->PSendSysMessage(
+                    "Solo Arena combat-status diagnostic refused: tracked instance %u is unavailable or no longer an Arena.",
+                    SoloArenaEnteredInstance);
+                return true;
+            }
+
+            BattlegroundStatus arenaStatus = arena->GetStatus();
+            handler->PSendSysMessage(
+                "Solo Arena combat status: instance=%u, map=%u, status=%s(%u), start-delay-ms=%d, elapsed-ms=%u, "
+                "players Alliance/Horde=%u/%u, alive Alliance/Horde=%u/%u.",
+                arena->GetInstanceID(), arena->GetMapId(), SoloArenaBattlegroundStatusName(arenaStatus),
+                uint32(arenaStatus), arena->GetStartDelayTime(), arena->GetElapsedTime(),
+                arena->GetPlayersCountByTeam(ALLIANCE), arena->GetPlayersCountByTeam(HORDE),
+                arena->GetAlivePlayersCountByTeam(ALLIANCE), arena->GetAlivePlayersCountByTeam(HORDE));
+            TC_LOG_INFO("server",
+                "SoloArena combat status instance=%u map=%u status=%s(%u) start-delay-ms=%d elapsed-ms=%u players=%u/%u alive=%u/%u",
+                arena->GetInstanceID(), arena->GetMapId(), SoloArenaBattlegroundStatusName(arenaStatus),
+                uint32(arenaStatus), arena->GetStartDelayTime(), arena->GetElapsedTime(),
+                arena->GetPlayersCountByTeam(ALLIANCE), arena->GetPlayersCountByTeam(HORDE),
+                arena->GetAlivePlayersCountByTeam(ALLIANCE), arena->GetAlivePlayersCountByTeam(HORDE));
+
+            uint32 participantGuids[] = { SoloArenaStagedRequester, SoloArenaStagedTeammate,
+                SoloArenaStagedOpponentHealer, SoloArenaStagedOpponentDamage };
+            char const* labels[] = { "requester", "teammate", "opponent-healer", "opponent-damage" };
+            for (uint8 index = 0; index < 4; ++index)
+            {
+                Player* participant = participantGuids[index] ? ObjectAccessor::FindConnectedPlayer(
+                    ObjectGuid::Create<HighGuid::Player>(participantGuids[index])) : nullptr;
+                if (!participant)
+                {
+                    handler->PSendSysMessage("Solo Arena combat participant %s: offline.", labels[index]);
+                    TC_LOG_INFO("server", "SoloArena combat participant label=%s guid=%u state=offline",
+                        labels[index], participantGuids[index]);
+                    continue;
+                }
+
+                Unit* victim = participant->GetVictim();
+                PlayerbotAI* botAI = GET_PLAYERBOT_AI(participant);
+                bool inTrackedArena = participant->GetBattlegroundId() == SoloArenaEnteredInstance;
+                handler->PSendSysMessage(
+                    "Solo Arena combat participant %s: name=%s, guid=%u, present=%s, team=%s, alive=%s, "
+                    "combat=%s, moving=%s, preparation=%s, ai=%s, victim=%s, position=%.2f/%.2f/%.2f.",
+                    labels[index], participant->GetName().c_str(), participant->GetGUID().GetCounter(),
+                    inTrackedArena ? "yes" : "no", SoloArenaTeamName(participant->GetBGTeam()),
+                    participant->IsAlive() ? "yes" : "no", participant->IsInCombat() ? "yes" : "no",
+                    participant->isMoving() ? "yes" : "no",
+                    participant->HasAura(SPELL_ARENA_PREPARATION) ? "yes" : "no",
+                    SoloArenaBotStateName(botAI), victim ? victim->GetName().c_str() : "none",
+                    participant->GetPositionX(), participant->GetPositionY(), participant->GetPositionZ());
+                TC_LOG_INFO("server",
+                    "SoloArena combat participant label=%s name=%s guid=%u present=%u team=%s alive=%u combat=%u moving=%u preparation=%u ai=%s victim=%s position=%.2f/%.2f/%.2f",
+                    labels[index], participant->GetName().c_str(), participant->GetGUID().GetCounter(),
+                    inTrackedArena ? 1 : 0, SoloArenaTeamName(participant->GetBGTeam()),
+                    participant->IsAlive() ? 1 : 0, participant->IsInCombat() ? 1 : 0,
+                    participant->isMoving() ? 1 : 0,
+                    participant->HasAura(SPELL_ARENA_PREPARATION) ? 1 : 0,
+                    SoloArenaBotStateName(botAI), victim ? victim->GetName().c_str() : "none",
+                    participant->GetPositionX(), participant->GetPositionY(), participant->GetPositionZ());
+            }
+
+            handler->SendSysMessage(
+                "Solo Arena combat-status diagnostic made no queue, movement, combat, result, reward, or rating change.");
             return true;
         }
 
