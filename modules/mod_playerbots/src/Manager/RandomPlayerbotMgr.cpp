@@ -882,9 +882,7 @@ void RandomPlayerbotMgr::OnPlayerLogout(Player* player)
         }
     }
 
-    std::vector<Player*>::iterator i = std::find(_players.begin(), _players.end(), player);
-    if (i != _players.end())
-        _players.erase(i);
+    _players.erase(std::remove(_players.begin(), _players.end(), player), _players.end());
 }
 
 void RandomPlayerbotMgr::OnBotLoginInternal(Player* const bot)
@@ -1037,8 +1035,11 @@ void RandomPlayerbotMgr::OnPlayerLogin(Player* player)
 
     if (!IsRandomBot(player))
     {
-        _players.push_back(player);
-        TC_LOG_DEBUG("playerbots", "Including non-random bot player %s into random bot update", player->GetName().c_str());
+        if (std::find(_players.begin(), _players.end(), player) == _players.end())
+        {
+            _players.push_back(player);
+            TC_LOG_DEBUG("playerbots", "Including non-random bot player %s into random bot update", player->GetName().c_str());
+        }
     }
 }
 
