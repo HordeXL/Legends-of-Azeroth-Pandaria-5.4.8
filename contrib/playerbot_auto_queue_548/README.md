@@ -222,7 +222,15 @@ the LFG queue manager.
   The complete x64 RelWithDebInfo `worldserver` target compiled and linked
   successfully on 2026-08-06. The active local configuration enables
   `StageHealthRestore = 1`; both distributed configurations retain the safe default
-  `StageHealthRestore = 0`. Runtime health verification is pending.
+  `StageHealthRestore = 0`. The controlled runtime verification passed on
+  2026-08-06: all four staged participants entered instance `1`, `.soloarena leave`
+  removed all four, the summary reported `health-restore-scheduled=4`, and one
+  delayed post-return restoration ran for each of Palstest, Patrie, Alaniel, and
+  Idonia. The observer returned to `Arena real/bot=0/0`, and the real player
+  arrived alive with full world-map health. Final cleanup also passed: both staged
+  groups were disbanded, the character database contained zero matching
+  `group_member` and `groups` rows, the three selected bots were offline, and only
+  the requester remained online.
 
 The user confirmed fresh backups before `0005` was applied. Its first Alliance
 runtime test passed on 2026-08-05: the three screened candidates were requested,
