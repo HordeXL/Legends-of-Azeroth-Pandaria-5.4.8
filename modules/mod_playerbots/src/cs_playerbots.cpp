@@ -463,11 +463,24 @@ public:
             uint32 leftArena = 0;
             uint32 removedQueue = 0;
             uint32 alreadyOutside = 0;
+            uint32 healthRestoreScheduled = 0;
             for (Player* participant : participants)
             {
                 if (participant->GetBattlegroundId() == SoloArenaEnteredInstance)
                 {
                     participant->LeaveBattleground(true);
+                    if (sPlayerbotAIConfig->autoQueueArenaStageHealthRestore)
+                    {
+                        if (participant->IsBeingTeleportedFar())
+                        {
+                            participant->ScheduleBattlegroundHealthRestore();
+                            ++healthRestoreScheduled;
+                        }
+                        else
+                            TC_LOG_WARN("server",
+                                "SoloArena post-return health restore not scheduled name=%s guid=%u: far teleport did not start",
+                                participant->GetName().c_str(), participant->GetGUID().GetCounter());
+                    }
                     ++leftArena;
                 }
                 else if (participant->InBattlegroundQueueForBattlegroundQueueType(BATTLEGROUND_QUEUE_2v2))
@@ -497,13 +510,14 @@ public:
             SoloArenaQueuesStaged = false;
             SoloArenaMatchScheduled = false;
             TC_LOG_INFO("server",
-                "SoloArena staged Arena left instance=%u participants=%s/%s versus %s/%s left=%u queue-removed=%u already-outside=%u",
+                "SoloArena staged Arena left instance=%u participants=%s/%s versus %s/%s left=%u queue-removed=%u already-outside=%u health-restore-scheduled=%u",
                 exitedInstance, player->GetName().c_str(), teammate->GetName().c_str(),
                 opponentHealer->GetName().c_str(), opponentDamage->GetName().c_str(),
-                leftArena, removedQueue, alreadyOutside);
+                leftArena, removedQueue, alreadyOutside, healthRestoreScheduled);
             handler->SendSysMessage(
                 "Solo Arena removed every tracked participant from the staged Arena/queue. "
-                "Wait for return teleports, then use .soloarena status and .soloarena ungroup.");
+                "Wait for return teleports and optional health restoration, then use "
+                ".soloarena status and .soloarena ungroup.");
             return true;
         }
 

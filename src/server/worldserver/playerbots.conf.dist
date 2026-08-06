@@ -824,6 +824,11 @@ AiPlayerbot.AutoQueue.Arena.StageMatch = 0
 # Leave before the 60-second Arena countdown ends by using `.soloarena leave`.
 AiPlayerbot.AutoQueue.Arena.StageEnter = 0
 
+# Manual stage-7 diagnostic only. When enabled, `.soloarena leave` schedules a
+# health refill through the core delayed-operation path after each exact staged
+# participant finishes the return teleport and destination-map stat recalculation.
+AiPlayerbot.AutoQueue.Arena.StageHealthRestore = 0
+
 # Required Configuration for RandomBotAutoJoinBG
 #
 # Known issue: When enabling a lot of brackats in combination with multiple instances,

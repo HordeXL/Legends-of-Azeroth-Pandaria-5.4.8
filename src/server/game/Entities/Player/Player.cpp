@@ -2196,6 +2196,18 @@ void Player::ProcessDelayedOperations()
             g->SendUpdateToPlayer(GetGUID());
     }
 
+    if (m_DelayedOperations & DELAYED_BG_HEALTH_RESTORE)
+    {
+        if (IsAlive())
+        {
+            uint32 oldHealth = GetHealth();
+            SetFullHealth();
+            TC_LOG_INFO("server",
+                "Battleground post-return health restored name=%s guid=%u health=%u/%u",
+                GetName().c_str(), GetGUID().GetCounter(), oldHealth, GetMaxHealth());
+        }
+    }
+
     //we have executed ALL delayed ops, so clear the flag
     m_DelayedOperations = 0;
 }

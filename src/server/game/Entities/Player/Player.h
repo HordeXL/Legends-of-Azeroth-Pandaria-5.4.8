@@ -923,6 +923,7 @@ enum PlayerDelayedOperations
     DELAYED_BG_MOUNT_RESTORE = 0x08,                     ///< Flag to restore mount state after teleport from BG
     DELAYED_BG_TAXI_RESTORE = 0x10,                     ///< Flag to restore taxi state after teleport from BG
     DELAYED_BG_GROUP_RESTORE = 0x20,                     ///< Flag to restore group state after teleport from BG
+    DELAYED_BG_HEALTH_RESTORE = 0x40,                    ///< Flag to restore health after destination-map stat scaling
     DELAYED_END
 };
 
@@ -2751,6 +2752,7 @@ public:
     TeamId GetBGTeamId() const { return (m_bgData.bgTeam ? m_bgData.bgTeam : GetTeam()) == ALLIANCE ? TEAM_ALLIANCE : TEAM_HORDE; }
 
     void LeaveBattleground(bool teleportToEntryPoint = true);
+    void ScheduleBattlegroundHealthRestore() { ScheduleDelayedOperation(DELAYED_BG_HEALTH_RESTORE); }
     bool CanJoinToBattleground(Battleground const* bg) const;
     bool CanReportAfkDueToLimit();
 

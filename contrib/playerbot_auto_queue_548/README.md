@@ -1,12 +1,13 @@
 # Playerbot auto-queue patches for MoP 5.4.8
 
-Status: experimental. Patches `0001`, `0004`, `0005`, `0006`, `0007`, `0008`, `0009`, and `0010` are applied to
+Status: experimental. Patches `0001`, `0004`, `0005`, `0006`, `0007`, `0008`, `0009`, `0010`, and `0011` are applied to
 the active source and compiled; patches `0002` and `0003` are not applied. None
 contains SQL. The explicitly gated `0005` login, `0006` grouping, and `0007`
 non-rated queue stages use normal core paths and can therefore save character/group
 state or temporarily change in-memory queue state. Patch `0009` adds an additional
 invite-only matchmaking diagnostic. Patch `0010` adds a separately gated staged
-accept/teleport diagnostic plus exact pre-countdown cleanup.
+accept/teleport diagnostic plus exact pre-countdown cleanup. Patch `0011` adds a
+separately gated post-return health refill after destination-map stat recalculation.
 
 The active `Build/bin/RelWithDebInfo/playerbots.conf` currently enables the `0001`
 observer with `DryRun = 1`, all three queue categories visible, a five-second check
@@ -147,6 +148,13 @@ contained the LFG configuration key without the corresponding bot queue implemen
      back to their saved entry points;
    - must be cleaned before the 60-second Arena countdown ends. It adds no combat AI,
      completion, rewards, or rating behavior.
+11. `patches/0011-playerbots-solo-arena-post-return-health.patch`
+   - adds the disabled `StageHealthRestore` gate to the exact `0010` leave path;
+   - schedules restoration only after normal Arena exit starts a far return teleport;
+   - processes the refill through the core delayed-operation path, after the
+     destination map restores normal equipment item levels and maximum health;
+   - restores health only for a living exact staged participant and changes no
+     queue, combat, reward, rating, schema, or SQL behavior.
 
 Arena combat, completion, rewards, and ratings remain unimplemented. An Arena must
 not be treated as an ordinary battleground. Manually entered
@@ -208,6 +216,13 @@ the LFG queue manager.
   `worldserver` target also compiled and linked successfully. The complete staged
   entry, immediate pre-countdown leave, group cleanup, and bot logout runtime
   verification passed on 2026-08-06.
+- Patch `0011` reverse-checks cleanly against the active source and passes
+  `git diff --check`. Its SHA-256 is
+  `6C47D8CF37C7C1A367DC7896B07677388EA6F5248D19D012C0484B290C63081F`.
+  The complete x64 RelWithDebInfo `worldserver` target compiled and linked
+  successfully on 2026-08-06. The active local configuration enables
+  `StageHealthRestore = 1`; both distributed configurations retain the safe default
+  `StageHealthRestore = 0`. Runtime health verification is pending.
 
 The user confirmed fresh backups before `0005` was applied. Its first Alliance
 runtime test passed on 2026-08-05: the three screened candidates were requested,
@@ -510,6 +525,25 @@ show `entered-instance=0`, no queue state, and all four participants outside bef
 normal `ungroup`/`logout` cleanup. Do not stop or restart WorldServer while an
 entered-instance tracker exists.
 
+Patch `0011` must be applied only after the complete `0010` entry/leave/cleanup test
+passes. Stop WorldServer before applying and rebuilding. The health gate defaults to
+disabled:
+
+```powershell
+git apply --check contrib/playerbot_auto_queue_548/patches/0011-playerbots-solo-arena-post-return-health.patch
+git apply contrib/playerbot_auto_queue_548/patches/0011-playerbots-solo-arena-post-return-health.patch
+```
+
+```ini
+AiPlayerbot.AutoQueue.Arena.StageHealthRestore = 1
+```
+
+Repeat the verified `0010` sequence. After `.soloarena leave`, the log must report
+`health-restore-scheduled=4`, followed by one `Battleground post-return health
+restored` line for each exact participant. The real player must arrive alive at full
+health after world-map item levels are restored. Continue with the normal status,
+ungroup, logout, and database cleanup checks.
+
 Do not enable LFG and battleground functional testing simultaneously until each has passed
 separately. `MaxBotsPerCycle` is shared by both systems.
 
@@ -518,6 +552,9 @@ separately. `MaxBotsPerCycle` is shared by both systems.
 Stop WorldServer, remove only the patches that were applied, in reverse order, then rebuild:
 
 ```powershell
+git apply -R --check contrib/playerbot_auto_queue_548/patches/0011-playerbots-solo-arena-post-return-health.patch
+git apply -R contrib/playerbot_auto_queue_548/patches/0011-playerbots-solo-arena-post-return-health.patch
+
 git apply -R --check contrib/playerbot_auto_queue_548/patches/0010-playerbots-solo-arena-staged-entry.patch
 git apply -R contrib/playerbot_auto_queue_548/patches/0010-playerbots-solo-arena-staged-entry.patch
 
@@ -584,6 +621,8 @@ The active `playerbots.conf` entries may then be removed manually or left disabl
   participants enter the same tracked Arena through the normal port handler, then
   leave before the countdown completes; verify return teleport, zero Arena/queue
   state, normal group cleanup, and all three staged bots offline.
+- Arena post-return health: with `0011` explicitly enabled, repeat the `0010` cycle
+  and verify four delayed restorations plus full real-player health after landing.
 - Shutdown/restart: verify no bot remains stuck in LFG or battleground queue state.
 - Keep `AiPlayerbot.AutoQueue.Arena = 0` during functional LFG/BG testing; enable it
   only for the read-only `0004` preview while `DryRun = 1`.

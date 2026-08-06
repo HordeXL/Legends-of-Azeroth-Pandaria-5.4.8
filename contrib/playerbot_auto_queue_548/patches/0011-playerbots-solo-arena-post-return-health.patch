@@ -1,0 +1,147 @@
+diff --git a/modules/mod_playerbots/config/playerbots.conf.dist b/modules/mod_playerbots/config/playerbots.conf.dist
+index b3d7a6fe..90fd1a78 100644
+--- a/modules/mod_playerbots/config/playerbots.conf.dist
++++ b/modules/mod_playerbots/config/playerbots.conf.dist
+@@ -824,6 +824,11 @@ AiPlayerbot.AutoQueue.Arena.StageMatch = 0
+ # Leave before the 60-second Arena countdown ends by using `.soloarena leave`.
+ AiPlayerbot.AutoQueue.Arena.StageEnter = 0
+ 
++# Manual stage-7 diagnostic only. When enabled, `.soloarena leave` schedules a
++# health refill through the core delayed-operation path after each exact staged
++# participant finishes the return teleport and destination-map stat recalculation.
++AiPlayerbot.AutoQueue.Arena.StageHealthRestore = 0
++
+ # Required Configuration for RandomBotAutoJoinBG
+ #
+ # Known issue: When enabling a lot of brackats in combination with multiple instances,
+diff --git a/modules/mod_playerbots/src/Utils/PlayerbotAIConfig.cpp b/modules/mod_playerbots/src/Utils/PlayerbotAIConfig.cpp
+index 88e402bf..f59b89f3 100644
+--- a/modules/mod_playerbots/src/Utils/PlayerbotAIConfig.cpp
++++ b/modules/mod_playerbots/src/Utils/PlayerbotAIConfig.cpp
+@@ -179,6 +179,7 @@ bool PlayerbotAIConfig::Initialize()
+     autoQueueArenaStageQueue = sConfigMgr->GetBoolDefault("AiPlayerbot.AutoQueue.Arena.StageQueue", false);
+     autoQueueArenaStageMatch = sConfigMgr->GetBoolDefault("AiPlayerbot.AutoQueue.Arena.StageMatch", false);
+     autoQueueArenaStageEnter = sConfigMgr->GetBoolDefault("AiPlayerbot.AutoQueue.Arena.StageEnter", false);
++    autoQueueArenaStageHealthRestore = sConfigMgr->GetBoolDefault("AiPlayerbot.AutoQueue.Arena.StageHealthRestore", false);
+ 
+     randomChangeMultiplier = sConfigMgr->GetFloatDefault("AiPlayerbot.RandomChangeMultiplier", 1.0);
+ 
+diff --git a/modules/mod_playerbots/src/Utils/PlayerbotAIConfig.h b/modules/mod_playerbots/src/Utils/PlayerbotAIConfig.h
+index 3f287961..482cfd19 100644
+--- a/modules/mod_playerbots/src/Utils/PlayerbotAIConfig.h
++++ b/modules/mod_playerbots/src/Utils/PlayerbotAIConfig.h
+@@ -73,7 +73,7 @@ public:
+ 
+     bool autoQueueEnabled, autoQueueDryRun, autoQueueLfg, autoQueueBattleground, autoQueueArena;
+     bool autoQueueArenaStageLogin, autoQueueArenaStageGroup, autoQueueArenaStageQueue, autoQueueArenaStageMatch;
+-    bool autoQueueArenaStageEnter;
++    bool autoQueueArenaStageEnter, autoQueueArenaStageHealthRestore;
+     uint32 autoQueueCheckInterval, autoQueueMaxBotsPerCycle;
+     uint32 autoQueueArenaMinEquippedItems, autoQueueArenaMinAverageItemLevel, autoQueueArenaMinPvpItems;
+ 
+diff --git a/modules/mod_playerbots/src/cs_playerbots.cpp b/modules/mod_playerbots/src/cs_playerbots.cpp
+index a22e859e..926522df 100644
+--- a/modules/mod_playerbots/src/cs_playerbots.cpp
++++ b/modules/mod_playerbots/src/cs_playerbots.cpp
+@@ -463,11 +463,24 @@ public:
+             uint32 leftArena = 0;
+             uint32 removedQueue = 0;
+             uint32 alreadyOutside = 0;
++            uint32 healthRestoreScheduled = 0;
+             for (Player* participant : participants)
+             {
+                 if (participant->GetBattlegroundId() == SoloArenaEnteredInstance)
+                 {
+                     participant->LeaveBattleground(true);
++                    if (sPlayerbotAIConfig->autoQueueArenaStageHealthRestore)
++                    {
++                        if (participant->IsBeingTeleportedFar())
++                        {
++                            participant->ScheduleBattlegroundHealthRestore();
++                            ++healthRestoreScheduled;
++                        }
++                        else
++                            TC_LOG_WARN("server",
++                                "SoloArena post-return health restore not scheduled name=%s guid=%u: far teleport did not start",
++                                participant->GetName().c_str(), participant->GetGUID().GetCounter());
++                    }
+                     ++leftArena;
+                 }
+                 else if (participant->InBattlegroundQueueForBattlegroundQueueType(BATTLEGROUND_QUEUE_2v2))
+@@ -497,13 +510,14 @@ public:
+             SoloArenaQueuesStaged = false;
+             SoloArenaMatchScheduled = false;
+             TC_LOG_INFO("server",
+-                "SoloArena staged Arena left instance=%u participants=%s/%s versus %s/%s left=%u queue-removed=%u already-outside=%u",
++                "SoloArena staged Arena left instance=%u participants=%s/%s versus %s/%s left=%u queue-removed=%u already-outside=%u health-restore-scheduled=%u",
+                 exitedInstance, player->GetName().c_str(), teammate->GetName().c_str(),
+                 opponentHealer->GetName().c_str(), opponentDamage->GetName().c_str(),
+-                leftArena, removedQueue, alreadyOutside);
++                leftArena, removedQueue, alreadyOutside, healthRestoreScheduled);
+             handler->SendSysMessage(
+                 "Solo Arena removed every tracked participant from the staged Arena/queue. "
+-                "Wait for return teleports, then use .soloarena status and .soloarena ungroup.");
++                "Wait for return teleports and optional health restoration, then use "
++                ".soloarena status and .soloarena ungroup.");
+             return true;
+         }
+ 
+diff --git a/src/server/game/Entities/Player/Player.cpp b/src/server/game/Entities/Player/Player.cpp
+index 3b72d3c6..69ec8dfb 100644
+--- a/src/server/game/Entities/Player/Player.cpp
++++ b/src/server/game/Entities/Player/Player.cpp
+@@ -2196,6 +2196,18 @@ void Player::ProcessDelayedOperations()
+             g->SendUpdateToPlayer(GetGUID());
+     }
+ 
++    if (m_DelayedOperations & DELAYED_BG_HEALTH_RESTORE)
++    {
++        if (IsAlive())
++        {
++            uint32 oldHealth = GetHealth();
++            SetFullHealth();
++            TC_LOG_INFO("server",
++                "Battleground post-return health restored name=%s guid=%u health=%u/%u",
++                GetName().c_str(), GetGUID().GetCounter(), oldHealth, GetMaxHealth());
++        }
++    }
++
+     //we have executed ALL delayed ops, so clear the flag
+     m_DelayedOperations = 0;
+ }
+diff --git a/src/server/game/Entities/Player/Player.h b/src/server/game/Entities/Player/Player.h
+index 5c064c94..ef1d1c40 100644
+--- a/src/server/game/Entities/Player/Player.h
++++ b/src/server/game/Entities/Player/Player.h
+@@ -923,6 +923,7 @@ enum PlayerDelayedOperations
+     DELAYED_BG_MOUNT_RESTORE = 0x08,                     ///< Flag to restore mount state after teleport from BG
+     DELAYED_BG_TAXI_RESTORE = 0x10,                     ///< Flag to restore taxi state after teleport from BG
+     DELAYED_BG_GROUP_RESTORE = 0x20,                     ///< Flag to restore group state after teleport from BG
++    DELAYED_BG_HEALTH_RESTORE = 0x40,                    ///< Flag to restore health after destination-map stat scaling
+     DELAYED_END
+ };
+ 
+@@ -2751,6 +2752,7 @@ public:
+     TeamId GetBGTeamId() const { return (m_bgData.bgTeam ? m_bgData.bgTeam : GetTeam()) == ALLIANCE ? TEAM_ALLIANCE : TEAM_HORDE; }
+ 
+     void LeaveBattleground(bool teleportToEntryPoint = true);
++    void ScheduleBattlegroundHealthRestore() { ScheduleDelayedOperation(DELAYED_BG_HEALTH_RESTORE); }
+     bool CanJoinToBattleground(Battleground const* bg) const;
+     bool CanReportAfkDueToLimit();
+ 
+diff --git a/src/server/worldserver/playerbots.conf.dist b/src/server/worldserver/playerbots.conf.dist
+index 6591dde2..afee8253 100644
+--- a/src/server/worldserver/playerbots.conf.dist
++++ b/src/server/worldserver/playerbots.conf.dist
+@@ -824,6 +824,11 @@ AiPlayerbot.AutoQueue.Arena.StageMatch = 0
+ # Leave before the 60-second Arena countdown ends by using `.soloarena leave`.
+ AiPlayerbot.AutoQueue.Arena.StageEnter = 0
+ 
++# Manual stage-7 diagnostic only. When enabled, `.soloarena leave` schedules a
++# health refill through the core delayed-operation path after each exact staged
++# participant finishes the return teleport and destination-map stat recalculation.
++AiPlayerbot.AutoQueue.Arena.StageHealthRestore = 0
++
+ # Required Configuration for RandomBotAutoJoinBG
+ #
+ # Known issue: When enabling a lot of brackats in combination with multiple instances,
