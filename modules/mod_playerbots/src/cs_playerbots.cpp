@@ -24,12 +24,14 @@
 #include "LFGMgr.h"
 #include "ObjectAccessor.h"
 #include "ObjectMgr.h"
+#include "Opcodes.h"
 #include "Player.h"
 #include "PlayerbotMgr.h"
 #include "PerformanceMonitor.h"
 #include "PlayerbotAIConfig.h"
 #include "RandomPlayerbotMgr.h"
 #include "ScriptMgr.h"
+#include "WorldSession.h"
 
 #include <algorithm>
 #include <map>
@@ -47,6 +49,7 @@ uint32 SoloArenaRequesterGroup = 0;
 uint32 SoloArenaOpponentGroup = 0;
 bool SoloArenaQueuesStaged = false;
 bool SoloArenaMatchScheduled = false;
+uint32 SoloArenaEnteredInstance = 0;
 
 enum class SoloArenaPreviewRole : uint8
 {
@@ -167,6 +170,44 @@ bool HasExactSoloArenaQueueGroup(BattlegroundQueue& queue, uint32 firstGuid, uin
     return true;
 }
 
+bool AcceptSoloArenaInvite(Player* participant, uint32 invitedInstance)
+{
+    if (!participant || !participant->GetSession() || !invitedInstance ||
+        participant->InBattleground() || participant->IsBeingTeleported() ||
+        !participant->IsInvitedForBattlegroundQueueType(BATTLEGROUND_QUEUE_2v2))
+        return false;
+
+    uint32 queueSlot = participant->GetBattlegroundQueueIndex(BATTLEGROUND_QUEUE_2v2);
+    if (queueSlot >= PLAYER_MAX_BATTLEGROUND_QUEUES)
+        return false;
+
+    ObjectGuid guid = participant->GetGUID();
+    WorldPacket packet(CMSG_BATTLEFIELD_PORT, 32);
+    packet << uint8(1) << uint32(queueSlot) << uint32(0) << uint32(0);
+
+    packet.WriteBit(guid[6]);
+    packet.WriteBit(guid[4]);
+    packet.WriteBit(guid[2]);
+    packet.WriteBit(guid[5]);
+    packet.WriteBit(guid[0]);
+    packet.WriteBit(guid[1]);
+    packet.WriteBit(guid[7]);
+    packet.WriteBit(guid[3]);
+    packet.FlushBits();
+
+    packet.WriteByteSeq(guid[2]);
+    packet.WriteByteSeq(guid[5]);
+    packet.WriteByteSeq(guid[3]);
+    packet.WriteByteSeq(guid[0]);
+    packet.WriteByteSeq(guid[7]);
+    packet.WriteByteSeq(guid[4]);
+    packet.WriteByteSeq(guid[6]);
+    packet.WriteByteSeq(guid[1]);
+
+    participant->GetSession()->HandleBattleFieldPortOpcode(packet);
+    return participant->GetBattlegroundId() == invitedInstance && participant->IsBeingTeleported();
+}
+
 void ReadSoloArenaGear(std::string const& cache, SoloArenaPreviewCandidate& candidate)
 {
     std::istringstream stream(cache);
@@ -270,12 +311,14 @@ public:
         bool ungroup = args && !strcmp(args, "ungroup");
         bool stageQueue = args && !strcmp(args, "queue");
         bool stageMatch = args && !strcmp(args, "match");
+        bool stageEnter = args && !strcmp(args, "enter");
+        bool leaveArena = args && !strcmp(args, "leave");
         bool unstageQueue = args && !strcmp(args, "unqueue");
         if (!preview && !login && !status && !logout && !formGroups && !ungroup &&
-            !stageQueue && !stageMatch && !unstageQueue)
+            !stageQueue && !stageMatch && !stageEnter && !leaveArena && !unstageQueue)
         {
             handler->SendSysMessage(
-                "Usage: .soloarena preview|login|status|group|queue|match|unqueue|ungroup|logout");
+                "Usage: .soloarena preview|login|status|group|queue|match|enter|leave|unqueue|ungroup|logout");
             return true;
         }
 
@@ -324,21 +367,154 @@ public:
                 opponentExact = HasExactSoloArenaQueueGroup(arenaQueue,
                     SoloArenaStagedOpponentHealer, SoloArenaStagedOpponentDamage, opponentInvite);
             }
+
+            uint32 insideCount = 0;
+            uint32 teleportingCount = 0;
+            uint32 otherInstanceCount = 0;
+            uint32 participantGuids[] = { SoloArenaStagedRequester, SoloArenaStagedTeammate,
+                SoloArenaStagedOpponentHealer, SoloArenaStagedOpponentDamage };
+            for (uint32 participantGuid : participantGuids)
+            {
+                Player* participant = participantGuid ? ObjectAccessor::FindConnectedPlayer(
+                    ObjectGuid::Create<HighGuid::Player>(participantGuid)) : nullptr;
+                if (!participant)
+                    continue;
+
+                if (participant->IsBeingTeleported())
+                    ++teleportingCount;
+                if (SoloArenaEnteredInstance && participant->GetBattlegroundId() == SoloArenaEnteredInstance)
+                    ++insideCount;
+                else if (participant->GetBattlegroundId())
+                    ++otherInstanceCount;
+            }
             handler->PSendSysMessage(
                 "Solo Arena staged status: total=%u, loading=%u, online=%u, offline=%u, "
                 "requester-group=%u/%u, opponent-group=%u/%u, staged-queue=%s, requester-2v2=%s, "
-                "match-scheduled=%s, exact-queues=%s/%s, invite-instances=%u/%u.",
+                "match-scheduled=%s, exact-queues=%s/%s, invite-instances=%u/%u, "
+                "entered-instance=%u, inside=%u, teleporting=%u, other-instance=%u.",
                 uint32(SoloArenaStagedBots.size()), loadingCount, onlineCount, offlineCount,
                 SoloArenaRequesterGroup, requesterGroup ? requesterGroup->GetMembersCount() : 0,
                 SoloArenaOpponentGroup, opponentGroup ? opponentGroup->GetMembersCount() : 0,
                 SoloArenaQueuesStaged ? "yes" : "no", requesterQueued ? "yes" : "no",
                 SoloArenaMatchScheduled ? "yes" : "no", requesterExact ? "yes" : "no",
-                opponentExact ? "yes" : "no", requesterInvite, opponentInvite);
+                opponentExact ? "yes" : "no", requesterInvite, opponentInvite,
+                SoloArenaEnteredInstance, insideCount, teleportingCount, otherInstanceCount);
+            return true;
+        }
+
+        if (leaveArena)
+        {
+            if (!SoloArenaEnteredInstance)
+            {
+                handler->SendSysMessage("Solo Arena has no tracked entered Arena instance to leave.");
+                return true;
+            }
+
+            if (player->GetGUID().GetCounter() != SoloArenaStagedRequester)
+            {
+                handler->SendSysMessage(
+                    "Only the administrator character that entered this staged Arena may leave it.");
+                return true;
+            }
+
+            ObjectGuid teammateGuid = ObjectGuid::Create<HighGuid::Player>(SoloArenaStagedTeammate);
+            ObjectGuid opponentHealerGuid = ObjectGuid::Create<HighGuid::Player>(SoloArenaStagedOpponentHealer);
+            ObjectGuid opponentDamageGuid = ObjectGuid::Create<HighGuid::Player>(SoloArenaStagedOpponentDamage);
+            Player* teammate = sRandomPlayerbotMgr->GetPlayerBot(teammateGuid);
+            Player* opponentHealer = sRandomPlayerbotMgr->GetPlayerBot(opponentHealerGuid);
+            Player* opponentDamage = sRandomPlayerbotMgr->GetPlayerBot(opponentDamageGuid);
+            Player* participants[] = { player, teammate, opponentHealer, opponentDamage };
+            char const* labels[] = { "requester", "teammate", "opponent healer", "opponent damage" };
+
+            Battleground* arena = sBattlegroundMgr->GetBattleground(
+                SoloArenaEnteredInstance, BATTLEGROUND_TYPE_NONE);
+            if (!arena || !arena->IsArena())
+            {
+                handler->PSendSysMessage(
+                    "Solo Arena leave refused: tracked Arena instance %u is unavailable or no longer an Arena.",
+                    SoloArenaEnteredInstance);
+                return true;
+            }
+
+            for (uint8 index = 0; index < 4; ++index)
+            {
+                Player* participant = participants[index];
+                if (!participant)
+                {
+                    handler->PSendSysMessage("Solo Arena leave refused: %s is offline.", labels[index]);
+                    return true;
+                }
+                if (participant->IsBeingTeleported())
+                {
+                    handler->PSendSysMessage(
+                        "Solo Arena leave refused: %s is still teleporting; wait and retry.", labels[index]);
+                    return true;
+                }
+                if (participant->GetBattlegroundId() &&
+                    participant->GetBattlegroundId() != SoloArenaEnteredInstance)
+                {
+                    handler->PSendSysMessage(
+                        "Solo Arena leave refused: %s is in a different battleground instance %u.",
+                        labels[index], participant->GetBattlegroundId());
+                    return true;
+                }
+            }
+
+            uint32 leftArena = 0;
+            uint32 removedQueue = 0;
+            uint32 alreadyOutside = 0;
+            for (Player* participant : participants)
+            {
+                if (participant->GetBattlegroundId() == SoloArenaEnteredInstance)
+                {
+                    participant->LeaveBattleground(true);
+                    ++leftArena;
+                }
+                else if (participant->InBattlegroundQueueForBattlegroundQueueType(BATTLEGROUND_QUEUE_2v2))
+                {
+                    sBattlegroundMgr->RemovePlayerFromQueue(participant, BATTLEGROUND_QUEUE_2v2);
+                    ++removedQueue;
+                }
+                else
+                    ++alreadyOutside;
+            }
+
+            uint32 remaining = 0;
+            for (Player* participant : participants)
+                if (participant->GetBattlegroundId() ||
+                    participant->InBattlegroundQueueForBattlegroundQueueType(BATTLEGROUND_QUEUE_2v2))
+                    ++remaining;
+
+            if (remaining)
+            {
+                handler->PSendSysMessage(
+                    "Solo Arena leave incomplete: %u tracked participants still have Arena/queue state.", remaining);
+                return true;
+            }
+
+            uint32 exitedInstance = SoloArenaEnteredInstance;
+            SoloArenaEnteredInstance = 0;
+            SoloArenaQueuesStaged = false;
+            SoloArenaMatchScheduled = false;
+            TC_LOG_INFO("server",
+                "SoloArena staged Arena left instance=%u participants=%s/%s versus %s/%s left=%u queue-removed=%u already-outside=%u",
+                exitedInstance, player->GetName().c_str(), teammate->GetName().c_str(),
+                opponentHealer->GetName().c_str(), opponentDamage->GetName().c_str(),
+                leftArena, removedQueue, alreadyOutside);
+            handler->SendSysMessage(
+                "Solo Arena removed every tracked participant from the staged Arena/queue. "
+                "Wait for return teleports, then use .soloarena status and .soloarena ungroup.");
             return true;
         }
 
         if (unstageQueue)
         {
+            if (SoloArenaEnteredInstance)
+            {
+                handler->SendSysMessage(
+                    "Solo Arena has entered participants. Use .soloarena leave before unqueue.");
+                return true;
+            }
             if (!SoloArenaQueuesStaged)
             {
                 handler->SendSysMessage("Solo Arena has no tracked staged 2v2 queue to remove.");
@@ -437,6 +613,12 @@ public:
 
         if (ungroup)
         {
+            if (SoloArenaEnteredInstance)
+            {
+                handler->SendSysMessage(
+                    "Solo Arena entered instance still exists. Use .soloarena leave before ungroup.");
+                return true;
+            }
             if (SoloArenaQueuesStaged)
             {
                 handler->SendSysMessage(
@@ -519,6 +701,13 @@ public:
                 return true;
             }
 
+            if (SoloArenaEnteredInstance)
+            {
+                handler->SendSysMessage(
+                    "Solo Arena entered instance still exists. Use .soloarena leave before logout.");
+                return true;
+            }
+
             if (SoloArenaRequesterGroup || SoloArenaOpponentGroup)
             {
                 handler->SendSysMessage(
@@ -584,6 +773,121 @@ public:
             !sPlayerbotAIConfig->autoQueueDryRun)
         {
             handler->SendSysMessage("Solo Arena preview requires AutoQueue.Enabled=1, Arena=1 and DryRun=1.");
+            return true;
+        }
+
+        if (stageEnter && (!sPlayerbotAIConfig->autoQueueArenaStageLogin ||
+            !sPlayerbotAIConfig->autoQueueArenaStageGroup ||
+            !sPlayerbotAIConfig->autoQueueArenaStageQueue ||
+            !sPlayerbotAIConfig->autoQueueArenaStageMatch ||
+            !sPlayerbotAIConfig->autoQueueArenaStageEnter))
+        {
+            handler->SendSysMessage(
+                "Solo Arena staged entry is disabled. StageLogin=1, StageGroup=1, StageQueue=1, "
+                "StageMatch=1 and StageEnter=1 are required.");
+            return true;
+        }
+
+        if (stageEnter)
+        {
+            if (SoloArenaEnteredInstance)
+            {
+                handler->PSendSysMessage(
+                    "Solo Arena already tracks entered instance %u. Use .soloarena status or .soloarena leave.",
+                    SoloArenaEnteredInstance);
+                return true;
+            }
+
+            if (!SoloArenaQueuesStaged || !SoloArenaMatchScheduled ||
+                player->GetGUID().GetCounter() != SoloArenaStagedRequester)
+            {
+                handler->SendSysMessage(
+                    "Solo Arena entry requires this requester's exact tracked queue and scheduled matchmaking.");
+                return true;
+            }
+
+            ObjectGuid teammateGuid = ObjectGuid::Create<HighGuid::Player>(SoloArenaStagedTeammate);
+            ObjectGuid opponentHealerGuid = ObjectGuid::Create<HighGuid::Player>(SoloArenaStagedOpponentHealer);
+            ObjectGuid opponentDamageGuid = ObjectGuid::Create<HighGuid::Player>(SoloArenaStagedOpponentDamage);
+            Player* teammate = sRandomPlayerbotMgr->GetPlayerBot(teammateGuid);
+            Player* opponentHealer = sRandomPlayerbotMgr->GetPlayerBot(opponentHealerGuid);
+            Player* opponentDamage = sRandomPlayerbotMgr->GetPlayerBot(opponentDamageGuid);
+            Player* participants[] = { player, teammate, opponentHealer, opponentDamage };
+            char const* labels[] = { "requester", "teammate", "opponent healer", "opponent damage" };
+
+            BattlegroundQueue& arenaQueue = sBattlegroundMgr->GetBattlegroundQueue(BATTLEGROUND_QUEUE_2v2);
+            uint32 requesterInvite = 0;
+            uint32 opponentInvite = 0;
+            bool requesterExact = HasExactSoloArenaQueueGroup(arenaQueue,
+                SoloArenaStagedRequester, SoloArenaStagedTeammate, requesterInvite);
+            bool opponentExact = HasExactSoloArenaQueueGroup(arenaQueue,
+                SoloArenaStagedOpponentHealer, SoloArenaStagedOpponentDamage, opponentInvite);
+            if (!requesterExact || !opponentExact || arenaQueue.m_QueuedPlayers.size() != 4 ||
+                !requesterInvite || requesterInvite != opponentInvite)
+            {
+                handler->PSendSysMessage(
+                    "Solo Arena entry refused: expected two exact groups, four queued players, and one shared "
+                    "nonzero invitation (exact=%s/%s, queued=%u, invites=%u/%u).",
+                    requesterExact ? "yes" : "no", opponentExact ? "yes" : "no",
+                    uint32(arenaQueue.m_QueuedPlayers.size()), requesterInvite, opponentInvite);
+                return true;
+            }
+
+            Battleground* arena = sBattlegroundMgr->GetBattleground(requesterInvite, BATTLEGROUND_TYPE_NONE);
+            if (!arena || !arena->IsArena() || arena->GetArenaType() != ARENA_TYPE_2v2 ||
+                arena->GetStatus() != STATUS_WAIT_JOIN)
+            {
+                handler->PSendSysMessage(
+                    "Solo Arena entry refused: invited instance %u is missing, not 2v2 Arena, or no longer waiting to join.",
+                    requesterInvite);
+                return true;
+            }
+
+            for (uint8 index = 0; index < 4; ++index)
+            {
+                Player* participant = participants[index];
+                if (!participant || participant->InBattleground() || participant->IsBeingTeleported() ||
+                    !participant->InBattlegroundQueueForBattlegroundQueueType(BATTLEGROUND_QUEUE_2v2) ||
+                    !participant->IsInvitedForBattlegroundQueueType(BATTLEGROUND_QUEUE_2v2))
+                {
+                    handler->PSendSysMessage(
+                        "Solo Arena entry refused: %s is offline, already inside/teleporting, or lacks the exact invitation.",
+                        labels[index]);
+                    return true;
+                }
+            }
+
+            SoloArenaEnteredInstance = requesterInvite;
+            uint32 accepted = 0;
+            Player* acceptanceOrder[] = { opponentDamage, opponentHealer, teammate, player };
+            for (Player* participant : acceptanceOrder)
+            {
+                if (!AcceptSoloArenaInvite(participant, requesterInvite))
+                {
+                    TC_LOG_ERROR("server",
+                        "SoloArena staged entry stopped instance=%u accepted=%u failed=%s; use .soloarena status then .soloarena leave",
+                        requesterInvite, accepted, participant->GetName().c_str());
+                    handler->PSendSysMessage(
+                        "Solo Arena entry stopped after %u accepts because %s did not enter. "
+                        "Wait for teleports, then use .soloarena status and .soloarena leave.",
+                        accepted, participant->GetName().c_str());
+                    return true;
+                }
+
+                ++accepted;
+                TC_LOG_INFO("server", "SoloArena staged enter accepted instance=%u name=%s guid=%u",
+                    requesterInvite, participant->GetName().c_str(), participant->GetGUID().GetCounter());
+            }
+
+            SoloArenaQueuesStaged = false;
+            SoloArenaMatchScheduled = false;
+            TC_LOG_INFO("server",
+                "SoloArena staged 2v2 entry requested instance=%u members=%s/%s versus %s/%s accepted=%u; leave before countdown ends",
+                requesterInvite, player->GetName().c_str(), teammate->GetName().c_str(),
+                opponentHealer->GetName().c_str(), opponentDamage->GetName().c_str(), accepted);
+            handler->SendSysMessage(
+                "Solo Arena accepted the shared invitation for all four tracked participants. "
+                "Wait for all teleports, use .soloarena status, then .soloarena leave before the countdown ends.");
             return true;
         }
 

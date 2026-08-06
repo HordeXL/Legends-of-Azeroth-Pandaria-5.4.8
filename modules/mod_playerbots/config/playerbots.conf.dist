@@ -818,6 +818,12 @@ AiPlayerbot.AutoQueue.Arena.StageQueue = 0
 # Do not click Enter; use `.soloarena status`, then `.soloarena unqueue` promptly.
 AiPlayerbot.AutoQueue.Arena.StageMatch = 0
 
+# Manual stage-6 diagnostic only. When enabled, `.soloarena enter` may accept the
+# one exact shared 2v2 Arena invitation created by the verified staged commands and
+# teleport all four tracked participants through the normal 5.4.8 port handler.
+# Leave before the 60-second Arena countdown ends by using `.soloarena leave`.
+AiPlayerbot.AutoQueue.Arena.StageEnter = 0
+
 # Required Configuration for RandomBotAutoJoinBG
 #
 # Known issue: When enabling a lot of brackats in combination with multiple instances,

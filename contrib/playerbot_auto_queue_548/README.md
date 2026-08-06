@@ -1,12 +1,12 @@
 # Playerbot auto-queue patches for MoP 5.4.8
 
-Status: experimental. Patches `0001`, `0004`, `0005`, `0006`, `0007`, `0008`, and `0009` are applied to
+Status: experimental. Patches `0001`, `0004`, `0005`, `0006`, `0007`, `0008`, `0009`, and `0010` are applied to
 the active source and compiled; patches `0002` and `0003` are not applied. None
 contains SQL. The explicitly gated `0005` login, `0006` grouping, and `0007`
 non-rated queue stages use normal core paths and can therefore save character/group
 state or temporarily change in-memory queue state. Patch `0009` adds an additional
-invite-only matchmaking diagnostic; it never accepts the invitation or teleports a
-participant.
+invite-only matchmaking diagnostic. Patch `0010` adds a separately gated staged
+accept/teleport diagnostic plus exact pre-countdown cleanup.
 
 The active `Build/bin/RelWithDebInfo/playerbots.conf` currently enables the `0001`
 observer with `DryRun = 1`, all three queue categories visible, a five-second check
@@ -132,9 +132,24 @@ contained the LFG configuration key without the corresponding bot queue implemen
      all four invited queue slots through the existing `.soloarena unqueue` cleanup;
    - does not accept an invitation, teleport, start combat, award rewards, or change
      rating. Never click the client Enter button during this stage.
+10. `patches/0010-playerbots-solo-arena-staged-entry.patch`
+   - adds separately disabled `.soloarena enter` and always-available `.soloarena
+     leave` cleanup;
+   - accepts only one shared nonzero invitation belonging to the exact two tracked
+     groups and four queued participants from `0009`;
+   - submits the same 5.4.8 `CMSG_BATTLEFIELD_PORT` path used when a real client
+     presses Enter, so queue removal, entry-point storage, Arena team assignment,
+     and teleport remain core-owned operations;
+   - tracks the exact entered instance, reports inside/teleporting counts, and blocks
+     unqueue, ungroup, and logout until staged Arena cleanup is complete;
+   - makes `.soloarena leave` remove every exact tracked participant from either the
+     entered Arena or a partially retained queue, then teleports entered participants
+     back to their saved entry points;
+   - must be cleaned before the 60-second Arena countdown ends. It adds no combat AI,
+     completion, rewards, or rating behavior.
 
-Invitation acceptance, teleport, combat, completion, rewards, and ratings remain
-unimplemented. An Arena must not be treated as an ordinary battleground. Manually entered
+Arena combat, completion, rewards, and ratings remain unimplemented. An Arena must
+not be treated as an ordinary battleground. Manually entered
 instances are also outside this patch series; the LFG patch covers content reached through
 the LFG queue manager.
 
@@ -184,6 +199,15 @@ the LFG queue manager.
   cleanup verification also passed on 2026-08-06. The local active configuration
   has `StageMatch = 1`; both
   distributed configurations keep the safe default `StageMatch = 0`.
+- Patch `0010` reverse-checks cleanly against the active source, passes
+  `git diff --check`, and its x64 RelWithDebInfo `modules` target compiles
+  successfully. Its SHA-256 is
+  `9420C4E64B497D6F60AC48837447F4CB1F1536B87AABCBAB4678CBDBA8250E82`.
+  The local active configuration has `StageEnter = 1`; both distributed
+  configurations retain `StageEnter = 0`. The complete x64 RelWithDebInfo
+  `worldserver` target also compiled and linked successfully. The complete staged
+  entry, immediate pre-countdown leave, group cleanup, and bot logout runtime
+  verification passed on 2026-08-06.
 
 The user confirmed fresh backups before `0005` was applied. Its first Alliance
 runtime test passed on 2026-08-05: the three screened candidates were requested,
@@ -446,6 +470,46 @@ both tracked groups. Only then run `ungroup` and `logout`. If the two invitation
 are different, zero, or cleanup refuses, do not enter the Arena or restart the server;
 record the status and clean the exact staged state first.
 
+Patch `0010` must be applied only after the complete `0009` invite and cleanup test
+passes. Stop WorldServer before applying and rebuilding. Keep `DryRun = 1`; the new
+entry gate defaults to disabled while cleanup remains available:
+
+```powershell
+git apply --check contrib/playerbot_auto_queue_548/patches/0010-playerbots-solo-arena-staged-entry.patch
+git apply contrib/playerbot_auto_queue_548/patches/0010-playerbots-solo-arena-staged-entry.patch
+```
+
+```ini
+AiPlayerbot.AutoQueue.Arena.StageLogin = 1
+AiPlayerbot.AutoQueue.Arena.StageGroup = 1
+AiPlayerbot.AutoQueue.Arena.StageQueue = 1
+AiPlayerbot.AutoQueue.Arena.StageMatch = 1
+AiPlayerbot.AutoQueue.Arena.StageEnter = 1
+```
+
+Use the verified `0009` sequence through `.soloarena match`, then run the following
+quickly because the Arena preparation countdown is 60 seconds:
+
+```text
+.soloarena enter
+.soloarena status
+.soloarena leave
+.soloarena status
+.soloarena ungroup
+.soloarena status
+.soloarena logout
+.soloarena status
+```
+
+Wait only until the real player has landed before the first `status`; bots process
+their far-teleport acknowledgements automatically. The entered status must report
+the tracked nonzero Arena instance and `inside=4`, `teleporting=0`. Do not fight or
+wait for the gates to open. Run `leave` immediately; if it reports a participant
+still teleporting, wait one or two seconds and retry. After leaving, status must
+show `entered-instance=0`, no queue state, and all four participants outside before
+normal `ungroup`/`logout` cleanup. Do not stop or restart WorldServer while an
+entered-instance tracker exists.
+
 Do not enable LFG and battleground functional testing simultaneously until each has passed
 separately. `MaxBotsPerCycle` is shared by both systems.
 
@@ -454,6 +518,9 @@ separately. `MaxBotsPerCycle` is shared by both systems.
 Stop WorldServer, remove only the patches that were applied, in reverse order, then rebuild:
 
 ```powershell
+git apply -R --check contrib/playerbot_auto_queue_548/patches/0010-playerbots-solo-arena-staged-entry.patch
+git apply -R contrib/playerbot_auto_queue_548/patches/0010-playerbots-solo-arena-staged-entry.patch
+
 git apply -R --check contrib/playerbot_auto_queue_548/patches/0009-playerbots-solo-arena-invite-only-match.patch
 git apply -R contrib/playerbot_auto_queue_548/patches/0009-playerbots-solo-arena-invite-only-match.patch
 
@@ -513,6 +580,10 @@ The active `playerbots.conf` entries may then be removed manually or left disabl
   two exact groups receive one shared nonzero invitation instance, do not accept
   the invitation, and immediately verify that `unqueue` removes all four slots and
   the popup before normal group and login cleanup.
+- Arena staged entry: with `0010` explicitly enabled, verify all four exact
+  participants enter the same tracked Arena through the normal port handler, then
+  leave before the countdown completes; verify return teleport, zero Arena/queue
+  state, normal group cleanup, and all three staged bots offline.
 - Shutdown/restart: verify no bot remains stuck in LFG or battleground queue state.
 - Keep `AiPlayerbot.AutoQueue.Arena = 0` during functional LFG/BG testing; enable it
   only for the read-only `0004` preview while `DryRun = 1`.
