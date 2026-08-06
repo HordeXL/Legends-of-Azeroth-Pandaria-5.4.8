@@ -1,0 +1,430 @@
+diff --git a/modules/mod_playerbots/config/playerbots.conf.dist b/modules/mod_playerbots/config/playerbots.conf.dist
+index 8810092dbe91431e14194025907f9e2020c2399d..c50c9b69f01ada94a452fb783b09dd1e9a8ed340 100644
+--- a/modules/mod_playerbots/config/playerbots.conf.dist
++++ b/modules/mod_playerbots/config/playerbots.conf.dist
+@@ -788,6 +788,13 @@ AiPlayerbot.AutoQueue.CheckInterval = 5
+ # Reserved for later functional patches. Patch 0001 only reports this setting.
+ AiPlayerbot.AutoQueue.MaxBotsPerCycle = 4
+ 
++# Dry-run solo 2v2 candidate screening. These settings are read by the
++# administrator-only `.soloarena preview` command added in patch 0004.
++# The preview never logs in, groups, equips, queues, or teleports a bot.
++AiPlayerbot.AutoQueue.Arena.MinEquippedItems = 12
++AiPlayerbot.AutoQueue.Arena.MinAverageItemLevel = 450
++AiPlayerbot.AutoQueue.Arena.MinPvpItems = 2
++
+ # Required Configuration for RandomBotAutoJoinBG
+ #
+ # Known issue: When enabling a lot of brackats in combination with multiple instances,
+diff --git a/modules/mod_playerbots/src/Utils/PlayerbotAIConfig.cpp b/modules/mod_playerbots/src/Utils/PlayerbotAIConfig.cpp
+index 8a6797e15bee06418220c373bd3dfe6f1353cdbe..669e3e701569ee67dccf9c2b0731dacc2b98ddd1 100644
+--- a/modules/mod_playerbots/src/Utils/PlayerbotAIConfig.cpp
++++ b/modules/mod_playerbots/src/Utils/PlayerbotAIConfig.cpp
+@@ -171,6 +171,9 @@ bool PlayerbotAIConfig::Initialize()
+     if (!autoQueueCheckInterval)
+         autoQueueCheckInterval = IN_MILLISECONDS;
+     autoQueueMaxBotsPerCycle = sConfigMgr->GetIntDefault("AiPlayerbot.AutoQueue.MaxBotsPerCycle", 4);
++    autoQueueArenaMinEquippedItems = sConfigMgr->GetIntDefault("AiPlayerbot.AutoQueue.Arena.MinEquippedItems", 12);
++    autoQueueArenaMinAverageItemLevel = sConfigMgr->GetIntDefault("AiPlayerbot.AutoQueue.Arena.MinAverageItemLevel", 450);
++    autoQueueArenaMinPvpItems = sConfigMgr->GetIntDefault("AiPlayerbot.AutoQueue.Arena.MinPvpItems", 2);
+ 
+     randomChangeMultiplier = sConfigMgr->GetFloatDefault("AiPlayerbot.RandomChangeMultiplier", 1.0);
+ 
+diff --git a/modules/mod_playerbots/src/Utils/PlayerbotAIConfig.h b/modules/mod_playerbots/src/Utils/PlayerbotAIConfig.h
+index a29325dd9b33ce8deec5430c3679f981f2cb7118..579a16ae88dc35c5298a6cf7a8207ee0bb618365 100644
+--- a/modules/mod_playerbots/src/Utils/PlayerbotAIConfig.h
++++ b/modules/mod_playerbots/src/Utils/PlayerbotAIConfig.h
+@@ -73,6 +73,7 @@ public:
+ 
+     bool autoQueueEnabled, autoQueueDryRun, autoQueueLfg, autoQueueBattleground, autoQueueArena;
+     uint32 autoQueueCheckInterval, autoQueueMaxBotsPerCycle;
++    uint32 autoQueueArenaMinEquippedItems, autoQueueArenaMinAverageItemLevel, autoQueueArenaMinPvpItems;
+ 
+     std::string premadeSpecName[MAX_CLASSES][MAX_SPECIALIZATIONS - 1];
+     std::vector<uint16> premadeSpecLink[MAX_CLASSES][MAX_SPECIALIZATIONS - 1];
+diff --git a/modules/mod_playerbots/src/cs_playerbots.cpp b/modules/mod_playerbots/src/cs_playerbots.cpp
+index 43d8cd2f5fe6eff44ba0a6297fe9976880af902c..498130a8792ecf74fb4cb3e01180af1d2b717ce1 100644
+--- a/modules/mod_playerbots/src/cs_playerbots.cpp
++++ b/modules/mod_playerbots/src/cs_playerbots.cpp
+@@ -14,12 +14,186 @@
+  */
+ 
+ #include "Chat.h"
++#include "DatabaseEnv.h"
++#include "ItemPrototype.h"
++#include "ObjectMgr.h"
++#include "Player.h"
+ #include "PlayerbotMgr.h"
+ #include "PerformanceMonitor.h"
+ #include "PlayerbotAIConfig.h"
+ #include "RandomPlayerbotMgr.h"
+ #include "ScriptMgr.h"
+ 
++#include <algorithm>
++#include <sstream>
++#include <vector>
++
++namespace
++{
++enum class SoloArenaPreviewRole : uint8
++{
++    None,
++    Melee,
++    Ranged,
++    Healer
++};
++
++struct SoloArenaPreviewCandidate
++{
++    uint32 Guid = 0;
++    std::string Name;
++    uint8 Race = 0;
++    uint8 Class = 0;
++    uint8 Level = 0;
++    uint32 Team = 0;
++    Specializations Specialization = SPEC_NONE;
++    SoloArenaPreviewRole Role = SoloArenaPreviewRole::None;
++    uint32 EquippedItems = 0;
++    uint32 AverageItemLevel = 0;
++    uint32 PvpItems = 0;
++    uint32 PvpPower = 0;
++    uint32 Resilience = 0;
++
++    uint32 GearScore() const
++    {
++        return PvpItems * 100000 + PvpPower + AverageItemLevel;
++    }
++};
++
++SoloArenaPreviewRole GetSoloArenaPreviewRole(Specializations specialization)
++{
++    switch (specialization)
++    {
++        case SPEC_PALADIN_RETRIBUTION:
++        case SPEC_WARRIOR_ARMS:
++        case SPEC_WARRIOR_FURY:
++        case SPEC_DRUID_FERAL:
++        case SPEC_DEATH_KNIGHT_FROST:
++        case SPEC_DEATH_KNIGHT_UNHOLY:
++        case SPEC_ROGUE_ASSASSINATION:
++        case SPEC_ROGUE_COMBAT:
++        case SPEC_ROGUE_SUBTLETY:
++        case SPEC_SHAMAN_ENHANCEMENT:
++        case SPEC_MONK_WINDWALKER:
++            return SoloArenaPreviewRole::Melee;
++        case SPEC_MAGE_ARCANE:
++        case SPEC_MAGE_FIRE:
++        case SPEC_MAGE_FROST:
++        case SPEC_DRUID_BALANCE:
++        case SPEC_HUNTER_BEAST_MASTERY:
++        case SPEC_HUNTER_MARKSMANSHIP:
++        case SPEC_HUNTER_SURVIVAL:
++        case SPEC_PRIEST_SHADOW:
++        case SPEC_SHAMAN_ELEMENTAL:
++        case SPEC_WARLOCK_AFFLICTION:
++        case SPEC_WARLOCK_DEMONOLOGY:
++        case SPEC_WARLOCK_DESTRUCTION:
++            return SoloArenaPreviewRole::Ranged;
++        case SPEC_PALADIN_HOLY:
++        case SPEC_DRUID_RESTORATION:
++        case SPEC_PRIEST_DISCIPLINE:
++        case SPEC_PRIEST_HOLY:
++        case SPEC_SHAMAN_RESTORATION:
++        case SPEC_MONK_MISTWEAVER:
++            return SoloArenaPreviewRole::Healer;
++        default:
++            return SoloArenaPreviewRole::None;
++    }
++}
++
++bool IsSoloArenaDamage(SoloArenaPreviewRole role)
++{
++    return role == SoloArenaPreviewRole::Melee || role == SoloArenaPreviewRole::Ranged;
++}
++
++char const* SoloArenaRoleName(SoloArenaPreviewRole role)
++{
++    switch (role)
++    {
++        case SoloArenaPreviewRole::Melee:  return "melee";
++        case SoloArenaPreviewRole::Ranged: return "ranged";
++        case SoloArenaPreviewRole::Healer: return "healer";
++        default:                           return "none";
++    }
++}
++
++char const* SoloArenaTeamName(uint32 team)
++{
++    return team == ALLIANCE ? "Alliance" : "Horde";
++}
++
++void ReadSoloArenaGear(std::string const& cache, SoloArenaPreviewCandidate& candidate)
++{
++    std::istringstream stream(cache);
++    uint32 itemEntry = 0;
++    uint32 visibleValue = 0;
++    uint32 itemLevelTotal = 0;
++
++    for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
++    {
++        if (!(stream >> itemEntry >> visibleValue))
++            break;
++
++        if (!itemEntry || slot == EQUIPMENT_SLOT_BODY || slot == EQUIPMENT_SLOT_TABARD)
++            continue;
++
++        ItemTemplate const* item = sObjectMgr->GetItemTemplate(itemEntry);
++        if (!item)
++            continue;
++
++        ++candidate.EquippedItems;
++        itemLevelTotal += item->ItemLevel;
++
++        bool pvpItem = false;
++        for (uint8 stat = 0; stat < MAX_ITEM_PROTO_STATS; ++stat)
++        {
++            int32 value = std::max<int32>(0, item->ItemStat[stat].ItemStatValue);
++            switch (item->ItemStat[stat].ItemStatType)
++            {
++                case ITEM_MOD_PVP_POWER:
++                    candidate.PvpPower += value;
++                    pvpItem = true;
++                    break;
++                case ITEM_MOD_RESILIENCE_RATING:
++                    candidate.Resilience += value;
++                    pvpItem = true;
++                    break;
++                default:
++                    break;
++            }
++        }
++
++        if (pvpItem)
++            ++candidate.PvpItems;
++    }
++
++    if (candidate.EquippedItems)
++        candidate.AverageItemLevel = itemLevelTotal / candidate.EquippedItems;
++}
++
++SoloArenaPreviewCandidate const* FindSoloArenaCandidate(
++    std::vector<SoloArenaPreviewCandidate> const& candidates, SoloArenaPreviewRole wantedRole,
++    uint32 wantedTeam, bool requireTeam, uint8 forbiddenClass,
++    std::vector<uint32> const& excluded)
++{
++    for (SoloArenaPreviewCandidate const& candidate : candidates)
++    {
++        if (candidate.Role != wantedRole &&
++            !(wantedRole == SoloArenaPreviewRole::Melee && IsSoloArenaDamage(candidate.Role)))
++            continue;
++        if (requireTeam && candidate.Team != wantedTeam)
++            continue;
++        if (forbiddenClass && candidate.Class == forbiddenClass)
++            continue;
++        if (std::find(excluded.begin(), excluded.end(), candidate.Guid) != excluded.end())
++            continue;
++        return &candidate;
++    }
++
++    return nullptr;
++}
++}
++
+ class playerbots_commandscript : public CommandScript
+ {
+ public:
+@@ -31,6 +205,7 @@ public:
+         {
+             { "npcbot",         SEC_ADMINISTRATOR,          true,           &HandlePlayerbotCommand},
+             { "pmon",           SEC_GAMEMASTER,             true,           &HandlePerfMonCommand},
++            { "soloarena",      SEC_ADMINISTRATOR,          false,          &HandleSoloArenaCommand},
+         };
+         return commandTable;
+     }
+@@ -40,6 +215,168 @@ public:
+         return PlayerbotMgr::HandlePlayerbotMgrCommand(handler, args);
+     }
+ 
++    static bool HandleSoloArenaCommand(ChatHandler* handler, char const* args)
++    {
++        if (!args || strcmp(args, "preview"))
++        {
++            handler->SendSysMessage("Usage: .soloarena preview");
++            return true;
++        }
++
++        Player* player = handler->GetSession() ? handler->GetSession()->GetPlayer() : nullptr;
++        if (!player)
++            return false;
++
++        if (!sPlayerbotAIConfig->autoQueueEnabled || !sPlayerbotAIConfig->autoQueueArena ||
++            !sPlayerbotAIConfig->autoQueueDryRun)
++        {
++            handler->SendSysMessage("Solo Arena preview requires AutoQueue.Enabled=1, Arena=1 and DryRun=1.");
++            return true;
++        }
++
++        if (player->GetLevel() != DEFAULT_MAX_LEVEL)
++        {
++            handler->PSendSysMessage("Solo Arena preview currently supports level %u only.", DEFAULT_MAX_LEVEL);
++            return true;
++        }
++
++        SoloArenaPreviewRole playerRole = GetSoloArenaPreviewRole(player->GetSpecialization());
++        if (!IsSoloArenaDamage(playerRole) && playerRole != SoloArenaPreviewRole::Healer)
++        {
++            handler->SendSysMessage("Solo Arena preview requires an active damage or healer specialization.");
++            return true;
++        }
++
++        if (sPlayerbotAIConfig->randomBotAccounts.empty())
++        {
++            handler->SendSysMessage("Solo Arena preview found no configured random-bot accounts.");
++            return true;
++        }
++
++        uint32 minAccount = sPlayerbotAIConfig->randomBotAccounts.front();
++        uint32 maxAccount = sPlayerbotAIConfig->randomBotAccounts.back();
++        QueryResult result = CharacterDatabase.PQuery(
++            "SELECT guid, name, race, class, level, talentTree, activespec, equipmentCache "
++            "FROM characters WHERE account >= %u AND account <= %u AND level = %u AND online = 0 "
++            "AND guid NOT IN (SELECT guid FROM guild_member) "
++            "AND guid NOT IN (SELECT memberGuid FROM group_member)",
++            minAccount, maxAccount, player->GetLevel());
++
++        if (!result)
++        {
++            handler->SendSysMessage("Solo Arena preview found no unused offline random-bot characters.");
++            return true;
++        }
++
++        std::vector<SoloArenaPreviewCandidate> candidates;
++        uint32 rejectedNeutral = 0;
++        uint32 rejectedSpec = 0;
++        uint32 rejectedGear = 0;
++
++        do
++        {
++            Field* fields = result->Fetch();
++            SoloArenaPreviewCandidate candidate;
++            candidate.Guid = fields[0].GetUInt32();
++            candidate.Name = fields[1].GetString();
++            candidate.Race = fields[2].GetUInt8();
++            candidate.Class = fields[3].GetUInt8();
++            candidate.Level = fields[4].GetUInt8();
++            candidate.Team = Player::TeamForRace(candidate.Race);
++
++            if (candidate.Team == PANDAREN_NEUTRAL)
++            {
++                ++rejectedNeutral;
++                continue;
++            }
++
++            uint32 specs[MAX_TALENT_SPECS] = { 0, 0 };
++            std::istringstream talentTrees(fields[5].GetString());
++            for (uint8 spec = 0; spec < MAX_TALENT_SPECS; ++spec)
++                talentTrees >> specs[spec];
++
++            uint8 activeSpec = fields[6].GetUInt8();
++            if (activeSpec >= MAX_TALENT_SPECS)
++                activeSpec = 0;
++            candidate.Specialization = Specializations(specs[activeSpec]);
++            candidate.Role = GetSoloArenaPreviewRole(candidate.Specialization);
++            if (!IsSoloArenaDamage(candidate.Role) && candidate.Role != SoloArenaPreviewRole::Healer)
++            {
++                ++rejectedSpec;
++                continue;
++            }
++
++            ReadSoloArenaGear(fields[7].GetString(), candidate);
++            if (candidate.EquippedItems < sPlayerbotAIConfig->autoQueueArenaMinEquippedItems ||
++                candidate.AverageItemLevel < sPlayerbotAIConfig->autoQueueArenaMinAverageItemLevel ||
++                candidate.PvpItems < sPlayerbotAIConfig->autoQueueArenaMinPvpItems)
++            {
++                ++rejectedGear;
++                continue;
++            }
++
++            candidates.push_back(candidate);
++        }
++        while (result->NextRow());
++
++        std::sort(candidates.begin(), candidates.end(),
++            [](SoloArenaPreviewCandidate const& left, SoloArenaPreviewCandidate const& right)
++            {
++                return left.GearScore() > right.GearScore();
++            });
++
++        std::vector<uint32> selected;
++        SoloArenaPreviewRole teammateRole = playerRole == SoloArenaPreviewRole::Healer ? SoloArenaPreviewRole::Melee : SoloArenaPreviewRole::Healer;
++        SoloArenaPreviewCandidate const* teammate = FindSoloArenaCandidate(
++            candidates, teammateRole, player->GetTeam(), true, player->GetClass(), selected);
++        if (teammate)
++            selected.push_back(teammate->Guid);
++
++        SoloArenaPreviewCandidate const* opponentHealer = FindSoloArenaCandidate(
++            candidates, SoloArenaPreviewRole::Healer, 0, false, 0, selected);
++        if (opponentHealer)
++            selected.push_back(opponentHealer->Guid);
++
++        SoloArenaPreviewCandidate const* opponentDamage = FindSoloArenaCandidate(
++            candidates, SoloArenaPreviewRole::Melee,
++            opponentHealer ? opponentHealer->Team : 0, opponentHealer != nullptr,
++            opponentHealer ? opponentHealer->Class : 0, selected);
++
++        TC_LOG_INFO("server",
++            "SoloArena 2v2 preview requester=%s role=%s faction=%s eligible=%u rejected(neutral/spec/gear)=%u/%u/%u",
++            player->GetName().c_str(), SoloArenaRoleName(playerRole), SoloArenaTeamName(player->GetTeam()),
++            uint32(candidates.size()), rejectedNeutral, rejectedSpec, rejectedGear);
++
++        if (!teammate || !opponentHealer || !opponentDamage)
++        {
++            handler->PSendSysMessage(
++                "Solo Arena preview could not form 2v2: teammate=%s, opponent healer=%s, opponent damage=%s. "
++                "Eligible=%u; rejected neutral/spec/gear=%u/%u/%u.",
++                teammate ? "yes" : "no", opponentHealer ? "yes" : "no", opponentDamage ? "yes" : "no",
++                uint32(candidates.size()), rejectedNeutral, rejectedSpec, rejectedGear);
++            return true;
++        }
++
++        auto report = [](char const* position, SoloArenaPreviewCandidate const* candidate)
++        {
++            TC_LOG_INFO("server",
++                "SoloArena 2v2 preview %s=%s guid=%u faction=%s class=%u spec=%u role=%s gear=%u avg-ilvl=%u pvp-items=%u pvp-power=%u resilience=%u",
++                position, candidate->Name.c_str(), candidate->Guid, SoloArenaTeamName(candidate->Team),
++                candidate->Class, uint32(candidate->Specialization), SoloArenaRoleName(candidate->Role),
++                candidate->EquippedItems, candidate->AverageItemLevel, candidate->PvpItems,
++                candidate->PvpPower, candidate->Resilience);
++        };
++
++        report("teammate", teammate);
++        report("opponent-healer", opponentHealer);
++        report("opponent-damage", opponentDamage);
++
++        handler->PSendSysMessage(
++            "Dry-run only: teammate %s; opponents %s and %s. No bot was logged in, changed, grouped or queued.",
++            teammate->Name.c_str(), opponentHealer->Name.c_str(), opponentDamage->Name.c_str());
++        return true;
++    }
++
+     static bool HandlePerfMonCommand(ChatHandler* handler, char const* args)
+     {
+         if (!strcmp(args, "reset"))
+diff --git a/src/server/worldserver/playerbots.conf.dist b/src/server/worldserver/playerbots.conf.dist
+index e89ac079320e717dcf96a6bc777a23202bb4bb6a..8dfc5ae8ae63ebc0c42f5a4b949abb8a2ef1aa3d 100644
+--- a/src/server/worldserver/playerbots.conf.dist
++++ b/src/server/worldserver/playerbots.conf.dist
+@@ -788,6 +788,13 @@ AiPlayerbot.AutoQueue.CheckInterval = 5
+ # Reserved for later functional patches. Patch 0001 only reports this setting.
+ AiPlayerbot.AutoQueue.MaxBotsPerCycle = 4
+ 
++# Dry-run solo 2v2 candidate screening. These settings are read by the
++# administrator-only `.soloarena preview` command added in patch 0004.
++# The preview never logs in, groups, equips, queues, or teleports a bot.
++AiPlayerbot.AutoQueue.Arena.MinEquippedItems = 12
++AiPlayerbot.AutoQueue.Arena.MinAverageItemLevel = 450
++AiPlayerbot.AutoQueue.Arena.MinPvpItems = 2
++
+ # Required Configuration for RandomBotAutoJoinBG
+ #
+ # Known issue: When enabling a lot of brackats in combination with multiple instances,

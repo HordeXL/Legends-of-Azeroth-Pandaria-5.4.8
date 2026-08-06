@@ -1,0 +1,270 @@
+diff --git a/modules/mod_playerbots/config/playerbots.conf.dist b/modules/mod_playerbots/config/playerbots.conf.dist
+index c50c9b69f01ada94a452fb783b09dd1e9a8ed340..48961f7d60a050d36643d68bbee9cb2f323c1f4b 100644
+--- a/modules/mod_playerbots/config/playerbots.conf.dist
++++ b/modules/mod_playerbots/config/playerbots.conf.dist
+@@ -795,6 +795,12 @@ AiPlayerbot.AutoQueue.Arena.MinEquippedItems = 12
+ AiPlayerbot.AutoQueue.Arena.MinAverageItemLevel = 450
+ AiPlayerbot.AutoQueue.Arena.MinPvpItems = 2
+ 
++# Manual stage-2 diagnostic only. When enabled, an administrator can use
++# `.soloarena login`, `.soloarena status`, and `.soloarena logout` to load the
++# three screened candidates without grouping, teleporting, or queueing them.
++# Character login/logout uses the normal save path and can update character data.
++AiPlayerbot.AutoQueue.Arena.StageLogin = 0
++
+ # Required Configuration for RandomBotAutoJoinBG
+ #
+ # Known issue: When enabling a lot of brackats in combination with multiple instances,
+diff --git a/modules/mod_playerbots/src/Manager/PlayerbotMgr.h b/modules/mod_playerbots/src/Manager/PlayerbotMgr.h
+index beb243275375414b8fea8e86984d5a195b473eed..cba351809f3efe38959a47a843c41c599ec3d20e 100644
+--- a/modules/mod_playerbots/src/Manager/PlayerbotMgr.h
++++ b/modules/mod_playerbots/src/Manager/PlayerbotMgr.h
+@@ -36,6 +36,7 @@ public:
+     void DisablePlayerBot(ObjectGuid guid);
+     Player* GetPlayerBot(ObjectGuid guid) const;
+     Player* GetPlayerBot(ObjectGuid::LowType lowGuid) const;
++    bool IsBotLoading(ObjectGuid guid) const { return botLoading.find(guid) != botLoading.end(); }
+     PlayerBotMap::const_iterator GetPlayerBotsBegin() const { return playerBots.begin(); }
+     PlayerBotMap::const_iterator GetPlayerBotsEnd() const { return playerBots.end(); }
+ 
+diff --git a/modules/mod_playerbots/src/Utils/PlayerbotAIConfig.cpp b/modules/mod_playerbots/src/Utils/PlayerbotAIConfig.cpp
+index 669e3e701569ee67dccf9c2b0731dacc2b98ddd1..d46bc91263acacf32921cec7795d2e6d3b96d502 100644
+--- a/modules/mod_playerbots/src/Utils/PlayerbotAIConfig.cpp
++++ b/modules/mod_playerbots/src/Utils/PlayerbotAIConfig.cpp
+@@ -174,6 +174,7 @@ bool PlayerbotAIConfig::Initialize()
+     autoQueueArenaMinEquippedItems = sConfigMgr->GetIntDefault("AiPlayerbot.AutoQueue.Arena.MinEquippedItems", 12);
+     autoQueueArenaMinAverageItemLevel = sConfigMgr->GetIntDefault("AiPlayerbot.AutoQueue.Arena.MinAverageItemLevel", 450);
+     autoQueueArenaMinPvpItems = sConfigMgr->GetIntDefault("AiPlayerbot.AutoQueue.Arena.MinPvpItems", 2);
++    autoQueueArenaStageLogin = sConfigMgr->GetBoolDefault("AiPlayerbot.AutoQueue.Arena.StageLogin", false);
+ 
+     randomChangeMultiplier = sConfigMgr->GetFloatDefault("AiPlayerbot.RandomChangeMultiplier", 1.0);
+ 
+diff --git a/modules/mod_playerbots/src/Utils/PlayerbotAIConfig.h b/modules/mod_playerbots/src/Utils/PlayerbotAIConfig.h
+index 579a16ae88dc35c5298a6cf7a8207ee0bb618365..1abb9ef44669445f919694918b534830ef27b95e 100644
+--- a/modules/mod_playerbots/src/Utils/PlayerbotAIConfig.h
++++ b/modules/mod_playerbots/src/Utils/PlayerbotAIConfig.h
+@@ -72,6 +72,7 @@ public:
+     std::vector<uint32> randomBotAccounts;
+ 
+     bool autoQueueEnabled, autoQueueDryRun, autoQueueLfg, autoQueueBattleground, autoQueueArena;
++    bool autoQueueArenaStageLogin;
+     uint32 autoQueueCheckInterval, autoQueueMaxBotsPerCycle;
+     uint32 autoQueueArenaMinEquippedItems, autoQueueArenaMinAverageItemLevel, autoQueueArenaMinPvpItems;
+ 
+diff --git a/modules/mod_playerbots/src/cs_playerbots.cpp b/modules/mod_playerbots/src/cs_playerbots.cpp
+index 498130a8792ecf74fb4cb3e01180af1d2b717ce1..f34e6fd788c8cbb55ac1d29626ee8cf094fd2ed7 100644
+--- a/modules/mod_playerbots/src/cs_playerbots.cpp
++++ b/modules/mod_playerbots/src/cs_playerbots.cpp
+@@ -16,6 +16,7 @@
+ #include "Chat.h"
+ #include "DatabaseEnv.h"
+ #include "ItemPrototype.h"
++#include "ObjectAccessor.h"
+ #include "ObjectMgr.h"
+ #include "Player.h"
+ #include "PlayerbotMgr.h"
+@@ -25,11 +26,14 @@
+ #include "ScriptMgr.h"
+ 
+ #include <algorithm>
++#include <map>
+ #include <sstream>
+ #include <vector>
+ 
+ namespace
+ {
++std::map<uint32, std::string> SoloArenaStagedBots;
++
+ enum class SoloArenaPreviewRole : uint8
+ {
+     None,
+@@ -217,9 +221,13 @@ public:
+ 
+     static bool HandleSoloArenaCommand(ChatHandler* handler, char const* args)
+     {
+-        if (!args || strcmp(args, "preview"))
++        bool preview = args && !strcmp(args, "preview");
++        bool login = args && !strcmp(args, "login");
++        bool status = args && !strcmp(args, "status");
++        bool logout = args && !strcmp(args, "logout");
++        if (!preview && !login && !status && !logout)
+         {
+-            handler->SendSysMessage("Usage: .soloarena preview");
++            handler->SendSysMessage("Usage: .soloarena preview|login|status|logout");
+             return true;
+         }
+ 
+@@ -227,6 +235,91 @@ public:
+         if (!player)
+             return false;
+ 
++        if (status)
++        {
++            if (SoloArenaStagedBots.empty())
++            {
++                handler->SendSysMessage("Solo Arena has no staged bots in this WorldServer process.");
++                return true;
++            }
++
++            uint32 loadingCount = 0;
++            uint32 onlineCount = 0;
++            uint32 offlineCount = 0;
++            for (auto const& staged : SoloArenaStagedBots)
++            {
++                ObjectGuid guid = ObjectGuid::Create<HighGuid::Player>(staged.first);
++                bool loadingBot = sRandomPlayerbotMgr->IsBotLoading(guid);
++                Player* bot = sRandomPlayerbotMgr->GetPlayerBot(guid);
++                char const* state = loadingBot ? "loading" : (bot ? "online" : "offline");
++                loadingCount += loadingBot ? 1 : 0;
++                onlineCount += bot ? 1 : 0;
++                offlineCount += (!loadingBot && !bot) ? 1 : 0;
++                handler->PSendSysMessage("Solo Arena staged bot %s (guid %u): %s, group=%s, queue=%s.",
++                    staged.second.c_str(), staged.first, state,
++                    bot && bot->GetGroup() ? "yes" : "no",
++                    bot && (bot->InBattlegroundQueue() || bot->InBattleground()) ? "yes" : "no");
++            }
++
++            handler->PSendSysMessage("Solo Arena staged status: total=%u, loading=%u, online=%u, offline=%u.",
++                uint32(SoloArenaStagedBots.size()), loadingCount, onlineCount, offlineCount);
++            return true;
++        }
++
++        if (logout)
++        {
++            if (SoloArenaStagedBots.empty())
++            {
++                handler->SendSysMessage("Solo Arena has no staged bots to log out.");
++                return true;
++            }
++
++            uint32 loggedOut = 0;
++            uint32 removedOffline = 0;
++            uint32 stillLoading = 0;
++            uint32 protectedBots = 0;
++            for (auto itr = SoloArenaStagedBots.begin(); itr != SoloArenaStagedBots.end();)
++            {
++                ObjectGuid guid = ObjectGuid::Create<HighGuid::Player>(itr->first);
++                if (sRandomPlayerbotMgr->IsBotLoading(guid))
++                {
++                    ++stillLoading;
++                    ++itr;
++                    continue;
++                }
++
++                Player* bot = sRandomPlayerbotMgr->GetPlayerBot(guid);
++                if (bot && (bot->GetGroup() || bot->InBattlegroundQueue() || bot->InBattleground()))
++                {
++                    ++protectedBots;
++                    handler->PSendSysMessage(
++                        "Refusing to log out staged bot %s: it is grouped or in a battleground/queue.",
++                        itr->second.c_str());
++                    ++itr;
++                    continue;
++                }
++
++                std::string name = itr->second;
++                bool wasOnline = bot != nullptr;
++                if (bot)
++                {
++                    sRandomPlayerbotMgr->LogoutPlayerBot(guid);
++                    ++loggedOut;
++                }
++                else
++                    ++removedOffline;
++
++                TC_LOG_INFO("server", "SoloArena staged logout name=%s guid=%u state=%s",
++                    name.c_str(), guid.GetCounter(), wasOnline ? "logged-out" : "already-offline");
++                itr = SoloArenaStagedBots.erase(itr);
++            }
++
++            handler->PSendSysMessage(
++                "Solo Arena staged cleanup: logged-out=%u, removed-offline=%u, still-loading=%u, protected=%u, remaining=%u.",
++                loggedOut, removedOffline, stillLoading, protectedBots, uint32(SoloArenaStagedBots.size()));
++            return true;
++        }
++
+         if (!sPlayerbotAIConfig->autoQueueEnabled || !sPlayerbotAIConfig->autoQueueArena ||
+             !sPlayerbotAIConfig->autoQueueDryRun)
+         {
+@@ -234,6 +327,20 @@ public:
+             return true;
+         }
+ 
++        if (login && !sPlayerbotAIConfig->autoQueueArenaStageLogin)
++        {
++            handler->SendSysMessage(
++                "Solo Arena staged login is disabled. Set AiPlayerbot.AutoQueue.Arena.StageLogin=1 and restart.");
++            return true;
++        }
++
++        if (login && !SoloArenaStagedBots.empty())
++        {
++            handler->SendSysMessage(
++                "Solo Arena already has staged bots. Use .soloarena status and .soloarena logout first.");
++            return true;
++        }
++
+         if (player->GetLevel() != DEFAULT_MAX_LEVEL)
+         {
+             handler->PSendSysMessage("Solo Arena preview currently supports level %u only.", DEFAULT_MAX_LEVEL);
+@@ -371,8 +478,42 @@ public:
+         report("opponent-healer", opponentHealer);
+         report("opponent-damage", opponentDamage);
+ 
++        if (preview)
++        {
++            handler->PSendSysMessage(
++                "Dry-run only: teammate %s; opponents %s and %s. No bot was logged in, changed, grouped or queued.",
++                teammate->Name.c_str(), opponentHealer->Name.c_str(), opponentDamage->Name.c_str());
++            return true;
++        }
++
++        SoloArenaPreviewCandidate const* stagedCandidates[] = { teammate, opponentHealer, opponentDamage };
++        for (SoloArenaPreviewCandidate const* candidate : stagedCandidates)
++        {
++            ObjectGuid guid = ObjectGuid::Create<HighGuid::Player>(candidate->Guid);
++            if (ObjectAccessor::FindPlayer(guid) || sRandomPlayerbotMgr->GetPlayerBot(guid) ||
++                sRandomPlayerbotMgr->IsBotLoading(guid))
++            {
++                handler->PSendSysMessage(
++                    "Solo Arena staged login aborted: candidate %s is already online or loading. No new login was requested.",
++                    candidate->Name.c_str());
++                return true;
++            }
++        }
++
++        for (SoloArenaPreviewCandidate const* candidate : stagedCandidates)
++        {
++            ObjectGuid guid = ObjectGuid::Create<HighGuid::Player>(candidate->Guid);
++            SoloArenaStagedBots[candidate->Guid] = candidate->Name;
++            sRandomPlayerbotMgr->AddPlayerBot(guid, 0);
++            TC_LOG_INFO("server",
++                "SoloArena staged login requested name=%s guid=%u faction=%s role=%s; no group, teleport or queue requested",
++                candidate->Name.c_str(), candidate->Guid, SoloArenaTeamName(candidate->Team),
++                SoloArenaRoleName(candidate->Role));
++        }
++
+         handler->PSendSysMessage(
+-            "Dry-run only: teammate %s; opponents %s and %s. No bot was logged in, changed, grouped or queued.",
++            "Staged login requested for %s, %s and %s. Wait a few seconds, then use .soloarena status. "
++            "No group, teleport or queue was requested. Finish with .soloarena logout.",
+             teammate->Name.c_str(), opponentHealer->Name.c_str(), opponentDamage->Name.c_str());
+         return true;
+     }
+diff --git a/src/server/worldserver/playerbots.conf.dist b/src/server/worldserver/playerbots.conf.dist
+index 8dfc5ae8ae63ebc0c42f5a4b949abb8a2ef1aa3d..d8882226227cf4c12b0d4d907fee1e2cd8a1b6b7 100644
+--- a/src/server/worldserver/playerbots.conf.dist
++++ b/src/server/worldserver/playerbots.conf.dist
+@@ -795,6 +795,12 @@ AiPlayerbot.AutoQueue.Arena.MinEquippedItems = 12
+ AiPlayerbot.AutoQueue.Arena.MinAverageItemLevel = 450
+ AiPlayerbot.AutoQueue.Arena.MinPvpItems = 2
+ 
++# Manual stage-2 diagnostic only. When enabled, an administrator can use
++# `.soloarena login`, `.soloarena status`, and `.soloarena logout` to load the
++# three screened candidates without grouping, teleporting, or queueing them.
++# Character login/logout uses the normal save path and can update character data.
++AiPlayerbot.AutoQueue.Arena.StageLogin = 0
++
+ # Required Configuration for RandomBotAutoJoinBG
+ #
+ # Known issue: When enabling a lot of brackats in combination with multiple instances,

@@ -1,0 +1,308 @@
+diff --git a/modules/mod_playerbots/src/Manager/RandomPlayerbotMgr.cpp b/modules/mod_playerbots/src/Manager/RandomPlayerbotMgr.cpp
+index b1457dfb..0a4be92b 100644
+--- a/modules/mod_playerbots/src/Manager/RandomPlayerbotMgr.cpp
++++ b/modules/mod_playerbots/src/Manager/RandomPlayerbotMgr.cpp
+@@ -196,6 +196,15 @@ namespace
+         lfg::LfgRoles Role;
+     };
+ 
++    struct BgAutoQueueDemand
++    {
++        BattlegroundTypeId Type = BATTLEGROUND_TYPE_NONE;
++        uint32 MapId = 0;
++        BattlegroundBracketId Bracket = BG_BRACKET_ID_FIRST;
++        uint32 RealPlayers[2] = { 0, 0 };
++        uint32 BotPlayers[2] = { 0, 0 };
++    };
++
+     lfg::LfgRoles GetLfgRole(Player* bot)
+     {
+         switch (AiFactory::GetPlayerRoles(bot))
+@@ -217,6 +226,18 @@ namespace
+             !bot->InBattlegroundQueue() && !bot->IsInCombat() && !bot->IsInFlight() &&
+             !bot->GetMap()->Instanceable();
+     }
++
++    bool CanAutoQueueBgBot(Player* bot, TeamId team, uint32 mapId, BattlegroundBracketId bracket)
++    {
++        if (!bot || !bot->IsInWorld() || bot->GetTeamId() != team || !bot->IsAlive() ||
++            bot->GetGroup() || bot->IsUsingLfg() || bot->InBattleground() ||
++            bot->InBattlegroundQueue() || bot->IsInCombat() || bot->IsInFlight() ||
++            bot->GetMap()->Instanceable())
++            return false;
++
++        PvPDifficultyEntry const* botBracket = GetBattlegroundBracketByLevel(mapId, bot->GetLevel());
++        return botBracket && botBracket->GetBracketId() == bracket;
++    }
+ }
+ 
+ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
+@@ -286,6 +307,7 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
+     uint32 realArena = 0;
+     uint32 botBg = 0;
+     uint32 botArena = 0;
++    std::map<std::pair<BattlegroundQueueTypeId, BattlegroundBracketId>, BgAutoQueueDemand> bgDemands;
+     auto countPvpQueues = [](Player* player, uint32& bgCount, uint32& arenaCount)
+     {
+         if (!player || !player->IsInWorld())
+@@ -307,11 +329,58 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
+     if (sPlayerbotAIConfig->autoQueueBattleground || sPlayerbotAIConfig->autoQueueArena)
+     {
+         for (Player* player : _players)
++        {
+             countPvpQueues(player, realBg, realArena);
+ 
++            if (!player || !player->IsInWorld())
++                continue;
++            for (uint8 slot = 0; slot < PLAYER_MAX_BATTLEGROUND_QUEUES; ++slot)
++            {
++                BattlegroundQueueTypeId queueType = player->GetBattlegroundQueueTypeId(slot);
++                if (queueType == BATTLEGROUND_QUEUE_NONE || BattlegroundMgr::BGArenaType(queueType))
++                    continue;
++
++                BattlegroundTypeId bgType = BattlegroundMgr::BGTemplateId(queueType);
++                Battleground* bg = sBattlegroundMgr->GetBattlegroundTemplate(bgType);
++                PvPDifficultyEntry const* bracket = bg ? GetBattlegroundBracketByLevel(bg->GetMapId(), player->GetLevel()) : nullptr;
++                if (!bg || !bracket || player->GetTeamId() > TEAM_HORDE)
++                    continue;
++
++                auto& demand = bgDemands[{ queueType, bracket->GetBracketId() }];
++                demand.Type = bgType;
++                demand.MapId = bg->GetMapId();
++                demand.Bracket = bracket->GetBracketId();
++                ++demand.RealPlayers[player->GetTeamId()];
++            }
++        }
++
+         for (auto const& botPair : playerBots)
++        {
+             if (IsRandomBot(botPair.second))
++            {
+                 countPvpQueues(botPair.second, botBg, botArena);
++
++                Player* bot = botPair.second;
++                for (uint8 slot = 0; slot < PLAYER_MAX_BATTLEGROUND_QUEUES; ++slot)
++                {
++                    BattlegroundQueueTypeId queueType = bot->GetBattlegroundQueueTypeId(slot);
++                    if (queueType == BATTLEGROUND_QUEUE_NONE || BattlegroundMgr::BGArenaType(queueType))
++                        continue;
++
++                    BattlegroundTypeId bgType = BattlegroundMgr::BGTemplateId(queueType);
++                    Battleground* bg = sBattlegroundMgr->GetBattlegroundTemplate(bgType);
++                    PvPDifficultyEntry const* bracket = bg ? GetBattlegroundBracketByLevel(bg->GetMapId(), bot->GetLevel()) : nullptr;
++                    if (!bg || !bracket || bot->GetTeamId() > TEAM_HORDE)
++                        continue;
++
++                    auto& demand = bgDemands[{ queueType, bracket->GetBracketId() }];
++                    demand.Type = bgType;
++                    demand.MapId = bg->GetMapId();
++                    demand.Bracket = bracket->GetBracketId();
++                    ++demand.BotPlayers[bot->GetTeamId()];
++                }
++            }
++        }
+     }
+ 
+     uint32 proposalsAccepted = 0;
+@@ -349,10 +418,71 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
+         }
+     }
+ 
++    uint32 bgInvitesAccepted = 0;
++    uint32 bgBotsJoined = 0;
++    if (sPlayerbotAIConfig->autoQueueBattleground && !sPlayerbotAIConfig->autoQueueDryRun)
++    {
++        for (auto const& botPair : playerBots)
++        {
++            Player* bot = botPair.second;
++            if (!IsRandomBot(bot))
++                continue;
++
++            for (uint8 slot = 0; slot < PLAYER_MAX_BATTLEGROUND_QUEUES; ++slot)
++            {
++                BattlegroundQueueTypeId queueType = bot->GetBattlegroundQueueTypeId(slot);
++                if (queueType != BATTLEGROUND_QUEUE_NONE && !BattlegroundMgr::BGArenaType(queueType) &&
++                    sBattlegroundMgr->AcceptQueueInvite(bot, slot))
++                {
++                    ++bgInvitesAccepted;
++                    break;
++                }
++            }
++        }
++
++        for (auto& demandPair : bgDemands)
++        {
++            BgAutoQueueDemand& demand = demandPair.second;
++            if (!demand.RealPlayers[TEAM_ALLIANCE] && !demand.RealPlayers[TEAM_HORDE])
++                continue;
++
++            Battleground* bg = sBattlegroundMgr->GetBattlegroundTemplate(demand.Type);
++            uint32 targetPerTeam = bg ? bg->GetMinPlayersPerTeam() : 0;
++            if (!targetPerTeam)
++                continue;
++
++            for (TeamId team : { TEAM_ALLIANCE, TEAM_HORDE })
++            {
++                while (demand.RealPlayers[team] + demand.BotPlayers[team] < targetPerTeam &&
++                    botsJoined + bgBotsJoined < sPlayerbotAIConfig->autoQueueMaxBotsPerCycle)
++                {
++                    Player* selectedBot = nullptr;
++                    for (auto const& botPair : playerBots)
++                    {
++                        Player* bot = botPair.second;
++                        if (IsRandomBot(bot) && CanAutoQueueBgBot(bot, team, demand.MapId, demand.Bracket))
++                        {
++                            selectedBot = bot;
++                            break;
++                        }
++                    }
++
++                    if (!selectedBot || !sBattlegroundMgr->QueuePlayer(selectedBot, demand.Type))
++                        break;
++
++                    ++demand.BotPlayers[team];
++                    ++bgBotsJoined;
++                    TC_LOG_INFO("playerbots", "AutoQueue joined bot %s (%u) to battleground type %u",
++                        selectedBot->GetName().c_str(), selectedBot->GetGUID().GetCounter(), uint32(demand.Type));
++                }
++            }
++        }
++    }
++
+     TC_LOG_INFO("playerbots",
+-        "AutoQueue (dry-run=%u, max-bots=%u): LFG real/bot=%u/%u, joined=%u, accepted=%u; BG real/bot=%u/%u; Arena real/bot=%u/%u",
++        "AutoQueue (dry-run=%u, max-bots=%u): LFG real/bot=%u/%u, joined=%u, accepted=%u; BG real/bot=%u/%u, joined=%u, accepted=%u; Arena real/bot=%u/%u",
+         sPlayerbotAIConfig->autoQueueDryRun ? 1 : 0, sPlayerbotAIConfig->autoQueueMaxBotsPerCycle,
+-        realLfg, botLfg, botsJoined, proposalsAccepted, realBg, botBg, realArena, botArena);
++        realLfg, botLfg, botsJoined, proposalsAccepted, realBg, botBg, bgBotsJoined, bgInvitesAccepted, realArena, botArena);
+ }
+ 
+ uint32 RandomPlayerbotMgr::AddRandomBots()
+diff --git a/src/server/game/Battlegrounds/BattlegroundMgr.cpp b/src/server/game/Battlegrounds/BattlegroundMgr.cpp
+index 37c6d0cb..fd64efc3 100644
+--- a/src/server/game/Battlegrounds/BattlegroundMgr.cpp
++++ b/src/server/game/Battlegrounds/BattlegroundMgr.cpp
+@@ -46,6 +46,8 @@
+ #include "MapManager.h"
+ #include "Player.h"
+ #include "GameEventMgr.h"
++#include "LFGMgr.h"
++#include "MotionMaster.h"
+ #include "SharedDefines.h"
+ #include "Formulas.h"
+ #include "DisableMgr.h"
+@@ -74,6 +76,98 @@ BattlegroundMgr* BattlegroundMgr::instance()
+     return &instance;
+ }
+ 
++bool BattlegroundMgr::QueuePlayer(Player* player, BattlegroundTypeId bgTypeId)
++{
++    if (!player || !player->IsInWorld() || player->InBattleground() ||
++        DisableMgr::IsDisabledFor(DISABLE_TYPE_BATTLEGROUND, bgTypeId, nullptr))
++        return false;
++
++    Battleground* bg = GetBattlegroundTemplate(bgTypeId);
++    if (!bg || !player->GetBGAccessByLevel(bgTypeId))
++        return false;
++
++    PvPDifficultyEntry const* bracketEntry = GetBattlegroundBracketByLevel(bg->GetMapId(), player->GetLevel());
++    if (!bracketEntry || player->IsUsingLfg(true) || !player->CanJoinToBattleground(bg))
++        return false;
++
++    BattlegroundQueueTypeId queueType = BGQueueTypeId(bgTypeId, 0);
++    BattlegroundQueueTypeId randomQueueType = BGQueueTypeId(BATTLEGROUND_RB, 0);
++    if (player->GetBattlegroundQueueIndex(randomQueueType) < PLAYER_MAX_BATTLEGROUND_QUEUES ||
++        (player->InBattlegroundQueue() && bgTypeId == BATTLEGROUND_RB) ||
++        player->GetBattlegroundQueueIndex(queueType) < PLAYER_MAX_BATTLEGROUND_QUEUES ||
++        !player->HasFreeBattlegroundQueueId())
++        return false;
++
++    BattlegroundQueue& queue = GetBattlegroundQueue(queueType);
++    GroupQueueInfo* info = queue.AddGroup(player, nullptr, bgTypeId, bracketEntry, 0, false, false, 0, 0);
++    if (!info)
++        return false;
++
++    uint32 averageWait = queue.GetAverageQueueWaitTime(info, bracketEntry->GetBracketId());
++    uint32 queueSlot = player->AddBattlegroundQueueId(queueType);
++    player->AddBattlegroundQueueJoinTime(bgTypeId, info->JoinTime);
++
++    WorldPacket data;
++    BuildBattlegroundStatusPacket(&data, bg, player, queueSlot, STATUS_WAIT_QUEUE, averageWait, info->JoinTime, 0);
++    player->GetSession()->SendPacket(&data);
++    ScheduleQueueUpdate(0, 0, queueType, bgTypeId, bracketEntry->GetBracketId());
++    return true;
++}
++
++bool BattlegroundMgr::AcceptQueueInvite(Player* player, uint8 queueSlot)
++{
++    if (!player || queueSlot >= PLAYER_MAX_BATTLEGROUND_QUEUES)
++        return false;
++
++    BattlegroundQueueTypeId queueType = player->GetBattlegroundQueueTypeId(queueSlot);
++    if (queueType == BATTLEGROUND_QUEUE_NONE || !player->IsInvitedForBattlegroundQueueType(queueType))
++        return false;
++
++    BattlegroundQueue& queue = GetBattlegroundQueue(queueType);
++    GroupQueueInfo info;
++    if (!queue.GetPlayerGroupInfoData(player->GetGUID(), &info) || !info.IsInvitedToBGInstanceGUID)
++        return false;
++
++    BattlegroundTypeId bgTypeId = BGTemplateId(queueType);
++    Battleground* bg = GetBattleground(info.IsInvitedToBGInstanceGUID,
++        bgTypeId == BATTLEGROUND_AA ? BATTLEGROUND_TYPE_NONE : bgTypeId);
++    if (!bg)
++        return false;
++
++    bgTypeId = bg->GetTypeID();
++    PvPDifficultyEntry const* bracketEntry = GetBattlegroundBracketByLevel(bg->GetMapId(), player->GetLevel());
++    if (!bracketEntry || (!info.ArenaType && (!player->CanJoinToBattleground(bg) || player->GetLevel() > bg->GetMaxLevel())))
++        return false;
++
++    if (!player->InBattleground())
++        player->SetBattlegroundEntryPoint();
++    if (!player->IsAlive())
++    {
++        player->ResurrectPlayer(1.0f);
++        player->SpawnCorpseBones();
++    }
++    if (player->IsInFlight())
++    {
++        player->GetMotionMaster()->MovementExpired();
++        player->CleanupAfterTaxiFlight();
++    }
++
++    WorldPacket data;
++    BuildBattlegroundStatusPacket(&data, bg, player, queueSlot, STATUS_IN_PROGRESS,
++        player->GetBattlegroundQueueJoinTime(bgTypeId), bg->GetElapsedTime(), bg->GetArenaType());
++    player->GetSession()->SendPacket(&data);
++
++    queue.RemovePlayer(player->GetGUID(), false);
++    if (Battleground* currentBg = player->GetBattleground())
++        currentBg->RemovePlayerAtLeave(player->GetGUID(), false, true);
++
++    player->SetBattlegroundId(bg->GetInstanceID(), bgTypeId);
++    player->SetBGTeam(info.Team);
++    sLFGMgr->RemovePlayerQueuesOnPartyFound(player->GetGUID());
++    SendToBattleground(player, info.IsInvitedToBGInstanceGUID, bgTypeId);
++    return true;
++}
++
+ void BattlegroundMgr::DeleteAllBattlegrounds()
+ {
+     for (BattlegroundDataContainer::iterator itr1 = bgDataStore.begin(); itr1 != bgDataStore.end(); ++itr1)
+diff --git a/src/server/game/Battlegrounds/BattlegroundMgr.h b/src/server/game/Battlegrounds/BattlegroundMgr.h
+index b5382fd8..20d7fe95 100644
+--- a/src/server/game/Battlegrounds/BattlegroundMgr.h
++++ b/src/server/game/Battlegrounds/BattlegroundMgr.h
+@@ -104,6 +104,11 @@ class BattlegroundMgr
+ 
+         void SendToBattleground(Player* player, uint32 InstanceID, BattlegroundTypeId bgTypeId);
+ 
++        // Server-side entry points used by playerbots. They intentionally avoid
++        // constructing client-version-specific battleground packets.
++        bool QueuePlayer(Player* player, BattlegroundTypeId bgTypeId);
++        bool AcceptQueueInvite(Player* player, uint8 queueSlot);
++
+         /* Battleground queues */
+         BattlegroundQueue& GetBattlegroundQueue(BattlegroundQueueTypeId bgQueueTypeId) { return *m_battlegroundQueues[bgQueueTypeId]; }
+         void ScheduleQueueUpdate(uint32 arenaMatchmakerRating, uint8 arenaType, BattlegroundQueueTypeId bgQueueTypeId, BattlegroundTypeId bgTypeId, BattlegroundBracketId bracket_id);

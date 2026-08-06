@@ -1,0 +1,196 @@
+diff --git a/modules/mod_playerbots/src/Factory/AiFactory.cpp b/modules/mod_playerbots/src/Factory/AiFactory.cpp
+index cf99e4dd..fdaf9f26 100644
+--- a/modules/mod_playerbots/src/Factory/AiFactory.cpp
++++ b/modules/mod_playerbots/src/Factory/AiFactory.cpp
+@@ -82,7 +82,7 @@ BotRoles AiFactory::GetPlayerRoles(Player* player)
+                 role = BOT_ROLE_HEALER;
+             break;
+         case CLASS_SHAMAN:
+-            if (spec == Specializations::SPEC_DRUID_RESTORATION)
++            if (spec == Specializations::SPEC_SHAMAN_RESTORATION)
+                 role = BOT_ROLE_HEALER;
+             else
+                 role = BOT_ROLE_DPS;
+diff --git a/modules/mod_playerbots/src/Manager/RandomPlayerbotMgr.cpp b/modules/mod_playerbots/src/Manager/RandomPlayerbotMgr.cpp
+index dea880e5..b1457dfb 100644
+--- a/modules/mod_playerbots/src/Manager/RandomPlayerbotMgr.cpp
++++ b/modules/mod_playerbots/src/Manager/RandomPlayerbotMgr.cpp
+@@ -23,8 +23,10 @@
+ #include <chrono>
+ #include <iomanip>
+ #include <random>
++#include <set>
+ 
+ #include "AccountMgr.h"
++#include "AiFactory.h"
+ #include "Battleground.h"
+ #include "BattlegroundMgr.h"
+ #include "BotFactory.h"
+@@ -185,6 +187,38 @@ void RandomPlayerbotMgr::UpdateAIInternal(uint32 elapsed, bool /*minimal*/)
+         pmo->finish();
+ }
+ 
++namespace
++{
++    struct LfgAutoQueueDemand
++    {
++        uint8 Team;
++        lfg::LfgDungeonSet Dungeons;
++        lfg::LfgRoles Role;
++    };
++
++    lfg::LfgRoles GetLfgRole(Player* bot)
++    {
++        switch (AiFactory::GetPlayerRoles(bot))
++        {
++            case BOT_ROLE_TANK:
++                return lfg::PLAYER_ROLE_TANK;
++            case BOT_ROLE_HEALER:
++                return lfg::PLAYER_ROLE_HEALER;
++            case BOT_ROLE_DPS:
++            default:
++                return lfg::PLAYER_ROLE_DAMAGE;
++        }
++    }
++
++    bool CanAutoQueueLfgBot(Player* bot, uint8 team)
++    {
++        return bot && bot->IsInWorld() && uint8(bot->GetTeam()) == team && bot->IsAlive() &&
++            !bot->GetGroup() && !bot->IsUsingLfg() && !bot->InBattleground() &&
++            !bot->InBattlegroundQueue() && !bot->IsInCombat() && !bot->IsInFlight() &&
++            !bot->GetMap()->Instanceable();
++    }
++}
++
+ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
+ {
+     if (!sPlayerbotAIConfig->autoQueueEnabled)
+@@ -198,6 +232,8 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
+ 
+     uint32 realLfg = 0;
+     uint32 botLfg = 0;
++    std::vector<LfgAutoQueueDemand> lfgDemands;
++    std::set<std::pair<uint8, uint32>> observedDungeonQueues;
+     if (sPlayerbotAIConfig->autoQueueLfg)
+     {
+         for (auto const& managerPair : sLFGMgr->GetQueueManagers())
+@@ -219,7 +255,27 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
+                 }
+ 
+                 if (hasRealPlayer)
++                {
+                     ++realLfg;
++                    if (!queuePair.second.Dungeons.empty())
++                    {
++                        uint32 dungeonId = *queuePair.second.Dungeons.begin();
++                        if (observedDungeonQueues.insert({ managerPair.first, dungeonId }).second)
++                        {
++                            lfg::DungeonQueue const& dungeonQueue = managerPair.second.GetQueue(dungeonId);
++                            lfg::LfgRoles neededRole = lfg::PLAYER_ROLE_NONE;
++                            if (dungeonQueue.GetTotalPlayers(lfg::PLAYER_ROLE_TANK) < dungeonQueue.GetRoleSlots(lfg::PLAYER_ROLE_TANK))
++                                neededRole = lfg::PLAYER_ROLE_TANK;
++                            else if (dungeonQueue.GetTotalPlayers(lfg::PLAYER_ROLE_HEALER) < dungeonQueue.GetRoleSlots(lfg::PLAYER_ROLE_HEALER))
++                                neededRole = lfg::PLAYER_ROLE_HEALER;
++                            else if (dungeonQueue.GetTotalPlayers(lfg::PLAYER_ROLE_DAMAGE) < dungeonQueue.GetRoleSlots(lfg::PLAYER_ROLE_DAMAGE))
++                                neededRole = lfg::PLAYER_ROLE_DAMAGE;
++
++                            if (neededRole != lfg::PLAYER_ROLE_NONE)
++                                lfgDemands.push_back({ managerPair.first, queuePair.second.Dungeons, neededRole });
++                        }
++                    }
++                }
+                 if (hasRandomBot)
+                     ++botLfg;
+             }
+@@ -258,10 +314,45 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
+                 countPvpQueues(botPair.second, botBg, botArena);
+     }
+ 
++    uint32 proposalsAccepted = 0;
++    uint32 botsJoined = 0;
++    if (sPlayerbotAIConfig->autoQueueLfg && !sPlayerbotAIConfig->autoQueueDryRun)
++    {
++        for (auto const& botPair : playerBots)
++        {
++            Player* bot = botPair.second;
++            if (IsRandomBot(bot) && sLFGMgr->AnswerProposalForPlayer(bot->GetGUID(), true))
++                ++proposalsAccepted;
++        }
++
++        for (LfgAutoQueueDemand const& demand : lfgDemands)
++        {
++            if (botsJoined >= sPlayerbotAIConfig->autoQueueMaxBotsPerCycle)
++                break;
++
++            for (auto const& botPair : playerBots)
++            {
++                Player* bot = botPair.second;
++                if (!IsRandomBot(bot) || !CanAutoQueueLfgBot(bot, demand.Team) || GetLfgRole(bot) != demand.Role)
++                    continue;
++
++                lfg::LfgDungeonSet dungeons = demand.Dungeons;
++                sLFGMgr->JoinLfg(bot, demand.Role, dungeons, "playerbot auto-fill");
++                if (!bot->IsUsingLfg())
++                    continue;
++
++                ++botsJoined;
++                TC_LOG_INFO("playerbots", "AutoQueue joined bot %s (%u) to LFG as role %u",
++                    bot->GetName().c_str(), bot->GetGUID().GetCounter(), uint32(demand.Role));
++                break;
++            }
++        }
++    }
++
+     TC_LOG_INFO("playerbots",
+-        "AutoQueue observer (dry-run=%u, max-bots=%u): LFG real/bot=%u/%u, BG real/bot=%u/%u, Arena real/bot=%u/%u",
++        "AutoQueue (dry-run=%u, max-bots=%u): LFG real/bot=%u/%u, joined=%u, accepted=%u; BG real/bot=%u/%u; Arena real/bot=%u/%u",
+         sPlayerbotAIConfig->autoQueueDryRun ? 1 : 0, sPlayerbotAIConfig->autoQueueMaxBotsPerCycle,
+-        realLfg, botLfg, realBg, botBg, realArena, botArena);
++        realLfg, botLfg, botsJoined, proposalsAccepted, realBg, botBg, realArena, botArena);
+ }
+ 
+ uint32 RandomPlayerbotMgr::AddRandomBots()
+diff --git a/src/server/game/DungeonFinding/LFGMgr.cpp b/src/server/game/DungeonFinding/LFGMgr.cpp
+index 11e3f565..f58b2af1 100644
+--- a/src/server/game/DungeonFinding/LFGMgr.cpp
++++ b/src/server/game/DungeonFinding/LFGMgr.cpp
+@@ -1598,6 +1598,26 @@ bool LFGMgr::AddProposal(LfgProposal& proposal)
+     return true;
+ }
+ 
++bool LFGMgr::AnswerProposalForPlayer(ObjectGuid guid, bool accept)
++{
++    uint32 proposalId = 0;
++    for (auto const& proposalPair : ProposalsStore)
++    {
++        auto const playerIt = proposalPair.second.players.find(guid);
++        if (playerIt != proposalPair.second.players.end() && playerIt->second.accept == LFG_ANSWER_PENDING)
++        {
++            proposalId = proposalPair.first;
++            break;
++        }
++    }
++
++    if (!proposalId)
++        return false;
++
++    UpdateProposal(proposalId, guid, accept);
++    return true;
++}
++
+ /**
+    Update Proposal info with player answer
+ 
+diff --git a/src/server/game/DungeonFinding/LFGMgr.h b/src/server/game/DungeonFinding/LFGMgr.h
+index 3a65ba20..5c5895ed 100644
+--- a/src/server/game/DungeonFinding/LFGMgr.h
++++ b/src/server/game/DungeonFinding/LFGMgr.h
+@@ -416,6 +416,8 @@ class LFGMgr
+         void InitBoot(ObjectGuid gguid, ObjectGuid kguid, ObjectGuid vguid, std::string const& reason);
+         /// Updates player boot proposal with new player answer
+         void UpdateBoot(ObjectGuid guid, bool accept);
++        /// Answers the pending proposal containing a player, if one exists
++        bool AnswerProposalForPlayer(ObjectGuid guid, bool accept);
+         /// Updates proposal to join dungeon with player answer
+         void UpdateProposal(uint32 proposalId, ObjectGuid guid, bool accept);
+         /// Updates the role check with player answer
