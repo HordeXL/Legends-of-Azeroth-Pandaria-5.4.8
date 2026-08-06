@@ -812,6 +812,12 @@ AiPlayerbot.AutoQueue.Arena.StageGroup = 0
 # Use `.soloarena unqueue` before `.soloarena ungroup`.
 AiPlayerbot.AutoQueue.Arena.StageQueue = 0
 
+# Manual stage-5 diagnostic only. When enabled, `.soloarena match` may schedule
+# one normal non-rated 2v2 queue update for the exact tracked groups. This creates
+# the Arena invitation but does not accept it or teleport any participant.
+# Do not click Enter; use `.soloarena status`, then `.soloarena unqueue` promptly.
+AiPlayerbot.AutoQueue.Arena.StageMatch = 0
+
 # Required Configuration for RandomBotAutoJoinBG
 #
 # Known issue: When enabling a lot of brackats in combination with multiple instances,

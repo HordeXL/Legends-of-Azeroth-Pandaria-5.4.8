@@ -177,6 +177,7 @@ bool PlayerbotAIConfig::Initialize()
     autoQueueArenaStageLogin = sConfigMgr->GetBoolDefault("AiPlayerbot.AutoQueue.Arena.StageLogin", false);
     autoQueueArenaStageGroup = sConfigMgr->GetBoolDefault("AiPlayerbot.AutoQueue.Arena.StageGroup", false);
     autoQueueArenaStageQueue = sConfigMgr->GetBoolDefault("AiPlayerbot.AutoQueue.Arena.StageQueue", false);
+    autoQueueArenaStageMatch = sConfigMgr->GetBoolDefault("AiPlayerbot.AutoQueue.Arena.StageMatch", false);
 
     randomChangeMultiplier = sConfigMgr->GetFloatDefault("AiPlayerbot.RandomChangeMultiplier", 1.0);
 
