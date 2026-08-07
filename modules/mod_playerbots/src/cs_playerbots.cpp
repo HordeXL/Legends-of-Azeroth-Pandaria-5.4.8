@@ -449,7 +449,8 @@ public:
         bool formGroups = args && !strcmp(args, "group");
         bool ungroup = args && !strcmp(args, "ungroup");
         bool stageQueue = args && !strcmp(args, "queue");
-        bool stageMatch = args && !strcmp(args, "match");
+        bool forceTolviron = args && !strcmp(args, "match tolviron");
+        bool stageMatch = (args && !strcmp(args, "match")) || forceTolviron;
         bool stageEnter = args && !strcmp(args, "enter");
         bool combatStatus = args && !strcmp(args, "combatstatus");
         bool leaveArena = args && !strcmp(args, "leave");
@@ -458,7 +459,7 @@ public:
             !stageQueue && !stageMatch && !stageEnter && !combatStatus && !leaveArena && !unstageQueue)
         {
             handler->SendSysMessage(
-                "Usage: .soloarena preview|login|status|group|queue|match|enter|combatstatus|leave|unqueue|ungroup|logout");
+                "Usage: .soloarena preview|login|status|group|queue|match [tolviron]|enter|combatstatus|leave|unqueue|ungroup|logout");
             return true;
         }
 
@@ -1204,7 +1205,8 @@ public:
                 return true;
             }
 
-            Battleground* arenaTemplate = sBattlegroundMgr->GetBattlegroundTemplate(BATTLEGROUND_AA);
+            BattlegroundTypeId matchType = forceTolviron ? BATTLEGROUND_TV : BATTLEGROUND_AA;
+            Battleground* arenaTemplate = sBattlegroundMgr->GetBattlegroundTemplate(matchType);
             PvPDifficultyEntry const* bracket = arenaTemplate ?
                 GetBattlegroundBracketByLevel(arenaTemplate->GetMapId(), player->GetLevel()) : nullptr;
             if (!arenaTemplate || !bracket)
@@ -1214,15 +1216,17 @@ public:
             }
 
             sBattlegroundMgr->ScheduleQueueUpdate(0, ARENA_TYPE_2v2,
-                BATTLEGROUND_QUEUE_2v2, BATTLEGROUND_AA, bracket->GetBracketId());
+                BATTLEGROUND_QUEUE_2v2, matchType, bracket->GetBracketId());
             SoloArenaMatchScheduled = true;
             TC_LOG_INFO("server",
-                "SoloArena invite-only 2v2 matchmaking scheduled members=%s/%s versus %s/%s; no acceptance or teleport requested",
+                "SoloArena invite-only 2v2 matchmaking scheduled arena=%s members=%s/%s versus %s/%s; no acceptance or teleport requested",
+                forceTolviron ? "Tol'viron" : "random",
                 player->GetName().c_str(), teammate->GetName().c_str(),
                 opponentHealer->GetName().c_str(), opponentDamage->GetName().c_str());
-            handler->SendSysMessage(
-                "Solo Arena scheduled one invite-only 2v2 queue update. Do not click Enter. "
-                "Use .soloarena status, then .soloarena unqueue promptly.");
+            handler->PSendSysMessage(
+                "Solo Arena scheduled one invite-only 2v2 queue update for %s. Do not click Enter. "
+                "Use .soloarena status, then .soloarena unqueue promptly.",
+                forceTolviron ? "Tol'viron" : "a random Arena");
             return true;
         }
 

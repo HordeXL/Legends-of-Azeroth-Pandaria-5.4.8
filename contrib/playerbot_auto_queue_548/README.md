@@ -687,6 +687,18 @@ normal countdown ends, then keep the match alive beyond five minutes and verify
 that dampening is applied without a crash. These patches add no configuration or
 database change.
 
+For repeatable Tol'viron-only regression runs, apply `0016` after `0015`:
+
+```powershell
+git apply --check contrib/playerbot_auto_queue_548/patches/0016-playerbots-solo-arena-force-tolviron.patch
+git apply contrib/playerbot_auto_queue_548/patches/0016-playerbots-solo-arena-force-tolviron.patch
+```
+
+Use `.soloarena match tolviron` instead of `.soloarena match` after the exact
+four-player queue has been staged. The former schedules `BATTLEGROUND_TV`
+directly; the latter deliberately retains the normal random all-Arena selection.
+This is a test-control change only and makes no database or configuration change.
+
 The same test's equipment audit found no 4/5 or 5/5 coherent set among the 200
 configured level-90 random-bot accounts. Do not treat candidate re-sorting as a
 5/5 fix. A later separately gated loadout stage must back up and restore every
@@ -706,6 +718,9 @@ separately. `MaxBotsPerCycle` is shared by both systems.
 Stop WorldServer, remove only the patches that were applied, in reverse order, then rebuild:
 
 ```powershell
+git apply -R --check contrib/playerbot_auto_queue_548/patches/0016-playerbots-solo-arena-force-tolviron.patch
+git apply -R contrib/playerbot_auto_queue_548/patches/0016-playerbots-solo-arena-force-tolviron.patch
+
 git apply -R --check contrib/playerbot_auto_queue_548/patches/0015-battleground-tolviron-object-rotations.patch
 git apply -R contrib/playerbot_auto_queue_548/patches/0015-battleground-tolviron-object-rotations.patch
 
