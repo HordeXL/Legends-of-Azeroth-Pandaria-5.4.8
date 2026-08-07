@@ -1,0 +1,265 @@
+diff --git a/modules/mod_playerbots/config/playerbots.conf.dist b/modules/mod_playerbots/config/playerbots.conf.dist
+index ef5639ed..91a225dd 100644
+--- a/modules/mod_playerbots/config/playerbots.conf.dist
++++ b/modules/mod_playerbots/config/playerbots.conf.dist
+@@ -835,6 +835,12 @@ AiPlayerbot.AutoQueue.Arena.StageHealthRestore = 0
+ # Playerbot AI state, and current victim. It starts no combat and changes nothing.
+ AiPlayerbot.AutoQueue.Arena.StageCombatStatus = 0
+ 
++# Manual stage-9 diagnostic only. When enabled, the exact staged participants
++# receive delayed post-return health restoration for normal client-button and
++# automatic completed-match exits. It also clears only the entered-instance
++# tracker after all four participants finish leaving the completed Arena.
++AiPlayerbot.AutoQueue.Arena.StageAutomaticExit = 0
++
+ # Required Configuration for RandomBotAutoJoinBG
+ #
+ # Known issue: When enabling a lot of brackats in combination with multiple instances,
+diff --git a/modules/mod_playerbots/src/Utils/PlayerbotAIConfig.cpp b/modules/mod_playerbots/src/Utils/PlayerbotAIConfig.cpp
+index 69ec5461..b0372d03 100644
+--- a/modules/mod_playerbots/src/Utils/PlayerbotAIConfig.cpp
++++ b/modules/mod_playerbots/src/Utils/PlayerbotAIConfig.cpp
+@@ -181,6 +181,7 @@ bool PlayerbotAIConfig::Initialize()
+     autoQueueArenaStageEnter = sConfigMgr->GetBoolDefault("AiPlayerbot.AutoQueue.Arena.StageEnter", false);
+     autoQueueArenaStageHealthRestore = sConfigMgr->GetBoolDefault("AiPlayerbot.AutoQueue.Arena.StageHealthRestore", false);
+     autoQueueArenaStageCombatStatus = sConfigMgr->GetBoolDefault("AiPlayerbot.AutoQueue.Arena.StageCombatStatus", false);
++    autoQueueArenaStageAutomaticExit = sConfigMgr->GetBoolDefault("AiPlayerbot.AutoQueue.Arena.StageAutomaticExit", false);
+ 
+     randomChangeMultiplier = sConfigMgr->GetFloatDefault("AiPlayerbot.RandomChangeMultiplier", 1.0);
+ 
+diff --git a/modules/mod_playerbots/src/Utils/PlayerbotAIConfig.h b/modules/mod_playerbots/src/Utils/PlayerbotAIConfig.h
+index fe4d5262..9ee5e35e 100644
+--- a/modules/mod_playerbots/src/Utils/PlayerbotAIConfig.h
++++ b/modules/mod_playerbots/src/Utils/PlayerbotAIConfig.h
+@@ -74,6 +74,7 @@ public:
+     bool autoQueueEnabled, autoQueueDryRun, autoQueueLfg, autoQueueBattleground, autoQueueArena;
+     bool autoQueueArenaStageLogin, autoQueueArenaStageGroup, autoQueueArenaStageQueue, autoQueueArenaStageMatch;
+     bool autoQueueArenaStageEnter, autoQueueArenaStageHealthRestore, autoQueueArenaStageCombatStatus;
++    bool autoQueueArenaStageAutomaticExit;
+     uint32 autoQueueCheckInterval, autoQueueMaxBotsPerCycle;
+     uint32 autoQueueArenaMinEquippedItems, autoQueueArenaMinAverageItemLevel, autoQueueArenaMinPvpItems;
+ 
+diff --git a/modules/mod_playerbots/src/cs_playerbots.cpp b/modules/mod_playerbots/src/cs_playerbots.cpp
+index 6a6f1424..ad95be9e 100644
+--- a/modules/mod_playerbots/src/cs_playerbots.cpp
++++ b/modules/mod_playerbots/src/cs_playerbots.cpp
+@@ -36,6 +36,7 @@
+ 
+ #include <algorithm>
+ #include <map>
++#include <set>
+ #include <sstream>
+ #include <vector>
+ 
+@@ -51,6 +52,8 @@ uint32 SoloArenaOpponentGroup = 0;
+ bool SoloArenaQueuesStaged = false;
+ bool SoloArenaMatchScheduled = false;
+ uint32 SoloArenaEnteredInstance = 0;
++uint32 SoloArenaAutomaticExitTimer = 0;
++std::set<uint32> SoloArenaAutomaticHealthRestoreScheduled;
+ 
+ enum class SoloArenaPreviewRole : uint8
+ {
+@@ -171,6 +174,29 @@ char const* SoloArenaBotStateName(PlayerbotAI* botAI)
+     }
+ }
+ 
++bool IsSoloArenaTrackedParticipant(uint32 guid)
++{
++    return guid && (guid == SoloArenaStagedRequester || guid == SoloArenaStagedTeammate ||
++        guid == SoloArenaStagedOpponentHealer || guid == SoloArenaStagedOpponentDamage);
++}
++
++bool ScheduleSoloArenaAutomaticHealthRestore(Player* participant, char const* reason)
++{
++    if (!participant || !IsSoloArenaTrackedParticipant(participant->GetGUID().GetCounter()) ||
++        !SoloArenaEnteredInstance || participant->GetBattlegroundId() != SoloArenaEnteredInstance)
++        return false;
++
++    uint32 guid = participant->GetGUID().GetCounter();
++    if (!SoloArenaAutomaticHealthRestoreScheduled.insert(guid).second)
++        return false;
++
++    participant->ScheduleBattlegroundHealthRestore();
++    TC_LOG_INFO("server",
++        "SoloArena automatic post-match health restore scheduled instance=%u name=%s guid=%u reason=%s",
++        SoloArenaEnteredInstance, participant->GetName().c_str(), guid, reason);
++    return true;
++}
++
+ bool HasExactSoloArenaQueueGroup(BattlegroundQueue& queue, uint32 firstGuid, uint32 secondGuid,
+                                  uint32& invitedInstance)
+ {
+@@ -308,6 +334,91 @@ SoloArenaPreviewCandidate const* FindSoloArenaCandidate(
+ }
+ }
+ 
++void HandleSoloArenaClientLeave(Player* player)
++{
++    if (!sPlayerbotAIConfig->autoQueueArenaStageAutomaticExit || !player ||
++        !SoloArenaEnteredInstance || !IsSoloArenaTrackedParticipant(player->GetGUID().GetCounter()))
++        return;
++
++    Battleground* arena = player->GetBattleground();
++    if (!arena || !arena->IsArena() || arena->GetInstanceID() != SoloArenaEnteredInstance ||
++        arena->GetStatus() != STATUS_WAIT_LEAVE)
++        return;
++
++    ScheduleSoloArenaAutomaticHealthRestore(player, "client-leave");
++}
++
++void UpdateSoloArenaAutomaticExit(uint32 diff)
++{
++    if (!sPlayerbotAIConfig->autoQueueArenaStageAutomaticExit || !SoloArenaEnteredInstance)
++    {
++        SoloArenaAutomaticExitTimer = 0;
++        return;
++    }
++
++    if (SoloArenaAutomaticExitTimer > diff)
++    {
++        SoloArenaAutomaticExitTimer -= diff;
++        return;
++    }
++    SoloArenaAutomaticExitTimer = 250;
++
++    uint32 instanceId = SoloArenaEnteredInstance;
++    Battleground* arena = sBattlegroundMgr->GetBattleground(instanceId, BATTLEGROUND_TYPE_NONE);
++    if (arena && arena->IsArena() && arena->GetStatus() == STATUS_WAIT_LEAVE)
++    {
++        uint32 participantGuids[] = { SoloArenaStagedRequester, SoloArenaStagedTeammate,
++            SoloArenaStagedOpponentHealer, SoloArenaStagedOpponentDamage };
++        for (uint32 guid : participantGuids)
++        {
++            Player* participant = guid ? ObjectAccessor::FindConnectedPlayer(
++                ObjectGuid::Create<HighGuid::Player>(guid)) : nullptr;
++            ScheduleSoloArenaAutomaticHealthRestore(participant, "wait-leave");
++
++            // The real requester keeps the normal client Leave Arena button. Playerbot
++            // sessions do not send that packet and can remain in the completed Arena
++            // after the core auto-close timer, so remove only the three exact staged
++            // bots through the same Player::LeaveBattleground path used by the command.
++            if (participant && guid != SoloArenaStagedRequester &&
++                participant->GetBattlegroundId() == instanceId)
++            {
++                participant->LeaveBattleground(true);
++                TC_LOG_INFO("server",
++                    "SoloArena automatic staged-bot exit requested instance=%u name=%s guid=%u",
++                    instanceId, participant->GetName().c_str(), guid);
++            }
++        }
++    }
++
++    bool pendingExit = false;
++    uint32 participantGuids[] = { SoloArenaStagedRequester, SoloArenaStagedTeammate,
++        SoloArenaStagedOpponentHealer, SoloArenaStagedOpponentDamage };
++    for (uint32 guid : participantGuids)
++    {
++        Player* participant = guid ? ObjectAccessor::FindConnectedPlayer(
++            ObjectGuid::Create<HighGuid::Player>(guid)) : nullptr;
++        if (participant && (participant->GetBattlegroundId() == instanceId ||
++            participant->IsBeingTeleported() ||
++            participant->InBattlegroundQueueForBattlegroundQueueType(BATTLEGROUND_QUEUE_2v2)))
++        {
++            pendingExit = true;
++            break;
++        }
++    }
++
++    if (pendingExit)
++        return;
++
++    TC_LOG_INFO("server",
++        "SoloArena automatic post-match exit finalized instance=%u health-restore-scheduled=%u; groups and staged logins remain for explicit cleanup",
++        instanceId, uint32(SoloArenaAutomaticHealthRestoreScheduled.size()));
++    SoloArenaEnteredInstance = 0;
++    SoloArenaQueuesStaged = false;
++    SoloArenaMatchScheduled = false;
++    SoloArenaAutomaticHealthRestoreScheduled.clear();
++    SoloArenaAutomaticExitTimer = 0;
++}
++
+ class playerbots_commandscript : public CommandScript
+ {
+ public:
+@@ -627,6 +738,8 @@ public:
+             SoloArenaEnteredInstance = 0;
+             SoloArenaQueuesStaged = false;
+             SoloArenaMatchScheduled = false;
++            SoloArenaAutomaticHealthRestoreScheduled.clear();
++            SoloArenaAutomaticExitTimer = 0;
+             TC_LOG_INFO("server",
+                 "SoloArena staged Arena left instance=%u participants=%s/%s versus %s/%s left=%u queue-removed=%u already-outside=%u health-restore-scheduled=%u",
+                 exitedInstance, player->GetName().c_str(), teammate->GetName().c_str(),
+@@ -1520,6 +1633,8 @@ public:
+         SoloArenaStagedTeammate = teammate->Guid;
+         SoloArenaStagedOpponentHealer = opponentHealer->Guid;
+         SoloArenaStagedOpponentDamage = opponentDamage->Guid;
++        SoloArenaAutomaticHealthRestoreScheduled.clear();
++        SoloArenaAutomaticExitTimer = 0;
+ 
+         for (SoloArenaPreviewCandidate const* candidate : stagedCandidates)
+         {
+diff --git a/modules/mod_playerbots/src/cs_playerbots.h b/modules/mod_playerbots/src/cs_playerbots.h
+index f937a5bb..a323318d 100644
+--- a/modules/mod_playerbots/src/cs_playerbots.h
++++ b/modules/mod_playerbots/src/cs_playerbots.h
+@@ -1,4 +1,9 @@
+ #pragma once
+ 
++#include "Define.h"
+ 
+-void AddSC_playerbots_commandscript();
+\ No newline at end of file
++class Player;
++
++void AddSC_playerbots_commandscript();
++void HandleSoloArenaClientLeave(Player* player);
++void UpdateSoloArenaAutomaticExit(uint32 diff);
+diff --git a/modules/mod_playerbots/src/mod_playerbots.cpp b/modules/mod_playerbots/src/mod_playerbots.cpp
+index 8f075e16..a977eb6a 100644
+--- a/modules/mod_playerbots/src/mod_playerbots.cpp
++++ b/modules/mod_playerbots/src/mod_playerbots.cpp
+@@ -10,6 +10,7 @@
+ #include "Config.h"
+ #include "cs_playerbots.h"
+ #include "Log.h"
++#include "Opcodes.h"
+ #include "Player.h"
+ #include "ScriptMgr.h"
+ #include "World.h"
+@@ -88,6 +89,7 @@ public:
+     void OnUpdate(uint32 diff) override
+     {
+         sBracketMgr->Update(diff);
++        UpdateSoloArenaAutomaticExit(diff);
+     }
+ };
+ 
+@@ -97,6 +99,9 @@ public:
+     PlayerbotsServerScript() : ServerScript("PlayerbotsServerScript") {}
+     void OnPacketReceive(WorldSession* sessionBot, WorldPacket& packet) override
+     {
++        if (packet.GetOpcode() == CMSG_BATTLEFIELD_LEAVE)
++            HandleSoloArenaClientLeave(sessionBot ? sessionBot->GetPlayer() : nullptr);
++
+         Player* playerBot = sessionBot->GetPlayer();
+             if (PlayerbotMgr* playerbotMgr = GET_PLAYERBOT_MGR(playerBot))
+                 playerbotMgr->HandleMasterIncomingPacket(packet);
+diff --git a/src/server/worldserver/playerbots.conf.dist b/src/server/worldserver/playerbots.conf.dist
+index 2a135d4c..eaea842e 100644
+--- a/src/server/worldserver/playerbots.conf.dist
++++ b/src/server/worldserver/playerbots.conf.dist
+@@ -835,6 +835,12 @@ AiPlayerbot.AutoQueue.Arena.StageHealthRestore = 0
+ # Playerbot AI state, and current victim. It starts no combat and changes nothing.
+ AiPlayerbot.AutoQueue.Arena.StageCombatStatus = 0
+ 
++# Manual stage-9 diagnostic only. When enabled, the exact staged participants
++# receive delayed post-return health restoration for normal client-button and
++# automatic completed-match exits. It also clears only the entered-instance
++# tracker after all four participants finish leaving the completed Arena.
++AiPlayerbot.AutoQueue.Arena.StageAutomaticExit = 0
++
+ # Required Configuration for RandomBotAutoJoinBG
+ #
+ # Known issue: When enabling a lot of brackats in combination with multiple instances,

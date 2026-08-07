@@ -181,6 +181,7 @@ bool PlayerbotAIConfig::Initialize()
     autoQueueArenaStageEnter = sConfigMgr->GetBoolDefault("AiPlayerbot.AutoQueue.Arena.StageEnter", false);
     autoQueueArenaStageHealthRestore = sConfigMgr->GetBoolDefault("AiPlayerbot.AutoQueue.Arena.StageHealthRestore", false);
     autoQueueArenaStageCombatStatus = sConfigMgr->GetBoolDefault("AiPlayerbot.AutoQueue.Arena.StageCombatStatus", false);
+    autoQueueArenaStageAutomaticExit = sConfigMgr->GetBoolDefault("AiPlayerbot.AutoQueue.Arena.StageAutomaticExit", false);
 
     randomChangeMultiplier = sConfigMgr->GetFloatDefault("AiPlayerbot.RandomChangeMultiplier", 1.0);
 

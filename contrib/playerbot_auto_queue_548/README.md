@@ -1,7 +1,9 @@
 # Playerbot auto-queue patches for MoP 5.4.8
 
-Status: experimental. Patches `0001`, `0004`, `0005`, `0006`, `0007`, `0008`, `0009`, `0010`, `0011`, and `0012` are applied to
-the active source, compiled, and runtime-verified. Patches
+Status: experimental. Patches `0001`, `0004`, `0005`, `0006`, `0007`, `0008`, `0009`, `0010`, `0011`, `0012`, and `0013` are applied to
+the active source. Patches through `0012` are compiled and runtime-verified.
+The first `0013` runtime pass verified the real-player client-button health path,
+but exposed stuck staged bots; `0013` is revised, compiled, and awaiting retest. Patches
 `0002` and `0003` are not applied. None
 contains SQL. The explicitly gated `0005` login, `0006` grouping, and `0007`
 non-rated queue stages use normal core paths and can therefore save character/group
@@ -10,6 +12,8 @@ invite-only matchmaking diagnostic. Patch `0010` adds a separately gated staged
 accept/teleport diagnostic plus exact pre-countdown cleanup. Patch `0011` adds a
 separately gated post-return health refill after destination-map stat recalculation.
 Patch `0012` adds a separately gated, read-only countdown/combat-status snapshot.
+Patch `0013` adds separately gated health/tracker handling for normal completed-match
+client-button and automatic exits of only the four exact staged participants.
 
 The active `Build/bin/RelWithDebInfo/playerbots.conf` currently enables the `0001`
 observer with `DryRun = 1`, all three queue categories visible, a five-second check
@@ -167,6 +171,17 @@ contained the LFG configuration key without the corresponding bot queue implemen
      coordinates to `Server.log` and the administrator's chat;
    - performs no queue scheduling, invitation, teleport, movement, attack, result,
      reward, rating, schema, or SQL operation.
+13. `patches/0013-playerbots-solo-arena-automatic-exit.patch`
+   - adds the separately disabled `StageAutomaticExit` gate;
+   - watches only the exact tracked Arena instance and four staged participant GUIDs;
+   - schedules the existing delayed post-return health operation while a completed
+     Arena is in `WAIT_LEAVE`, before client-button or automatic return teleports;
+   - also recognizes the requester's normal `CMSG_BATTLEFIELD_LEAVE` before the core
+     handler starts the return teleport;
+   - clears only the entered-instance tracker after all four participants are outside;
+     groups and staged bot logins remain for the existing explicit cleanup;
+   - changes no unrelated battleground exit, combat, result, reward, rating, schema,
+     or SQL behavior.
 
 Arena combat, completion, rewards, and ratings remain unimplemented. An Arena must
 not be treated as an ordinary battleground. Manually entered
@@ -248,7 +263,24 @@ the LFG queue manager.
   `9D3D575C058E2241D9004F9BDABD806010931DBC5A2C8C596BCF967557338FC3`;
   `git diff --check` and reverse apply checking pass. The complete x64
   RelWithDebInfo `worldserver` target compiled and linked successfully on
-  2026-08-06. Runtime countdown diagnostics are pending.
+  2026-08-06. Both `WAIT_JOIN` and `IN_PROGRESS` snapshots, normal combat, four
+  participant return, health restoration, and exact cleanup passed at runtime.
+- Patch `0013` is applied locally with `StageAutomaticExit = 1` only in the ignored
+  active test configuration; both distributed configurations retain the safe
+  default `0`. Its revised SHA-256 is
+  `D1105A05A7E2124A2FA2BD9F225A1DA613C13003B96DDD895E8BFB60D3ED5049`.
+  `git diff --check` and reverse apply checking pass. The initial x64
+  RelWithDebInfo build linked successfully on 2026-08-07. Its first runtime pass
+  scheduled health restoration for all four participants, the requester's normal
+  client Leave button reduced Arena occupancy from `4/0` to `3/0`, and the delayed
+  operation restored the requester after the destination teleport. The log prints
+  the old health followed by the recalculated maximum (`481409/733409`); the operation
+  itself calls `SetFullHealth()`. The three staged bots remained in the completed
+  Arena beyond the core 120-second auto-close, so the tracker could not finalize.
+  The patch is now revised to call the existing `Player::LeaveBattleground(true)`
+  path only for the three exact staged bot GUIDs during `WAIT_LEAVE`; the real
+  requester retains the normal client button. The revised x64 RelWithDebInfo target
+  compiled and linked successfully on 2026-08-07; runtime retest remains pending.
 
 The user confirmed fresh backups before `0005` was applied. Its first Alliance
 runtime test passed on 2026-08-05: the three screened candidates were requested,
@@ -605,6 +637,67 @@ groups; direct character-database checks found `groups=0`, no matching
 Match completion, rewards, ratings, and proactive opponent engagement remain
 outside `0012`.
 
+One completed-match follow-up exposed a separate limitation. The normal client
+`Leave Arena` button removed the requester first, reducing the observer from four
+to three Arena slots, but it did not pass through the `0011` command-owned delayed
+health restoration. A subsequent `.soloarena leave` safely removed the remaining
+three bots and restored their health, but could not restore the already-outside
+requester. A later patch must cover normal client and automatic post-match exits
+without altering unrelated battleground exits.
+
+Patch `0013` is the gated implementation prepared for that limitation. Apply it
+only after `0012` and its cleanup have passed:
+
+```powershell
+git apply --check contrib/playerbot_auto_queue_548/patches/0013-playerbots-solo-arena-automatic-exit.patch
+git apply contrib/playerbot_auto_queue_548/patches/0013-playerbots-solo-arena-automatic-exit.patch
+```
+
+```ini
+AiPlayerbot.AutoQueue.Arena.StageAutomaticExit = 1
+```
+
+Run the verified sequence through a naturally completed match. After the winner is
+shown and `WAIT_LEAVE` is confirmed, use the normal client `Leave Arena` button for
+the requester and do not use `.soloarena leave`. The three exact staged bots should
+leave through `Player::LeaveBattleground(true)` without waiting for or modifying the
+global Arena auto-close path. The log must contain four exact automatic health
+schedules, three staged-bot exit requests, four delayed restorations, and one
+automatic-exit finalization. Then run the normal `ungroup`/`logout` cleanup and direct
+database checks. The requester must return at full destination-map health. Abort
+with the existing `.soloarena leave` command if the exact staged cleanup stalls.
+
+The first revised-`0013` retest exposed two independent core defects in Tol'viron
+Arena. Apply these patches in order after `0013`:
+
+```powershell
+git apply --check contrib/playerbot_auto_queue_548/patches/0014-battleground-unrated-arena-dampening-crash.patch
+git apply contrib/playerbot_auto_queue_548/patches/0014-battleground-unrated-arena-dampening-crash.patch
+
+git apply --check contrib/playerbot_auto_queue_548/patches/0015-battleground-tolviron-object-rotations.patch
+git apply contrib/playerbot_auto_queue_548/patches/0015-battleground-tolviron-object-rotations.patch
+```
+
+`0014` prevents non-rated Arenas from dereferencing absent rated `ArenaTeam`
+objects when dampening updates; it applies dampening to the battleground's actual
+participant map instead. `0015` supplies the missing fourth quaternion components
+and explicit respawn arguments for Tol'viron's two gates and first buff object.
+Together they require a fresh Tol'viron run: verify that both gates open when the
+normal countdown ends, then keep the match alive beyond five minutes and verify
+that dampening is applied without a crash. These patches add no configuration or
+database change.
+
+The same test's equipment audit found no 4/5 or 5/5 coherent set among the 200
+configured level-90 random-bot accounts. Do not treat candidate re-sorting as a
+5/5 fix. A later separately gated loadout stage must back up and restore every
+replaced equipment slot/item instance for the teammate and both opponents.
+
+The same test showed that staged bots did not visibly apply their available class
+buffs to themselves and their Arena teammate during preparation. Treat preparation
+buffing as a separate later stage: use each bot's existing spell/action logic,
+restrict targets to its exact two-member Arena team, allow it only during
+`WAIT_JOIN`, and do not use direct hard-coded spell casts.
+
 Do not enable LFG and battleground functional testing simultaneously until each has passed
 separately. `MaxBotsPerCycle` is shared by both systems.
 
@@ -613,6 +706,15 @@ separately. `MaxBotsPerCycle` is shared by both systems.
 Stop WorldServer, remove only the patches that were applied, in reverse order, then rebuild:
 
 ```powershell
+git apply -R --check contrib/playerbot_auto_queue_548/patches/0015-battleground-tolviron-object-rotations.patch
+git apply -R contrib/playerbot_auto_queue_548/patches/0015-battleground-tolviron-object-rotations.patch
+
+git apply -R --check contrib/playerbot_auto_queue_548/patches/0014-battleground-unrated-arena-dampening-crash.patch
+git apply -R contrib/playerbot_auto_queue_548/patches/0014-battleground-unrated-arena-dampening-crash.patch
+
+git apply -R --check contrib/playerbot_auto_queue_548/patches/0013-playerbots-solo-arena-automatic-exit.patch
+git apply -R contrib/playerbot_auto_queue_548/patches/0013-playerbots-solo-arena-automatic-exit.patch
+
 git apply -R --check contrib/playerbot_auto_queue_548/patches/0012-playerbots-solo-arena-combat-status.patch
 git apply -R contrib/playerbot_auto_queue_548/patches/0012-playerbots-solo-arena-combat-status.patch
 
@@ -690,6 +792,13 @@ The active `playerbots.conf` entries may then be removed manually or left disabl
 - Arena countdown/combat status: with `0012` explicitly enabled, capture one exact
   four-participant `WAIT_JOIN` snapshot, wait for the normal gates to open, capture
   one `IN_PROGRESS` snapshot, and immediately leave and complete all normal cleanup.
+- Arena completed-match exit: with `0013` explicitly enabled, finish the staged
+  match, press the normal client Leave button, verify the three exact staged-bot
+  exit requests, four health restorations, automatic tracker cleanup, zero Arena
+  slots, full requester health, zero groups, and all staged bots offline.
+- Tol'viron core regression: with `0014` and `0015` applied, verify both gates open
+  at `IN_PROGRESS`; keep all four participants alive beyond the five-minute
+  dampening boundary and verify no crash plus dampening on all present players.
 - Shutdown/restart: verify no bot remains stuck in LFG or battleground queue state.
 - Keep `AiPlayerbot.AutoQueue.Arena = 0` during functional LFG/BG testing; enable it
   only for the read-only `0004` preview while `DryRun = 1`.

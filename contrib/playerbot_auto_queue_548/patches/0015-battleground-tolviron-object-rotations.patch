@@ -1,0 +1,18 @@
+diff --git a/src/server/game/Battlegrounds/Zones/BattlegroundTV.cpp b/src/server/game/Battlegrounds/Zones/BattlegroundTV.cpp
+index c3bc3d08..d7c87bda 100644
+--- a/src/server/game/Battlegrounds/Zones/BattlegroundTV.cpp
++++ b/src/server/game/Battlegrounds/Zones/BattlegroundTV.cpp
+@@ -135,10 +135,10 @@ void BattlegroundTV::Reset()
+ bool BattlegroundTV::SetupBattleground()
+ {
+     // Gates
+-    if (!AddObject(BG_TV_OBJECT_DOOR_1, BG_TV_OBJECT_TYPE_DOOR_1, -10774.6f, 430.992f, 24.41076f, 0.0156f, 0.0f, 0.0f, 0.0078f, RESPAWN_IMMEDIATELY)
+-        || !AddObject(BG_TV_OBJECT_DOOR_2, BG_TV_OBJECT_TYPE_DOOR_2, -10655.0f, 428.117f, 24.416f, 3.148f, 0.0f, 0.0f, 1.0f, RESPAWN_IMMEDIATELY)
++    if (!AddObject(BG_TV_OBJECT_DOOR_1, BG_TV_OBJECT_TYPE_DOOR_1, -10774.6f, 430.992f, 24.41076f, 0.0156f, 0.0f, 0.0f, 0.0078f, 0.9999696f, RESPAWN_IMMEDIATELY)
++        || !AddObject(BG_TV_OBJECT_DOOR_2, BG_TV_OBJECT_TYPE_DOOR_2, -10655.0f, 428.117f, 24.416f, 3.148f, 0.0f, 0.0f, 1.0f, -0.00320367f, RESPAWN_IMMEDIATELY)
+     // Buffs
+-        || !AddObject(BG_TV_OBJECT_BUFF_1, BG_TV_OBJECT_TYPE_BUFF_1, -10717.63f, 383.8223f, 24.412825f, 1.555f, 0.0f, 0.0f, 0.70154f, 120)
++        || !AddObject(BG_TV_OBJECT_BUFF_1, BG_TV_OBJECT_TYPE_BUFF_1, -10717.63f, 383.8223f, 24.412825f, 1.555f, 0.0f, 0.0f, 0.70154f, 0.7126695f, 120)
+         || !AddObject(BG_TV_OBJECT_BUFF_2, BG_TV_OBJECT_TYPE_BUFF_2, -10716.6f, 475.364f, 24.4131f, 0.0f, 0.0f, 0.70068f, -0.713476f, 120))
+     {
+         TC_LOG_ERROR("bg.battleground", "BattlegroundTV: Failed to spawn some object!");

@@ -74,6 +74,7 @@ public:
     bool autoQueueEnabled, autoQueueDryRun, autoQueueLfg, autoQueueBattleground, autoQueueArena;
     bool autoQueueArenaStageLogin, autoQueueArenaStageGroup, autoQueueArenaStageQueue, autoQueueArenaStageMatch;
     bool autoQueueArenaStageEnter, autoQueueArenaStageHealthRestore, autoQueueArenaStageCombatStatus;
+    bool autoQueueArenaStageAutomaticExit;
     uint32 autoQueueCheckInterval, autoQueueMaxBotsPerCycle;
     uint32 autoQueueArenaMinEquippedItems, autoQueueArenaMinAverageItemLevel, autoQueueArenaMinPvpItems;
 

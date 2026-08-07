@@ -835,6 +835,12 @@ AiPlayerbot.AutoQueue.Arena.StageHealthRestore = 0
 # Playerbot AI state, and current victim. It starts no combat and changes nothing.
 AiPlayerbot.AutoQueue.Arena.StageCombatStatus = 0
 
+# Manual stage-9 diagnostic only. When enabled, the exact staged participants
+# receive delayed post-return health restoration for normal client-button and
+# automatic completed-match exits. It also clears only the entered-instance
+# tracker after all four participants finish leaving the completed Arena.
+AiPlayerbot.AutoQueue.Arena.StageAutomaticExit = 0
+
 # Required Configuration for RandomBotAutoJoinBG
 #
 # Known issue: When enabling a lot of brackats in combination with multiple instances,

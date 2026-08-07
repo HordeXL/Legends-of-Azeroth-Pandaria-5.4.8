@@ -10,6 +10,7 @@
 #include "Config.h"
 #include "cs_playerbots.h"
 #include "Log.h"
+#include "Opcodes.h"
 #include "Player.h"
 #include "ScriptMgr.h"
 #include "World.h"
@@ -88,6 +89,7 @@ public:
     void OnUpdate(uint32 diff) override
     {
         sBracketMgr->Update(diff);
+        UpdateSoloArenaAutomaticExit(diff);
     }
 };
 
@@ -97,6 +99,9 @@ public:
     PlayerbotsServerScript() : ServerScript("PlayerbotsServerScript") {}
     void OnPacketReceive(WorldSession* sessionBot, WorldPacket& packet) override
     {
+        if (packet.GetOpcode() == CMSG_BATTLEFIELD_LEAVE)
+            HandleSoloArenaClientLeave(sessionBot ? sessionBot->GetPlayer() : nullptr);
+
         Player* playerBot = sessionBot->GetPlayer();
             if (PlayerbotMgr* playerbotMgr = GET_PLAYERBOT_MGR(playerBot))
                 playerbotMgr->HandleMasterIncomingPacket(packet);

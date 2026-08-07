@@ -36,6 +36,7 @@
 
 #include <algorithm>
 #include <map>
+#include <set>
 #include <sstream>
 #include <vector>
 
@@ -51,6 +52,8 @@ uint32 SoloArenaOpponentGroup = 0;
 bool SoloArenaQueuesStaged = false;
 bool SoloArenaMatchScheduled = false;
 uint32 SoloArenaEnteredInstance = 0;
+uint32 SoloArenaAutomaticExitTimer = 0;
+std::set<uint32> SoloArenaAutomaticHealthRestoreScheduled;
 
 enum class SoloArenaPreviewRole : uint8
 {
@@ -169,6 +172,29 @@ char const* SoloArenaBotStateName(PlayerbotAI* botAI)
         case BOT_STATE_DEAD:       return "dead";
         default:                   return "unknown";
     }
+}
+
+bool IsSoloArenaTrackedParticipant(uint32 guid)
+{
+    return guid && (guid == SoloArenaStagedRequester || guid == SoloArenaStagedTeammate ||
+        guid == SoloArenaStagedOpponentHealer || guid == SoloArenaStagedOpponentDamage);
+}
+
+bool ScheduleSoloArenaAutomaticHealthRestore(Player* participant, char const* reason)
+{
+    if (!participant || !IsSoloArenaTrackedParticipant(participant->GetGUID().GetCounter()) ||
+        !SoloArenaEnteredInstance || participant->GetBattlegroundId() != SoloArenaEnteredInstance)
+        return false;
+
+    uint32 guid = participant->GetGUID().GetCounter();
+    if (!SoloArenaAutomaticHealthRestoreScheduled.insert(guid).second)
+        return false;
+
+    participant->ScheduleBattlegroundHealthRestore();
+    TC_LOG_INFO("server",
+        "SoloArena automatic post-match health restore scheduled instance=%u name=%s guid=%u reason=%s",
+        SoloArenaEnteredInstance, participant->GetName().c_str(), guid, reason);
+    return true;
 }
 
 bool HasExactSoloArenaQueueGroup(BattlegroundQueue& queue, uint32 firstGuid, uint32 secondGuid,
@@ -306,6 +332,91 @@ SoloArenaPreviewCandidate const* FindSoloArenaCandidate(
 
     return nullptr;
 }
+}
+
+void HandleSoloArenaClientLeave(Player* player)
+{
+    if (!sPlayerbotAIConfig->autoQueueArenaStageAutomaticExit || !player ||
+        !SoloArenaEnteredInstance || !IsSoloArenaTrackedParticipant(player->GetGUID().GetCounter()))
+        return;
+
+    Battleground* arena = player->GetBattleground();
+    if (!arena || !arena->IsArena() || arena->GetInstanceID() != SoloArenaEnteredInstance ||
+        arena->GetStatus() != STATUS_WAIT_LEAVE)
+        return;
+
+    ScheduleSoloArenaAutomaticHealthRestore(player, "client-leave");
+}
+
+void UpdateSoloArenaAutomaticExit(uint32 diff)
+{
+    if (!sPlayerbotAIConfig->autoQueueArenaStageAutomaticExit || !SoloArenaEnteredInstance)
+    {
+        SoloArenaAutomaticExitTimer = 0;
+        return;
+    }
+
+    if (SoloArenaAutomaticExitTimer > diff)
+    {
+        SoloArenaAutomaticExitTimer -= diff;
+        return;
+    }
+    SoloArenaAutomaticExitTimer = 250;
+
+    uint32 instanceId = SoloArenaEnteredInstance;
+    Battleground* arena = sBattlegroundMgr->GetBattleground(instanceId, BATTLEGROUND_TYPE_NONE);
+    if (arena && arena->IsArena() && arena->GetStatus() == STATUS_WAIT_LEAVE)
+    {
+        uint32 participantGuids[] = { SoloArenaStagedRequester, SoloArenaStagedTeammate,
+            SoloArenaStagedOpponentHealer, SoloArenaStagedOpponentDamage };
+        for (uint32 guid : participantGuids)
+        {
+            Player* participant = guid ? ObjectAccessor::FindConnectedPlayer(
+                ObjectGuid::Create<HighGuid::Player>(guid)) : nullptr;
+            ScheduleSoloArenaAutomaticHealthRestore(participant, "wait-leave");
+
+            // The real requester keeps the normal client Leave Arena button. Playerbot
+            // sessions do not send that packet and can remain in the completed Arena
+            // after the core auto-close timer, so remove only the three exact staged
+            // bots through the same Player::LeaveBattleground path used by the command.
+            if (participant && guid != SoloArenaStagedRequester &&
+                participant->GetBattlegroundId() == instanceId)
+            {
+                participant->LeaveBattleground(true);
+                TC_LOG_INFO("server",
+                    "SoloArena automatic staged-bot exit requested instance=%u name=%s guid=%u",
+                    instanceId, participant->GetName().c_str(), guid);
+            }
+        }
+    }
+
+    bool pendingExit = false;
+    uint32 participantGuids[] = { SoloArenaStagedRequester, SoloArenaStagedTeammate,
+        SoloArenaStagedOpponentHealer, SoloArenaStagedOpponentDamage };
+    for (uint32 guid : participantGuids)
+    {
+        Player* participant = guid ? ObjectAccessor::FindConnectedPlayer(
+            ObjectGuid::Create<HighGuid::Player>(guid)) : nullptr;
+        if (participant && (participant->GetBattlegroundId() == instanceId ||
+            participant->IsBeingTeleported() ||
+            participant->InBattlegroundQueueForBattlegroundQueueType(BATTLEGROUND_QUEUE_2v2)))
+        {
+            pendingExit = true;
+            break;
+        }
+    }
+
+    if (pendingExit)
+        return;
+
+    TC_LOG_INFO("server",
+        "SoloArena automatic post-match exit finalized instance=%u health-restore-scheduled=%u; groups and staged logins remain for explicit cleanup",
+        instanceId, uint32(SoloArenaAutomaticHealthRestoreScheduled.size()));
+    SoloArenaEnteredInstance = 0;
+    SoloArenaQueuesStaged = false;
+    SoloArenaMatchScheduled = false;
+    SoloArenaAutomaticHealthRestoreScheduled.clear();
+    SoloArenaAutomaticExitTimer = 0;
 }
 
 class playerbots_commandscript : public CommandScript
@@ -627,6 +738,8 @@ public:
             SoloArenaEnteredInstance = 0;
             SoloArenaQueuesStaged = false;
             SoloArenaMatchScheduled = false;
+            SoloArenaAutomaticHealthRestoreScheduled.clear();
+            SoloArenaAutomaticExitTimer = 0;
             TC_LOG_INFO("server",
                 "SoloArena staged Arena left instance=%u participants=%s/%s versus %s/%s left=%u queue-removed=%u already-outside=%u health-restore-scheduled=%u",
                 exitedInstance, player->GetName().c_str(), teammate->GetName().c_str(),
@@ -1520,6 +1633,8 @@ public:
         SoloArenaStagedTeammate = teammate->Guid;
         SoloArenaStagedOpponentHealer = opponentHealer->Guid;
         SoloArenaStagedOpponentDamage = opponentDamage->Guid;
+        SoloArenaAutomaticHealthRestoreScheduled.clear();
+        SoloArenaAutomaticExitTimer = 0;
 
         for (SoloArenaPreviewCandidate const* candidate : stagedCandidates)
         {
