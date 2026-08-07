@@ -831,7 +831,9 @@ static Battleground* FromTemplate(Battleground const* bg)
 }
 
 // create a new battleground that will really be used to play
-Battleground* BattlegroundMgr::CreateNewBattleground(BattlegroundTypeId originalBgTypeId, PvPDifficultyEntry const* bracketEntry, uint8 arenaType, bool isRated)
+Battleground* BattlegroundMgr::CreateNewBattleground(BattlegroundTypeId originalBgTypeId,
+    PvPDifficultyEntry const* bracketEntry, uint8 arenaType, bool isRated,
+    BattlegroundTypeId forcedRandomTypeId)
 {
     BattlegroundTypeId bgTypeId = originalBgTypeId;
     bool isRandom = false;
@@ -843,7 +845,8 @@ Battleground* BattlegroundMgr::CreateNewBattleground(BattlegroundTypeId original
             /// Intentional fallback, "All Arenas" is random too
         case BATTLEGROUND_AA:
         case BATTLEGROUND_RATED_10_VS_10:
-            bgTypeId = GetRandomBG(originalBgTypeId);
+            bgTypeId = originalBgTypeId == BATTLEGROUND_AA && forcedRandomTypeId != BATTLEGROUND_TYPE_NONE ?
+                forcedRandomTypeId : GetRandomBG(originalBgTypeId);
             break;
         default:
             break;

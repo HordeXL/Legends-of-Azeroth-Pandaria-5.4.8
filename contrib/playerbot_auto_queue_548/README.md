@@ -695,9 +695,12 @@ git apply contrib/playerbot_auto_queue_548/patches/0016-playerbots-solo-arena-fo
 ```
 
 Use `.soloarena match tolviron` instead of `.soloarena match` after the exact
-four-player queue has been staged. The former schedules `BATTLEGROUND_TV`
-directly; the latter deliberately retains the normal random all-Arena selection.
-This is a test-control change only and makes no database or configuration change.
+four-player queue has been staged. The former keeps matchmaking on the original
+`BATTLEGROUND_AA` queue/bracket and supplies a one-shot `BATTLEGROUND_TV`
+selection when that exact match is created; the latter deliberately retains the
+normal random all-Arena selection. The one-shot selection is consumed after
+successful creation and cleared by `.soloarena unqueue`. This is a test-control
+change only and makes no database or configuration change.
 
 The same test's equipment audit found no 4/5 or 5/5 coherent set among the 200
 configured level-90 random-bot accounts. Do not treat candidate re-sorting as a

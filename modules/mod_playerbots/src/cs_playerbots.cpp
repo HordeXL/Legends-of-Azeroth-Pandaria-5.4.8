@@ -812,6 +812,7 @@ public:
 
             if (!onlineQueueSlots && !requesterExact && !opponentExact)
             {
+                arenaQueue.SetForcedArenaType(BATTLEGROUND_TYPE_NONE);
                 SoloArenaQueuesStaged = false;
                 SoloArenaMatchScheduled = false;
                 handler->SendSysMessage(
@@ -829,6 +830,7 @@ public:
             }
 
             Player* removalOrder[] = { teammate, player, opponentDamage, opponentHealer };
+            arenaQueue.SetForcedArenaType(BATTLEGROUND_TYPE_NONE);
             for (Player* participant : removalOrder)
                 sBattlegroundMgr->RemovePlayerFromQueue(participant, BATTLEGROUND_QUEUE_2v2);
 
@@ -1205,8 +1207,7 @@ public:
                 return true;
             }
 
-            BattlegroundTypeId matchType = forceTolviron ? BATTLEGROUND_TV : BATTLEGROUND_AA;
-            Battleground* arenaTemplate = sBattlegroundMgr->GetBattlegroundTemplate(matchType);
+            Battleground* arenaTemplate = sBattlegroundMgr->GetBattlegroundTemplate(BATTLEGROUND_AA);
             PvPDifficultyEntry const* bracket = arenaTemplate ?
                 GetBattlegroundBracketByLevel(arenaTemplate->GetMapId(), player->GetLevel()) : nullptr;
             if (!arenaTemplate || !bracket)
@@ -1215,8 +1216,9 @@ public:
                 return true;
             }
 
+            arenaQueue.SetForcedArenaType(forceTolviron ? BATTLEGROUND_TV : BATTLEGROUND_TYPE_NONE);
             sBattlegroundMgr->ScheduleQueueUpdate(0, ARENA_TYPE_2v2,
-                BATTLEGROUND_QUEUE_2v2, matchType, bracket->GetBracketId());
+                BATTLEGROUND_QUEUE_2v2, BATTLEGROUND_AA, bracket->GetBracketId());
             SoloArenaMatchScheduled = true;
             TC_LOG_INFO("server",
                 "SoloArena invite-only 2v2 matchmaking scheduled arena=%s members=%s/%s versus %s/%s; no acceptance or teleport requested",

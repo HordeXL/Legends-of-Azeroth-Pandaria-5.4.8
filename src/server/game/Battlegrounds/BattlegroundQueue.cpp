@@ -976,12 +976,18 @@ void BattlegroundQueue::BattlegroundQueueUpdate(uint32 /*diff*/, BattlegroundTyp
             || (bgTemplate->IsArena() && CheckSkirmishForSameFaction(bracket_id, MinPlayersPerTeam)))
         {
             // we successfully created a pool
-            Battleground* bg2 = sBattlegroundMgr->CreateNewBattleground(bgTypeId, bracketEntry, arenaType, false);
+            BattlegroundTypeId forcedArenaType = bgTypeId == BATTLEGROUND_AA ?
+                m_ForcedArenaType : BATTLEGROUND_TYPE_NONE;
+            Battleground* bg2 = sBattlegroundMgr->CreateNewBattleground(
+                bgTypeId, bracketEntry, arenaType, false, forcedArenaType);
             if (!bg2)
             {
                 TC_LOG_ERROR("bg.battleground", "BattlegroundQueue::Update - Cannot create battleground: %u", bgTypeId);
                 return;
             }
+
+            if (forcedArenaType != BATTLEGROUND_TYPE_NONE)
+                m_ForcedArenaType = BATTLEGROUND_TYPE_NONE;
 
             // invite those selection pools
             for (uint32 i = 0; i < BG_TEAMS_COUNT; i++)

@@ -19,23 +19,30 @@ diff --git a/modules/mod_playerbots/src/cs_playerbots.cpp b/modules/mod_playerbo
 +                "Usage: .soloarena preview|login|status|group|queue|match [tolviron]|enter|combatstatus|leave|unqueue|ungroup|logout");
              return true;
          }
- 
-@@ -1204,7 +1205,8 @@ public:
+
+@@ -811,6 +812,7 @@ public:
+
+             if (!onlineQueueSlots && !requesterExact && !opponentExact)
+             {
++                arenaQueue.SetForcedArenaType(BATTLEGROUND_TYPE_NONE);
+                 SoloArenaQueuesStaged = false;
+                 SoloArenaMatchScheduled = false;
+                 handler->SendSysMessage(
+@@ -828,6 +830,7 @@ public:
+             }
+
+             Player* removalOrder[] = { teammate, player, opponentDamage, opponentHealer };
++            arenaQueue.SetForcedArenaType(BATTLEGROUND_TYPE_NONE);
+             for (Player* participant : removalOrder)
+                 sBattlegroundMgr->RemovePlayerFromQueue(participant, BATTLEGROUND_QUEUE_2v2);
+
+@@ -1213,15 +1216,18 @@ public:
                  return true;
              }
- 
--            Battleground* arenaTemplate = sBattlegroundMgr->GetBattlegroundTemplate(BATTLEGROUND_AA);
-+            BattlegroundTypeId matchType = forceTolviron ? BATTLEGROUND_TV : BATTLEGROUND_AA;
-+            Battleground* arenaTemplate = sBattlegroundMgr->GetBattlegroundTemplate(matchType);
-             PvPDifficultyEntry const* bracket = arenaTemplate ?
-                 GetBattlegroundBracketByLevel(arenaTemplate->GetMapId(), player->GetLevel()) : nullptr;
-             if (!arenaTemplate || !bracket)
-@@ -1214,15 +1216,17 @@ public:
-             }
- 
+
++            arenaQueue.SetForcedArenaType(forceTolviron ? BATTLEGROUND_TV : BATTLEGROUND_TYPE_NONE);
              sBattlegroundMgr->ScheduleQueueUpdate(0, ARENA_TYPE_2v2,
--                BATTLEGROUND_QUEUE_2v2, BATTLEGROUND_AA, bracket->GetBracketId());
-+                BATTLEGROUND_QUEUE_2v2, matchType, bracket->GetBracketId());
+                 BATTLEGROUND_QUEUE_2v2, BATTLEGROUND_AA, bracket->GetBracketId());
              SoloArenaMatchScheduled = true;
              TC_LOG_INFO("server",
 -                "SoloArena invite-only 2v2 matchmaking scheduled members=%s/%s versus %s/%s; no acceptance or teleport requested",
@@ -52,4 +59,88 @@ diff --git a/modules/mod_playerbots/src/cs_playerbots.cpp b/modules/mod_playerbo
 +                forceTolviron ? "Tol'viron" : "a random Arena");
              return true;
          }
+
+diff --git a/src/server/game/Battlegrounds/BattlegroundMgr.cpp b/src/server/game/Battlegrounds/BattlegroundMgr.cpp
+index 37c6d0cb..6ecb08c4 100644
+--- a/src/server/game/Battlegrounds/BattlegroundMgr.cpp
++++ b/src/server/game/Battlegrounds/BattlegroundMgr.cpp
+@@ -831,7 +831,9 @@ static Battleground* FromTemplate(Battleground const* bg)
+ }
+
+ // create a new battleground that will really be used to play
+-Battleground* BattlegroundMgr::CreateNewBattleground(BattlegroundTypeId originalBgTypeId, PvPDifficultyEntry const* bracketEntry, uint8 arenaType, bool isRated)
++Battleground* BattlegroundMgr::CreateNewBattleground(BattlegroundTypeId originalBgTypeId,
++    PvPDifficultyEntry const* bracketEntry, uint8 arenaType, bool isRated,
++    BattlegroundTypeId forcedRandomTypeId)
+ {
+     BattlegroundTypeId bgTypeId = originalBgTypeId;
+     bool isRandom = false;
+@@ -843,7 +845,8 @@ Battleground* BattlegroundMgr::CreateNewBattleground(BattlegroundTypeId original
+             /// Intentional fallback, "All Arenas" is random too
+         case BATTLEGROUND_AA:
+         case BATTLEGROUND_RATED_10_VS_10:
+-            bgTypeId = GetRandomBG(originalBgTypeId);
++            bgTypeId = originalBgTypeId == BATTLEGROUND_AA && forcedRandomTypeId != BATTLEGROUND_TYPE_NONE ?
++                forcedRandomTypeId : GetRandomBG(originalBgTypeId);
+             break;
+         default:
+             break;
+diff --git a/src/server/game/Battlegrounds/BattlegroundMgr.h b/src/server/game/Battlegrounds/BattlegroundMgr.h
+index b5382fd8..429b5324 100644
+--- a/src/server/game/Battlegrounds/BattlegroundMgr.h
++++ b/src/server/game/Battlegrounds/BattlegroundMgr.h
+@@ -91,7 +91,8 @@ class BattlegroundMgr
+         Battleground* GetBattlegroundThroughClientInstance(uint32 instanceId, BattlegroundTypeId bgTypeId);
+         Battleground* GetBattleground(uint32 InstanceID, BattlegroundTypeId bgTypeId);
+         Battleground* GetBattlegroundTemplate(BattlegroundTypeId bgTypeId);
+-        Battleground* CreateNewBattleground(BattlegroundTypeId bgTypeId, PvPDifficultyEntry const* bracketEntry, uint8 arenaType, bool isRated);
++        Battleground* CreateNewBattleground(BattlegroundTypeId bgTypeId, PvPDifficultyEntry const* bracketEntry,
++            uint8 arenaType, bool isRated, BattlegroundTypeId forcedRandomTypeId = BATTLEGROUND_TYPE_NONE);
+
+         void AddBattleground(Battleground* bg);
+         void RemoveBattleground(BattlegroundTypeId bgTypeId, uint32 instanceId);
+diff --git a/src/server/game/Battlegrounds/BattlegroundQueue.cpp b/src/server/game/Battlegrounds/BattlegroundQueue.cpp
+index 38eed080..9406fced 100644
+--- a/src/server/game/Battlegrounds/BattlegroundQueue.cpp
++++ b/src/server/game/Battlegrounds/BattlegroundQueue.cpp
+@@ -976,13 +976,19 @@ void BattlegroundQueue::BattlegroundQueueUpdate(uint32 /*diff*/, BattlegroundTyp
+             || (bgTemplate->IsArena() && CheckSkirmishForSameFaction(bracket_id, MinPlayersPerTeam)))
+         {
+             // we successfully created a pool
+-            Battleground* bg2 = sBattlegroundMgr->CreateNewBattleground(bgTypeId, bracketEntry, arenaType, false);
++            BattlegroundTypeId forcedArenaType = bgTypeId == BATTLEGROUND_AA ?
++                m_ForcedArenaType : BATTLEGROUND_TYPE_NONE;
++            Battleground* bg2 = sBattlegroundMgr->CreateNewBattleground(
++                bgTypeId, bracketEntry, arenaType, false, forcedArenaType);
+             if (!bg2)
+             {
+                 TC_LOG_ERROR("bg.battleground", "BattlegroundQueue::Update - Cannot create battleground: %u", bgTypeId);
+                 return;
+             }
+
++            if (forcedArenaType != BATTLEGROUND_TYPE_NONE)
++                m_ForcedArenaType = BATTLEGROUND_TYPE_NONE;
++
+             // invite those selection pools
+             for (uint32 i = 0; i < BG_TEAMS_COUNT; i++)
+                 for (GroupsQueueType::const_iterator citr = m_SelectionPools[TEAM_ALLIANCE + i].SelectedGroups.begin(); citr != m_SelectionPools[TEAM_ALLIANCE + i].SelectedGroups.end(); ++citr)
+diff --git a/src/server/game/Battlegrounds/BattlegroundQueue.h b/src/server/game/Battlegrounds/BattlegroundQueue.h
+index 80199c41..b92cc693 100644
+--- a/src/server/game/Battlegrounds/BattlegroundQueue.h
++++ b/src/server/game/Battlegrounds/BattlegroundQueue.h
+@@ -92,6 +92,7 @@ class BattlegroundQueue
+         bool GetPlayerGroupInfoData(uint64 guid, GroupQueueInfo* ginfo);
+         void PlayerInvitedToBGUpdateAverageWaitTime(GroupQueueInfo* ginfo, BattlegroundBracketId bracket_id);
+         uint32 GetAverageQueueWaitTime(GroupQueueInfo* ginfo, BattlegroundBracketId bracket_id) const;
++        void SetForcedArenaType(BattlegroundTypeId bgTypeId) { m_ForcedArenaType = bgTypeId; }
+
+         typedef std::map<uint64, PlayerQueueInfo> QueuedPlayersMap;
+         QueuedPlayersMap m_QueuedPlayers;
+@@ -140,6 +141,7 @@ class BattlegroundQueue
+         EventProcessor m_events;
  
+         bool m_isSolo = false;
++        BattlegroundTypeId m_ForcedArenaType = BATTLEGROUND_TYPE_NONE;
+         uint32 m_damagersCount = 0;
+         uint32 m_healersCount = 0;
+ };

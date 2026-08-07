@@ -92,6 +92,7 @@ class BattlegroundQueue
         bool GetPlayerGroupInfoData(uint64 guid, GroupQueueInfo* ginfo);
         void PlayerInvitedToBGUpdateAverageWaitTime(GroupQueueInfo* ginfo, BattlegroundBracketId bracket_id);
         uint32 GetAverageQueueWaitTime(GroupQueueInfo* ginfo, BattlegroundBracketId bracket_id) const;
+        void SetForcedArenaType(BattlegroundTypeId bgTypeId) { m_ForcedArenaType = bgTypeId; }
 
         typedef std::map<uint64, PlayerQueueInfo> QueuedPlayersMap;
         QueuedPlayersMap m_QueuedPlayers;
@@ -140,6 +141,7 @@ class BattlegroundQueue
         EventProcessor m_events;
 
         bool m_isSolo = false;
+        BattlegroundTypeId m_ForcedArenaType = BATTLEGROUND_TYPE_NONE;
         uint32 m_damagersCount = 0;
         uint32 m_healersCount = 0;
 };
