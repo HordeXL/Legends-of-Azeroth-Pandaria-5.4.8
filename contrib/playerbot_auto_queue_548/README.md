@@ -707,6 +707,27 @@ configured level-90 random-bot accounts. Do not treat candidate re-sorting as a
 5/5 fix. A later separately gated loadout stage must back up and restore every
 replaced equipment slot/item instance for the teammate and both opponents.
 
+Patch `0017` is the read-only prerequisite for that later loadout stage. Apply it
+after `0016`:
+
+```powershell
+git apply --check contrib/playerbot_auto_queue_548/patches/0017-playerbots-solo-arena-loadout-audit.patch
+git apply contrib/playerbot_auto_queue_548/patches/0017-playerbots-solo-arena-loadout-audit.patch
+```
+
+It adds `.soloarena loadout`, which is valid only for the administrator requester
+after the exact three staged bots are online. The command maps every supported
+level-90 damage/healer specialization to its Season 15 Prideful five-piece set,
+uses the matching Alliance or Horde item entries, and validates all five item
+templates, ItemSet IDs, armor slots, class restrictions, and live
+`Player::CanUseItem` results. It also reports how many matching set pieces are
+currently equipped. This command is deliberately audit-only: it creates, moves,
+equips, saves, and deletes no item. Run `.soloarena preview`, `.soloarena login`,
+wait for `.soloarena status` to show three online bots, then run `.soloarena
+loadout`. It must report `valid=5/5` for all four participants before any later
+mutation/restore patch is designed. Finish with `.soloarena logout`; no groups or
+queues are needed for this test.
+
 The same test showed that staged bots did not visibly apply their available class
 buffs to themselves and their Arena teammate during preparation. Treat preparation
 buffing as a separate later stage: use each bot's existing spell/action logic,
@@ -721,6 +742,9 @@ separately. `MaxBotsPerCycle` is shared by both systems.
 Stop WorldServer, remove only the patches that were applied, in reverse order, then rebuild:
 
 ```powershell
+git apply -R --check contrib/playerbot_auto_queue_548/patches/0017-playerbots-solo-arena-loadout-audit.patch
+git apply -R contrib/playerbot_auto_queue_548/patches/0017-playerbots-solo-arena-loadout-audit.patch
+
 git apply -R --check contrib/playerbot_auto_queue_548/patches/0016-playerbots-solo-arena-force-tolviron.patch
 git apply -R contrib/playerbot_auto_queue_548/patches/0016-playerbots-solo-arena-force-tolviron.patch
 
@@ -817,6 +841,10 @@ The active `playerbots.conf` entries may then be removed manually or left disabl
 - Tol'viron core regression: with `0014` and `0015` applied, verify both gates open
   at `IN_PROGRESS`; keep all four participants alive beyond the five-minute
   dampening boundary and verify no crash plus dampening on all present players.
+- Arena loadout audit: with `0017` applied, stage only the three bot logins and
+  verify `.soloarena loadout` reports four complete `valid=5/5` plans, preserves
+  every equipped item and item-instance GUID, creates no item, and permits normal
+  staged logout without requiring a group or queue.
 - Shutdown/restart: verify no bot remains stuck in LFG or battleground queue state.
 - Keep `AiPlayerbot.AutoQueue.Arena = 0` during functional LFG/BG testing; enable it
   only for the read-only `0004` preview while `DryRun = 1`.

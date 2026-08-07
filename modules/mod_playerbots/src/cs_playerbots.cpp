@@ -35,6 +35,7 @@
 #include "WorldSession.h"
 
 #include <algorithm>
+#include <array>
 #include <map>
 #include <set>
 #include <sstream>
@@ -84,6 +85,70 @@ struct SoloArenaPreviewCandidate
         return PvpItems * 100000 + PvpPower + AverageItemLevel;
     }
 };
+
+struct SoloArenaLoadoutPlan
+{
+    Specializations Specialization;
+    uint32 ItemSet;
+    std::array<uint32, 5> AllianceItems;
+    std::array<uint32, 5> HordeItems;
+};
+
+SoloArenaLoadoutPlan const* GetSoloArenaLoadoutPlan(Specializations specialization)
+{
+    // Season 15 Prideful five-piece sets. Item order is head, shoulders,
+    // chest/robe, legs and hands. Alliance and Horde entries share the same
+    // ItemSet but retain their faction-specific appearances.
+    static SoloArenaLoadoutPlan const plans[] =
+    {
+        { SPEC_DEATH_KNIGHT_FROST, 1104, {{ 102713, 102652, 102676, 102651, 102650 }}, {{ 103378, 103380, 103376, 103379, 103377 }} },
+        { SPEC_DEATH_KNIGHT_UNHOLY, 1104, {{ 102713, 102652, 102676, 102651, 102650 }}, {{ 103378, 103380, 103376, 103379, 103377 }} },
+        { SPEC_DRUID_RESTORATION, 1105, {{ 102776, 102658, 102721, 102761, 102657 }}, {{ 103390, 103393, 103392, 103391, 103389 }} },
+        { SPEC_DRUID_FERAL, 1106, {{ 102653, 102741, 102740, 102654, 102739 }}, {{ 103382, 103385, 103384, 103383, 103381 }} },
+        { SPEC_DRUID_BALANCE, 1107, {{ 102634, 102700, 102614, 102767, 102696 }}, {{ 103399, 103402, 103401, 103400, 103398 }} },
+        { SPEC_HUNTER_BEAST_MASTERY, 1108, {{ 102690, 102734, 102689, 102670, 102737 }}, {{ 103418, 103420, 103416, 103419, 103417 }} },
+        { SPEC_HUNTER_MARKSMANSHIP, 1108, {{ 102690, 102734, 102689, 102670, 102737 }}, {{ 103418, 103420, 103416, 103419, 103417 }} },
+        { SPEC_HUNTER_SURVIVAL, 1108, {{ 102690, 102734, 102689, 102670, 102737 }}, {{ 103418, 103420, 103416, 103419, 103417 }} },
+        { SPEC_MAGE_ARCANE, 1109, {{ 102667, 102673, 102715, 102648, 102735 }}, {{ 103422, 103425, 103424, 103423, 103421 }} },
+        { SPEC_MAGE_FIRE, 1109, {{ 102667, 102673, 102715, 102648, 102735 }}, {{ 103422, 103425, 103424, 103423, 103421 }} },
+        { SPEC_MAGE_FROST, 1109, {{ 102667, 102673, 102715, 102648, 102735 }}, {{ 103422, 103425, 103424, 103423, 103421 }} },
+        { SPEC_PALADIN_HOLY, 1110, {{ 102635, 102697, 102632, 102768, 102722 }}, {{ 103452, 103454, 103450, 103453, 103451 }} },
+        { SPEC_PALADIN_RETRIBUTION, 1111, {{ 102779, 102744, 102747, 102780, 102630 }}, {{ 103441, 103443, 103439, 103442, 103440 }} },
+        { SPEC_PRIEST_DISCIPLINE, 1112, {{ 102703, 102750, 102681, 102704, 102615 }}, {{ 103463, 103466, 103465, 103464, 103462 }} },
+        { SPEC_PRIEST_HOLY, 1112, {{ 102703, 102750, 102681, 102704, 102615 }}, {{ 103463, 103466, 103465, 103464, 103462 }} },
+        { SPEC_ROGUE_ASSASSINATION, 1113, {{ 102710, 102731, 102727, 102730, 102663 }}, {{ 103477, 103479, 103475, 103478, 103476 }} },
+        { SPEC_ROGUE_COMBAT, 1113, {{ 102710, 102731, 102727, 102730, 102663 }}, {{ 103477, 103479, 103475, 103478, 103476 }} },
+        { SPEC_ROGUE_SUBTLETY, 1113, {{ 102710, 102731, 102727, 102730, 102663 }}, {{ 103477, 103479, 103475, 103478, 103476 }} },
+        { SPEC_SHAMAN_RESTORATION, 1114, {{ 102718, 102655, 102717, 102719, 102774 }}, {{ 103487, 103489, 103485, 103488, 103486 }} },
+        { SPEC_SHAMAN_ENHANCEMENT, 1115, {{ 102714, 102629, 102759, 102778, 102742 }}, {{ 103492, 103494, 103490, 103493, 103491 }} },
+        { SPEC_SHAMAN_ELEMENTAL, 1116, {{ 102693, 102637, 102743, 102781, 102692 }}, {{ 103498, 103500, 103496, 103499, 103497 }} },
+        { SPEC_WARLOCK_AFFLICTION, 1117, {{ 102726, 102682, 102661, 102755, 102725 }}, {{ 103521, 103524, 103523, 103522, 103520 }} },
+        { SPEC_WARLOCK_DEMONOLOGY, 1117, {{ 102726, 102682, 102661, 102755, 102725 }}, {{ 103521, 103524, 103523, 103522, 103520 }} },
+        { SPEC_WARLOCK_DESTRUCTION, 1117, {{ 102726, 102682, 102661, 102755, 102725 }}, {{ 103521, 103524, 103523, 103522, 103520 }} },
+        { SPEC_WARRIOR_ARMS, 1118, {{ 102619, 102685, 102728, 102732, 102618 }}, {{ 103527, 103529, 103525, 103528, 103526 }} },
+        { SPEC_WARRIOR_FURY, 1118, {{ 102619, 102685, 102728, 102732, 102618 }}, {{ 103527, 103529, 103525, 103528, 103526 }} },
+        { SPEC_MONK_MISTWEAVER, 1119, {{ 102628, 102777, 102763, 102762, 102627 }}, {{ 103435, 103437, 103438, 103436, 103434 }} },
+        { SPEC_MONK_WINDWALKER, 1120, {{ 102712, 102626, 102720, 102656, 102675 }}, {{ 103430, 103432, 103433, 103431, 103429 }} },
+        { SPEC_PRIEST_SHADOW, 1146, {{ 102751, 102671, 102622, 102621, 102707 }}, {{ 103468, 103471, 103470, 103469, 103467 }} }
+    };
+
+    for (SoloArenaLoadoutPlan const& plan : plans)
+        if (plan.Specialization == specialization)
+            return &plan;
+
+    return nullptr;
+}
+
+bool IsSoloArenaLoadoutInventoryType(uint8 index, uint32 inventoryType)
+{
+    static uint32 const expected[] =
+    {
+        INVTYPE_HEAD, INVTYPE_SHOULDERS, INVTYPE_CHEST, INVTYPE_LEGS, INVTYPE_HANDS
+    };
+
+    return index == 2 ? (inventoryType == INVTYPE_CHEST || inventoryType == INVTYPE_ROBE) :
+        inventoryType == expected[index];
+}
 
 SoloArenaPreviewRole GetSoloArenaPreviewRole(Specializations specialization)
 {
@@ -445,6 +510,7 @@ public:
         bool preview = args && !strcmp(args, "preview");
         bool login = args && !strcmp(args, "login");
         bool status = args && !strcmp(args, "status");
+        bool loadoutAudit = args && !strcmp(args, "loadout");
         bool logout = args && !strcmp(args, "logout");
         bool formGroups = args && !strcmp(args, "group");
         bool ungroup = args && !strcmp(args, "ungroup");
@@ -455,11 +521,11 @@ public:
         bool combatStatus = args && !strcmp(args, "combatstatus");
         bool leaveArena = args && !strcmp(args, "leave");
         bool unstageQueue = args && !strcmp(args, "unqueue");
-        if (!preview && !login && !status && !logout && !formGroups && !ungroup &&
+        if (!preview && !login && !status && !loadoutAudit && !logout && !formGroups && !ungroup &&
             !stageQueue && !stageMatch && !stageEnter && !combatStatus && !leaveArena && !unstageQueue)
         {
             handler->SendSysMessage(
-                "Usage: .soloarena preview|login|status|group|queue|match [tolviron]|enter|combatstatus|leave|unqueue|ungroup|logout");
+                "Usage: .soloarena preview|login|status|loadout|group|queue|match [tolviron]|enter|combatstatus|leave|unqueue|ungroup|logout");
             return true;
         }
 
@@ -540,6 +606,102 @@ public:
                 SoloArenaMatchScheduled ? "yes" : "no", requesterExact ? "yes" : "no",
                 opponentExact ? "yes" : "no", requesterInvite, opponentInvite,
                 SoloArenaEnteredInstance, insideCount, teleportingCount, otherInstanceCount);
+            return true;
+        }
+
+        if (loadoutAudit)
+        {
+            if (SoloArenaStagedBots.size() != 3 || !SoloArenaStagedRequester ||
+                player->GetGUID().GetCounter() != SoloArenaStagedRequester)
+            {
+                handler->SendSysMessage(
+                    "Solo Arena loadout audit requires this requester's complete staged-login set. Use .soloarena login first.");
+                return true;
+            }
+
+            ObjectGuid teammateGuid = ObjectGuid::Create<HighGuid::Player>(SoloArenaStagedTeammate);
+            ObjectGuid opponentHealerGuid = ObjectGuid::Create<HighGuid::Player>(SoloArenaStagedOpponentHealer);
+            ObjectGuid opponentDamageGuid = ObjectGuid::Create<HighGuid::Player>(SoloArenaStagedOpponentDamage);
+            Player* participants[] =
+            {
+                player,
+                sRandomPlayerbotMgr->GetPlayerBot(teammateGuid),
+                sRandomPlayerbotMgr->GetPlayerBot(opponentHealerGuid),
+                sRandomPlayerbotMgr->GetPlayerBot(opponentDamageGuid)
+            };
+            char const* labels[] = { "requester", "teammate", "opponent-healer", "opponent-damage" };
+            uint8 const equipmentSlots[] =
+            {
+                EQUIPMENT_SLOT_HEAD, EQUIPMENT_SLOT_SHOULDERS, EQUIPMENT_SLOT_CHEST,
+                EQUIPMENT_SLOT_LEGS, EQUIPMENT_SLOT_HANDS
+            };
+
+            uint32 completePlans = 0;
+            for (uint8 participantIndex = 0; participantIndex < 4; ++participantIndex)
+            {
+                Player* participant = participants[participantIndex];
+                if (!participant)
+                {
+                    handler->PSendSysMessage("Solo Arena loadout %s: offline.", labels[participantIndex]);
+                    continue;
+                }
+
+                SoloArenaLoadoutPlan const* plan = GetSoloArenaLoadoutPlan(participant->GetSpecialization());
+                if (!plan)
+                {
+                    handler->PSendSysMessage(
+                        "Solo Arena loadout %s %s: no mapped set for class=%u spec=%u.",
+                        labels[participantIndex], participant->GetName().c_str(), participant->GetClass(),
+                        uint32(participant->GetSpecialization()));
+                    continue;
+                }
+
+                std::array<uint32, 5> const& plannedItems = participant->GetTeam() == ALLIANCE ?
+                    plan->AllianceItems : plan->HordeItems;
+                uint32 currentPieces = 0;
+                uint32 validPlannedItems = 0;
+                std::ostringstream entries;
+                for (uint8 itemIndex = 0; itemIndex < plannedItems.size(); ++itemIndex)
+                {
+                    if (itemIndex)
+                        entries << '/';
+                    entries << plannedItems[itemIndex];
+
+                    if (Item* equipped = participant->GetItemByPos(
+                        INVENTORY_SLOT_BAG_0, equipmentSlots[itemIndex]))
+                        if (equipped->GetTemplate()->ItemSet == plan->ItemSet)
+                            ++currentPieces;
+
+                    ItemTemplate const* item = sObjectMgr->GetItemTemplate(plannedItems[itemIndex]);
+                    if (!item || item->ItemSet != plan->ItemSet ||
+                        !IsSoloArenaLoadoutInventoryType(itemIndex, item->InventoryType) ||
+                        !(uint32(item->AllowableClass) & (1u << (participant->GetClass() - 1))) ||
+                        participant->CanUseItem(item) != EQUIP_ERR_OK)
+                        continue;
+
+                    ++validPlannedItems;
+                }
+
+                if (validPlannedItems == plannedItems.size())
+                    ++completePlans;
+
+                handler->PSendSysMessage(
+                    "Solo Arena loadout %s %s: faction=%s class=%u spec=%u target-set=%u current=%u/5 valid=%u/5 entries=%s.",
+                    labels[participantIndex], participant->GetName().c_str(),
+                    SoloArenaTeamName(participant->GetTeam()), participant->GetClass(),
+                    uint32(participant->GetSpecialization()), plan->ItemSet, currentPieces,
+                    validPlannedItems, entries.str().c_str());
+                TC_LOG_INFO("server",
+                    "SoloArena loadout audit label=%s name=%s guid=%u faction=%s class=%u spec=%u target-set=%u current=%u/5 valid=%u/5 entries=%s",
+                    labels[participantIndex], participant->GetName().c_str(),
+                    participant->GetGUID().GetCounter(), SoloArenaTeamName(participant->GetTeam()),
+                    participant->GetClass(), uint32(participant->GetSpecialization()), plan->ItemSet,
+                    currentPieces, validPlannedItems, entries.str().c_str());
+            }
+
+            handler->PSendSysMessage(
+                "Dry-run only: %u/4 complete five-piece plans validated. No item was created, moved, equipped, saved or deleted.",
+                completePlans);
             return true;
         }
 
