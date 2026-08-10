@@ -55,6 +55,13 @@ bool SoloArenaMatchScheduled = false;
 uint32 SoloArenaEnteredInstance = 0;
 uint32 SoloArenaAutomaticExitTimer = 0;
 std::set<uint32> SoloArenaAutomaticHealthRestoreScheduled;
+std::set<uint32> SoloArenaLoadoutRecoveryBots;
+
+uint8 const SoloArenaLoadoutEquipmentSlots[] =
+{
+    EQUIPMENT_SLOT_HEAD, EQUIPMENT_SLOT_SHOULDERS, EQUIPMENT_SLOT_CHEST,
+    EQUIPMENT_SLOT_LEGS, EQUIPMENT_SLOT_HANDS
+};
 
 enum class SoloArenaPreviewRole : uint8
 {
@@ -148,6 +155,347 @@ bool IsSoloArenaLoadoutInventoryType(uint8 index, uint32 inventoryType)
 
     return index == 2 ? (inventoryType == INVTYPE_CHEST || inventoryType == INVTYPE_ROBE) :
         inventoryType == expected[index];
+}
+
+struct SoloArenaLoadoutBackupRow
+{
+    uint8 EquipmentSlot = 0;
+    uint32 OriginalItemGuid = 0;
+    uint32 OriginalItemEntry = 0;
+    uint8 StorageBag = 0;
+    uint8 StorageSlot = 0;
+    uint32 TemporaryItemGuid = 0;
+    uint32 TemporaryItemEntry = 0;
+};
+
+uint32 GetSoloArenaLoadoutBackupCount(uint32 ownerGuid = 0)
+{
+    QueryResult result = ownerGuid ? CharacterDatabase.PQuery(
+        "SELECT COUNT(*) FROM `solo_arena_loadout_backup` WHERE `owner_guid`=%u", ownerGuid) :
+        CharacterDatabase.Query("SELECT COUNT(*) FROM `solo_arena_loadout_backup`");
+    return result ? (*result)[0].GetUInt32() : 0;
+}
+
+std::vector<SoloArenaLoadoutBackupRow> LoadSoloArenaLoadoutBackups(uint32 ownerGuid)
+{
+    std::vector<SoloArenaLoadoutBackupRow> rows;
+    QueryResult result = CharacterDatabase.PQuery(
+        "SELECT `equipment_slot`,`original_item_guid`,`original_item_entry`,"
+        "`storage_bag`,`storage_slot`,`temporary_item_guid`,`temporary_item_entry` "
+        "FROM `solo_arena_loadout_backup` WHERE `owner_guid`=%u ORDER BY `equipment_slot`",
+        ownerGuid);
+    if (!result)
+        return rows;
+
+    do
+    {
+        Field* fields = result->Fetch();
+        SoloArenaLoadoutBackupRow row;
+        row.EquipmentSlot = fields[0].GetUInt8();
+        row.OriginalItemGuid = fields[1].GetUInt32();
+        row.OriginalItemEntry = fields[2].GetUInt32();
+        row.StorageBag = fields[3].GetUInt8();
+        row.StorageSlot = fields[4].GetUInt8();
+        row.TemporaryItemGuid = fields[5].GetUInt32();
+        row.TemporaryItemEntry = fields[6].GetUInt32();
+        rows.push_back(row);
+    }
+    while (result->NextRow());
+
+    return rows;
+}
+
+bool CommitSoloArenaCharacterTransaction(CharacterDatabaseTransaction transaction,
+                                         char const* operation, std::string& error)
+{
+    // Character inventory prepared statements are registered for asynchronous
+    // connections. Waiting for that worker here preserves the recovery
+    // journal's required ordering without executing those statements through
+    // a synchronous connection, where they are not prepared.
+    TransactionCallback callback = CharacterDatabase.AsyncCommitTransaction(transaction);
+    try
+    {
+        if (callback.m_future.get())
+            return true;
+    }
+    catch (std::exception const& exception)
+    {
+        error = Trinity::StringFormat("%s database transaction raised an exception: %s",
+            operation, exception.what());
+        return false;
+    }
+
+    error = Trinity::StringFormat("%s database transaction failed", operation);
+    return false;
+}
+
+bool SaveSoloArenaInventory(Player* participant, char const* operation, std::string& error)
+{
+    CharacterDatabaseTransaction transaction = CharacterDatabase.BeginTransaction();
+    participant->SaveInventoryAndGoldToDB(transaction);
+    return CommitSoloArenaCharacterTransaction(transaction, operation, error);
+}
+
+bool RestoreSoloArenaLoadout(Player* participant, char const* reason, uint32& restoredSlots,
+                             uint32& remainingSlots, std::string& error)
+{
+    restoredSlots = 0;
+    remainingSlots = 0;
+    error.clear();
+    if (!participant)
+    {
+        error = "participant is offline";
+        return false;
+    }
+
+    uint32 ownerGuid = participant->GetGUID().GetCounter();
+    std::vector<SoloArenaLoadoutBackupRow> rows = LoadSoloArenaLoadoutBackups(ownerGuid);
+    if (rows.empty())
+        return true;
+
+    std::vector<uint8> completedSlots;
+    for (SoloArenaLoadoutBackupRow const& row : rows)
+    {
+        uint16 equipmentPos = uint16(INVENTORY_SLOT_BAG_0) << 8 | row.EquipmentSlot;
+        Item* equipped = participant->GetItemByPos(INVENTORY_SLOT_BAG_0, row.EquipmentSlot);
+        Item* original = row.OriginalItemGuid ? participant->GetItemByGuid(
+            ObjectGuid(HighGuid::Item, row.OriginalItemGuid)) : nullptr;
+        Item* temporary = participant->GetItemByGuid(
+            ObjectGuid(HighGuid::Item, row.TemporaryItemGuid));
+
+        if (original && original->GetEntry() != row.OriginalItemEntry)
+        {
+            error = "original item GUID resolves to an unexpected entry";
+            continue;
+        }
+        if (temporary && temporary->GetEntry() != row.TemporaryItemEntry)
+        {
+            error = "temporary item GUID resolves to an unexpected entry";
+            continue;
+        }
+
+        if (row.OriginalItemGuid)
+        {
+            if (equipped && equipped->GetGUID().GetCounter() == row.OriginalItemGuid)
+            {
+                // Crash before the swap, or this slot was already restored. Only
+                // the exact temporary item owned by the journal may be removed.
+            }
+            else if (equipped && equipped->GetGUID().GetCounter() == row.TemporaryItemGuid && original)
+            {
+                uint16 originalPos = original->GetPos();
+                participant->SwapItem(originalPos, equipmentPos);
+                equipped = participant->GetItemByPos(INVENTORY_SLOT_BAG_0, row.EquipmentSlot);
+                if (!equipped || equipped->GetGUID().GetCounter() != row.OriginalItemGuid)
+                {
+                    error = "core refused to re-equip the original item";
+                    continue;
+                }
+                temporary = participant->GetItemByGuid(ObjectGuid(HighGuid::Item, row.TemporaryItemGuid));
+            }
+            else
+            {
+                error = !original ? "original item instance is not in the character inventory" :
+                    "equipment slot contains neither the recorded original nor temporary item";
+                continue;
+            }
+        }
+
+        if (temporary)
+        {
+            uint16 temporaryPos = temporary->GetPos();
+            if (Player::IsEquipmentPos(temporaryPos) &&
+                participant->CanUnequipItem(temporaryPos, false) != EQUIP_ERR_OK)
+            {
+                error = "temporary item cannot currently be unequipped";
+                continue;
+            }
+            participant->DestroyItem(temporary->GetBagSlot(), temporary->GetSlot(), true);
+        }
+
+        if (participant->GetItemByGuid(ObjectGuid(HighGuid::Item, row.TemporaryItemGuid)))
+        {
+            error = "temporary item still exists after the guarded destroy";
+            continue;
+        }
+
+        Item* finalEquipped = participant->GetItemByPos(INVENTORY_SLOT_BAG_0, row.EquipmentSlot);
+        if (row.OriginalItemGuid && (!finalEquipped ||
+            finalEquipped->GetGUID().GetCounter() != row.OriginalItemGuid))
+        {
+            error = "original item was not restored to its exact equipment slot";
+            continue;
+        }
+
+        completedSlots.push_back(row.EquipmentSlot);
+        ++restoredSlots;
+    }
+
+    if (!completedSlots.empty())
+    {
+        CharacterDatabaseTransaction transaction = CharacterDatabase.BeginTransaction();
+        participant->SaveInventoryAndGoldToDB(transaction);
+        for (uint8 equipmentSlot : completedSlots)
+            transaction->PAppend(
+                "DELETE FROM `solo_arena_loadout_backup` WHERE `owner_guid`=%u AND `equipment_slot`=%u",
+                ownerGuid, uint32(equipmentSlot));
+        if (!CommitSoloArenaCharacterTransaction(transaction, "loadout restore", error))
+        {
+            remainingSlots = GetSoloArenaLoadoutBackupCount(ownerGuid);
+            TC_LOG_ERROR("server",
+                "SoloArena loadout restore database failure name=%s guid=%u reason=%s "
+                "remaining=%u error=%s",
+                participant->GetName().c_str(), ownerGuid, reason ? reason : "unspecified",
+                remainingSlots, error.c_str());
+            return false;
+        }
+    }
+
+    remainingSlots = GetSoloArenaLoadoutBackupCount(ownerGuid);
+    TC_LOG_INFO("server",
+        "SoloArena loadout restore name=%s guid=%u reason=%s restored=%u remaining=%u result=%s",
+        participant->GetName().c_str(), ownerGuid, reason ? reason : "unspecified",
+        restoredSlots, remainingSlots, remainingSlots ? "incomplete" : "complete");
+    return remainingSlots == 0;
+}
+
+bool ApplySoloArenaLoadout(Player* participant, uint32 requesterGuid, uint32& changedSlots,
+                           std::string& error)
+{
+    changedSlots = 0;
+    error.clear();
+    if (!participant || !participant->IsAlive() || participant->IsBeingTeleported() ||
+        participant->GetGroup() || participant->InBattlegroundQueue() || participant->InBattleground())
+    {
+        error = "participant is offline, dead, teleporting, grouped, queued, or inside a battleground";
+        return false;
+    }
+
+    uint32 ownerGuid = participant->GetGUID().GetCounter();
+    if (GetSoloArenaLoadoutBackupCount(ownerGuid))
+    {
+        error = "participant already has an active recovery journal";
+        return false;
+    }
+
+    SoloArenaLoadoutPlan const* plan = GetSoloArenaLoadoutPlan(participant->GetSpecialization());
+    if (!plan)
+    {
+        error = "specialization has no mapped Prideful set";
+        return false;
+    }
+
+    std::array<uint32, 5> const& plannedItems = participant->GetTeam() == ALLIANCE ?
+        plan->AllianceItems : plan->HordeItems;
+    for (uint8 itemIndex = 0; itemIndex < plannedItems.size(); ++itemIndex)
+    {
+        uint8 equipmentSlot = SoloArenaLoadoutEquipmentSlots[itemIndex];
+        uint16 equipmentPos = uint16(INVENTORY_SLOT_BAG_0) << 8 | equipmentSlot;
+        Item* original = participant->GetItemByPos(INVENTORY_SLOT_BAG_0, equipmentSlot);
+        if (original && original->GetEntry() == plannedItems[itemIndex])
+            continue;
+
+        ItemTemplate const* itemTemplate = sObjectMgr->GetItemTemplate(plannedItems[itemIndex]);
+        if (!itemTemplate || itemTemplate->ItemSet != plan->ItemSet ||
+            !IsSoloArenaLoadoutInventoryType(itemIndex, itemTemplate->InventoryType) ||
+            !(uint32(itemTemplate->AllowableClass) & (1u << (participant->GetClass() - 1))) ||
+            participant->CanUseItem(itemTemplate) != EQUIP_ERR_OK)
+        {
+            error = "planned item failed the strict template/class/spec validation";
+            return false;
+        }
+
+        if (original && participant->CanUnequipItem(equipmentPos, true) != EQUIP_ERR_OK)
+        {
+            error = "original item cannot currently be unequipped";
+            return false;
+        }
+
+        uint16 equipDestination = 0;
+        if (participant->CanEquipNewItem(equipmentSlot, equipDestination,
+            plannedItems[itemIndex], true) != EQUIP_ERR_OK)
+        {
+            error = "planned item cannot be equipped in the required slot";
+            return false;
+        }
+
+        ItemPosCountVec storageDestination;
+        if (participant->CanStoreNewItem(NULL_BAG, NULL_SLOT, storageDestination,
+            plannedItems[itemIndex], 1) != EQUIP_ERR_OK)
+        {
+            error = "no inventory slot is available for the temporary/original item swap";
+            return false;
+        }
+
+        Item* temporary = participant->StoreNewItem(storageDestination,
+            plannedItems[itemIndex], true);
+        if (!temporary)
+        {
+            error = "core failed to create the temporary item";
+            return false;
+        }
+
+        uint16 temporaryPos = temporary->GetPos();
+        uint32 temporaryGuid = temporary->GetGUID().GetCounter();
+        uint32 originalGuid = original ? original->GetGUID().GetCounter() : 0;
+        uint32 originalEntry = original ? original->GetEntry() : 0;
+
+        // Persist both the still-unswapped inventory and its recovery journal
+        // before changing the equipped slot. The asynchronous character DB
+        // worker is awaited, so a crash after this point can always identify
+        // the exact original and the exact module-created temporary item.
+        CharacterDatabaseTransaction beforeSwap = CharacterDatabase.BeginTransaction();
+        participant->SaveInventoryAndGoldToDB(beforeSwap);
+        beforeSwap->PAppend(
+            "INSERT INTO `solo_arena_loadout_backup` "
+            "(`owner_guid`,`requester_guid`,`equipment_slot`,`original_item_guid`,`original_item_entry`,"
+            "`storage_bag`,`storage_slot`,`temporary_item_guid`,`temporary_item_entry`) "
+            "VALUES (%u,%u,%u,%u,%u,%u,%u,%u,%u)",
+            ownerGuid, requesterGuid, uint32(equipmentSlot), originalGuid, originalEntry,
+            uint32(temporary->GetBagSlot()), uint32(temporary->GetSlot()), temporaryGuid,
+            plannedItems[itemIndex]);
+        if (!CommitSoloArenaCharacterTransaction(beforeSwap, "pre-swap journal", error))
+        {
+            // The failed transaction did not create a recovery row or persist
+            // the temporary item. Remove its in-memory instance and persist the
+            // cleanup before returning to the caller.
+            Item* failedTemporary = participant->GetItemByGuid(
+                ObjectGuid(HighGuid::Item, temporaryGuid));
+            if (failedTemporary)
+                participant->DestroyItem(failedTemporary->GetBagSlot(), failedTemporary->GetSlot(), true);
+
+            std::string cleanupError;
+            if (!SaveSoloArenaInventory(participant, "failed pre-swap cleanup", cleanupError))
+                error += "; cleanup also failed: " + cleanupError;
+            return false;
+        }
+
+        participant->SwapItem(temporaryPos, equipmentPos);
+        Item* equipped = participant->GetItemByPos(INVENTORY_SLOT_BAG_0, equipmentSlot);
+        if (!equipped || equipped->GetGUID().GetCounter() != temporaryGuid)
+        {
+            error = "core refused the guarded temporary/original item swap";
+            return false;
+        }
+        if (originalGuid)
+        {
+            Item* storedOriginal = participant->GetItemByGuid(ObjectGuid(HighGuid::Item, originalGuid));
+            if (!storedOriginal || storedOriginal->GetPos() != temporaryPos)
+            {
+                error = "original item did not arrive in the journaled storage slot";
+                return false;
+            }
+        }
+
+        if (!SaveSoloArenaInventory(participant, "post-swap inventory", error))
+            return false;
+        ++changedSlots;
+    }
+
+    TC_LOG_INFO("server",
+        "SoloArena temporary loadout applied name=%s guid=%u requester=%u changed=%u target-set=%u",
+        participant->GetName().c_str(), ownerGuid, requesterGuid, changedSlots, plan->ItemSet);
+    return true;
 }
 
 SoloArenaPreviewRole GetSoloArenaPreviewRole(Specializations specialization)
@@ -410,6 +758,14 @@ void HandleSoloArenaClientLeave(Player* player)
         arena->GetStatus() != STATUS_WAIT_LEAVE)
         return;
 
+    uint32 restored = 0;
+    uint32 remaining = 0;
+    std::string restoreError;
+    if (!RestoreSoloArenaLoadout(player, "client-leave", restored, remaining, restoreError))
+        TC_LOG_ERROR("server",
+            "SoloArena client-leave loadout restore incomplete name=%s guid=%u restored=%u remaining=%u error=%s",
+            player->GetName().c_str(), player->GetGUID().GetCounter(), restored, remaining,
+            restoreError.c_str());
     ScheduleSoloArenaAutomaticHealthRestore(player, "client-leave");
 }
 
@@ -438,6 +794,16 @@ void UpdateSoloArenaAutomaticExit(uint32 diff)
         {
             Player* participant = guid ? ObjectAccessor::FindConnectedPlayer(
                 ObjectGuid::Create<HighGuid::Player>(guid)) : nullptr;
+            if (participant)
+            {
+                uint32 restored = 0;
+                uint32 remaining = 0;
+                std::string restoreError;
+                if (!RestoreSoloArenaLoadout(participant, "wait-leave", restored, remaining, restoreError))
+                    TC_LOG_ERROR("server",
+                        "SoloArena wait-leave loadout restore incomplete name=%s guid=%u restored=%u remaining=%u error=%s",
+                        participant->GetName().c_str(), guid, restored, remaining, restoreError.c_str());
+            }
             ScheduleSoloArenaAutomaticHealthRestore(participant, "wait-leave");
 
             // The real requester keeps the normal client Leave Arena button. Playerbot
@@ -473,6 +839,23 @@ void UpdateSoloArenaAutomaticExit(uint32 diff)
 
     if (pendingExit)
         return;
+
+    for (uint32 guid : participantGuids)
+    {
+        Player* participant = guid ? ObjectAccessor::FindConnectedPlayer(
+            ObjectGuid::Create<HighGuid::Player>(guid)) : nullptr;
+        if (!participant)
+            continue;
+
+        uint32 restored = 0;
+        uint32 remaining = 0;
+        std::string restoreError;
+        if (!RestoreSoloArenaLoadout(participant, "automatic-exit-finalize",
+            restored, remaining, restoreError))
+            TC_LOG_ERROR("server",
+                "SoloArena automatic-finalize loadout restore incomplete name=%s guid=%u restored=%u remaining=%u error=%s",
+                participant->GetName().c_str(), guid, restored, remaining, restoreError.c_str());
+    }
 
     TC_LOG_INFO("server",
         "SoloArena automatic post-match exit finalized instance=%u health-restore-scheduled=%u; groups and staged logins remain for explicit cleanup",
@@ -511,6 +894,9 @@ public:
         bool login = args && !strcmp(args, "login");
         bool status = args && !strcmp(args, "status");
         bool loadoutAudit = args && !strcmp(args, "loadout");
+        bool loadoutApply = args && !strcmp(args, "loadout apply");
+        bool loadoutRestore = args && !strcmp(args, "loadout restore");
+        bool loadoutRecover = args && !strcmp(args, "loadout recover");
         bool logout = args && !strcmp(args, "logout");
         bool formGroups = args && !strcmp(args, "group");
         bool ungroup = args && !strcmp(args, "ungroup");
@@ -521,11 +907,12 @@ public:
         bool combatStatus = args && !strcmp(args, "combatstatus");
         bool leaveArena = args && !strcmp(args, "leave");
         bool unstageQueue = args && !strcmp(args, "unqueue");
-        if (!preview && !login && !status && !loadoutAudit && !logout && !formGroups && !ungroup &&
+        if (!preview && !login && !status && !loadoutAudit && !loadoutApply && !loadoutRestore &&
+            !loadoutRecover && !logout && !formGroups && !ungroup &&
             !stageQueue && !stageMatch && !stageEnter && !combatStatus && !leaveArena && !unstageQueue)
         {
             handler->SendSysMessage(
-                "Usage: .soloarena preview|login|status|loadout|group|queue|match [tolviron]|enter|combatstatus|leave|unqueue|ungroup|logout");
+                "Usage: .soloarena preview|login|status|loadout [apply|restore|recover]|group|queue|match [tolviron]|enter|combatstatus|leave|unqueue|ungroup|logout");
             return true;
         }
 
@@ -606,6 +993,8 @@ public:
                 SoloArenaMatchScheduled ? "yes" : "no", requesterExact ? "yes" : "no",
                 opponentExact ? "yes" : "no", requesterInvite, opponentInvite,
                 SoloArenaEnteredInstance, insideCount, teleportingCount, otherInstanceCount);
+            handler->PSendSysMessage("Solo Arena persistent loadout recovery rows: %u.",
+                GetSoloArenaLoadoutBackupCount());
             return true;
         }
 
@@ -630,12 +1019,6 @@ public:
                 sRandomPlayerbotMgr->GetPlayerBot(opponentDamageGuid)
             };
             char const* labels[] = { "requester", "teammate", "opponent-healer", "opponent-damage" };
-            uint8 const equipmentSlots[] =
-            {
-                EQUIPMENT_SLOT_HEAD, EQUIPMENT_SLOT_SHOULDERS, EQUIPMENT_SLOT_CHEST,
-                EQUIPMENT_SLOT_LEGS, EQUIPMENT_SLOT_HANDS
-            };
-
             uint32 completePlans = 0;
             for (uint8 participantIndex = 0; participantIndex < 4; ++participantIndex)
             {
@@ -668,7 +1051,7 @@ public:
                     entries << plannedItems[itemIndex];
 
                     if (Item* equipped = participant->GetItemByPos(
-                        INVENTORY_SLOT_BAG_0, equipmentSlots[itemIndex]))
+                        INVENTORY_SLOT_BAG_0, SoloArenaLoadoutEquipmentSlots[itemIndex]))
                         if (equipped->GetTemplate()->ItemSet == plan->ItemSet)
                             ++currentPieces;
 
@@ -702,6 +1085,209 @@ public:
             handler->PSendSysMessage(
                 "Dry-run only: %u/4 complete five-piece plans validated. No item was created, moved, equipped, saved or deleted.",
                 completePlans);
+            return true;
+        }
+
+        if (loadoutRecover)
+        {
+            QueryResult recoveryOwners = CharacterDatabase.Query(
+                "SELECT DISTINCT b.`owner_guid`,c.`name`,c.`account` "
+                "FROM `solo_arena_loadout_backup` b "
+                "LEFT JOIN `characters` c ON c.`guid`=b.`owner_guid` ORDER BY b.`owner_guid`");
+            if (!recoveryOwners)
+            {
+                handler->SendSysMessage("Solo Arena has no persistent loadout recovery rows.");
+                return true;
+            }
+
+            uint32 restoredOwners = 0;
+            uint32 requestedLogins = 0;
+            uint32 waitingOwners = 0;
+            do
+            {
+                Field* fields = recoveryOwners->Fetch();
+                uint32 ownerGuid = fields[0].GetUInt32();
+                std::string ownerName = fields[1].GetString();
+                uint32 accountId = fields[2].GetUInt32();
+                ObjectGuid guid = ObjectGuid::Create<HighGuid::Player>(ownerGuid);
+                Player* owner = ObjectAccessor::FindConnectedPlayer(guid);
+                if (owner)
+                {
+                    uint32 restored = 0;
+                    uint32 remaining = 0;
+                    std::string restoreError;
+                    if (RestoreSoloArenaLoadout(owner, "manual-recovery", restored, remaining, restoreError))
+                    {
+                        ++restoredOwners;
+                        handler->PSendSysMessage(
+                            "Solo Arena recovered %s (guid %u): restored=%u, remaining=0.",
+                            ownerName.c_str(), ownerGuid, restored);
+                    }
+                    else
+                    {
+                        ++waitingOwners;
+                        handler->PSendSysMessage(
+                            "Solo Arena recovery for %s (guid %u) remains protected: restored=%u, remaining=%u, error=%s.",
+                            ownerName.c_str(), ownerGuid, restored, remaining, restoreError.c_str());
+                    }
+                    continue;
+                }
+
+                bool randomBotAccount = std::find(sPlayerbotAIConfig->randomBotAccounts.begin(),
+                    sPlayerbotAIConfig->randomBotAccounts.end(), accountId) !=
+                    sPlayerbotAIConfig->randomBotAccounts.end();
+                if (randomBotAccount)
+                {
+                    if (!sRandomPlayerbotMgr->IsBotLoading(guid))
+                    {
+                        SoloArenaLoadoutRecoveryBots.insert(ownerGuid);
+                        sRandomPlayerbotMgr->AddPlayerBot(guid, 0);
+                        ++requestedLogins;
+                        handler->PSendSysMessage(
+                            "Solo Arena requested recovery login for bot %s (guid %u). Wait, then repeat .soloarena loadout recover.",
+                            ownerName.c_str(), ownerGuid);
+                    }
+                    else
+                    {
+                        ++waitingOwners;
+                        handler->PSendSysMessage(
+                            "Solo Arena recovery bot %s (guid %u) is still loading; repeat the command shortly.",
+                            ownerName.c_str(), ownerGuid);
+                    }
+                }
+                else
+                {
+                    ++waitingOwners;
+                    handler->PSendSysMessage(
+                        "Solo Arena recovery owner %s (guid %u) is a real offline character; log into that exact character and run .soloarena loadout recover.",
+                        ownerName.c_str(), ownerGuid);
+                }
+            }
+            while (recoveryOwners->NextRow());
+
+            for (auto itr = SoloArenaLoadoutRecoveryBots.begin();
+                 itr != SoloArenaLoadoutRecoveryBots.end();)
+            {
+                ObjectGuid guid = ObjectGuid::Create<HighGuid::Player>(*itr);
+                Player* recoveryBot = sRandomPlayerbotMgr->GetPlayerBot(guid);
+                if (!recoveryBot || GetSoloArenaLoadoutBackupCount(*itr) || recoveryBot->GetGroup() ||
+                    recoveryBot->InBattlegroundQueue() || recoveryBot->InBattleground())
+                {
+                    ++itr;
+                    continue;
+                }
+
+                sRandomPlayerbotMgr->LogoutPlayerBot(guid);
+                itr = SoloArenaLoadoutRecoveryBots.erase(itr);
+            }
+
+            handler->PSendSysMessage(
+                "Solo Arena recovery summary: restored-owners=%u, login-requests=%u, waiting=%u, persistent-rows=%u.",
+                restoredOwners, requestedLogins, waitingOwners, GetSoloArenaLoadoutBackupCount());
+            return true;
+        }
+
+        if (loadoutApply || loadoutRestore)
+        {
+            if (SoloArenaStagedBots.size() != 3 || !SoloArenaStagedRequester ||
+                player->GetGUID().GetCounter() != SoloArenaStagedRequester)
+            {
+                handler->SendSysMessage(
+                    "Solo Arena loadout changes require this requester's complete staged-login set. Use .soloarena login first.");
+                return true;
+            }
+
+            ObjectGuid teammateGuid = ObjectGuid::Create<HighGuid::Player>(SoloArenaStagedTeammate);
+            ObjectGuid opponentHealerGuid = ObjectGuid::Create<HighGuid::Player>(SoloArenaStagedOpponentHealer);
+            ObjectGuid opponentDamageGuid = ObjectGuid::Create<HighGuid::Player>(SoloArenaStagedOpponentDamage);
+            Player* participants[] =
+            {
+                player,
+                sRandomPlayerbotMgr->GetPlayerBot(teammateGuid),
+                sRandomPlayerbotMgr->GetPlayerBot(opponentHealerGuid),
+                sRandomPlayerbotMgr->GetPlayerBot(opponentDamageGuid)
+            };
+            char const* labels[] = { "requester", "teammate", "opponent-healer", "opponent-damage" };
+
+            for (uint8 index = 0; index < 4; ++index)
+            {
+                if (!participants[index])
+                {
+                    handler->PSendSysMessage("Solo Arena loadout %s is offline.", labels[index]);
+                    return true;
+                }
+            }
+
+            if (loadoutApply)
+            {
+                uint32 existingRows = GetSoloArenaLoadoutBackupCount();
+                if (existingRows)
+                {
+                    handler->PSendSysMessage(
+                        "Solo Arena loadout apply refused: %u persistent recovery rows already exist. Use .soloarena loadout recover.",
+                        existingRows);
+                    return true;
+                }
+
+                uint32 changedTotal = 0;
+                for (uint8 index = 0; index < 4; ++index)
+                {
+                    uint32 changed = 0;
+                    std::string applyError;
+                    if (!ApplySoloArenaLoadout(participants[index], SoloArenaStagedRequester,
+                        changed, applyError))
+                    {
+                        handler->PSendSysMessage(
+                            "Solo Arena loadout apply stopped at %s %s: %s. Starting guarded rollback.",
+                            labels[index], participants[index]->GetName().c_str(), applyError.c_str());
+                        for (Player* rollbackParticipant : participants)
+                        {
+                            uint32 restored = 0;
+                            uint32 remaining = 0;
+                            std::string restoreError;
+                            RestoreSoloArenaLoadout(rollbackParticipant, "apply-rollback",
+                                restored, remaining, restoreError);
+                        }
+                        handler->PSendSysMessage(
+                            "Solo Arena guarded rollback finished; persistent recovery rows=%u.",
+                            GetSoloArenaLoadoutBackupCount());
+                        return true;
+                    }
+
+                    changedTotal += changed;
+                    handler->PSendSysMessage(
+                        "Solo Arena temporary loadout %s %s: changed=%u, journal-rows=%u.",
+                        labels[index], participants[index]->GetName().c_str(), changed,
+                        GetSoloArenaLoadoutBackupCount(participants[index]->GetGUID().GetCounter()));
+                }
+
+                handler->PSendSysMessage(
+                    "Solo Arena temporary five-piece loadouts applied: changed=%u, persistent recovery rows=%u. "
+                    "Use .soloarena loadout to audit and .soloarena loadout restore to undo before logout.",
+                    changedTotal, GetSoloArenaLoadoutBackupCount());
+                return true;
+            }
+
+            uint32 restoredTotal = 0;
+            uint32 failedOwners = 0;
+            for (uint8 index = 0; index < 4; ++index)
+            {
+                uint32 restored = 0;
+                uint32 remaining = 0;
+                std::string restoreError;
+                bool restoredAll = RestoreSoloArenaLoadout(participants[index], "manual-restore",
+                    restored, remaining, restoreError);
+                restoredTotal += restored;
+                failedOwners += restoredAll ? 0 : 1;
+                handler->PSendSysMessage(
+                    "Solo Arena loadout restore %s %s: restored=%u, remaining=%u%s%s.",
+                    labels[index], participants[index]->GetName().c_str(), restored, remaining,
+                    restoreError.empty() ? "" : ", error=", restoreError.c_str());
+            }
+
+            handler->PSendSysMessage(
+                "Solo Arena loadout restore summary: restored=%u, failed-owners=%u, persistent-rows=%u.",
+                restoredTotal, failedOwners, GetSoloArenaLoadoutBackupCount());
             return true;
         }
 
@@ -850,6 +1436,29 @@ public:
                         labels[index], participant->GetBattlegroundId());
                     return true;
                 }
+            }
+
+            uint32 loadoutRestoreFailures = 0;
+            for (uint8 index = 0; index < 4; ++index)
+            {
+                uint32 restored = 0;
+                uint32 remaining = 0;
+                std::string restoreError;
+                if (!RestoreSoloArenaLoadout(participants[index], "manual-leave",
+                    restored, remaining, restoreError))
+                {
+                    ++loadoutRestoreFailures;
+                    handler->PSendSysMessage(
+                        "Solo Arena leave loadout restore incomplete for %s: restored=%u, remaining=%u, error=%s.",
+                        labels[index], restored, remaining, restoreError.c_str());
+                }
+            }
+            if (loadoutRestoreFailures)
+            {
+                handler->PSendSysMessage(
+                    "Solo Arena leave refused until %u protected loadout owner(s) are fully restored.",
+                    loadoutRestoreFailures);
+                return true;
             }
 
             uint32 leftArena = 0;
@@ -1122,6 +1731,49 @@ public:
             {
                 handler->SendSysMessage(
                     "Solo Arena staged groups still exist. Use .soloarena ungroup before logout.");
+                return true;
+            }
+
+            Player* restoreParticipants[] =
+            {
+                player,
+                sRandomPlayerbotMgr->GetPlayerBot(ObjectGuid::Create<HighGuid::Player>(SoloArenaStagedTeammate)),
+                sRandomPlayerbotMgr->GetPlayerBot(ObjectGuid::Create<HighGuid::Player>(SoloArenaStagedOpponentHealer)),
+                sRandomPlayerbotMgr->GetPlayerBot(ObjectGuid::Create<HighGuid::Player>(SoloArenaStagedOpponentDamage))
+            };
+            uint32 restoreParticipantGuids[] =
+            {
+                SoloArenaStagedRequester, SoloArenaStagedTeammate,
+                SoloArenaStagedOpponentHealer, SoloArenaStagedOpponentDamage
+            };
+            uint32 restoreFailures = 0;
+            for (uint8 index = 0; index < 4; ++index)
+            {
+                Player* restoreParticipant = restoreParticipants[index];
+                if (!restoreParticipant)
+                {
+                    if (GetSoloArenaLoadoutBackupCount(restoreParticipantGuids[index]))
+                        ++restoreFailures;
+                    continue;
+                }
+
+                uint32 restored = 0;
+                uint32 remaining = 0;
+                std::string restoreError;
+                if (!RestoreSoloArenaLoadout(restoreParticipant, "staged-logout",
+                    restored, remaining, restoreError))
+                {
+                    ++restoreFailures;
+                    handler->PSendSysMessage(
+                        "Solo Arena logout loadout restore incomplete for %s: restored=%u, remaining=%u, error=%s.",
+                        restoreParticipant->GetName().c_str(), restored, remaining, restoreError.c_str());
+                }
+            }
+            if (restoreFailures)
+            {
+                handler->PSendSysMessage(
+                    "Solo Arena logout refused: %u participant(s) are offline or still have protected loadout rows. Use .soloarena loadout recover.",
+                    restoreFailures);
                 return true;
             }
 
@@ -1628,6 +2280,14 @@ public:
         {
             handler->SendSysMessage(
                 "Solo Arena staged login is disabled. Set AiPlayerbot.AutoQueue.Arena.StageLogin=1 and restart.");
+            return true;
+        }
+
+        if (login && GetSoloArenaLoadoutBackupCount())
+        {
+            handler->PSendSysMessage(
+                "Solo Arena staged login refused: %u persistent loadout recovery rows exist. Use .soloarena loadout recover first.",
+                GetSoloArenaLoadoutBackupCount());
             return true;
         }
 

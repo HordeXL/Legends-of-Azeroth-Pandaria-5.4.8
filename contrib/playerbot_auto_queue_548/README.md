@@ -728,6 +728,52 @@ loadout`. It must report `valid=5/5` for all four participants before any later
 mutation/restore patch is designed. Finish with `.soloarena logout`; no groups or
 queues are needed for this test.
 
+Patch `0018` adds the separately gated, reversible temporary equipment stage.
+Apply it after `0017`, then execute its character-database migration before
+starting WorldServer:
+
+```powershell
+git apply --check contrib/playerbot_auto_queue_548/patches/0018-playerbots-solo-arena-temporary-loadout-restore.patch
+git apply contrib/playerbot_auto_queue_548/patches/0018-playerbots-solo-arena-temporary-loadout-restore.patch
+```
+
+The migration is
+`sql/updates/characters/2026_08_07_00_characters_solo_arena_loadout_backup.sql`.
+It creates the initially empty InnoDB recovery journal
+`solo_arena_loadout_backup`. After `.soloarena login`, use `.soloarena loadout
+apply` to replace only nonmatching head, shoulder, chest, leg, and hand slots
+with the exact faction/spec Prideful entries validated by `0017`. Every changed
+slot records the exact original and temporary item-instance GUIDs before the
+swap is saved. Inventory prepared statements run on the asynchronous Character
+DB connection and the command waits for each transaction to finish before it
+changes the in-memory equipment slot. `.soloarena loadout restore` restores the exact original
+instances and deletes only the corresponding temporary instances. Restoration
+is also attempted before manual/automatic Arena exit and staged logout.
+
+The first runtime build of `0018` incorrectly used
+`DirectCommitTransaction` for `Player::SaveInventoryAndGoldToDB`. Those
+inventory statements are prepared only on asynchronous Character DB
+connections, so `.soloarena loadout apply` asserted on its first changed bot
+slot. The transaction rolled back and left the recovery journal empty; no item
+row changed. The current patch uses `AsyncCommitTransaction` and explicitly
+waits for its result. Do not test with an older `0018` patch or executable.
+
+The corrected build completed its first full manual runtime cycle on
+2026-08-10. All four participants audited as `current=5/5`; the three bots
+created 15 recovery rows and equipped 15 temporary pieces. Manual restore then
+restored all 15 exact original item instances, removed all temporary instances,
+and returned the persistent journal to zero rows without a crash. Automatic
+post-match/leave restoration remains a separate runtime test.
+
+If WorldServer stops or crashes while journal rows exist, do not delete items or
+the journal table. Start the server, log into the affected real character if
+needed, and repeat `.soloarena loadout recover`; random-bot owners are loaded for
+recovery and logged out after their protected rows reach zero. New staged login
+and loadout apply operations refuse to run while any older recovery row exists.
+The schema rollback
+`sql/backup/characters_solo_arena_loadout_backup_before_20260807.sql` refuses to
+drop a nonempty journal and is harmless when the table is already absent.
+
 The same test showed that staged bots did not visibly apply their available class
 buffs to themselves and their Arena teammate during preparation. Treat preparation
 buffing as a separate later stage: use each bot's existing spell/action logic,
@@ -742,6 +788,9 @@ separately. `MaxBotsPerCycle` is shared by both systems.
 Stop WorldServer, remove only the patches that were applied, in reverse order, then rebuild:
 
 ```powershell
+git apply -R --check contrib/playerbot_auto_queue_548/patches/0018-playerbots-solo-arena-temporary-loadout-restore.patch
+git apply -R contrib/playerbot_auto_queue_548/patches/0018-playerbots-solo-arena-temporary-loadout-restore.patch
+
 git apply -R --check contrib/playerbot_auto_queue_548/patches/0017-playerbots-solo-arena-loadout-audit.patch
 git apply -R contrib/playerbot_auto_queue_548/patches/0017-playerbots-solo-arena-loadout-audit.patch
 
@@ -845,6 +894,13 @@ The active `playerbots.conf` entries may then be removed manually or left disabl
   verify `.soloarena loadout` reports four complete `valid=5/5` plans, preserves
   every equipped item and item-instance GUID, creates no item, and permits normal
   staged logout without requiring a group or queue.
+- Arena temporary loadout: with `0018` and its character migration applied,
+  stage only the three bot logins, run `.soloarena loadout apply`, and verify all
+  four report `current=5/5`. Run `.soloarena loadout restore` before any group or
+  queue test and verify every original equipment GUID/entry and inventory
+  position is restored, the journal returns to zero rows, and only the exact
+  temporary item GUIDs disappear. Repeat through one completed Arena and verify
+  the automatic exit path produces the same zero-row, exact-restoration result.
 - Shutdown/restart: verify no bot remains stuck in LFG or battleground queue state.
 - Keep `AiPlayerbot.AutoQueue.Arena = 0` during functional LFG/BG testing; enable it
   only for the read-only `0004` preview while `DryRun = 1`.
