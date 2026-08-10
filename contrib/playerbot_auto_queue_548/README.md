@@ -780,6 +780,28 @@ buffing as a separate later stage: use each bot's existing spell/action logic,
 restrict targets to its exact two-member Arena team, allow it only during
 `WAIT_JOIN`, and do not use direct hard-coded spell casts.
 
+Patch `0019` adds a read-only MoP build audit after `0018`:
+
+```powershell
+git apply --check contrib/playerbot_auto_queue_548/patches/0019-playerbots-solo-arena-build-audit.patch
+git apply contrib/playerbot_auto_queue_548/patches/0019-playerbots-solo-arena-build-audit.patch
+```
+
+After `.soloarena login` reports all three staged bots online, run `.soloarena
+build`. For the requester, teammate, opponent healer, and opponent damage bot it
+reports class, level, active spec index, specialization ID, used/unlocked talent
+count, selected talent spell IDs, and all six glyph-property slots. It also writes
+the same audit to the server log. This stage does not select, learn, reset, apply,
+save, or delete any specialization, talent, glyph, item, or database row. Its
+output is the required baseline before verified 5.4.8 talent and glyph templates
+are designed; the shipped WotLK `.60`/`.80` premade values must not be reused.
+
+The first manual runtime audit completed successfully on 2026-08-10. Palstest
+reported six of six talents and six of six glyph properties. Patrie, Alaniel,
+and Idonia each reported zero of six talents and zero of six glyph properties,
+confirming that the command distinguishes a populated real-player build from
+the empty random-bot builds. All three staged bots then logged out normally.
+
 Do not enable LFG and battleground functional testing simultaneously until each has passed
 separately. `MaxBotsPerCycle` is shared by both systems.
 
@@ -788,6 +810,9 @@ separately. `MaxBotsPerCycle` is shared by both systems.
 Stop WorldServer, remove only the patches that were applied, in reverse order, then rebuild:
 
 ```powershell
+git apply -R --check contrib/playerbot_auto_queue_548/patches/0019-playerbots-solo-arena-build-audit.patch
+git apply -R contrib/playerbot_auto_queue_548/patches/0019-playerbots-solo-arena-build-audit.patch
+
 git apply -R --check contrib/playerbot_auto_queue_548/patches/0018-playerbots-solo-arena-temporary-loadout-restore.patch
 git apply -R contrib/playerbot_auto_queue_548/patches/0018-playerbots-solo-arena-temporary-loadout-restore.patch
 
@@ -901,6 +926,10 @@ The active `playerbots.conf` entries may then be removed manually or left disabl
   position is restored, the journal returns to zero rows, and only the exact
   temporary item GUIDs disappear. Repeat through one completed Arena and verify
   the automatic exit path produces the same zero-row, exact-restoration result.
+- Arena build audit: with `0019` applied, stage only the three bot logins and run
+  `.soloarena build`. Verify four participants are online, the real-player control
+  build is reported, empty bot talents/glyphs are exposed without mutation, and
+  normal `.soloarena logout` leaves no bot online or queued.
 - Shutdown/restart: verify no bot remains stuck in LFG or battleground queue state.
 - Keep `AiPlayerbot.AutoQueue.Arena = 0` during functional LFG/BG testing; enable it
   only for the read-only `0004` preview while `DryRun = 1`.

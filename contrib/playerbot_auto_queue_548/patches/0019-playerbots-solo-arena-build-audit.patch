@@ -1,0 +1,127 @@
+diff --git a/modules/mod_playerbots/src/cs_playerbots.cpp b/modules/mod_playerbots/src/cs_playerbots.cpp
+index 3268397a..e5afcce6 100644
+--- a/modules/mod_playerbots/src/cs_playerbots.cpp
++++ b/modules/mod_playerbots/src/cs_playerbots.cpp
+@@ -893,6 +893,7 @@ public:
+         bool preview = args && !strcmp(args, "preview");
+         bool login = args && !strcmp(args, "login");
+         bool status = args && !strcmp(args, "status");
++        bool buildAudit = args && !strcmp(args, "build");
+         bool loadoutAudit = args && !strcmp(args, "loadout");
+         bool loadoutApply = args && !strcmp(args, "loadout apply");
+         bool loadoutRestore = args && !strcmp(args, "loadout restore");
+@@ -907,12 +908,12 @@ public:
+         bool combatStatus = args && !strcmp(args, "combatstatus");
+         bool leaveArena = args && !strcmp(args, "leave");
+         bool unstageQueue = args && !strcmp(args, "unqueue");
+-        if (!preview && !login && !status && !loadoutAudit && !loadoutApply && !loadoutRestore &&
++        if (!preview && !login && !status && !buildAudit && !loadoutAudit && !loadoutApply && !loadoutRestore &&
+             !loadoutRecover && !logout && !formGroups && !ungroup &&
+             !stageQueue && !stageMatch && !stageEnter && !combatStatus && !leaveArena && !unstageQueue)
+         {
+             handler->SendSysMessage(
+-                "Usage: .soloarena preview|login|status|loadout [apply|restore|recover]|group|queue|match [tolviron]|enter|combatstatus|leave|unqueue|ungroup|logout");
++                "Usage: .soloarena preview|login|status|build|loadout [apply|restore|recover]|group|queue|match [tolviron]|enter|combatstatus|leave|unqueue|ungroup|logout");
+             return true;
+         }
+ 
+@@ -998,6 +999,99 @@ public:
+             return true;
+         }
+ 
++        if (buildAudit)
++        {
++            if (SoloArenaStagedBots.size() != 3 || !SoloArenaStagedRequester ||
++                player->GetGUID().GetCounter() != SoloArenaStagedRequester)
++            {
++                handler->SendSysMessage(
++                    "Solo Arena build audit requires this requester's complete staged-login set. Use .soloarena login first.");
++                return true;
++            }
++
++            ObjectGuid teammateGuid = ObjectGuid::Create<HighGuid::Player>(SoloArenaStagedTeammate);
++            ObjectGuid opponentHealerGuid = ObjectGuid::Create<HighGuid::Player>(SoloArenaStagedOpponentHealer);
++            ObjectGuid opponentDamageGuid = ObjectGuid::Create<HighGuid::Player>(SoloArenaStagedOpponentDamage);
++            Player* participants[] =
++            {
++                player,
++                sRandomPlayerbotMgr->GetPlayerBot(teammateGuid),
++                sRandomPlayerbotMgr->GetPlayerBot(opponentHealerGuid),
++                sRandomPlayerbotMgr->GetPlayerBot(opponentDamageGuid)
++            };
++            char const* labels[] = { "requester", "teammate", "opponent-healer", "opponent-damage" };
++            uint32 onlineParticipants = 0;
++            uint32 emptyTalentParticipants = 0;
++            uint32 emptyGlyphParticipants = 0;
++            for (uint8 participantIndex = 0; participantIndex < 4; ++participantIndex)
++            {
++                Player* participant = participants[participantIndex];
++                if (!participant)
++                {
++                    handler->PSendSysMessage("Solo Arena build %s: offline.", labels[participantIndex]);
++                    continue;
++                }
++
++                ++onlineParticipants;
++                uint8 activeSpec = participant->GetActiveSpec();
++                std::vector<uint32> talents;
++                if (PlayerTalentMap const* talentMap = participant->GetTalentMap(activeSpec))
++                    for (auto const& talent : *talentMap)
++                        if (participant->HasTalent(talent.first, activeSpec))
++                            talents.push_back(talent.first);
++                std::sort(talents.begin(), talents.end());
++
++                std::ostringstream talentEntries;
++                if (talents.empty())
++                {
++                    talentEntries << '-';
++                    ++emptyTalentParticipants;
++                }
++                else
++                    for (uint8 talentIndex = 0; talentIndex < talents.size(); ++talentIndex)
++                    {
++                        if (talentIndex)
++                            talentEntries << '/';
++                        talentEntries << talents[talentIndex];
++                    }
++
++                std::ostringstream glyphEntries;
++                uint32 glyphCount = 0;
++                for (uint8 glyphSlot = 0; glyphSlot < MAX_GLYPH_SLOT_INDEX; ++glyphSlot)
++                {
++                    if (glyphSlot)
++                        glyphEntries << '/';
++                    uint32 glyph = participant->GetGlyph(activeSpec, glyphSlot);
++                    glyphEntries << glyph;
++                    glyphCount += glyph ? 1 : 0;
++                }
++                if (!glyphCount)
++                    ++emptyGlyphParticipants;
++
++                uint32 unlockedTalents = participant->CalculateTalentsPoints();
++                uint32 usedTalents = uint32(talents.size());
++                uint32 remainingTalents = unlockedTalents > usedTalents ? unlockedTalents - usedTalents : 0;
++                handler->PSendSysMessage(
++                    "Solo Arena build %s %s: class=%u level=%u active-spec=%u specialization=%u talents=%u/%u remaining=%u talent-spells=%s glyphs=%u/6 glyph-properties=%s.",
++                    labels[participantIndex], participant->GetName().c_str(), participant->GetClass(),
++                    participant->GetLevel(), uint32(activeSpec), uint32(participant->GetSpecialization()),
++                    usedTalents, unlockedTalents, remainingTalents, talentEntries.str().c_str(),
++                    glyphCount, glyphEntries.str().c_str());
++                TC_LOG_INFO("server",
++                    "SoloArena build audit label=%s name=%s guid=%u class=%u level=%u active-spec=%u specialization=%u talents=%u/%u remaining=%u talent-spells=%s glyphs=%u/6 glyph-properties=%s",
++                    labels[participantIndex], participant->GetName().c_str(),
++                    participant->GetGUID().GetCounter(), participant->GetClass(), participant->GetLevel(),
++                    uint32(activeSpec), uint32(participant->GetSpecialization()), usedTalents,
++                    unlockedTalents, remainingTalents, talentEntries.str().c_str(), glyphCount,
++                    glyphEntries.str().c_str());
++            }
++
++            handler->PSendSysMessage(
++                "Dry-run only: %u/4 participants online; empty talents=%u, empty glyphs=%u. No specialization, talent, glyph, item or database row was changed.",
++                onlineParticipants, emptyTalentParticipants, emptyGlyphParticipants);
++            return true;
++        }
++
+         if (loadoutAudit)
+         {
+             if (SoloArenaStagedBots.size() != 3 || !SoloArenaStagedRequester ||
