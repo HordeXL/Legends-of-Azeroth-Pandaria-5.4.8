@@ -857,12 +857,17 @@ Only one automatic Solo Arena may run at a time, and an occupied queue of the
 selected size is protected rather than mixed into this controlled match. The
 distributed configuration keeps `AutomaticBattlemasterSolo = 0`; the ignored
 active local test configuration enables it. The x64 RelWithDebInfo WorldServer
-compiled and linked successfully on 2026-08-10. The isolated `0021` patch passes
-forward application over `0020`, reverse application from the active source,
-and whitespace validation; its SHA-256 is
-`528F18F738E4F4471F537C852307A988268FA93776932FB5528C1BC24282FE49`.
-Runtime tests for 2v2, 3v3, and 5v5 remain required after a fresh server restart
-applies the world update.
+compiled and linked successfully on 2026-08-10. The first UI test exposed a
+5.4.8 core detail: `GossipMenu::_senderGUID` is never populated, so the visible
+choices were silently ignored while the module tried to resolve the
+Battlemaster through that empty value. The revised packet hook decodes and
+validates the sender GUID directly from `CMSG_GOSSIP_SELECT_OPTION`, matching
+the core opcode handler, and reports rejected requests to the player instead
+of failing silently. The isolated revised `0021` patch passes forward
+application over `0020`, reverse application, and whitespace validation; its
+SHA-256 is
+`288FC824FCC9796ADA0A8CEA405A8D98CD903004E35F6FBF7EDCE0569F3D7A32`.
+Runtime tests for 2v2, 3v3, and 5v5 remain required after a fresh server restart.
 
 Do not enable LFG and battleground functional testing simultaneously until each has passed
 separately. `MaxBotsPerCycle` is shared by both systems.
