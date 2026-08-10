@@ -139,14 +139,12 @@ public:
         if (packet.GetOpcode() == CMSG_GOSSIP_SELECT_OPTION && packet.size() >= 8)
         {
             Player* player = sessionBot->GetPlayer();
-            if (player && !player->GetGroup() &&
-                sPlayerbotAIConfig->autoQueueArenaAutomaticBattlemasterSolo)
+            if (player)
             {
                 size_t readPosition = packet.rpos();
                 uint32 gossipListId = 0;
                 uint32 menuId = 0;
                 packet >> gossipListId >> menuId;
-                packet.rpos(readPosition);
 
                 GossipMenu const& gossipMenu = player->PlayerTalkClass->GetGossipMenu();
                 GossipMenuItem const* item = gossipMenu.GetItem(gossipListId);
@@ -162,16 +160,55 @@ public:
                     menuId == gossipMenu.GetMenuId() && item &&
                     item->OptionType == GOSSIP_OPTION_GOSSIP && arenaSlot != PVP_SLOT_MAX)
                 {
-                    if (Creature* battlemaster = player->GetMap()->GetCreature(gossipMenu.GetSenderGUID()))
+                    // GossipMenu::_senderGUID is not populated by this 5.4.8 core.
+                    // Decode the sender from CMSG_GOSSIP_SELECT_OPTION just as the
+                    // core opcode handler does instead of relying on that field.
+                    ObjectGuid senderGuid;
+                    uint8 boxTextLength = 0;
+                    senderGuid[3] = packet.ReadBit();
+                    senderGuid[0] = packet.ReadBit();
+                    senderGuid[1] = packet.ReadBit();
+                    senderGuid[4] = packet.ReadBit();
+                    senderGuid[7] = packet.ReadBit();
+                    senderGuid[5] = packet.ReadBit();
+                    senderGuid[6] = packet.ReadBit();
+                    boxTextLength = packet.ReadBits(8);
+                    senderGuid[2] = packet.ReadBit();
+
+                    packet.ReadByteSeq(senderGuid[7]);
+                    packet.ReadByteSeq(senderGuid[3]);
+                    packet.ReadByteSeq(senderGuid[4]);
+                    packet.ReadByteSeq(senderGuid[6]);
+                    packet.ReadByteSeq(senderGuid[0]);
+                    packet.ReadByteSeq(senderGuid[5]);
+                    if (item->IsCoded)
+                        packet.ReadString(boxTextLength);
+                    packet.ReadByteSeq(senderGuid[2]);
+                    packet.ReadByteSeq(senderGuid[1]);
+                    packet.rpos(readPosition);
+
+                    if (!sPlayerbotAIConfig->autoQueueArenaAutomaticBattlemasterSolo)
                     {
-                        if (battlemaster->IsBattleMaster() &&
-                            sBattlegroundMgr->GetBattleMasterBG(battlemaster->GetEntry()) == BATTLEGROUND_AA)
+                        ChatHandler(player->GetSession()).SendSysMessage(
+                            "Automatic Solo Arena through Arena Battlemasters is disabled.");
+                    }
+                    else if (Creature* battlemaster = player->GetNPCIfCanInteractWith(senderGuid, UNIT_NPC_FLAG_BATTLEMASTER))
+                    {
+                        if (sBattlegroundMgr->GetBattleMasterBG(battlemaster->GetEntry()) == BATTLEGROUND_AA)
                         {
                             player->PlayerTalkClass->SendCloseGossip();
                             HandleSoloArenaAutomaticJoinRequest(player, arenaSlot);
                         }
+                        else
+                            ChatHandler(player->GetSession()).SendSysMessage(
+                                "This NPC is not registered as an Arena Battlemaster.");
                     }
+                    else
+                        ChatHandler(player->GetSession()).SendSysMessage(
+                            "The Arena Battlemaster is no longer close enough to use.");
                 }
+                else
+                    packet.rpos(readPosition);
             }
         }
 
