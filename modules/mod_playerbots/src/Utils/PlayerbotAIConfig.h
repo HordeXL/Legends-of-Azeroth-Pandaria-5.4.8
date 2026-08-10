@@ -75,8 +75,11 @@ public:
     bool autoQueueArenaStageLogin, autoQueueArenaStageGroup, autoQueueArenaStageQueue, autoQueueArenaStageMatch;
     bool autoQueueArenaStageEnter, autoQueueArenaStageHealthRestore, autoQueueArenaStageCombatStatus;
     bool autoQueueArenaStageAutomaticExit;
+    bool autoQueueArenaAutomatic, autoQueueArenaAutomaticBattlemasterSolo;
+    bool autoQueueArenaAutomaticForceTolviron;
     uint32 autoQueueCheckInterval, autoQueueMaxBotsPerCycle;
     uint32 autoQueueArenaMinEquippedItems, autoQueueArenaMinAverageItemLevel, autoQueueArenaMinPvpItems;
+    uint32 autoQueueArenaAutomaticTimeout;
 
     std::string premadeSpecName[MAX_CLASSES][MAX_SPECIALIZATIONS - 1];
     std::vector<uint16> premadeSpecLink[MAX_CLASSES][MAX_SPECIALIZATIONS - 1];

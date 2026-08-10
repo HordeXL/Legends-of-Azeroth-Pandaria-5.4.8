@@ -6,12 +6,17 @@
 */
 
 #include "Chat.h"
+#include "BattlegroundMgr.h"
 #include "ChannelMgr.h"
 #include "Config.h"
+#include "Creature.h"
 #include "cs_playerbots.h"
+#include "GossipDef.h"
 #include "Log.h"
+#include "Map.h"
 #include "Opcodes.h"
 #include "Player.h"
+#include "RatedPvp.h"
 #include "ScriptMgr.h"
 #include "World.h"
 #include "WorldPacket.h"
@@ -36,6 +41,14 @@
 #ifndef _PLAYERBOT_CONFIG
 # define _PLAYERBOT_CONFIG  "playerbots.conf"
 #endif
+
+namespace
+{
+uint32 constexpr SOLO_ARENA_GOSSIP_MENU = 8218;
+uint32 constexpr SOLO_ARENA_GOSSIP_2V2 = 20;
+uint32 constexpr SOLO_ARENA_GOSSIP_3V3 = 21;
+uint32 constexpr SOLO_ARENA_GOSSIP_5V5 = 22;
+}
 
 class mod_playerbots : public PlayerScript
 {
@@ -89,6 +102,7 @@ public:
     void OnUpdate(uint32 diff) override
     {
         sBracketMgr->Update(diff);
+        UpdateSoloArenaAutomaticQueue(diff);
         UpdateSoloArenaAutomaticExit(diff);
     }
 };
@@ -99,8 +113,67 @@ public:
     PlayerbotsServerScript() : ServerScript("PlayerbotsServerScript") {}
     void OnPacketReceive(WorldSession* sessionBot, WorldPacket& packet) override
     {
+        if (!sessionBot)
+            return;
+
         if (packet.GetOpcode() == CMSG_BATTLEFIELD_LEAVE)
-            HandleSoloArenaClientLeave(sessionBot ? sessionBot->GetPlayer() : nullptr);
+            HandleSoloArenaClientLeave(sessionBot->GetPlayer());
+
+        if (packet.GetOpcode() == CMSG_BATTLEMASTER_JOIN_ARENA && packet.size() >= 1)
+        {
+            Player* player = sessionBot->GetPlayer();
+            if (player && !player->GetGroup())
+            {
+                size_t readPosition = packet.rpos();
+                uint8 arenaSlot = 0;
+                packet >> arenaSlot;
+                packet.rpos(readPosition);
+                HandleSoloArenaAutomaticJoinRequest(player, arenaSlot);
+            }
+        }
+
+        // MoP 5.4.8 disables the native Arena Join buttons for a solo player.
+        // The shared Arena Battlemaster gossip menu therefore exposes three
+        // explicit server-side choices. The original battlefield option and
+        // normal group registration remain untouched.
+        if (packet.GetOpcode() == CMSG_GOSSIP_SELECT_OPTION && packet.size() >= 8)
+        {
+            Player* player = sessionBot->GetPlayer();
+            if (player && !player->GetGroup() &&
+                sPlayerbotAIConfig->autoQueueArenaAutomaticBattlemasterSolo)
+            {
+                size_t readPosition = packet.rpos();
+                uint32 gossipListId = 0;
+                uint32 menuId = 0;
+                packet >> gossipListId >> menuId;
+                packet.rpos(readPosition);
+
+                GossipMenu const& gossipMenu = player->PlayerTalkClass->GetGossipMenu();
+                GossipMenuItem const* item = gossipMenu.GetItem(gossipListId);
+                uint8 arenaSlot = PVP_SLOT_MAX;
+                if (gossipListId == SOLO_ARENA_GOSSIP_2V2)
+                    arenaSlot = PVP_SLOT_ARENA_2v2;
+                else if (gossipListId == SOLO_ARENA_GOSSIP_3V3)
+                    arenaSlot = PVP_SLOT_ARENA_3v3;
+                else if (gossipListId == SOLO_ARENA_GOSSIP_5V5)
+                    arenaSlot = PVP_SLOT_ARENA_5v5;
+
+                if (menuId == SOLO_ARENA_GOSSIP_MENU &&
+                    menuId == gossipMenu.GetMenuId() && item &&
+                    item->OptionType == GOSSIP_OPTION_GOSSIP && arenaSlot != PVP_SLOT_MAX)
+                {
+                    if (Creature* battlemaster = player->GetMap()->GetCreature(gossipMenu.GetSenderGUID()))
+                    {
+                        if (battlemaster->IsBattleMaster() &&
+                            sBattlegroundMgr->GetBattleMasterBG(battlemaster->GetEntry()) == BATTLEGROUND_AA)
+                        {
+                            player->PlayerTalkClass->SendCloseGossip();
+                            HandleSoloArenaAutomaticJoinRequest(player, arenaSlot);
+                        }
+                    }
+                }
+            }
+        }
 
         Player* playerBot = sessionBot->GetPlayer();
             if (PlayerbotMgr* playerbotMgr = GET_PLAYERBOT_MGR(playerBot))

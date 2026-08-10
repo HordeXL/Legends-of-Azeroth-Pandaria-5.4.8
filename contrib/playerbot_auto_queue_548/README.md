@@ -4,8 +4,9 @@ Status: experimental. Patches `0001`, `0004`, `0005`, `0006`, `0007`, `0008`, `0
 the active source. Patches through `0012` are compiled and runtime-verified.
 The first `0013` runtime pass verified the real-player client-button health path,
 but exposed stuck staged bots; `0013` is revised, compiled, and awaiting retest. Patches
-`0002` and `0003` are not applied. None
-contains SQL. The explicitly gated `0005` login, `0006` grouping, and `0007`
+`0002` and `0003` are not applied. Patch `0021` includes one idempotent world
+SQL update for the shared Arena Battlemaster menu plus its exact rollback file;
+earlier patches contain no SQL. The explicitly gated `0005` login, `0006` grouping, and `0007`
 non-rated queue stages use normal core paths and can therefore save character/group
 state or temporarily change in-memory queue state. Patch `0009` adds an additional
 invite-only matchmaking diagnostic. Patch `0010` adds a separately gated staged
@@ -802,6 +803,67 @@ and Idonia each reported zero of six talents and zero of six glyph properties,
 confirming that the command distinguishes a populated real-player build from
 the empty random-bot builds. All three staged bots then logged out normally.
 
+Patch `0020` connects the already runtime-tested Solo Arena stages into one
+command-free 2v2 preparation flow:
+
+```powershell
+git apply --check contrib/playerbot_auto_queue_548/patches/0020-playerbots-solo-arena-automatic-ui.patch
+git apply contrib/playerbot_auto_queue_548/patches/0020-playerbots-solo-arena-automatic-ui.patch
+```
+
+It observes a real solo player's normal `CMSG_BATTLEMASTER_JOIN_ARENA` 2v2
+request and runs `login -> loadout apply -> group -> queue -> match -> enter`
+through the same handlers already tested manually. Every transition verifies
+the expected tracked state. Preparation is limited to 120 seconds by default;
+on a failed transition it unwinds queue, groups, temporary loadouts, and bot
+logins in the safe reverse order. Completed matches use the existing automatic
+exit and health restoration before the same final cleanup.
+
+The feature has its own default-off `AiPlayerbot.AutoQueue.Arena.Automatic`
+gate. `AutomaticForceTolviron = 1` provides a repeatable exact-map test;
+otherwise the core selects a random Arena. All earlier `Stage*` safety gates
+must remain enabled. The active local runtime configuration enables automatic
+orchestration with random Arena selection; distributed defaults remain disabled.
+
+The x64 RelWithDebInfo WorldServer compiled and linked successfully on
+2026-08-10. The first runtime test must be performed without `.soloarena`
+commands: while solo and outside all queues/groups, use the normal 2v2 Join
+button. If the client keeps that button disabled and sends no packet, this
+cannot be repaired purely by the server packet hook; the next frontend will be
+a normal in-game Queue Master gossip choice that calls the same automatic
+orchestrator rather than adding another GM command.
+
+Patch `0021` implements that frontend at the existing Arena Battlemaster NPCs
+and generalizes the automatic orchestrator to all three MoP Arena sizes:
+
+```powershell
+git apply --check contrib/playerbot_auto_queue_548/patches/0021-playerbots-arena-battlemaster-2v2-3v3-5v5.patch
+git apply contrib/playerbot_auto_queue_548/patches/0021-playerbots-arena-battlemaster-2v2-3v3-5v5.patch
+```
+
+The shared menu `8218` retains its original premade-group registration choice
+and gains explicit `Solo Arena 2v2`, `Solo Arena 3v3`, and `Solo Arena 5v5`
+choices. The world update uses previously unused option IDs `20-22`; its rollback
+is `sql/backup/world_arena_battlemaster_solo_options_before_20260810.sql`.
+Selecting a size maps to its real `BATTLEGROUND_QUEUE_2v2`, `_3v3`, or `_5v5`
+queue. The requester's team uses the requester's faction, the opponent team uses
+the opposing faction, each side has one healer, and every remaining slot is
+filled by damage players. A healer requester is itself the team's healer.
+
+The automatic participant model, exact group validation, queue validation,
+match scheduling, shared invitation acceptance, entry, protected temporary
+loadouts, exit, reverse cleanup, and bot logout all use the selected team size.
+Only one automatic Solo Arena may run at a time, and an occupied queue of the
+selected size is protected rather than mixed into this controlled match. The
+distributed configuration keeps `AutomaticBattlemasterSolo = 0`; the ignored
+active local test configuration enables it. The x64 RelWithDebInfo WorldServer
+compiled and linked successfully on 2026-08-10. The isolated `0021` patch passes
+forward application over `0020`, reverse application from the active source,
+and whitespace validation; its SHA-256 is
+`528F18F738E4F4471F537C852307A988268FA93776932FB5528C1BC24282FE49`.
+Runtime tests for 2v2, 3v3, and 5v5 remain required after a fresh server restart
+applies the world update.
+
 Do not enable LFG and battleground functional testing simultaneously until each has passed
 separately. `MaxBotsPerCycle` is shared by both systems.
 
@@ -810,6 +872,12 @@ separately. `MaxBotsPerCycle` is shared by both systems.
 Stop WorldServer, remove only the patches that were applied, in reverse order, then rebuild:
 
 ```powershell
+git apply -R --check contrib/playerbot_auto_queue_548/patches/0021-playerbots-arena-battlemaster-2v2-3v3-5v5.patch
+git apply -R contrib/playerbot_auto_queue_548/patches/0021-playerbots-arena-battlemaster-2v2-3v3-5v5.patch
+
+git apply -R --check contrib/playerbot_auto_queue_548/patches/0020-playerbots-solo-arena-automatic-ui.patch
+git apply -R contrib/playerbot_auto_queue_548/patches/0020-playerbots-solo-arena-automatic-ui.patch
+
 git apply -R --check contrib/playerbot_auto_queue_548/patches/0019-playerbots-solo-arena-build-audit.patch
 git apply -R contrib/playerbot_auto_queue_548/patches/0019-playerbots-solo-arena-build-audit.patch
 
@@ -930,6 +998,18 @@ The active `playerbots.conf` entries may then be removed manually or left disabl
   `.soloarena build`. Verify four participants are online, the real-player control
   build is reported, empty bot talents/glyphs are exposed without mutation, and
   normal `.soloarena logout` leaves no bot online or queued.
+- Automatic Arena UI: with `0020` and every verified `Stage*` gate enabled, remain
+  solo and use only the normal 2v2 Join button. Verify automatic state logs reach
+  `active`, all four enter one instance, the match completes, exact original
+  loadouts and health return, groups/queues reach zero, all three bots log out,
+  and the recovery journal is empty. Do not use `.soloarena` during this test.
+- Arena Battlemaster sizes: with `0021` and its world update applied, verify that
+  every Arena Battlemaster shows the original registration option plus Solo 2v2,
+  3v3, and 5v5. Test the sizes separately without `.soloarena` commands. Verify
+  exact totals of 4, 6, and 10 participants; one healer per side; same-faction
+  teammates; opposing-faction opponents; the matching Arena queue type; normal
+  gates/combat/leave; full health; exact original equipment restoration; zero
+  recovery rows/groups/queue slots; and all 3, 5, or 9 staged bots offline.
 - Shutdown/restart: verify no bot remains stuck in LFG or battleground queue state.
 - Keep `AiPlayerbot.AutoQueue.Arena = 0` during functional LFG/BG testing; enable it
   only for the read-only `0004` preview while `DryRun = 1`.

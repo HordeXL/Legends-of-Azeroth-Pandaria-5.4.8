@@ -182,6 +182,15 @@ bool PlayerbotAIConfig::Initialize()
     autoQueueArenaStageHealthRestore = sConfigMgr->GetBoolDefault("AiPlayerbot.AutoQueue.Arena.StageHealthRestore", false);
     autoQueueArenaStageCombatStatus = sConfigMgr->GetBoolDefault("AiPlayerbot.AutoQueue.Arena.StageCombatStatus", false);
     autoQueueArenaStageAutomaticExit = sConfigMgr->GetBoolDefault("AiPlayerbot.AutoQueue.Arena.StageAutomaticExit", false);
+    autoQueueArenaAutomatic = sConfigMgr->GetBoolDefault("AiPlayerbot.AutoQueue.Arena.Automatic", false);
+    autoQueueArenaAutomaticBattlemasterSolo = sConfigMgr->GetBoolDefault(
+        "AiPlayerbot.AutoQueue.Arena.AutomaticBattlemasterSolo", false);
+    autoQueueArenaAutomaticForceTolviron = sConfigMgr->GetBoolDefault(
+        "AiPlayerbot.AutoQueue.Arena.AutomaticForceTolviron", false);
+    autoQueueArenaAutomaticTimeout = sConfigMgr->GetIntDefault(
+        "AiPlayerbot.AutoQueue.Arena.AutomaticTimeout", 120) * IN_MILLISECONDS;
+    if (autoQueueArenaAutomaticTimeout < 30 * IN_MILLISECONDS)
+        autoQueueArenaAutomaticTimeout = 30 * IN_MILLISECONDS;
 
     randomChangeMultiplier = sConfigMgr->GetFloatDefault("AiPlayerbot.RandomChangeMultiplier", 1.0);
 

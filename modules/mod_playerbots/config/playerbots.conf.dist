@@ -841,6 +841,26 @@ AiPlayerbot.AutoQueue.Arena.StageCombatStatus = 0
 # tracker after all four participants finish leaving the completed Arena.
 AiPlayerbot.AutoQueue.Arena.StageAutomaticExit = 0
 
+# Patch 0020 command-free solo 2v2 orchestration. When enabled, a solo level-90
+# player pressing the normal 2v2 Arena Join button starts the already verified
+# login -> temporary PvP loadout -> group -> queue -> match -> enter sequence.
+# Keep disabled until every Stage* setting above is enabled and the server has
+# been rebuilt. Only one automatic Solo Arena session may exist at a time.
+AiPlayerbot.AutoQueue.Arena.Automatic = 0
+
+# Patch 0021 solo Battlemaster frontend. When enabled, every Arena Battlemaster
+# offers separate automatic Solo Arena 2v2, 3v3 and 5v5 choices. The original
+# Arena registration option remains available for normal premade groups.
+AiPlayerbot.AutoQueue.Arena.AutomaticBattlemasterSolo = 0
+
+# 0 keeps normal random Arena-map selection. 1 forces Tol'viron Arena, which is
+# useful for repeatable gate/rotation regression tests.
+AiPlayerbot.AutoQueue.Arena.AutomaticForceTolviron = 0
+
+# Maximum seconds allowed for automatic preparation before guarded cleanup.
+# Values below 30 seconds are clamped to 30.
+AiPlayerbot.AutoQueue.Arena.AutomaticTimeout = 120
+
 # Required Configuration for RandomBotAutoJoinBG
 #
 # Known issue: When enabling a lot of brackats in combination with multiple instances,

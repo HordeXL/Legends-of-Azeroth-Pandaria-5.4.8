@@ -31,6 +31,7 @@
 #include "PerformanceMonitor.h"
 #include "PlayerbotAIConfig.h"
 #include "RandomPlayerbotMgr.h"
+#include "RatedPvp.h"
 #include "ScriptMgr.h"
 #include "WorldSession.h"
 
@@ -48,6 +49,10 @@ uint32 SoloArenaStagedRequester = 0;
 uint32 SoloArenaStagedTeammate = 0;
 uint32 SoloArenaStagedOpponentHealer = 0;
 uint32 SoloArenaStagedOpponentDamage = 0;
+std::vector<uint32> SoloArenaAutomaticRequesterTeam;
+std::vector<uint32> SoloArenaAutomaticOpponentTeam;
+uint8 SoloArenaAutomaticTeamSize = ARENA_TYPE_2v2;
+BattlegroundQueueTypeId SoloArenaAutomaticQueueType = BATTLEGROUND_QUEUE_2v2;
 uint32 SoloArenaRequesterGroup = 0;
 uint32 SoloArenaOpponentGroup = 0;
 bool SoloArenaQueuesStaged = false;
@@ -56,6 +61,28 @@ uint32 SoloArenaEnteredInstance = 0;
 uint32 SoloArenaAutomaticExitTimer = 0;
 std::set<uint32> SoloArenaAutomaticHealthRestoreScheduled;
 std::set<uint32> SoloArenaLoadoutRecoveryBots;
+
+enum class SoloArenaAutomaticState : uint8
+{
+    Idle,
+    Login,
+    WaitForBots,
+    ApplyLoadout,
+    Group,
+    Queue,
+    Match,
+    WaitForInvite,
+    Enter,
+    WaitForEntry,
+    Active,
+    Cleanup
+};
+
+SoloArenaAutomaticState SoloArenaAutomaticQueueState = SoloArenaAutomaticState::Idle;
+uint32 SoloArenaAutomaticRequester = 0;
+uint32 SoloArenaAutomaticUpdateTimer = 0;
+uint32 SoloArenaAutomaticElapsed = 0;
+std::string SoloArenaAutomaticCleanupReason;
 
 uint8 const SoloArenaLoadoutEquipmentSlots[] =
 {
@@ -589,8 +616,45 @@ char const* SoloArenaBotStateName(PlayerbotAI* botAI)
 
 bool IsSoloArenaTrackedParticipant(uint32 guid)
 {
+    if (!guid)
+        return false;
+
+    if (std::find(SoloArenaAutomaticRequesterTeam.begin(),
+        SoloArenaAutomaticRequesterTeam.end(), guid) != SoloArenaAutomaticRequesterTeam.end() ||
+        std::find(SoloArenaAutomaticOpponentTeam.begin(),
+        SoloArenaAutomaticOpponentTeam.end(), guid) != SoloArenaAutomaticOpponentTeam.end())
+        return true;
+
     return guid && (guid == SoloArenaStagedRequester || guid == SoloArenaStagedTeammate ||
         guid == SoloArenaStagedOpponentHealer || guid == SoloArenaStagedOpponentDamage);
+}
+
+BattlegroundQueueTypeId GetSoloArenaQueueType(uint8 arenaType)
+{
+    switch (arenaType)
+    {
+        case ARENA_TYPE_2v2: return BATTLEGROUND_QUEUE_2v2;
+        case ARENA_TYPE_3v3: return BATTLEGROUND_QUEUE_3v3;
+        case ARENA_TYPE_5v5: return BATTLEGROUND_QUEUE_5v5;
+        default:             return BATTLEGROUND_QUEUE_NONE;
+    }
+}
+
+std::vector<uint32> GetSoloArenaAutomaticParticipantGuids()
+{
+    std::vector<uint32> guids = SoloArenaAutomaticRequesterTeam;
+    guids.insert(guids.end(), SoloArenaAutomaticOpponentTeam.begin(),
+        SoloArenaAutomaticOpponentTeam.end());
+    return guids;
+}
+
+std::vector<uint32> GetSoloArenaTrackedParticipantGuids()
+{
+    std::vector<uint32> guids = GetSoloArenaAutomaticParticipantGuids();
+    if (!guids.empty())
+        return guids;
+    return { SoloArenaStagedRequester, SoloArenaStagedTeammate,
+        SoloArenaStagedOpponentHealer, SoloArenaStagedOpponentDamage };
 }
 
 bool ScheduleSoloArenaAutomaticHealthRestore(Player* participant, char const* reason)
@@ -610,41 +674,62 @@ bool ScheduleSoloArenaAutomaticHealthRestore(Player* participant, char const* re
     return true;
 }
 
-bool HasExactSoloArenaQueueGroup(BattlegroundQueue& queue, uint32 firstGuid, uint32 secondGuid,
-                                 uint32& invitedInstance)
+bool HasExactSoloArenaQueueGroup(BattlegroundQueue& queue,
+                                 std::vector<uint32> const& memberGuids,
+                                 uint8 arenaType, uint32& invitedInstance)
 {
-    GroupQueueInfo firstInfo;
-    GroupQueueInfo secondInfo;
-    ObjectGuid first = ObjectGuid::Create<HighGuid::Player>(firstGuid);
-    ObjectGuid second = ObjectGuid::Create<HighGuid::Player>(secondGuid);
-    if (!queue.GetPlayerGroupInfoData(first, &firstInfo) ||
-        !queue.GetPlayerGroupInfoData(second, &secondInfo))
+    if (memberGuids.empty())
         return false;
 
-    auto isExact = [first, second](GroupQueueInfo const& info) -> bool
+    GroupQueueInfo reference;
+    ObjectGuid first = ObjectGuid::Create<HighGuid::Player>(memberGuids.front());
+    if (!queue.GetPlayerGroupInfoData(first, &reference))
+        return false;
+
+    auto isExact = [&memberGuids, arenaType](GroupQueueInfo const& info) -> bool
     {
-        return info.BgTypeId == BATTLEGROUND_AA && info.ArenaType == ARENA_TYPE_2v2 &&
-            !info.IsRated && info.Players.size() == 2 &&
-            info.Players.find(first) != info.Players.end() &&
-            info.Players.find(second) != info.Players.end();
+        if (info.BgTypeId != BATTLEGROUND_AA || info.ArenaType != arenaType ||
+            info.IsRated || info.Players.size() != memberGuids.size())
+            return false;
+
+        for (uint32 guid : memberGuids)
+            if (info.Players.find(ObjectGuid::Create<HighGuid::Player>(guid)) == info.Players.end())
+                return false;
+        return true;
     };
 
-    if (!isExact(firstInfo) || !isExact(secondInfo) || firstInfo.JoinTime != secondInfo.JoinTime ||
-        firstInfo.IsInvitedToBGInstanceGUID != secondInfo.IsInvitedToBGInstanceGUID)
+    if (!isExact(reference))
         return false;
 
-    invitedInstance = firstInfo.IsInvitedToBGInstanceGUID;
+    for (uint32 guid : memberGuids)
+    {
+        GroupQueueInfo memberInfo;
+        if (!queue.GetPlayerGroupInfoData(ObjectGuid::Create<HighGuid::Player>(guid), &memberInfo) ||
+            !isExact(memberInfo) || memberInfo.JoinTime != reference.JoinTime ||
+            memberInfo.IsInvitedToBGInstanceGUID != reference.IsInvitedToBGInstanceGUID)
+            return false;
+    }
+
+    invitedInstance = reference.IsInvitedToBGInstanceGUID;
     return true;
 }
 
-bool AcceptSoloArenaInvite(Player* participant, uint32 invitedInstance)
+bool HasExactSoloArenaQueueGroup(BattlegroundQueue& queue, uint32 firstGuid, uint32 secondGuid,
+                                 uint32& invitedInstance)
+{
+    return HasExactSoloArenaQueueGroup(queue, { firstGuid, secondGuid },
+        ARENA_TYPE_2v2, invitedInstance);
+}
+
+bool AcceptSoloArenaInvite(Player* participant, uint32 invitedInstance,
+                           BattlegroundQueueTypeId queueType = BATTLEGROUND_QUEUE_2v2)
 {
     if (!participant || !participant->GetSession() || !invitedInstance ||
         participant->InBattleground() || participant->IsBeingTeleported() ||
-        !participant->IsInvitedForBattlegroundQueueType(BATTLEGROUND_QUEUE_2v2))
+        !participant->IsInvitedForBattlegroundQueueType(queueType))
         return false;
 
-    uint32 queueSlot = participant->GetBattlegroundQueueIndex(BATTLEGROUND_QUEUE_2v2);
+    uint32 queueSlot = participant->GetBattlegroundQueueIndex(queueType);
     if (queueSlot >= PLAYER_MAX_BATTLEGROUND_QUEUES)
         return false;
 
@@ -745,6 +830,550 @@ SoloArenaPreviewCandidate const* FindSoloArenaCandidate(
 
     return nullptr;
 }
+
+Player* FindSoloArenaParticipant(uint32 guid)
+{
+    return guid ? ObjectAccessor::FindConnectedPlayer(
+        ObjectGuid::Create<HighGuid::Player>(guid)) : nullptr;
+}
+
+bool GetSoloArenaAutomaticParticipants(std::vector<Player*>& participants)
+{
+    participants.clear();
+    for (uint32 guid : GetSoloArenaAutomaticParticipantGuids())
+    {
+        Player* participant = FindSoloArenaParticipant(guid);
+        if (!participant)
+            return false;
+        participants.push_back(participant);
+    }
+    return !participants.empty();
+}
+
+bool LoadSoloArenaAutomaticCandidates(Player* requester,
+    std::vector<SoloArenaPreviewCandidate>& candidates, uint32& rejectedNeutral,
+    uint32& rejectedSpec, uint32& rejectedGear, std::string& error)
+{
+    candidates.clear();
+    rejectedNeutral = rejectedSpec = rejectedGear = 0;
+    error.clear();
+    if (!requester || sPlayerbotAIConfig->randomBotAccounts.empty())
+    {
+        error = "no requester or configured random-bot accounts";
+        return false;
+    }
+
+    uint32 minAccount = sPlayerbotAIConfig->randomBotAccounts.front();
+    uint32 maxAccount = sPlayerbotAIConfig->randomBotAccounts.back();
+    QueryResult result = CharacterDatabase.PQuery(
+        "SELECT guid,name,race,class,level,talentTree,activespec,equipmentCache "
+        "FROM characters WHERE account >= %u AND account <= %u AND level = %u AND online = 0 "
+        "AND guid NOT IN (SELECT guid FROM guild_member) "
+        "AND guid NOT IN (SELECT memberGuid FROM group_member)",
+        minAccount, maxAccount, requester->GetLevel());
+    if (!result)
+    {
+        error = "no unused offline random-bot characters";
+        return false;
+    }
+
+    do
+    {
+        Field* fields = result->Fetch();
+        SoloArenaPreviewCandidate candidate;
+        candidate.Guid = fields[0].GetUInt32();
+        candidate.Name = fields[1].GetString();
+        candidate.Race = fields[2].GetUInt8();
+        candidate.Class = fields[3].GetUInt8();
+        candidate.Level = fields[4].GetUInt8();
+        candidate.Team = Player::TeamForRace(candidate.Race);
+        if (candidate.Team == PANDAREN_NEUTRAL)
+        {
+            ++rejectedNeutral;
+            continue;
+        }
+
+        uint32 specs[MAX_TALENT_SPECS] = { 0, 0 };
+        std::istringstream talentTrees(fields[5].GetString());
+        for (uint8 spec = 0; spec < MAX_TALENT_SPECS; ++spec)
+            talentTrees >> specs[spec];
+        uint8 activeSpec = fields[6].GetUInt8();
+        if (activeSpec >= MAX_TALENT_SPECS)
+            activeSpec = 0;
+        candidate.Specialization = Specializations(specs[activeSpec]);
+        candidate.Role = GetSoloArenaPreviewRole(candidate.Specialization);
+        if ((!IsSoloArenaDamage(candidate.Role) && candidate.Role != SoloArenaPreviewRole::Healer) ||
+            !GetSoloArenaLoadoutPlan(candidate.Specialization))
+        {
+            ++rejectedSpec;
+            continue;
+        }
+
+        ReadSoloArenaGear(fields[7].GetString(), candidate);
+        if (candidate.EquippedItems < sPlayerbotAIConfig->autoQueueArenaMinEquippedItems ||
+            candidate.AverageItemLevel < sPlayerbotAIConfig->autoQueueArenaMinAverageItemLevel ||
+            candidate.PvpItems < sPlayerbotAIConfig->autoQueueArenaMinPvpItems)
+        {
+            ++rejectedGear;
+            continue;
+        }
+        candidates.push_back(candidate);
+    }
+    while (result->NextRow());
+
+    std::sort(candidates.begin(), candidates.end(),
+        [](SoloArenaPreviewCandidate const& left, SoloArenaPreviewCandidate const& right)
+        {
+            return left.GearScore() > right.GearScore();
+        });
+    return true;
+}
+
+SoloArenaPreviewCandidate const* SelectSoloArenaAutomaticCandidate(
+    std::vector<SoloArenaPreviewCandidate> const& candidates,
+    SoloArenaPreviewRole role, uint32 team, std::vector<uint32> const& selected,
+    uint8 forbiddenClass = 0)
+{
+    SoloArenaPreviewCandidate const* candidate = FindSoloArenaCandidate(
+        candidates, role, team, true, forbiddenClass, selected);
+    if (!candidate && forbiddenClass)
+        candidate = FindSoloArenaCandidate(candidates, role, team, true, 0, selected);
+    return candidate;
+}
+
+bool StageSoloArenaAutomaticBots(Player* requester, std::string& error)
+{
+    error.clear();
+    std::vector<SoloArenaPreviewCandidate> candidates;
+    uint32 rejectedNeutral = 0;
+    uint32 rejectedSpec = 0;
+    uint32 rejectedGear = 0;
+    if (!LoadSoloArenaAutomaticCandidates(requester, candidates, rejectedNeutral,
+        rejectedSpec, rejectedGear, error))
+        return false;
+
+    SoloArenaPreviewRole requesterRole = GetSoloArenaPreviewRole(requester->GetSpecialization());
+    if (!IsSoloArenaDamage(requesterRole) && requesterRole != SoloArenaPreviewRole::Healer)
+    {
+        error = "requester requires an active damage or healer specialization";
+        return false;
+    }
+
+    uint32 requesterTeam = requester->GetTeam();
+    uint32 opponentTeam = requesterTeam == ALLIANCE ? HORDE : ALLIANCE;
+    std::vector<uint32> selected;
+    std::vector<SoloArenaPreviewCandidate const*> requesterBots;
+    std::vector<SoloArenaPreviewCandidate const*> opponentBots;
+
+    if (requesterRole != SoloArenaPreviewRole::Healer)
+    {
+        SoloArenaPreviewCandidate const* healer = SelectSoloArenaAutomaticCandidate(
+            candidates, SoloArenaPreviewRole::Healer, requesterTeam, selected,
+            requester->GetClass());
+        if (!healer)
+        {
+            error = "no same-faction healer is available";
+            return false;
+        }
+        requesterBots.push_back(healer);
+        selected.push_back(healer->Guid);
+    }
+
+    while (requesterBots.size() + 1 < SoloArenaAutomaticTeamSize)
+    {
+        SoloArenaPreviewCandidate const* damage = SelectSoloArenaAutomaticCandidate(
+            candidates, SoloArenaPreviewRole::Melee, requesterTeam, selected,
+            requesterBots.empty() ? requester->GetClass() : requesterBots.back()->Class);
+        if (!damage)
+        {
+            error = "not enough same-faction damage players are available";
+            return false;
+        }
+        requesterBots.push_back(damage);
+        selected.push_back(damage->Guid);
+    }
+
+    SoloArenaPreviewCandidate const* opponentHealer = SelectSoloArenaAutomaticCandidate(
+        candidates, SoloArenaPreviewRole::Healer, opponentTeam, selected);
+    if (!opponentHealer)
+    {
+        error = "no opposing-faction healer is available";
+        return false;
+    }
+    opponentBots.push_back(opponentHealer);
+    selected.push_back(opponentHealer->Guid);
+
+    while (opponentBots.size() < SoloArenaAutomaticTeamSize)
+    {
+        SoloArenaPreviewCandidate const* damage = SelectSoloArenaAutomaticCandidate(
+            candidates, SoloArenaPreviewRole::Melee, opponentTeam, selected,
+            opponentBots.back()->Class);
+        if (!damage)
+        {
+            error = "not enough opposing-faction damage players are available";
+            return false;
+        }
+        opponentBots.push_back(damage);
+        selected.push_back(damage->Guid);
+    }
+
+    for (SoloArenaPreviewCandidate const* candidate : requesterBots)
+    {
+        ObjectGuid guid = ObjectGuid::Create<HighGuid::Player>(candidate->Guid);
+        if (ObjectAccessor::FindPlayer(guid) || sRandomPlayerbotMgr->GetPlayerBot(guid) ||
+            sRandomPlayerbotMgr->IsBotLoading(guid))
+        {
+            error = "a selected teammate is already online or loading";
+            return false;
+        }
+    }
+    for (SoloArenaPreviewCandidate const* candidate : opponentBots)
+    {
+        ObjectGuid guid = ObjectGuid::Create<HighGuid::Player>(candidate->Guid);
+        if (ObjectAccessor::FindPlayer(guid) || sRandomPlayerbotMgr->GetPlayerBot(guid) ||
+            sRandomPlayerbotMgr->IsBotLoading(guid))
+        {
+            error = "a selected opponent is already online or loading";
+            return false;
+        }
+    }
+
+    SoloArenaAutomaticRequesterTeam.clear();
+    SoloArenaAutomaticOpponentTeam.clear();
+    SoloArenaAutomaticRequesterTeam.push_back(requester->GetGUID().GetCounter());
+    for (SoloArenaPreviewCandidate const* candidate : requesterBots)
+        SoloArenaAutomaticRequesterTeam.push_back(candidate->Guid);
+    for (SoloArenaPreviewCandidate const* candidate : opponentBots)
+        SoloArenaAutomaticOpponentTeam.push_back(candidate->Guid);
+
+    // Preserve the original 2v2 diagnostic fields for the verified manual
+    // commands. Automatic 3v3/5v5 uses the vectors above exclusively.
+    SoloArenaStagedRequester = requester->GetGUID().GetCounter();
+    SoloArenaStagedTeammate = requesterBots.empty() ? 0 : requesterBots.front()->Guid;
+    SoloArenaStagedOpponentHealer = opponentBots.empty() ? 0 : opponentBots.front()->Guid;
+    SoloArenaStagedOpponentDamage = opponentBots.size() < 2 ? 0 : opponentBots[1]->Guid;
+    SoloArenaAutomaticHealthRestoreScheduled.clear();
+    SoloArenaAutomaticExitTimer = 0;
+
+    auto login = [](SoloArenaPreviewCandidate const* candidate, char const* side)
+    {
+        ObjectGuid guid = ObjectGuid::Create<HighGuid::Player>(candidate->Guid);
+        SoloArenaStagedBots[candidate->Guid] = candidate->Name;
+        sRandomPlayerbotMgr->AddPlayerBot(guid, 0);
+        TC_LOG_INFO("server",
+            "SoloArena automatic login requested side=%s name=%s guid=%u faction=%s role=%s",
+            side, candidate->Name.c_str(), candidate->Guid,
+            SoloArenaTeamName(candidate->Team), SoloArenaRoleName(candidate->Role));
+    };
+    for (SoloArenaPreviewCandidate const* candidate : requesterBots)
+        login(candidate, "requester");
+    for (SoloArenaPreviewCandidate const* candidate : opponentBots)
+        login(candidate, "opponent");
+
+    TC_LOG_INFO("server",
+        "SoloArena automatic %uv%u selected requester=%s faction=%s bots=%u eligible=%u rejected(neutral/spec/gear)=%u/%u/%u",
+        uint32(SoloArenaAutomaticTeamSize), uint32(SoloArenaAutomaticTeamSize),
+        requester->GetName().c_str(), SoloArenaTeamName(requesterTeam),
+        uint32(SoloArenaStagedBots.size()), uint32(candidates.size()), rejectedNeutral,
+        rejectedSpec, rejectedGear);
+    return true;
+}
+
+bool IsExactSoloArenaAutomaticGroup(Group* group, std::vector<uint32> const& memberGuids)
+{
+    if (!group || memberGuids.empty() || group->GetMembersCount() != memberGuids.size() ||
+        group->GetLeaderGUID() != ObjectGuid::Create<HighGuid::Player>(memberGuids.front()))
+        return false;
+    for (uint32 guid : memberGuids)
+        if (!group->IsMember(ObjectGuid::Create<HighGuid::Player>(guid)))
+            return false;
+    return true;
+}
+
+bool CreateSoloArenaAutomaticGroup(std::vector<uint32> const& memberGuids,
+                                   uint32& groupId, std::string& error)
+{
+    if (memberGuids.empty())
+    {
+        error = "team has no members";
+        return false;
+    }
+
+    std::vector<Player*> members;
+    for (uint32 guid : memberGuids)
+    {
+        Player* member = FindSoloArenaParticipant(guid);
+        if (!member || member->GetGroup() || member->InBattlegroundQueue() ||
+            member->InBattleground() || sLFGMgr->GetActiveState(member->GetGUID()) != lfg::LFG_STATE_NONE)
+        {
+            error = "a team member is offline, grouped, queued, or inside an instance";
+            return false;
+        }
+        members.push_back(member);
+    }
+
+    Group* group = new Group();
+    if (!group->Create(members.front()))
+    {
+        delete group;
+        error = "core refused to create a team group";
+        return false;
+    }
+    for (size_t index = 1; index < members.size(); ++index)
+    {
+        if (!group->AddMember(members[index]))
+        {
+            group->Disband();
+            error = "core refused to add a team member";
+            return false;
+        }
+    }
+    groupId = group->GetLowGUID();
+    return true;
+}
+
+bool ApplySoloArenaAutomaticLoadouts(std::string& error)
+{
+    std::vector<Player*> participants;
+    if (!GetSoloArenaAutomaticParticipants(participants))
+    {
+        error = "one or more participants are offline";
+        return false;
+    }
+    if (GetSoloArenaLoadoutBackupCount())
+    {
+        error = "protected loadout recovery rows already exist";
+        return false;
+    }
+
+    for (Player* participant : participants)
+    {
+        uint32 changed = 0;
+        if (!ApplySoloArenaLoadout(participant, SoloArenaStagedRequester, changed, error))
+        {
+            for (Player* rollback : participants)
+            {
+                uint32 restored = 0;
+                uint32 remaining = 0;
+                std::string rollbackError;
+                RestoreSoloArenaLoadout(rollback, "automatic-apply-rollback",
+                    restored, remaining, rollbackError);
+            }
+            return false;
+        }
+        TC_LOG_INFO("server", "SoloArena automatic loadout name=%s guid=%u changed=%u",
+            participant->GetName().c_str(), participant->GetGUID().GetCounter(), changed);
+    }
+    return true;
+}
+
+bool CreateSoloArenaAutomaticGroups(std::string& error)
+{
+    if (!CreateSoloArenaAutomaticGroup(SoloArenaAutomaticRequesterTeam,
+        SoloArenaRequesterGroup, error))
+        return false;
+    if (!CreateSoloArenaAutomaticGroup(SoloArenaAutomaticOpponentTeam,
+        SoloArenaOpponentGroup, error))
+    {
+        if (Group* requesterGroup = sGroupMgr->GetGroupByGUID(SoloArenaRequesterGroup))
+            requesterGroup->Disband();
+        SoloArenaRequesterGroup = 0;
+        return false;
+    }
+
+    TC_LOG_INFO("server",
+        "SoloArena automatic %uv%u groups created requester-group=%u opponent-group=%u",
+        uint32(SoloArenaAutomaticTeamSize), uint32(SoloArenaAutomaticTeamSize),
+        SoloArenaRequesterGroup, SoloArenaOpponentGroup);
+    return true;
+}
+
+bool QueueSoloArenaAutomaticGroups(std::string& error)
+{
+    Group* requesterGroup = sGroupMgr->GetGroupByGUID(SoloArenaRequesterGroup);
+    Group* opponentGroup = sGroupMgr->GetGroupByGUID(SoloArenaOpponentGroup);
+    if (!IsExactSoloArenaAutomaticGroup(requesterGroup, SoloArenaAutomaticRequesterTeam) ||
+        !IsExactSoloArenaAutomaticGroup(opponentGroup, SoloArenaAutomaticOpponentTeam))
+    {
+        error = "tracked group membership changed";
+        return false;
+    }
+
+    Battleground* arenaTemplate = sBattlegroundMgr->GetBattlegroundTemplate(BATTLEGROUND_AA);
+    if (!arenaTemplate || DisableMgr::IsDisabledFor(
+        DISABLE_TYPE_BATTLEGROUND, BATTLEGROUND_AA, nullptr))
+    {
+        error = "the all-Arena template is absent or disabled";
+        return false;
+    }
+
+    Player* requester = FindSoloArenaParticipant(SoloArenaAutomaticRequesterTeam.front());
+    Player* opponentLeader = FindSoloArenaParticipant(SoloArenaAutomaticOpponentTeam.front());
+    PvPDifficultyEntry const* requesterBracket = requester ?
+        GetBattlegroundBracketByLevel(arenaTemplate->GetMapId(), requester->GetLevel()) : nullptr;
+    PvPDifficultyEntry const* opponentBracket = opponentLeader ?
+        GetBattlegroundBracketByLevel(arenaTemplate->GetMapId(), opponentLeader->GetLevel()) : nullptr;
+    if (!requester || !opponentLeader || !requesterBracket || requesterBracket != opponentBracket)
+    {
+        error = "the two teams are not online in one Arena bracket";
+        return false;
+    }
+
+    GroupJoinBattlegroundResult requesterResult = requesterGroup->CanJoinBattlegroundQueue(
+        arenaTemplate, SoloArenaAutomaticQueueType, SoloArenaAutomaticTeamSize,
+        SoloArenaAutomaticTeamSize, false, 0);
+    GroupJoinBattlegroundResult opponentResult = opponentGroup->CanJoinBattlegroundQueue(
+        arenaTemplate, SoloArenaAutomaticQueueType, SoloArenaAutomaticTeamSize,
+        SoloArenaAutomaticTeamSize, false, 0);
+    if (requesterResult != ERR_BATTLEGROUND_NONE || opponentResult != ERR_BATTLEGROUND_NONE)
+    {
+        error = Trinity::StringFormat("core queue validation failed (%u/%u)",
+            uint32(requesterResult), uint32(opponentResult));
+        return false;
+    }
+
+    BattlegroundQueue& arenaQueue = sBattlegroundMgr->GetBattlegroundQueue(
+        SoloArenaAutomaticQueueType);
+    if (!arenaQueue.m_QueuedPlayers.empty())
+    {
+        error = "the selected Arena-size queue is not empty";
+        return false;
+    }
+
+    GroupQueueInfo* requesterInfo = arenaQueue.AddGroup(requester, requesterGroup,
+        BATTLEGROUND_AA, requesterBracket, SoloArenaAutomaticTeamSize, false, false, 0, 0);
+    GroupQueueInfo* opponentInfo = arenaQueue.AddGroup(opponentLeader, opponentGroup,
+        BATTLEGROUND_AA, opponentBracket, SoloArenaAutomaticTeamSize, false, false, 0, 0);
+    if (!requesterInfo || !opponentInfo)
+    {
+        error = "core failed to create one of the two queue groups";
+        return false;
+    }
+
+    BattlegroundBracketId bracketId = requesterBracket->GetBracketId();
+    auto sendQueuedStatus = [&arenaQueue, arenaTemplate, bracketId](Group* group, GroupQueueInfo* info)
+    {
+        uint32 averageWait = arenaQueue.GetAverageQueueWaitTime(info, bracketId);
+        for (auto&& member : *group)
+        {
+            uint32 queueSlot = member->AddBattlegroundQueueId(SoloArenaAutomaticQueueType);
+            member->AddBattlegroundQueueJoinTime(BATTLEGROUND_AA, info->JoinTime);
+            WorldPacket data;
+            sBattlegroundMgr->BuildBattlegroundStatusPacket(&data, arenaTemplate, member,
+                queueSlot, STATUS_WAIT_QUEUE, averageWait, info->JoinTime,
+                SoloArenaAutomaticTeamSize);
+            member->GetSession()->SendPacket(&data);
+        }
+    };
+    sendQueuedStatus(requesterGroup, requesterInfo);
+    sendQueuedStatus(opponentGroup, opponentInfo);
+    SoloArenaQueuesStaged = true;
+    SoloArenaMatchScheduled = false;
+    TC_LOG_INFO("server", "SoloArena automatic %uv%u queue created players=%u",
+        uint32(SoloArenaAutomaticTeamSize), uint32(SoloArenaAutomaticTeamSize),
+        uint32(arenaQueue.m_QueuedPlayers.size()));
+    return true;
+}
+
+bool ScheduleSoloArenaAutomaticMatch(bool forceTolviron, std::string& error)
+{
+    BattlegroundQueue& arenaQueue = sBattlegroundMgr->GetBattlegroundQueue(
+        SoloArenaAutomaticQueueType);
+    uint32 requesterInvite = 0;
+    uint32 opponentInvite = 0;
+    if (!HasExactSoloArenaQueueGroup(arenaQueue, SoloArenaAutomaticRequesterTeam,
+        SoloArenaAutomaticTeamSize, requesterInvite) ||
+        !HasExactSoloArenaQueueGroup(arenaQueue, SoloArenaAutomaticOpponentTeam,
+        SoloArenaAutomaticTeamSize, opponentInvite) || requesterInvite || opponentInvite ||
+        arenaQueue.m_QueuedPlayers.size() != size_t(SoloArenaAutomaticTeamSize * 2))
+    {
+        error = "the selected queue no longer contains exactly the two staged teams";
+        return false;
+    }
+
+    Battleground* arenaTemplate = sBattlegroundMgr->GetBattlegroundTemplate(BATTLEGROUND_AA);
+    Player* requester = FindSoloArenaParticipant(SoloArenaAutomaticRequesterTeam.front());
+    PvPDifficultyEntry const* bracket = arenaTemplate && requester ?
+        GetBattlegroundBracketByLevel(arenaTemplate->GetMapId(), requester->GetLevel()) : nullptr;
+    if (!arenaTemplate || !bracket)
+    {
+        error = "Arena template or bracket is unavailable";
+        return false;
+    }
+
+    arenaQueue.SetForcedArenaType(forceTolviron ? BATTLEGROUND_TV : BATTLEGROUND_TYPE_NONE);
+    sBattlegroundMgr->ScheduleQueueUpdate(0, SoloArenaAutomaticTeamSize,
+        SoloArenaAutomaticQueueType, BATTLEGROUND_AA, bracket->GetBracketId());
+    SoloArenaMatchScheduled = true;
+    return true;
+}
+
+bool GetSoloArenaAutomaticSharedInvite(uint32& instanceId)
+{
+    instanceId = 0;
+    if (!SoloArenaQueuesStaged || !SoloArenaMatchScheduled)
+        return false;
+    BattlegroundQueue& arenaQueue = sBattlegroundMgr->GetBattlegroundQueue(
+        SoloArenaAutomaticQueueType);
+    uint32 requesterInvite = 0;
+    uint32 opponentInvite = 0;
+    if (!HasExactSoloArenaQueueGroup(arenaQueue, SoloArenaAutomaticRequesterTeam,
+        SoloArenaAutomaticTeamSize, requesterInvite) ||
+        !HasExactSoloArenaQueueGroup(arenaQueue, SoloArenaAutomaticOpponentTeam,
+        SoloArenaAutomaticTeamSize, opponentInvite) || !requesterInvite ||
+        requesterInvite != opponentInvite)
+        return false;
+    instanceId = requesterInvite;
+    return true;
+}
+
+bool EnterSoloArenaAutomaticMatch(std::string& error)
+{
+    uint32 invitedInstance = 0;
+    if (!GetSoloArenaAutomaticSharedInvite(invitedInstance))
+    {
+        error = "the two teams do not share one Arena invitation";
+        return false;
+    }
+    Battleground* arena = sBattlegroundMgr->GetBattleground(
+        invitedInstance, BATTLEGROUND_TYPE_NONE);
+    if (!arena || !arena->IsArena() || arena->GetArenaType() != SoloArenaAutomaticTeamSize ||
+        arena->GetStatus() != STATUS_WAIT_JOIN)
+    {
+        error = "the invited instance has the wrong type or status";
+        return false;
+    }
+
+    std::vector<Player*> participants;
+    if (!GetSoloArenaAutomaticParticipants(participants))
+    {
+        error = "one or more invited participants are offline";
+        return false;
+    }
+    for (Player* participant : participants)
+        if (participant->InBattleground() || participant->IsBeingTeleported() ||
+            !participant->InBattlegroundQueueForBattlegroundQueueType(SoloArenaAutomaticQueueType) ||
+            !participant->IsInvitedForBattlegroundQueueType(SoloArenaAutomaticQueueType))
+        {
+            error = "one or more participants lack the exact invitation";
+            return false;
+        }
+
+    SoloArenaEnteredInstance = invitedInstance;
+    // Accept bots first and the real requester last. A partial failure remains
+    // tracked and is handled by the guarded automatic cleanup state.
+    for (auto itr = participants.rbegin(); itr != participants.rend(); ++itr)
+        if (!AcceptSoloArenaInvite(*itr, invitedInstance, SoloArenaAutomaticQueueType))
+        {
+            error = Trinity::StringFormat("invitation acceptance failed for %s",
+                (*itr)->GetName().c_str());
+            return false;
+        }
+
+    SoloArenaQueuesStaged = false;
+    SoloArenaMatchScheduled = false;
+    return true;
+}
 }
 
 void HandleSoloArenaClientLeave(Player* player)
@@ -788,8 +1417,7 @@ void UpdateSoloArenaAutomaticExit(uint32 diff)
     Battleground* arena = sBattlegroundMgr->GetBattleground(instanceId, BATTLEGROUND_TYPE_NONE);
     if (arena && arena->IsArena() && arena->GetStatus() == STATUS_WAIT_LEAVE)
     {
-        uint32 participantGuids[] = { SoloArenaStagedRequester, SoloArenaStagedTeammate,
-            SoloArenaStagedOpponentHealer, SoloArenaStagedOpponentDamage };
+        std::vector<uint32> participantGuids = GetSoloArenaTrackedParticipantGuids();
         for (uint32 guid : participantGuids)
         {
             Player* participant = guid ? ObjectAccessor::FindConnectedPlayer(
@@ -822,15 +1450,16 @@ void UpdateSoloArenaAutomaticExit(uint32 diff)
     }
 
     bool pendingExit = false;
-    uint32 participantGuids[] = { SoloArenaStagedRequester, SoloArenaStagedTeammate,
-        SoloArenaStagedOpponentHealer, SoloArenaStagedOpponentDamage };
+    std::vector<uint32> participantGuids = GetSoloArenaTrackedParticipantGuids();
     for (uint32 guid : participantGuids)
     {
         Player* participant = guid ? ObjectAccessor::FindConnectedPlayer(
             ObjectGuid::Create<HighGuid::Player>(guid)) : nullptr;
         if (participant && (participant->GetBattlegroundId() == instanceId ||
             participant->IsBeingTeleported() ||
-            participant->InBattlegroundQueueForBattlegroundQueueType(BATTLEGROUND_QUEUE_2v2)))
+            participant->InBattlegroundQueueForBattlegroundQueueType(
+                SoloArenaAutomaticRequesterTeam.empty() ? BATTLEGROUND_QUEUE_2v2 :
+                    SoloArenaAutomaticQueueType)))
         {
             pendingExit = true;
             break;
@@ -2610,5 +3239,420 @@ public:
         return true;
     }
 };
+
+namespace
+{
+char const* SoloArenaAutomaticStateName(SoloArenaAutomaticState state)
+{
+    switch (state)
+    {
+        case SoloArenaAutomaticState::Idle: return "idle";
+        case SoloArenaAutomaticState::Login: return "login";
+        case SoloArenaAutomaticState::WaitForBots: return "wait-bots";
+        case SoloArenaAutomaticState::ApplyLoadout: return "loadout";
+        case SoloArenaAutomaticState::Group: return "group";
+        case SoloArenaAutomaticState::Queue: return "queue";
+        case SoloArenaAutomaticState::Match: return "match";
+        case SoloArenaAutomaticState::WaitForInvite: return "wait-invite";
+        case SoloArenaAutomaticState::Enter: return "enter";
+        case SoloArenaAutomaticState::WaitForEntry: return "wait-entry";
+        case SoloArenaAutomaticState::Active: return "active";
+        case SoloArenaAutomaticState::Cleanup: return "cleanup";
+    }
+
+    return "unknown";
+}
+
+void SetSoloArenaAutomaticState(SoloArenaAutomaticState state)
+{
+    TC_LOG_INFO("server", "SoloArena automatic state %s -> %s requester=%u elapsed-ms=%u",
+        SoloArenaAutomaticStateName(SoloArenaAutomaticQueueState),
+        SoloArenaAutomaticStateName(state), SoloArenaAutomaticRequester,
+        SoloArenaAutomaticElapsed);
+    SoloArenaAutomaticQueueState = state;
+}
+
+void BeginSoloArenaAutomaticCleanup(char const* reason)
+{
+    SoloArenaAutomaticCleanupReason = reason ? reason : "unspecified failure";
+    TC_LOG_ERROR("server", "SoloArena automatic preparation stopped requester=%u state=%s reason=%s",
+        SoloArenaAutomaticRequester, SoloArenaAutomaticStateName(SoloArenaAutomaticQueueState),
+        SoloArenaAutomaticCleanupReason.c_str());
+    SetSoloArenaAutomaticState(SoloArenaAutomaticState::Cleanup);
+}
+
+Player* GetSoloArenaAutomaticRequester()
+{
+    return SoloArenaAutomaticRequester ? ObjectAccessor::FindConnectedPlayer(
+        ObjectGuid::Create<HighGuid::Player>(SoloArenaAutomaticRequester)) : nullptr;
+}
+
+bool HasExpectedSoloArenaLoadout(Player* participant)
+{
+    if (!participant)
+        return false;
+
+    SoloArenaLoadoutPlan const* plan = GetSoloArenaLoadoutPlan(participant->GetSpecialization());
+    if (!plan)
+        return false;
+
+    std::array<uint32, 5> const& expected = participant->GetTeam() == ALLIANCE ?
+        plan->AllianceItems : plan->HordeItems;
+    for (uint8 index = 0; index < expected.size(); ++index)
+    {
+        Item* equipped = participant->GetItemByPos(
+            INVENTORY_SLOT_BAG_0, SoloArenaLoadoutEquipmentSlots[index]);
+        if (!equipped || equipped->GetEntry() != expected[index])
+            return false;
+    }
+
+    return true;
+}
+
+bool CleanupSoloArenaAutomaticStep()
+{
+    std::vector<uint32> participantGuids = GetSoloArenaAutomaticParticipantGuids();
+    std::vector<Player*> participants;
+    for (uint32 guid : participantGuids)
+        if (Player* participant = FindSoloArenaParticipant(guid))
+            participants.push_back(participant);
+
+    if (SoloArenaEnteredInstance)
+    {
+        bool pending = false;
+        for (Player* participant : participants)
+        {
+            if (participant->IsBeingTeleported())
+            {
+                pending = true;
+                continue;
+            }
+            if (participant->GetBattlegroundId() == SoloArenaEnteredInstance)
+            {
+                uint32 restored = 0;
+                uint32 remaining = 0;
+                std::string restoreError;
+                RestoreSoloArenaLoadout(participant, "automatic-cleanup-leave",
+                    restored, remaining, restoreError);
+                participant->LeaveBattleground(true);
+                pending = true;
+            }
+            else if (participant->InBattlegroundQueueForBattlegroundQueueType(
+                SoloArenaAutomaticQueueType))
+            {
+                sBattlegroundMgr->RemovePlayerFromQueue(participant,
+                    SoloArenaAutomaticQueueType);
+                pending = true;
+            }
+        }
+        if (pending)
+            return false;
+        SoloArenaEnteredInstance = 0;
+        SoloArenaQueuesStaged = false;
+        SoloArenaMatchScheduled = false;
+    }
+
+    if (SoloArenaQueuesStaged)
+    {
+        BattlegroundQueue& arenaQueue = sBattlegroundMgr->GetBattlegroundQueue(
+            SoloArenaAutomaticQueueType);
+        arenaQueue.SetForcedArenaType(BATTLEGROUND_TYPE_NONE);
+        bool pending = false;
+        for (Player* participant : participants)
+        {
+            if (participant->InBattlegroundQueueForBattlegroundQueueType(
+                SoloArenaAutomaticQueueType))
+            {
+                sBattlegroundMgr->RemovePlayerFromQueue(participant,
+                    SoloArenaAutomaticQueueType);
+                pending = true;
+            }
+        }
+        if (pending)
+            return false;
+        SoloArenaQueuesStaged = false;
+        SoloArenaMatchScheduled = false;
+    }
+
+    auto disband = [](uint32& groupId, std::vector<uint32> const& memberGuids) -> bool
+    {
+        if (!groupId)
+            return true;
+        Group* group = sGroupMgr->GetGroupByGUID(groupId);
+        if (!group)
+        {
+            groupId = 0;
+            return true;
+        }
+        if (!IsExactSoloArenaAutomaticGroup(group, memberGuids))
+            return false;
+        for (uint32 guid : memberGuids)
+        {
+            Player* member = FindSoloArenaParticipant(guid);
+            if (!member || member->InBattlegroundQueue() || member->InBattleground() ||
+                member->IsBeingTeleported())
+                return false;
+        }
+        group->Disband();
+        groupId = 0;
+        return true;
+    };
+    if (!disband(SoloArenaOpponentGroup, SoloArenaAutomaticOpponentTeam) ||
+        !disband(SoloArenaRequesterGroup, SoloArenaAutomaticRequesterTeam))
+        return false;
+
+    for (uint32 guid : participantGuids)
+    {
+        if (!GetSoloArenaLoadoutBackupCount(guid))
+            continue;
+        Player* participant = FindSoloArenaParticipant(guid);
+        if (!participant)
+            return false;
+        uint32 restored = 0;
+        uint32 remaining = 0;
+        std::string restoreError;
+        if (!RestoreSoloArenaLoadout(participant, "automatic-cleanup",
+            restored, remaining, restoreError))
+            return false;
+    }
+
+    for (auto itr = SoloArenaStagedBots.begin(); itr != SoloArenaStagedBots.end();)
+    {
+        ObjectGuid guid = ObjectGuid::Create<HighGuid::Player>(itr->first);
+        if (sRandomPlayerbotMgr->IsBotLoading(guid))
+            return false;
+        Player* bot = sRandomPlayerbotMgr->GetPlayerBot(guid);
+        if (bot && (bot->GetGroup() || bot->InBattlegroundQueue() ||
+            bot->InBattleground() || bot->IsBeingTeleported()))
+            return false;
+        if (bot)
+            sRandomPlayerbotMgr->LogoutPlayerBot(guid);
+        itr = SoloArenaStagedBots.erase(itr);
+    }
+    return true;
+}
+
+void ResetSoloArenaAutomaticState()
+{
+    TC_LOG_INFO("server", "SoloArena automatic cleanup completed requester=%u reason=%s",
+        SoloArenaAutomaticRequester,
+        SoloArenaAutomaticCleanupReason.empty() ? "normal completion" :
+            SoloArenaAutomaticCleanupReason.c_str());
+    SoloArenaAutomaticQueueState = SoloArenaAutomaticState::Idle;
+    SoloArenaAutomaticRequester = 0;
+    SoloArenaAutomaticUpdateTimer = 0;
+    SoloArenaAutomaticElapsed = 0;
+    SoloArenaAutomaticCleanupReason.clear();
+    SoloArenaAutomaticRequesterTeam.clear();
+    SoloArenaAutomaticOpponentTeam.clear();
+    SoloArenaAutomaticTeamSize = ARENA_TYPE_2v2;
+    SoloArenaAutomaticQueueType = BATTLEGROUND_QUEUE_2v2;
+    SoloArenaStagedRequester = 0;
+    SoloArenaStagedTeammate = 0;
+    SoloArenaStagedOpponentHealer = 0;
+    SoloArenaStagedOpponentDamage = 0;
+    SoloArenaRequesterGroup = 0;
+    SoloArenaOpponentGroup = 0;
+    SoloArenaQueuesStaged = false;
+    SoloArenaMatchScheduled = false;
+    SoloArenaEnteredInstance = 0;
+    SoloArenaAutomaticHealthRestoreScheduled.clear();
+    SoloArenaAutomaticExitTimer = 0;
+}
+}
+
+bool HandleSoloArenaAutomaticJoinRequest(Player* player, uint8 arenaSlot)
+{
+    if (!sPlayerbotAIConfig->autoQueueArenaAutomatic || !player)
+        return false;
+
+    if (PlayerbotAI* botAI = GET_PLAYERBOT_AI(player))
+        if (!botAI->IsRealPlayer())
+            return false;
+
+    uint8 arenaType = 0;
+    switch (arenaSlot)
+    {
+        case PVP_SLOT_ARENA_2v2: arenaType = ARENA_TYPE_2v2; break;
+        case PVP_SLOT_ARENA_3v3: arenaType = ARENA_TYPE_3v3; break;
+        case PVP_SLOT_ARENA_5v5: arenaType = ARENA_TYPE_5v5; break;
+        default: return false;
+    }
+
+    if (!sPlayerbotAIConfig->autoQueueEnabled || !sPlayerbotAIConfig->autoQueueArena ||
+        !sPlayerbotAIConfig->autoQueueDryRun ||
+        !sPlayerbotAIConfig->autoQueueArenaStageLogin ||
+        !sPlayerbotAIConfig->autoQueueArenaStageGroup ||
+        !sPlayerbotAIConfig->autoQueueArenaStageQueue ||
+        !sPlayerbotAIConfig->autoQueueArenaStageMatch ||
+        !sPlayerbotAIConfig->autoQueueArenaStageEnter ||
+        !sPlayerbotAIConfig->autoQueueArenaStageHealthRestore ||
+        !sPlayerbotAIConfig->autoQueueArenaStageAutomaticExit)
+    {
+        ChatHandler(player->GetSession()).SendSysMessage(
+            "Automatic Solo Arena is enabled but its verified safety stages are not all enabled.");
+        return true;
+    }
+
+    if (SoloArenaAutomaticQueueState != SoloArenaAutomaticState::Idle ||
+        !SoloArenaStagedBots.empty() || SoloArenaRequesterGroup || SoloArenaOpponentGroup ||
+        SoloArenaQueuesStaged || SoloArenaEnteredInstance)
+    {
+        ChatHandler(player->GetSession()).SendSysMessage(
+            "Another Solo Arena preparation or cleanup is already active. Please try again shortly.");
+        return true;
+    }
+
+    if (GetSoloArenaLoadoutBackupCount())
+    {
+        ChatHandler(player->GetSession()).SendSysMessage(
+            "Automatic Solo Arena is blocked by protected loadout recovery rows.");
+        return true;
+    }
+
+    if (player->GetLevel() != DEFAULT_MAX_LEVEL || player->GetGroup() ||
+        player->InBattleground() || player->InBattlegroundQueue() ||
+        sLFGMgr->GetActiveState(player->GetGUID()) != lfg::LFG_STATE_NONE)
+    {
+        ChatHandler(player->GetSession()).PSendSysMessage(
+            "Leave your current group, battleground and queue before joining automatic Solo Arena %uv%u.",
+            uint32(arenaType), uint32(arenaType));
+        return true;
+    }
+
+    SoloArenaAutomaticTeamSize = arenaType;
+    SoloArenaAutomaticQueueType = GetSoloArenaQueueType(arenaType);
+    SoloArenaAutomaticRequester = player->GetGUID().GetCounter();
+    SoloArenaAutomaticElapsed = 0;
+    SoloArenaAutomaticUpdateTimer = 0;
+    SoloArenaAutomaticCleanupReason.clear();
+    SetSoloArenaAutomaticState(SoloArenaAutomaticState::Login);
+    ChatHandler(player->GetSession()).PSendSysMessage(
+        "Automatic Solo Arena %uv%u accepted. Selecting and preparing %u bots...",
+        uint32(arenaType), uint32(arenaType), uint32(arenaType * 2 - 1));
+    TC_LOG_INFO("server", "SoloArena automatic %uv%u request accepted name=%s guid=%u arena=%s",
+        uint32(arenaType), uint32(arenaType), player->GetName().c_str(), SoloArenaAutomaticRequester,
+        sPlayerbotAIConfig->autoQueueArenaAutomaticForceTolviron ? "Tol'viron" : "random");
+    return true;
+}
+
+void UpdateSoloArenaAutomaticQueue(uint32 diff)
+{
+    if (SoloArenaAutomaticQueueState == SoloArenaAutomaticState::Idle)
+        return;
+
+    SoloArenaAutomaticElapsed += diff;
+    if (SoloArenaAutomaticQueueState != SoloArenaAutomaticState::Active &&
+        SoloArenaAutomaticQueueState != SoloArenaAutomaticState::Cleanup &&
+        SoloArenaAutomaticElapsed > sPlayerbotAIConfig->autoQueueArenaAutomaticTimeout)
+    {
+        BeginSoloArenaAutomaticCleanup("preparation timeout");
+    }
+
+    if (SoloArenaAutomaticUpdateTimer > diff)
+    {
+        SoloArenaAutomaticUpdateTimer -= diff;
+        return;
+    }
+    SoloArenaAutomaticUpdateTimer = 500;
+
+    Player* requester = GetSoloArenaAutomaticRequester();
+    if (!requester || !requester->GetSession())
+    {
+        if (SoloArenaAutomaticQueueState != SoloArenaAutomaticState::Cleanup)
+            BeginSoloArenaAutomaticCleanup("requester disconnected");
+        if (SoloArenaAutomaticQueueState != SoloArenaAutomaticState::Cleanup)
+            return;
+    }
+
+    std::vector<Player*> participants;
+    std::string error;
+    switch (SoloArenaAutomaticQueueState)
+    {
+        case SoloArenaAutomaticState::Login:
+            if (StageSoloArenaAutomaticBots(requester, error) &&
+                SoloArenaStagedRequester == SoloArenaAutomaticRequester &&
+                SoloArenaStagedBots.size() == size_t(SoloArenaAutomaticTeamSize * 2 - 1))
+                SetSoloArenaAutomaticState(SoloArenaAutomaticState::WaitForBots);
+            else
+                BeginSoloArenaAutomaticCleanup(error.empty() ?
+                    "candidate selection or login request failed" : error.c_str());
+            break;
+        case SoloArenaAutomaticState::WaitForBots:
+            if (GetSoloArenaAutomaticParticipants(participants) &&
+                participants.size() == size_t(SoloArenaAutomaticTeamSize * 2))
+                SetSoloArenaAutomaticState(SoloArenaAutomaticState::ApplyLoadout);
+            break;
+        case SoloArenaAutomaticState::ApplyLoadout:
+            if (ApplySoloArenaAutomaticLoadouts(error) &&
+                GetSoloArenaAutomaticParticipants(participants) &&
+                std::all_of(participants.begin(), participants.end(), HasExpectedSoloArenaLoadout))
+                SetSoloArenaAutomaticState(SoloArenaAutomaticState::Group);
+            else
+                BeginSoloArenaAutomaticCleanup(error.empty() ?
+                    "temporary PvP loadout verification failed" : error.c_str());
+            break;
+        case SoloArenaAutomaticState::Group:
+            if (CreateSoloArenaAutomaticGroups(error) &&
+                SoloArenaRequesterGroup && SoloArenaOpponentGroup)
+                SetSoloArenaAutomaticState(SoloArenaAutomaticState::Queue);
+            else
+                BeginSoloArenaAutomaticCleanup(error.empty() ? "group creation failed" : error.c_str());
+            break;
+        case SoloArenaAutomaticState::Queue:
+            if (QueueSoloArenaAutomaticGroups(error) && SoloArenaQueuesStaged)
+                SetSoloArenaAutomaticState(SoloArenaAutomaticState::Match);
+            else
+                BeginSoloArenaAutomaticCleanup(error.empty() ? "Arena queue creation failed" : error.c_str());
+            break;
+        case SoloArenaAutomaticState::Match:
+            if (ScheduleSoloArenaAutomaticMatch(
+                sPlayerbotAIConfig->autoQueueArenaAutomaticForceTolviron, error) &&
+                SoloArenaMatchScheduled)
+                SetSoloArenaAutomaticState(SoloArenaAutomaticState::WaitForInvite);
+            else
+                BeginSoloArenaAutomaticCleanup(error.empty() ?
+                    "matchmaking schedule failed" : error.c_str());
+            break;
+        case SoloArenaAutomaticState::WaitForInvite:
+        {
+            uint32 invite = 0;
+            if (GetSoloArenaAutomaticSharedInvite(invite))
+                SetSoloArenaAutomaticState(SoloArenaAutomaticState::Enter);
+            break;
+        }
+        case SoloArenaAutomaticState::Enter:
+            if (EnterSoloArenaAutomaticMatch(error) && SoloArenaEnteredInstance)
+                SetSoloArenaAutomaticState(SoloArenaAutomaticState::WaitForEntry);
+            else
+                BeginSoloArenaAutomaticCleanup(error.empty() ?
+                    "shared Arena invitation acceptance failed" : error.c_str());
+            break;
+        case SoloArenaAutomaticState::WaitForEntry:
+            if (GetSoloArenaAutomaticParticipants(participants) &&
+                std::all_of(participants.begin(), participants.end(),
+                    [](Player* participant)
+                    {
+                        return participant->GetBattlegroundId() == SoloArenaEnteredInstance &&
+                            !participant->IsBeingTeleported();
+                    }))
+            {
+                ChatHandler(requester->GetSession()).SendSysMessage(
+                    "Automatic Solo Arena is ready. Wait for the gates, then fight normally.");
+                SetSoloArenaAutomaticState(SoloArenaAutomaticState::Active);
+            }
+            break;
+        case SoloArenaAutomaticState::Active:
+            if (!SoloArenaEnteredInstance)
+                SetSoloArenaAutomaticState(SoloArenaAutomaticState::Cleanup);
+            break;
+        case SoloArenaAutomaticState::Cleanup:
+            if (CleanupSoloArenaAutomaticStep())
+                ResetSoloArenaAutomaticState();
+            break;
+        case SoloArenaAutomaticState::Idle:
+            break;
+    }
+}
 
 void AddSC_playerbots_commandscript() { new playerbots_commandscript(); }

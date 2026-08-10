@@ -1,0 +1,510 @@
+diff --git a/modules/mod_playerbots/config/playerbots.conf.dist b/modules/mod_playerbots/config/playerbots.conf.dist
+index 91a225dd..32ff26c4 100644
+--- a/modules/mod_playerbots/config/playerbots.conf.dist
++++ b/modules/mod_playerbots/config/playerbots.conf.dist
+@@ -841,6 +841,21 @@ AiPlayerbot.AutoQueue.Arena.StageCombatStatus = 0
+ # tracker after all four participants finish leaving the completed Arena.
+ AiPlayerbot.AutoQueue.Arena.StageAutomaticExit = 0
+ 
++# Patch 0020 command-free solo 2v2 orchestration. When enabled, a solo level-90
++# player pressing the normal 2v2 Arena Join button starts the already verified
++# login -> temporary PvP loadout -> group -> queue -> match -> enter sequence.
++# Keep disabled until every Stage* setting above is enabled and the server has
++# been rebuilt. Only one automatic Solo Arena session may exist at a time.
++AiPlayerbot.AutoQueue.Arena.Automatic = 0
++
++# 0 keeps normal random Arena-map selection. 1 forces Tol'viron Arena, which is
++# useful for repeatable gate/rotation regression tests.
++AiPlayerbot.AutoQueue.Arena.AutomaticForceTolviron = 0
++
++# Maximum seconds allowed for automatic preparation before guarded cleanup.
++# Values below 30 seconds are clamped to 30.
++AiPlayerbot.AutoQueue.Arena.AutomaticTimeout = 120
++
+ # Required Configuration for RandomBotAutoJoinBG
+ #
+ # Known issue: When enabling a lot of brackats in combination with multiple instances,
+diff --git a/modules/mod_playerbots/src/Utils/PlayerbotAIConfig.cpp b/modules/mod_playerbots/src/Utils/PlayerbotAIConfig.cpp
+index b0372d03..3734a63d 100644
+--- a/modules/mod_playerbots/src/Utils/PlayerbotAIConfig.cpp
++++ b/modules/mod_playerbots/src/Utils/PlayerbotAIConfig.cpp
+@@ -182,6 +182,13 @@ bool PlayerbotAIConfig::Initialize()
+     autoQueueArenaStageHealthRestore = sConfigMgr->GetBoolDefault("AiPlayerbot.AutoQueue.Arena.StageHealthRestore", false);
+     autoQueueArenaStageCombatStatus = sConfigMgr->GetBoolDefault("AiPlayerbot.AutoQueue.Arena.StageCombatStatus", false);
+     autoQueueArenaStageAutomaticExit = sConfigMgr->GetBoolDefault("AiPlayerbot.AutoQueue.Arena.StageAutomaticExit", false);
++    autoQueueArenaAutomatic = sConfigMgr->GetBoolDefault("AiPlayerbot.AutoQueue.Arena.Automatic", false);
++    autoQueueArenaAutomaticForceTolviron = sConfigMgr->GetBoolDefault(
++        "AiPlayerbot.AutoQueue.Arena.AutomaticForceTolviron", false);
++    autoQueueArenaAutomaticTimeout = sConfigMgr->GetIntDefault(
++        "AiPlayerbot.AutoQueue.Arena.AutomaticTimeout", 120) * IN_MILLISECONDS;
++    if (autoQueueArenaAutomaticTimeout < 30 * IN_MILLISECONDS)
++        autoQueueArenaAutomaticTimeout = 30 * IN_MILLISECONDS;
+ 
+     randomChangeMultiplier = sConfigMgr->GetFloatDefault("AiPlayerbot.RandomChangeMultiplier", 1.0);
+ 
+diff --git a/modules/mod_playerbots/src/Utils/PlayerbotAIConfig.h b/modules/mod_playerbots/src/Utils/PlayerbotAIConfig.h
+index 9ee5e35e..1be6c6f3 100644
+--- a/modules/mod_playerbots/src/Utils/PlayerbotAIConfig.h
++++ b/modules/mod_playerbots/src/Utils/PlayerbotAIConfig.h
+@@ -75,8 +75,10 @@ public:
+     bool autoQueueArenaStageLogin, autoQueueArenaStageGroup, autoQueueArenaStageQueue, autoQueueArenaStageMatch;
+     bool autoQueueArenaStageEnter, autoQueueArenaStageHealthRestore, autoQueueArenaStageCombatStatus;
+     bool autoQueueArenaStageAutomaticExit;
++    bool autoQueueArenaAutomatic, autoQueueArenaAutomaticForceTolviron;
+     uint32 autoQueueCheckInterval, autoQueueMaxBotsPerCycle;
+     uint32 autoQueueArenaMinEquippedItems, autoQueueArenaMinAverageItemLevel, autoQueueArenaMinPvpItems;
++    uint32 autoQueueArenaAutomaticTimeout;
+ 
+     std::string premadeSpecName[MAX_CLASSES][MAX_SPECIALIZATIONS - 1];
+     std::vector<uint16> premadeSpecLink[MAX_CLASSES][MAX_SPECIALIZATIONS - 1];
+diff --git a/modules/mod_playerbots/src/cs_playerbots.cpp b/modules/mod_playerbots/src/cs_playerbots.cpp
+index e5afcce6..ebe6cce8 100644
+--- a/modules/mod_playerbots/src/cs_playerbots.cpp
++++ b/modules/mod_playerbots/src/cs_playerbots.cpp
+@@ -31,6 +31,7 @@
+ #include "PerformanceMonitor.h"
+ #include "PlayerbotAIConfig.h"
+ #include "RandomPlayerbotMgr.h"
++#include "RatedPvp.h"
+ #include "ScriptMgr.h"
+ #include "WorldSession.h"
+ 
+@@ -57,6 +58,28 @@ uint32 SoloArenaAutomaticExitTimer = 0;
+ std::set<uint32> SoloArenaAutomaticHealthRestoreScheduled;
+ std::set<uint32> SoloArenaLoadoutRecoveryBots;
+ 
++enum class SoloArenaAutomaticState : uint8
++{
++    Idle,
++    Login,
++    WaitForBots,
++    ApplyLoadout,
++    Group,
++    Queue,
++    Match,
++    WaitForInvite,
++    Enter,
++    WaitForEntry,
++    Active,
++    Cleanup
++};
++
++SoloArenaAutomaticState SoloArenaAutomaticQueueState = SoloArenaAutomaticState::Idle;
++uint32 SoloArenaAutomaticRequester = 0;
++uint32 SoloArenaAutomaticUpdateTimer = 0;
++uint32 SoloArenaAutomaticElapsed = 0;
++std::string SoloArenaAutomaticCleanupReason;
++
+ uint8 const SoloArenaLoadoutEquipmentSlots[] =
+ {
+     EQUIPMENT_SLOT_HEAD, EQUIPMENT_SLOT_SHOULDERS, EQUIPMENT_SLOT_CHEST,
+@@ -2611,4 +2634,323 @@ public:
+     }
+ };
+ 
++namespace
++{
++char const* SoloArenaAutomaticStateName(SoloArenaAutomaticState state)
++{
++    switch (state)
++    {
++        case SoloArenaAutomaticState::Idle: return "idle";
++        case SoloArenaAutomaticState::Login: return "login";
++        case SoloArenaAutomaticState::WaitForBots: return "wait-bots";
++        case SoloArenaAutomaticState::ApplyLoadout: return "loadout";
++        case SoloArenaAutomaticState::Group: return "group";
++        case SoloArenaAutomaticState::Queue: return "queue";
++        case SoloArenaAutomaticState::Match: return "match";
++        case SoloArenaAutomaticState::WaitForInvite: return "wait-invite";
++        case SoloArenaAutomaticState::Enter: return "enter";
++        case SoloArenaAutomaticState::WaitForEntry: return "wait-entry";
++        case SoloArenaAutomaticState::Active: return "active";
++        case SoloArenaAutomaticState::Cleanup: return "cleanup";
++    }
++
++    return "unknown";
++}
++
++void SetSoloArenaAutomaticState(SoloArenaAutomaticState state)
++{
++    TC_LOG_INFO("server", "SoloArena automatic state %s -> %s requester=%u elapsed-ms=%u",
++        SoloArenaAutomaticStateName(SoloArenaAutomaticQueueState),
++        SoloArenaAutomaticStateName(state), SoloArenaAutomaticRequester,
++        SoloArenaAutomaticElapsed);
++    SoloArenaAutomaticQueueState = state;
++}
++
++void BeginSoloArenaAutomaticCleanup(char const* reason)
++{
++    SoloArenaAutomaticCleanupReason = reason ? reason : "unspecified failure";
++    TC_LOG_ERROR("server", "SoloArena automatic preparation stopped requester=%u state=%s reason=%s",
++        SoloArenaAutomaticRequester, SoloArenaAutomaticStateName(SoloArenaAutomaticQueueState),
++        SoloArenaAutomaticCleanupReason.c_str());
++    SetSoloArenaAutomaticState(SoloArenaAutomaticState::Cleanup);
++}
++
++Player* GetSoloArenaAutomaticRequester()
++{
++    return SoloArenaAutomaticRequester ? ObjectAccessor::FindConnectedPlayer(
++        ObjectGuid::Create<HighGuid::Player>(SoloArenaAutomaticRequester)) : nullptr;
++}
++
++bool GetSoloArenaAutomaticParticipants(Player* requester, std::array<Player*, 4>& participants)
++{
++    participants = {{
++        requester,
++        SoloArenaStagedTeammate ? sRandomPlayerbotMgr->GetPlayerBot(
++            ObjectGuid::Create<HighGuid::Player>(SoloArenaStagedTeammate)) : nullptr,
++        SoloArenaStagedOpponentHealer ? sRandomPlayerbotMgr->GetPlayerBot(
++            ObjectGuid::Create<HighGuid::Player>(SoloArenaStagedOpponentHealer)) : nullptr,
++        SoloArenaStagedOpponentDamage ? sRandomPlayerbotMgr->GetPlayerBot(
++            ObjectGuid::Create<HighGuid::Player>(SoloArenaStagedOpponentDamage)) : nullptr
++    }};
++
++    return std::all_of(participants.begin(), participants.end(),
++        [](Player* participant) { return participant != nullptr; });
++}
++
++bool HasExpectedSoloArenaLoadout(Player* participant)
++{
++    if (!participant)
++        return false;
++
++    SoloArenaLoadoutPlan const* plan = GetSoloArenaLoadoutPlan(participant->GetSpecialization());
++    if (!plan)
++        return false;
++
++    std::array<uint32, 5> const& expected = participant->GetTeam() == ALLIANCE ?
++        plan->AllianceItems : plan->HordeItems;
++    for (uint8 index = 0; index < expected.size(); ++index)
++    {
++        Item* equipped = participant->GetItemByPos(
++            INVENTORY_SLOT_BAG_0, SoloArenaLoadoutEquipmentSlots[index]);
++        if (!equipped || equipped->GetEntry() != expected[index])
++            return false;
++    }
++
++    return true;
++}
++
++bool HasSharedSoloArenaAutomaticInvite(uint32& instanceId)
++{
++    instanceId = 0;
++    if (!SoloArenaQueuesStaged || !SoloArenaMatchScheduled)
++        return false;
++
++    BattlegroundQueue& arenaQueue = sBattlegroundMgr->GetBattlegroundQueue(BATTLEGROUND_QUEUE_2v2);
++    uint32 requesterInvite = 0;
++    uint32 opponentInvite = 0;
++    if (!HasExactSoloArenaQueueGroup(arenaQueue, SoloArenaStagedRequester,
++        SoloArenaStagedTeammate, requesterInvite) ||
++        !HasExactSoloArenaQueueGroup(arenaQueue, SoloArenaStagedOpponentHealer,
++        SoloArenaStagedOpponentDamage, opponentInvite) ||
++        !requesterInvite || requesterInvite != opponentInvite)
++        return false;
++
++    instanceId = requesterInvite;
++    return true;
++}
++
++void RunSoloArenaAutomaticCommand(Player* requester, char const* command)
++{
++    ChatHandler handler(requester->GetSession());
++    playerbots_commandscript::HandleSoloArenaCommand(&handler, command);
++}
++
++void ResetSoloArenaAutomaticState()
++{
++    TC_LOG_INFO("server", "SoloArena automatic cleanup completed requester=%u reason=%s",
++        SoloArenaAutomaticRequester,
++        SoloArenaAutomaticCleanupReason.empty() ? "normal completion" :
++            SoloArenaAutomaticCleanupReason.c_str());
++    SoloArenaAutomaticQueueState = SoloArenaAutomaticState::Idle;
++    SoloArenaAutomaticRequester = 0;
++    SoloArenaAutomaticUpdateTimer = 0;
++    SoloArenaAutomaticElapsed = 0;
++    SoloArenaAutomaticCleanupReason.clear();
++}
++}
++
++bool HandleSoloArenaAutomaticJoinRequest(Player* player, uint8 arenaSlot)
++{
++    if (!sPlayerbotAIConfig->autoQueueArenaAutomatic || !player)
++        return false;
++
++    if (PlayerbotAI* botAI = GET_PLAYERBOT_AI(player))
++        if (!botAI->IsRealPlayer())
++            return false;
++
++    if (arenaSlot != PVP_SLOT_ARENA_2v2)
++    {
++        ChatHandler(player->GetSession()).SendSysMessage(
++            "Automatic Solo Arena currently supports the 2v2 button only.");
++        return false;
++    }
++
++    if (!sPlayerbotAIConfig->autoQueueEnabled || !sPlayerbotAIConfig->autoQueueArena ||
++        !sPlayerbotAIConfig->autoQueueDryRun ||
++        !sPlayerbotAIConfig->autoQueueArenaStageLogin ||
++        !sPlayerbotAIConfig->autoQueueArenaStageGroup ||
++        !sPlayerbotAIConfig->autoQueueArenaStageQueue ||
++        !sPlayerbotAIConfig->autoQueueArenaStageMatch ||
++        !sPlayerbotAIConfig->autoQueueArenaStageEnter ||
++        !sPlayerbotAIConfig->autoQueueArenaStageHealthRestore ||
++        !sPlayerbotAIConfig->autoQueueArenaStageAutomaticExit)
++    {
++        ChatHandler(player->GetSession()).SendSysMessage(
++            "Automatic Solo Arena is enabled but its verified safety stages are not all enabled.");
++        return true;
++    }
++
++    if (SoloArenaAutomaticQueueState != SoloArenaAutomaticState::Idle ||
++        !SoloArenaStagedBots.empty() || SoloArenaRequesterGroup || SoloArenaOpponentGroup ||
++        SoloArenaQueuesStaged || SoloArenaEnteredInstance)
++    {
++        ChatHandler(player->GetSession()).SendSysMessage(
++            "Another Solo Arena preparation or cleanup is already active. Please try again shortly.");
++        return true;
++    }
++
++    if (GetSoloArenaLoadoutBackupCount())
++    {
++        ChatHandler(player->GetSession()).SendSysMessage(
++            "Automatic Solo Arena is blocked by protected loadout recovery rows.");
++        return true;
++    }
++
++    if (player->GetLevel() != DEFAULT_MAX_LEVEL || player->GetGroup() ||
++        player->InBattleground() || player->InBattlegroundQueue() ||
++        sLFGMgr->GetActiveState(player->GetGUID()) != lfg::LFG_STATE_NONE)
++    {
++        ChatHandler(player->GetSession()).SendSysMessage(
++            "Leave your current group, battleground and queue before joining automatic Solo Arena 2v2.");
++        return true;
++    }
++
++    SoloArenaAutomaticRequester = player->GetGUID().GetCounter();
++    SoloArenaAutomaticElapsed = 0;
++    SoloArenaAutomaticUpdateTimer = 0;
++    SoloArenaAutomaticCleanupReason.clear();
++    SetSoloArenaAutomaticState(SoloArenaAutomaticState::Login);
++    ChatHandler(player->GetSession()).SendSysMessage(
++        "Automatic Solo Arena 2v2 accepted. Selecting and preparing three players...");
++    TC_LOG_INFO("server", "SoloArena automatic 2v2 request accepted name=%s guid=%u arena=%s",
++        player->GetName().c_str(), SoloArenaAutomaticRequester,
++        sPlayerbotAIConfig->autoQueueArenaAutomaticForceTolviron ? "Tol'viron" : "random");
++    return true;
++}
++
++void UpdateSoloArenaAutomaticQueue(uint32 diff)
++{
++    if (SoloArenaAutomaticQueueState == SoloArenaAutomaticState::Idle)
++        return;
++
++    SoloArenaAutomaticElapsed += diff;
++    if (SoloArenaAutomaticQueueState != SoloArenaAutomaticState::Active &&
++        SoloArenaAutomaticQueueState != SoloArenaAutomaticState::Cleanup &&
++        SoloArenaAutomaticElapsed > sPlayerbotAIConfig->autoQueueArenaAutomaticTimeout)
++    {
++        BeginSoloArenaAutomaticCleanup("preparation timeout");
++    }
++
++    if (SoloArenaAutomaticUpdateTimer > diff)
++    {
++        SoloArenaAutomaticUpdateTimer -= diff;
++        return;
++    }
++    SoloArenaAutomaticUpdateTimer = 500;
++
++    Player* requester = GetSoloArenaAutomaticRequester();
++    if (!requester || !requester->GetSession())
++    {
++        if (SoloArenaAutomaticQueueState != SoloArenaAutomaticState::Cleanup)
++            BeginSoloArenaAutomaticCleanup("requester disconnected");
++        return;
++    }
++
++    std::array<Player*, 4> participants;
++    switch (SoloArenaAutomaticQueueState)
++    {
++        case SoloArenaAutomaticState::Login:
++            RunSoloArenaAutomaticCommand(requester, "login");
++            if (SoloArenaStagedRequester == SoloArenaAutomaticRequester &&
++                SoloArenaStagedBots.size() == 3)
++                SetSoloArenaAutomaticState(SoloArenaAutomaticState::WaitForBots);
++            else
++                BeginSoloArenaAutomaticCleanup("candidate selection or login request failed");
++            break;
++        case SoloArenaAutomaticState::WaitForBots:
++            if (GetSoloArenaAutomaticParticipants(requester, participants))
++                SetSoloArenaAutomaticState(SoloArenaAutomaticState::ApplyLoadout);
++            break;
++        case SoloArenaAutomaticState::ApplyLoadout:
++            RunSoloArenaAutomaticCommand(requester, "loadout apply");
++            if (GetSoloArenaAutomaticParticipants(requester, participants) &&
++                std::all_of(participants.begin(), participants.end(), HasExpectedSoloArenaLoadout))
++                SetSoloArenaAutomaticState(SoloArenaAutomaticState::Group);
++            else
++                BeginSoloArenaAutomaticCleanup("temporary PvP loadout verification failed");
++            break;
++        case SoloArenaAutomaticState::Group:
++            RunSoloArenaAutomaticCommand(requester, "group");
++            if (SoloArenaRequesterGroup && SoloArenaOpponentGroup)
++                SetSoloArenaAutomaticState(SoloArenaAutomaticState::Queue);
++            else
++                BeginSoloArenaAutomaticCleanup("group creation failed");
++            break;
++        case SoloArenaAutomaticState::Queue:
++            RunSoloArenaAutomaticCommand(requester, "queue");
++            if (SoloArenaQueuesStaged)
++                SetSoloArenaAutomaticState(SoloArenaAutomaticState::Match);
++            else
++                BeginSoloArenaAutomaticCleanup("2v2 queue creation failed");
++            break;
++        case SoloArenaAutomaticState::Match:
++            RunSoloArenaAutomaticCommand(requester,
++                sPlayerbotAIConfig->autoQueueArenaAutomaticForceTolviron ?
++                    "match tolviron" : "match");
++            if (SoloArenaMatchScheduled)
++                SetSoloArenaAutomaticState(SoloArenaAutomaticState::WaitForInvite);
++            else
++                BeginSoloArenaAutomaticCleanup("matchmaking schedule failed");
++            break;
++        case SoloArenaAutomaticState::WaitForInvite:
++        {
++            uint32 invite = 0;
++            if (HasSharedSoloArenaAutomaticInvite(invite))
++                SetSoloArenaAutomaticState(SoloArenaAutomaticState::Enter);
++            break;
++        }
++        case SoloArenaAutomaticState::Enter:
++            RunSoloArenaAutomaticCommand(requester, "enter");
++            if (SoloArenaEnteredInstance)
++                SetSoloArenaAutomaticState(SoloArenaAutomaticState::WaitForEntry);
++            else
++                BeginSoloArenaAutomaticCleanup("shared Arena invitation acceptance failed");
++            break;
++        case SoloArenaAutomaticState::WaitForEntry:
++            if (GetSoloArenaAutomaticParticipants(requester, participants) &&
++                std::all_of(participants.begin(), participants.end(),
++                    [](Player* participant)
++                    {
++                        return participant->GetBattlegroundId() == SoloArenaEnteredInstance &&
++                            !participant->IsBeingTeleported();
++                    }))
++            {
++                ChatHandler(requester->GetSession()).SendSysMessage(
++                    "Automatic Solo Arena is ready. Wait for the gates, then fight normally.");
++                SetSoloArenaAutomaticState(SoloArenaAutomaticState::Active);
++            }
++            break;
++        case SoloArenaAutomaticState::Active:
++            if (!SoloArenaEnteredInstance)
++                SetSoloArenaAutomaticState(SoloArenaAutomaticState::Cleanup);
++            break;
++        case SoloArenaAutomaticState::Cleanup:
++            if (SoloArenaEnteredInstance)
++                RunSoloArenaAutomaticCommand(requester, "leave");
++            else if (SoloArenaQueuesStaged)
++                RunSoloArenaAutomaticCommand(requester, "unqueue");
++            else if (SoloArenaRequesterGroup || SoloArenaOpponentGroup)
++                RunSoloArenaAutomaticCommand(requester, "ungroup");
++            else if (GetSoloArenaLoadoutBackupCount())
++                RunSoloArenaAutomaticCommand(requester, "loadout restore");
++            else if (!SoloArenaStagedBots.empty())
++                RunSoloArenaAutomaticCommand(requester, "logout");
++            else
++                ResetSoloArenaAutomaticState();
++            break;
++        case SoloArenaAutomaticState::Idle:
++            break;
++    }
++}
++
+ void AddSC_playerbots_commandscript() { new playerbots_commandscript(); }
+diff --git a/modules/mod_playerbots/src/cs_playerbots.h b/modules/mod_playerbots/src/cs_playerbots.h
+index a323318d..aa7eb3f8 100644
+--- a/modules/mod_playerbots/src/cs_playerbots.h
++++ b/modules/mod_playerbots/src/cs_playerbots.h
+@@ -6,4 +6,6 @@ class Player;
+ 
+ void AddSC_playerbots_commandscript();
+ void HandleSoloArenaClientLeave(Player* player);
++bool HandleSoloArenaAutomaticJoinRequest(Player* player, uint8 arenaSlot);
++void UpdateSoloArenaAutomaticQueue(uint32 diff);
+ void UpdateSoloArenaAutomaticExit(uint32 diff);
+diff --git a/modules/mod_playerbots/src/mod_playerbots.cpp b/modules/mod_playerbots/src/mod_playerbots.cpp
+index a977eb6a..7638fe8b 100644
+--- a/modules/mod_playerbots/src/mod_playerbots.cpp
++++ b/modules/mod_playerbots/src/mod_playerbots.cpp
+@@ -12,6 +12,7 @@
+ #include "Log.h"
+ #include "Opcodes.h"
+ #include "Player.h"
++#include "RatedPvp.h"
+ #include "ScriptMgr.h"
+ #include "World.h"
+ #include "WorldPacket.h"
+@@ -89,6 +90,7 @@ public:
+     void OnUpdate(uint32 diff) override
+     {
+         sBracketMgr->Update(diff);
++        UpdateSoloArenaAutomaticQueue(diff);
+         UpdateSoloArenaAutomaticExit(diff);
+     }
+ };
+@@ -99,8 +101,20 @@ public:
+     PlayerbotsServerScript() : ServerScript("PlayerbotsServerScript") {}
+     void OnPacketReceive(WorldSession* sessionBot, WorldPacket& packet) override
+     {
++        if (!sessionBot)
++            return;
++
+         if (packet.GetOpcode() == CMSG_BATTLEFIELD_LEAVE)
+-            HandleSoloArenaClientLeave(sessionBot ? sessionBot->GetPlayer() : nullptr);
++            HandleSoloArenaClientLeave(sessionBot->GetPlayer());
++
++        if (packet.GetOpcode() == CMSG_BATTLEMASTER_JOIN_ARENA && packet.size() >= 1)
++        {
++            size_t readPosition = packet.rpos();
++            uint8 arenaSlot = 0;
++            packet >> arenaSlot;
++            packet.rpos(readPosition);
++            HandleSoloArenaAutomaticJoinRequest(sessionBot->GetPlayer(), arenaSlot);
++        }
+ 
+         Player* playerBot = sessionBot->GetPlayer();
+             if (PlayerbotMgr* playerbotMgr = GET_PLAYERBOT_MGR(playerBot))
+diff --git a/src/server/worldserver/playerbots.conf.dist b/src/server/worldserver/playerbots.conf.dist
+index eaea842e..1110faf4 100644
+--- a/src/server/worldserver/playerbots.conf.dist
++++ b/src/server/worldserver/playerbots.conf.dist
+@@ -841,6 +841,21 @@ AiPlayerbot.AutoQueue.Arena.StageCombatStatus = 0
+ # tracker after all four participants finish leaving the completed Arena.
+ AiPlayerbot.AutoQueue.Arena.StageAutomaticExit = 0
+ 
++# Patch 0020 command-free solo 2v2 orchestration. When enabled, a solo level-90
++# player pressing the normal 2v2 Arena Join button starts the already verified
++# login -> temporary PvP loadout -> group -> queue -> match -> enter sequence.
++# Keep disabled until every Stage* setting above is enabled and the server has
++# been rebuilt. Only one automatic Solo Arena session may exist at a time.
++AiPlayerbot.AutoQueue.Arena.Automatic = 0
++
++# 0 keeps normal random Arena-map selection. 1 forces Tol'viron Arena, which is
++# useful for repeatable gate/rotation regression tests.
++AiPlayerbot.AutoQueue.Arena.AutomaticForceTolviron = 0
++
++# Maximum seconds allowed for automatic preparation before guarded cleanup.
++# Values below 30 seconds are clamped to 30.
++AiPlayerbot.AutoQueue.Arena.AutomaticTimeout = 120
++
+ # Required Configuration for RandomBotAutoJoinBG
+ #
+ # Known issue: When enabling a lot of brackats in combination with multiple instances,
+warning: in the working copy of 'modules/mod_playerbots/config/playerbots.conf.dist', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'modules/mod_playerbots/src/Utils/PlayerbotAIConfig.cpp', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'modules/mod_playerbots/src/Utils/PlayerbotAIConfig.h', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'modules/mod_playerbots/src/cs_playerbots.cpp', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'modules/mod_playerbots/src/cs_playerbots.h', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'modules/mod_playerbots/src/mod_playerbots.cpp', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/server/worldserver/playerbots.conf.dist', LF will be replaced by CRLF the next time Git touches it
