@@ -1,0 +1,250 @@
+diff --git a/modules/mod_playerbots/config/playerbots.conf.dist b/modules/mod_playerbots/config/playerbots.conf.dist
+index 6d7066fa..90ca50bd 100644
+--- a/modules/mod_playerbots/config/playerbots.conf.dist
++++ b/modules/mod_playerbots/config/playerbots.conf.dist
+@@ -857,14 +857,14 @@ AiPlayerbot.AutoQueue.Arena.AutomaticBattlemasterSolo = 0
+ # useful for repeatable gate/rotation regression tests.
+ AiPlayerbot.AutoQueue.Arena.AutomaticForceTolviron = 0
+ 
+-# During the automatic Solo Arena preparation countdown, temporarily enable
+-# each staged bot's normal class/spec non-combat buff strategy. It is removed
+-# when the gates open and never changes the real requester's strategies.
++# During the automatic Solo Arena preparation countdown, execute supported
++# class buff actions through normal PlayerbotAI. Failed casts are retried until
++# the gates open; the real requester is never controlled by this setting.
+ AiPlayerbot.AutoQueue.Arena.PreparationBuffs = 0
+ 
+ # Once all automatic Solo Arena participants have landed, face each one toward
+-# the opposing team's start location. This corrects map-dependent spawn
+-# orientations without changing global battleground_template coordinates.
++# the useful gate direction. Map-specific door geometry is used where required,
++# otherwise the opposing start is used as a safe fallback.
+ AiPlayerbot.AutoQueue.Arena.PreparationFaceOpponent = 0
+ 
+ # Maximum seconds allowed for automatic preparation before guarded cleanup.
+diff --git a/modules/mod_playerbots/src/cs_playerbots.cpp b/modules/mod_playerbots/src/cs_playerbots.cpp
+index 03423037..8483f90c 100644
+--- a/modules/mod_playerbots/src/cs_playerbots.cpp
++++ b/modules/mod_playerbots/src/cs_playerbots.cpp
+@@ -19,6 +19,7 @@
+ #include "BotFactory.h"
+ #include "DatabaseEnv.h"
+ #include "DisableMgr.h"
++#include "GameObject.h"
+ #include "Group.h"
+ #include "GroupMgr.h"
+ #include "ItemPrototype.h"
+@@ -64,7 +65,7 @@ bool SoloArenaAutomaticRewardProcessed = false;
+ uint32 SoloArenaAutomaticExitTimer = 0;
+ std::set<uint32> SoloArenaAutomaticHealthRestoreScheduled;
+ std::set<uint32> SoloArenaLoadoutRecoveryBots;
+-std::set<uint32> SoloArenaAutomaticPreparationBuffBots;
++std::set<uint32> SoloArenaAutomaticPreparationBuffedBots;
+ bool SoloArenaAutomaticPreparationFacingApplied = false;
+ 
+ enum class SoloArenaAutomaticState : uint8
+@@ -1397,18 +1398,108 @@ bool EnterSoloArenaAutomaticMatch(std::string& error)
+     return true;
+ }
+ 
+-void DisableSoloArenaAutomaticPreparationBuffs()
++bool GetSoloArenaPreparationFacingTarget(Battleground* arena, Player* participant,
++    float& x, float& y, char const*& targetType)
+ {
+-    for (uint32 guid : SoloArenaAutomaticPreparationBuffBots)
+-        if (Player* bot = FindSoloArenaParticipant(guid))
+-            if (PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot))
+-                if (botAI->HasStrategy("buff", BOT_STATE_NON_COMBAT))
+-                    botAI->ChangeStrategy("-buff", BOT_STATE_NON_COMBAT);
+-
+-    if (!SoloArenaAutomaticPreparationBuffBots.empty())
+-        TC_LOG_INFO("server", "SoloArena preparation buffs disabled instance=%u bots=%u",
+-            SoloArenaEnteredInstance, uint32(SoloArenaAutomaticPreparationBuffBots.size()));
+-    SoloArenaAutomaticPreparationBuffBots.clear();
++    if (!arena || !participant)
++        return false;
++
++    // Blade's Edge Arena starts are diagonally offset from the actual doors.
++    // Face the nearest one of the two opening doors instead of the opposing
++    // start location. Object indexes 0 and 1 are BG_BE_OBJECT_DOOR_1/2.
++    if (arena->GetMapId() == 562)
++    {
++        GameObject* firstDoor = arena->GetBGObject(0);
++        GameObject* secondDoor = arena->GetBGObject(1);
++        GameObject* nearestDoor = nullptr;
++        if (firstDoor && secondDoor)
++            nearestDoor = participant->GetDistance2d(firstDoor) <=
++                participant->GetDistance2d(secondDoor) ? firstDoor : secondDoor;
++        else
++            nearestDoor = firstDoor ? firstDoor : secondDoor;
++        if (nearestDoor)
++        {
++            x = nearestDoor->GetPositionX();
++            y = nearestDoor->GetPositionY();
++            targetType = "nearest-gate";
++            return true;
++        }
++    }
++
++    float z = 0.0f;
++    float orientation = 0.0f;
++    arena->GetTeamStartLoc(arena->GetOtherTeam(participant->GetBGTeam()),
++        x, y, z, orientation);
++    targetType = "opponent-start";
++    return true;
++}
++
++std::vector<char const*> GetSoloArenaPreparationBuffActions(Player* bot)
++{
++    if (!bot)
++        return {};
++
++    switch (bot->GetClass())
++    {
++        case CLASS_PRIEST:       return { "power word: fortitude on party" };
++        case CLASS_DRUID:        return { "mark of the wild on party" };
++        case CLASS_MAGE:         return { "arcane brilliance" };
++        case CLASS_PALADIN:      return { "blessing of kings", "blessing of might" };
++        case CLASS_WARRIOR:      return { "battle shout" };
++        case CLASS_DEATH_KNIGHT: return { "horn of winter" };
++        case CLASS_WARLOCK:      return { "dark intent" };
++        case CLASS_SHAMAN:       return { "water shield", "lightning shield" };
++        case CLASS_HUNTER:       return { "trueshot aura", "aspect of the hawk" };
++        default:                 return {};
++    }
++}
++
++void CastSoloArenaAutomaticPreparationBuffs(Battleground* arena,
++    std::vector<Player*> const& participants)
++{
++    if (!arena || arena->GetStatus() != STATUS_WAIT_JOIN ||
++        !sPlayerbotAIConfig->autoQueueArenaPreparationBuffs)
++        return;
++
++    for (Player* participant : participants)
++    {
++        if (!participant ||
++            participant->GetGUID().GetCounter() == SoloArenaAutomaticRequester ||
++            SoloArenaAutomaticPreparationBuffedBots.count(
++                participant->GetGUID().GetCounter()))
++            continue;
++
++        PlayerbotAI* botAI = GET_PLAYERBOT_AI(participant);
++        if (!botAI || botAI->IsRealPlayer())
++            continue;
++
++        // Execute real, class-supported PlayerbotAI actions. This is retried by
++        // the preparation state until a cast succeeds, so teleport/GCD timing
++        // cannot silently turn the old generic strategy toggle into a no-op.
++        for (char const* action : GetSoloArenaPreparationBuffActions(participant))
++            if (botAI->DoSpecificAction(action, Event(), true))
++            {
++                SoloArenaAutomaticPreparationBuffedBots.insert(
++                    participant->GetGUID().GetCounter());
++                TC_LOG_INFO("server",
++                    "SoloArena preparation buff cast instance=%u map=%u name=%s guid=%u class=%u action=%s",
++                    arena->GetInstanceID(), arena->GetMapId(),
++                    participant->GetName().c_str(),
++                    participant->GetGUID().GetCounter(),
++                    uint32(participant->GetClass()), action);
++                break;
++            }
++    }
++}
++
++void FinishSoloArenaAutomaticPreparationBuffs()
++{
++    if (!SoloArenaAutomaticPreparationBuffedBots.empty())
++        TC_LOG_INFO("server", "SoloArena preparation buffs finished instance=%u successful-bots=%u",
++            SoloArenaEnteredInstance,
++            uint32(SoloArenaAutomaticPreparationBuffedBots.size()));
++
++    SoloArenaAutomaticPreparationBuffedBots.clear();
+ }
+ 
+ void PrepareSoloArenaAutomaticParticipants(Battleground* arena,
+@@ -1427,39 +1518,23 @@ void PrepareSoloArenaAutomaticParticipants(Battleground* arena,
+         {
+             float x = 0.0f;
+             float y = 0.0f;
+-            float z = 0.0f;
+-            float orientation = 0.0f;
+-            arena->GetTeamStartLoc(arena->GetOtherTeam(participant->GetBGTeam()),
+-                x, y, z, orientation);
++            char const* targetType = "unknown";
++            if (!GetSoloArenaPreparationFacingTarget(
++                arena, participant, x, y, targetType))
++                continue;
+             float oldOrientation = participant->GetOrientation();
+             float newOrientation = participant->GetAngle(x, y);
+             participant->SetFacingTo(newOrientation);
+             TC_LOG_INFO("server",
+-                "SoloArena preparation facing instance=%u map=%u name=%s guid=%u team=%u old=%.4f new=%.4f target=%.2f/%.2f",
++                "SoloArena preparation facing instance=%u map=%u name=%s guid=%u team=%u old=%.4f new=%.4f target-type=%s target=%.2f/%.2f",
+                 arena->GetInstanceID(), arena->GetMapId(), participant->GetName().c_str(),
+                 participant->GetGUID().GetCounter(), participant->GetBGTeam(),
+-                oldOrientation, newOrientation, x, y);
++                oldOrientation, newOrientation, targetType, x, y);
+         }
+-
+-        if (!sPlayerbotAIConfig->autoQueueArenaPreparationBuffs ||
+-            participant->GetGUID().GetCounter() == SoloArenaAutomaticRequester)
+-            continue;
+-
+-        PlayerbotAI* botAI = GET_PLAYERBOT_AI(participant);
+-        if (!botAI || botAI->IsRealPlayer() ||
+-            botAI->HasStrategy("buff", BOT_STATE_NON_COMBAT))
+-            continue;
+-
+-        botAI->ChangeStrategy("+buff", BOT_STATE_NON_COMBAT);
+-        SoloArenaAutomaticPreparationBuffBots.insert(
+-            participant->GetGUID().GetCounter());
+-        TC_LOG_INFO("server",
+-            "SoloArena preparation buffs enabled instance=%u map=%u name=%s guid=%u",
+-            arena->GetInstanceID(), arena->GetMapId(), participant->GetName().c_str(),
+-            participant->GetGUID().GetCounter());
+     }
+ 
+     SoloArenaAutomaticPreparationFacingApplied = true;
++    CastSoloArenaAutomaticPreparationBuffs(arena, participants);
+ }
+ 
+ void ProcessSoloArenaAutomaticReward(Battleground* arena)
+@@ -3462,7 +3537,7 @@ bool HasExpectedSoloArenaLoadout(Player* participant)
+ 
+ bool CleanupSoloArenaAutomaticStep()
+ {
+-    DisableSoloArenaAutomaticPreparationBuffs();
++    FinishSoloArenaAutomaticPreparationBuffs();
+ 
+     std::vector<uint32> participantGuids = GetSoloArenaAutomaticParticipantGuids();
+     std::vector<Player*> participants;
+@@ -3612,7 +3687,7 @@ void ResetSoloArenaAutomaticState()
+     SoloArenaAutomaticRewardProcessed = false;
+     SoloArenaAutomaticHealthRestoreScheduled.clear();
+     SoloArenaAutomaticExitTimer = 0;
+-    SoloArenaAutomaticPreparationBuffBots.clear();
++    SoloArenaAutomaticPreparationBuffedBots.clear();
+     SoloArenaAutomaticPreparationFacingApplied = false;
+ }
+ }
+@@ -3809,13 +3884,15 @@ void UpdateSoloArenaAutomaticQueue(uint32 diff)
+             }
+             break;
+         case SoloArenaAutomaticState::Active:
+-            if (SoloArenaEnteredInstance &&
+-                !SoloArenaAutomaticPreparationBuffBots.empty())
++            if (SoloArenaEnteredInstance)
+             {
+                 Battleground* arena = sBattlegroundMgr->GetBattleground(
+                     SoloArenaEnteredInstance, BATTLEGROUND_TYPE_NONE);
+-                if (!arena || arena->GetStatus() != STATUS_WAIT_JOIN)
+-                    DisableSoloArenaAutomaticPreparationBuffs();
++                if (arena && arena->GetStatus() == STATUS_WAIT_JOIN &&
++                    GetSoloArenaAutomaticParticipants(participants))
++                    CastSoloArenaAutomaticPreparationBuffs(arena, participants);
++                else if (!SoloArenaAutomaticPreparationBuffedBots.empty())
++                    FinishSoloArenaAutomaticPreparationBuffs();
+             }
+             if (!SoloArenaEnteredInstance)
+                 SetSoloArenaAutomaticState(SoloArenaAutomaticState::Cleanup);

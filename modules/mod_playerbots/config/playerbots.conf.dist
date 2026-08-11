@@ -857,14 +857,14 @@ AiPlayerbot.AutoQueue.Arena.AutomaticBattlemasterSolo = 0
 # useful for repeatable gate/rotation regression tests.
 AiPlayerbot.AutoQueue.Arena.AutomaticForceTolviron = 0
 
-# During the automatic Solo Arena preparation countdown, temporarily enable
-# each staged bot's normal class/spec non-combat buff strategy. It is removed
-# when the gates open and never changes the real requester's strategies.
+# During the automatic Solo Arena preparation countdown, execute supported
+# class buff actions through normal PlayerbotAI. Failed casts are retried until
+# the gates open; the real requester is never controlled by this setting.
 AiPlayerbot.AutoQueue.Arena.PreparationBuffs = 0
 
 # Once all automatic Solo Arena participants have landed, face each one toward
-# the opposing team's start location. This corrects map-dependent spawn
-# orientations without changing global battleground_template coordinates.
+# the useful gate direction. Map-specific door geometry is used where required,
+# otherwise the opposing start is used as a safe fallback.
 AiPlayerbot.AutoQueue.Arena.PreparationFaceOpponent = 0
 
 # Maximum seconds allowed for automatic preparation before guarded cleanup.

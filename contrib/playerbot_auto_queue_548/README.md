@@ -1,13 +1,15 @@
 # Playerbot auto-queue patches for MoP 5.4.8
 
 Status: experimental. The active source contains the staged Solo Arena series
-through `0023`; `0002` and `0003` remain intentionally unapplied. Runtime work has
+through `0024`; `0002` and `0003` remain intentionally unapplied. Runtime work has
 already verified the earlier staged login, grouping, queue, entry, combat, exit,
 health, protected temporary loadout, and recovery paths. Patch `0021` provides the
 Arena Battlemaster 2v2/3v3/5v5 frontend and includes one idempotent world SQL update
 plus its exact rollback. Patch `0022` adds no SQL; its first automatic 2v2 victory
-cycle is runtime verified. Patch `0023` adds preparation buffs and safe participant
-facing without SQL or global Arena-coordinate changes.
+cycle is runtime verified. Patch `0023` added the first preparation implementation;
+runtime evidence showed that its generic strategy toggle did not guarantee a cast
+and that Blade's Edge needs its real diagonal gate direction. Patch `0024` corrects
+both without SQL or global Arena-coordinate changes.
 
 The active `Build/bin/RelWithDebInfo/playerbots.conf` currently enables the `0001`
 observer with `DryRun = 1`, all three queue categories visible, a five-second check
@@ -918,6 +920,34 @@ The complete x64 RelWithDebInfo WorldServer compiled and linked successfully on
 `349A8E81AB74A8CBD5F9D1DBB89DD6F42EF9EEC430DB2B5B0632AF26428CA49D`.
 Codex did not start or stop WorldServer; no server process was present at link time.
 
+The first `0023` runtime test completed normally and awarded the correct 180
+conquest, but its log proved that only Gerna and Colora received a generic strategy
+toggle; Patrie did not cast a group buff on the requester. On Blade's Edge Arena
+(map 562), facing the opposing start also left every participant approximately
+0.42 radians short of the diagonally placed exit. Patch `0024` replaces the toggle
+with real class-supported PlayerbotAI actions which retry during `STATUS_WAIT_JOIN`
+until a cast succeeds. Priest uses `power word: fortitude on party`, so a missing
+party member such as the requester is a valid target. Other supported classes use
+their normal named action; no spell ID is hard-coded. Blade's Edge participants now
+face the nearer one of its two opening gate objects; other maps keep the prior safe
+opposing-start fallback:
+
+```powershell
+git apply --check contrib/playerbot_auto_queue_548/patches/0024-playerbots-solo-arena-real-buffs-gate-facing.patch
+git apply contrib/playerbot_auto_queue_548/patches/0024-playerbots-solo-arena-real-buffs-gate-facing.patch
+```
+
+The isolated `0024` patch passes forward, reverse, and whitespace checks; its
+SHA-256 is `6FF4D3769DFEEF67E196544F7DF39D8DB9862004894C4BB1AEF97CEC028CE48A`.
+Both distributed settings still default to `0`, while the ignored active test
+configuration keeps both at `1`. The complete x64 RelWithDebInfo WorldServer
+compiled and linked successfully on 2026-08-11. The resulting executable is
+`61,669,888` bytes, dated `2026-08-11 12:43:23`, with SHA-256
+`6D6CAD69A2B343B80D5FB0659D713111267AA8F9881B1640ADD9199BC4BAC85D`.
+No WorldServer process was present during this build, and Codex did not start one.
+Fresh runtime verification of the real buff cast and corrected Blade's Edge gate
+facing remains required.
+
 Do not enable LFG and battleground functional testing simultaneously until each has passed
 separately. `MaxBotsPerCycle` is shared by both systems.
 
@@ -926,6 +956,9 @@ separately. `MaxBotsPerCycle` is shared by both systems.
 Stop WorldServer, remove only the patches that were applied, in reverse order, then rebuild:
 
 ```powershell
+git apply -R --check contrib/playerbot_auto_queue_548/patches/0024-playerbots-solo-arena-real-buffs-gate-facing.patch
+git apply -R contrib/playerbot_auto_queue_548/patches/0024-playerbots-solo-arena-real-buffs-gate-facing.patch
+
 git apply -R --check contrib/playerbot_auto_queue_548/patches/0023-playerbots-solo-arena-preparation-buffs-facing.patch
 git apply -R contrib/playerbot_auto_queue_548/patches/0023-playerbots-solo-arena-preparation-buffs-facing.patch
 
@@ -1076,12 +1109,13 @@ The active `playerbots.conf` entries may then be removed manually or left disabl
   exit polling never duplicates the reward. Confirm every staged bot reports
   six talents and six unique, slot-compatible glyphs. Existing non-empty talent
   rows and glyph slots must remain unchanged.
-- Arena preparation: with `0023` enabled, verify the real requester and every
-  staged bot initially face through their own gate toward the opposing start.
-  During `WAIT_JOIN`, verify each class that has a useful buff applies it to itself
-  or its own team through the normal bot AI. Verify the temporary `buff` strategy
-  is removed at `IN_PROGRESS`, opposing teams do not buff one another, normal
-  combat still starts, and guarded cleanup leaves every bot offline.
+- Arena preparation: with `0023` and corrective `0024` enabled, verify Blade's
+  Edge participants face their nearer opening gate (`target-type=nearest-gate`),
+  while other maps use the opposing-start fallback. During `WAIT_JOIN`, verify
+  successful named `preparation buff cast` lines and confirm the resulting aura
+  appears on the appropriate bot or its own party (especially priest Fortitude on
+  the real requester). Opposing teams must not buff one another; normal combat and
+  guarded cleanup must still complete with every staged bot offline.
 - Shutdown/restart: verify no bot remains stuck in LFG or battleground queue state.
 - Keep `AiPlayerbot.AutoQueue.Arena = 0` during functional LFG/BG testing; enable it
   only for the read-only `0004` preview while `DryRun = 1`.
