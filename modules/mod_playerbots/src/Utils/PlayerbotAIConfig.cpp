@@ -187,6 +187,10 @@ bool PlayerbotAIConfig::Initialize()
         "AiPlayerbot.AutoQueue.Arena.AutomaticBattlemasterSolo", false);
     autoQueueArenaAutomaticForceTolviron = sConfigMgr->GetBoolDefault(
         "AiPlayerbot.AutoQueue.Arena.AutomaticForceTolviron", false);
+    autoQueueArenaPreparationBuffs = sConfigMgr->GetBoolDefault(
+        "AiPlayerbot.AutoQueue.Arena.PreparationBuffs", false);
+    autoQueueArenaPreparationFaceOpponent = sConfigMgr->GetBoolDefault(
+        "AiPlayerbot.AutoQueue.Arena.PreparationFaceOpponent", false);
     autoQueueArenaAutomaticTimeout = sConfigMgr->GetIntDefault(
         "AiPlayerbot.AutoQueue.Arena.AutomaticTimeout", 120) * IN_MILLISECONDS;
     if (autoQueueArenaAutomaticTimeout < 30 * IN_MILLISECONDS)

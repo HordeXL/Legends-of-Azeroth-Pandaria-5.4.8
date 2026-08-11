@@ -1,0 +1,183 @@
+diff --git a/modules/mod_playerbots/config/playerbots.conf.dist b/modules/mod_playerbots/config/playerbots.conf.dist
+index d7172abe..6d7066fa 100644
+--- a/modules/mod_playerbots/config/playerbots.conf.dist
++++ b/modules/mod_playerbots/config/playerbots.conf.dist
+@@ -857,6 +857,16 @@ AiPlayerbot.AutoQueue.Arena.AutomaticBattlemasterSolo = 0
+ # useful for repeatable gate/rotation regression tests.
+ AiPlayerbot.AutoQueue.Arena.AutomaticForceTolviron = 0
+ 
++# During the automatic Solo Arena preparation countdown, temporarily enable
++# each staged bot's normal class/spec non-combat buff strategy. It is removed
++# when the gates open and never changes the real requester's strategies.
++AiPlayerbot.AutoQueue.Arena.PreparationBuffs = 0
++
++# Once all automatic Solo Arena participants have landed, face each one toward
++# the opposing team's start location. This corrects map-dependent spawn
++# orientations without changing global battleground_template coordinates.
++AiPlayerbot.AutoQueue.Arena.PreparationFaceOpponent = 0
++
+ # Maximum seconds allowed for automatic preparation before guarded cleanup.
+ # Values below 30 seconds are clamped to 30.
+ AiPlayerbot.AutoQueue.Arena.AutomaticTimeout = 120
+diff --git a/modules/mod_playerbots/src/Utils/PlayerbotAIConfig.cpp b/modules/mod_playerbots/src/Utils/PlayerbotAIConfig.cpp
+index 9e4d2b2a..459eb6a5 100644
+--- a/modules/mod_playerbots/src/Utils/PlayerbotAIConfig.cpp
++++ b/modules/mod_playerbots/src/Utils/PlayerbotAIConfig.cpp
+@@ -187,6 +187,10 @@ bool PlayerbotAIConfig::Initialize()
+         "AiPlayerbot.AutoQueue.Arena.AutomaticBattlemasterSolo", false);
+     autoQueueArenaAutomaticForceTolviron = sConfigMgr->GetBoolDefault(
+         "AiPlayerbot.AutoQueue.Arena.AutomaticForceTolviron", false);
++    autoQueueArenaPreparationBuffs = sConfigMgr->GetBoolDefault(
++        "AiPlayerbot.AutoQueue.Arena.PreparationBuffs", false);
++    autoQueueArenaPreparationFaceOpponent = sConfigMgr->GetBoolDefault(
++        "AiPlayerbot.AutoQueue.Arena.PreparationFaceOpponent", false);
+     autoQueueArenaAutomaticTimeout = sConfigMgr->GetIntDefault(
+         "AiPlayerbot.AutoQueue.Arena.AutomaticTimeout", 120) * IN_MILLISECONDS;
+     if (autoQueueArenaAutomaticTimeout < 30 * IN_MILLISECONDS)
+diff --git a/modules/mod_playerbots/src/Utils/PlayerbotAIConfig.h b/modules/mod_playerbots/src/Utils/PlayerbotAIConfig.h
+index 75282055..77182727 100644
+--- a/modules/mod_playerbots/src/Utils/PlayerbotAIConfig.h
++++ b/modules/mod_playerbots/src/Utils/PlayerbotAIConfig.h
+@@ -76,7 +76,8 @@ public:
+     bool autoQueueArenaStageEnter, autoQueueArenaStageHealthRestore, autoQueueArenaStageCombatStatus;
+     bool autoQueueArenaStageAutomaticExit;
+     bool autoQueueArenaAutomatic, autoQueueArenaAutomaticBattlemasterSolo;
+-    bool autoQueueArenaAutomaticForceTolviron, autoQueueArenaRewardEnabled;
++    bool autoQueueArenaAutomaticForceTolviron, autoQueueArenaPreparationBuffs;
++    bool autoQueueArenaPreparationFaceOpponent, autoQueueArenaRewardEnabled;
+     uint32 autoQueueCheckInterval, autoQueueMaxBotsPerCycle;
+     uint32 autoQueueArenaMinEquippedItems, autoQueueArenaMinAverageItemLevel, autoQueueArenaMinPvpItems;
+     uint32 autoQueueArenaAutomaticTimeout;
+diff --git a/modules/mod_playerbots/src/cs_playerbots.cpp b/modules/mod_playerbots/src/cs_playerbots.cpp
+index 10dd8be5..03423037 100644
+--- a/modules/mod_playerbots/src/cs_playerbots.cpp
++++ b/modules/mod_playerbots/src/cs_playerbots.cpp
+@@ -64,6 +64,8 @@ bool SoloArenaAutomaticRewardProcessed = false;
+ uint32 SoloArenaAutomaticExitTimer = 0;
+ std::set<uint32> SoloArenaAutomaticHealthRestoreScheduled;
+ std::set<uint32> SoloArenaLoadoutRecoveryBots;
++std::set<uint32> SoloArenaAutomaticPreparationBuffBots;
++bool SoloArenaAutomaticPreparationFacingApplied = false;
+ 
+ enum class SoloArenaAutomaticState : uint8
+ {
+@@ -1395,6 +1397,71 @@ bool EnterSoloArenaAutomaticMatch(std::string& error)
+     return true;
+ }
+ 
++void DisableSoloArenaAutomaticPreparationBuffs()
++{
++    for (uint32 guid : SoloArenaAutomaticPreparationBuffBots)
++        if (Player* bot = FindSoloArenaParticipant(guid))
++            if (PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot))
++                if (botAI->HasStrategy("buff", BOT_STATE_NON_COMBAT))
++                    botAI->ChangeStrategy("-buff", BOT_STATE_NON_COMBAT);
++
++    if (!SoloArenaAutomaticPreparationBuffBots.empty())
++        TC_LOG_INFO("server", "SoloArena preparation buffs disabled instance=%u bots=%u",
++            SoloArenaEnteredInstance, uint32(SoloArenaAutomaticPreparationBuffBots.size()));
++    SoloArenaAutomaticPreparationBuffBots.clear();
++}
++
++void PrepareSoloArenaAutomaticParticipants(Battleground* arena,
++    std::vector<Player*> const& participants)
++{
++    if (!arena || arena->GetStatus() != STATUS_WAIT_JOIN)
++        return;
++
++    for (Player* participant : participants)
++    {
++        if (!participant)
++            continue;
++
++        if (sPlayerbotAIConfig->autoQueueArenaPreparationFaceOpponent &&
++            !SoloArenaAutomaticPreparationFacingApplied)
++        {
++            float x = 0.0f;
++            float y = 0.0f;
++            float z = 0.0f;
++            float orientation = 0.0f;
++            arena->GetTeamStartLoc(arena->GetOtherTeam(participant->GetBGTeam()),
++                x, y, z, orientation);
++            float oldOrientation = participant->GetOrientation();
++            float newOrientation = participant->GetAngle(x, y);
++            participant->SetFacingTo(newOrientation);
++            TC_LOG_INFO("server",
++                "SoloArena preparation facing instance=%u map=%u name=%s guid=%u team=%u old=%.4f new=%.4f target=%.2f/%.2f",
++                arena->GetInstanceID(), arena->GetMapId(), participant->GetName().c_str(),
++                participant->GetGUID().GetCounter(), participant->GetBGTeam(),
++                oldOrientation, newOrientation, x, y);
++        }
++
++        if (!sPlayerbotAIConfig->autoQueueArenaPreparationBuffs ||
++            participant->GetGUID().GetCounter() == SoloArenaAutomaticRequester)
++            continue;
++
++        PlayerbotAI* botAI = GET_PLAYERBOT_AI(participant);
++        if (!botAI || botAI->IsRealPlayer() ||
++            botAI->HasStrategy("buff", BOT_STATE_NON_COMBAT))
++            continue;
++
++        botAI->ChangeStrategy("+buff", BOT_STATE_NON_COMBAT);
++        SoloArenaAutomaticPreparationBuffBots.insert(
++            participant->GetGUID().GetCounter());
++        TC_LOG_INFO("server",
++            "SoloArena preparation buffs enabled instance=%u map=%u name=%s guid=%u",
++            arena->GetInstanceID(), arena->GetMapId(), participant->GetName().c_str(),
++            participant->GetGUID().GetCounter());
++    }
++
++    SoloArenaAutomaticPreparationFacingApplied = true;
++}
++
+ void ProcessSoloArenaAutomaticReward(Battleground* arena)
+ {
+     if (SoloArenaAutomaticRewardProcessed || !arena || !arena->IsArena() ||
+@@ -3395,6 +3462,8 @@ bool HasExpectedSoloArenaLoadout(Player* participant)
+ 
+ bool CleanupSoloArenaAutomaticStep()
+ {
++    DisableSoloArenaAutomaticPreparationBuffs();
++
+     std::vector<uint32> participantGuids = GetSoloArenaAutomaticParticipantGuids();
+     std::vector<Player*> participants;
+     for (uint32 guid : participantGuids)
+@@ -3543,6 +3612,8 @@ void ResetSoloArenaAutomaticState()
+     SoloArenaAutomaticRewardProcessed = false;
+     SoloArenaAutomaticHealthRestoreScheduled.clear();
+     SoloArenaAutomaticExitTimer = 0;
++    SoloArenaAutomaticPreparationBuffBots.clear();
++    SoloArenaAutomaticPreparationFacingApplied = false;
+ }
+ }
+ 
+@@ -3723,12 +3794,29 @@ void UpdateSoloArenaAutomaticQueue(uint32 diff)
+                             !participant->IsBeingTeleported();
+                     }))
+             {
++                Battleground* arena = sBattlegroundMgr->GetBattleground(
++                    SoloArenaEnteredInstance, BATTLEGROUND_TYPE_NONE);
++                if (!arena || arena->GetStatus() != STATUS_WAIT_JOIN)
++                {
++                    BeginSoloArenaAutomaticCleanup(
++                        "Arena left preparation before participant setup");
++                    break;
++                }
++                PrepareSoloArenaAutomaticParticipants(arena, participants);
+                 ChatHandler(requester->GetSession()).SendSysMessage(
+                     "Automatic Solo Arena is ready. Wait for the gates, then fight normally.");
+                 SetSoloArenaAutomaticState(SoloArenaAutomaticState::Active);
+             }
+             break;
+         case SoloArenaAutomaticState::Active:
++            if (SoloArenaEnteredInstance &&
++                !SoloArenaAutomaticPreparationBuffBots.empty())
++            {
++                Battleground* arena = sBattlegroundMgr->GetBattleground(
++                    SoloArenaEnteredInstance, BATTLEGROUND_TYPE_NONE);
++                if (!arena || arena->GetStatus() != STATUS_WAIT_JOIN)
++                    DisableSoloArenaAutomaticPreparationBuffs();
++            }
+             if (!SoloArenaEnteredInstance)
+                 SetSoloArenaAutomaticState(SoloArenaAutomaticState::Cleanup);
+             break;

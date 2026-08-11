@@ -1,12 +1,13 @@
 # Playerbot auto-queue patches for MoP 5.4.8
 
 Status: experimental. The active source contains the staged Solo Arena series
-through `0022`; `0002` and `0003` remain intentionally unapplied. Runtime work has
+through `0023`; `0002` and `0003` remain intentionally unapplied. Runtime work has
 already verified the earlier staged login, grouping, queue, entry, combat, exit,
 health, protected temporary loadout, and recovery paths. Patch `0021` provides the
 Arena Battlemaster 2v2/3v3/5v5 frontend and includes one idempotent world SQL update
-plus its exact rollback. Patch `0022` adds no SQL; it is compiled and awaits runtime
-verification of size-dependent rewards and generated bot talents/glyphs.
+plus its exact rollback. Patch `0022` adds no SQL; its first automatic 2v2 victory
+cycle is runtime verified. Patch `0023` adds preparation buffs and safe participant
+facing without SQL or global Arena-coordinate changes.
 
 The active `Build/bin/RelWithDebInfo/playerbots.conf` currently enables the `0001`
 observer with `DryRun = 1`, all three queue categories visible, a five-second check
@@ -894,6 +895,29 @@ RelWithDebInfo WorldServer compiles and links successfully. Runtime verification
 of all three Arena sizes, reward amounts, duplicate protection, and generated
 builds remains required; Codex did not start the server for this patch.
 
+Patch `0023` enables staged bots' existing class/spec non-combat buff strategy
+only while the tracked automatic Arena is in `STATUS_WAIT_JOIN`. It records only
+the bots for which it added that strategy, removes it when combat begins, and also
+removes it on guarded cleanup. No spell ID is hard-coded and the real requester's
+AI strategies are never changed. After all participants land, each player is also
+faced toward the opposing team's configured start location; this is scoped to the
+automatic match and does not modify `battleground_template`:
+
+```powershell
+git apply --check contrib/playerbot_auto_queue_548/patches/0023-playerbots-solo-arena-preparation-buffs-facing.patch
+git apply contrib/playerbot_auto_queue_548/patches/0023-playerbots-solo-arena-preparation-buffs-facing.patch
+```
+
+Both distributed settings remain disabled. The ignored active test configuration
+enables `AiPlayerbot.AutoQueue.Arena.PreparationBuffs` and
+`AiPlayerbot.AutoQueue.Arena.PreparationFaceOpponent`. The isolated patch passes
+forward, reverse, and whitespace checks; its SHA-256 is
+`1AFDE3387702713490ADB60BB3D4D7DA29CD0AEC0B642A1412FDDC37FF0279DB`.
+The complete x64 RelWithDebInfo WorldServer compiled and linked successfully on
+2026-08-11. The resulting `worldserver.exe` is `61,669,888` bytes with SHA-256
+`349A8E81AB74A8CBD5F9D1DBB89DD6F42EF9EEC430DB2B5B0632AF26428CA49D`.
+Codex did not start or stop WorldServer; no server process was present at link time.
+
 Do not enable LFG and battleground functional testing simultaneously until each has passed
 separately. `MaxBotsPerCycle` is shared by both systems.
 
@@ -902,6 +926,9 @@ separately. `MaxBotsPerCycle` is shared by both systems.
 Stop WorldServer, remove only the patches that were applied, in reverse order, then rebuild:
 
 ```powershell
+git apply -R --check contrib/playerbot_auto_queue_548/patches/0023-playerbots-solo-arena-preparation-buffs-facing.patch
+git apply -R contrib/playerbot_auto_queue_548/patches/0023-playerbots-solo-arena-preparation-buffs-facing.patch
+
 git apply -R --check contrib/playerbot_auto_queue_548/patches/0022-playerbots-solo-arena-rewards-spec-builds.patch
 git apply -R contrib/playerbot_auto_queue_548/patches/0022-playerbots-solo-arena-rewards-spec-builds.patch
 
@@ -1049,6 +1076,12 @@ The active `playerbots.conf` entries may then be removed manually or left disabl
   exit polling never duplicates the reward. Confirm every staged bot reports
   six talents and six unique, slot-compatible glyphs. Existing non-empty talent
   rows and glyph slots must remain unchanged.
+- Arena preparation: with `0023` enabled, verify the real requester and every
+  staged bot initially face through their own gate toward the opposing start.
+  During `WAIT_JOIN`, verify each class that has a useful buff applies it to itself
+  or its own team through the normal bot AI. Verify the temporary `buff` strategy
+  is removed at `IN_PROGRESS`, opposing teams do not buff one another, normal
+  combat still starts, and guarded cleanup leaves every bot offline.
 - Shutdown/restart: verify no bot remains stuck in LFG or battleground queue state.
 - Keep `AiPlayerbot.AutoQueue.Arena = 0` during functional LFG/BG testing; enable it
   only for the read-only `0004` preview while `DryRun = 1`.
