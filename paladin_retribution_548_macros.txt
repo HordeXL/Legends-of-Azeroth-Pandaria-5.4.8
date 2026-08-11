@@ -1,0 +1,98 @@
+Retribution Paladin makrosi — World of Warcraft 5.4.8
+====================================================
+
+Klients izmanto angļu spēju nosaukumus. Katru bloku izveido kā atsevišķu
+makrosu ar ? ikonu. `#showtooltip` pats parādīs attiecīgās spējas ikonu.
+
+SVARĪGI
+-------
+- WoW makross nevar pats pārbaudīt cooldown/proc un izvēlēties nākamo spēju.
+- Shift/Ctrl/Alt ir jātur nospiests pirms makrosa pogas nospiešanas.
+- Ja Shift+taustiņš jau piesaistīts citai action-bar pogai, noņem šo Key Binding.
+- `Inquisition` lieto ar vismaz 1 Holy Power, vēlams ar 3, un atjauno pirms beigām.
+
+1. HOLY POWER ĢENERATORS — galvenā uzbrukuma poga
+-------------------------------------------------
+Parasti: Crusader Strike
+Shift: Judgment
+Ctrl: Exorcism
+Alt: Hammer of Wrath
+
+#showtooltip
+/startattack
+/cast [mod:shift] Judgment; [mod:ctrl] Exorcism; [mod:alt] Hammer of Wrath; Crusader Strike
+
+2. HOLY POWER IZLIETOŠANA
+------------------------
+Parasti: Templar's Verdict
+Shift: Inquisition
+Ctrl: Divine Storm (vairākiem pretiniekiem)
+
+#showtooltip
+/startattack
+/cast [mod:shift] Inquisition; [mod:ctrl] Divine Storm; Templar's Verdict
+
+3. BURST UN IZVĒLĒTIE TALANTI
+-----------------------------
+Parasti: Avenging Wrath
+Shift: Guardian of Ancient Kings
+Ctrl: Holy Avenger, ja šis talents ir izvēlēts
+Alt: Execution Sentence, ja šis talents ir izvēlēts
+Automātiski mēģina izmantot abus trinketus.
+
+#showtooltip
+/cast [mod:shift] Guardian of Ancient Kings; [mod:ctrl] Holy Avenger; [mod:alt,@target,harm,nodead] Execution Sentence; Avenging Wrath
+/use 13
+/use 14
+
+Guardian un Avenging Wrath spied atsevišķi, jo globālais cooldown var neļaut
+abām spējām nostrādāt ar vienu nospiešanu.
+
+4. AIZSARDZĪBA
+--------------
+Parasti: Divine Protection
+Shift: Lay on Hands sev
+Ctrl: Divine Shield
+Alt: Hand of Protection uz mouseover draudzīgo mērķi, citādi sev
+
+#showtooltip
+/cast [mod:shift,@player] Lay on Hands; [mod:ctrl] Divine Shield; [mod:alt,@mouseover,help,nodead][mod:alt,@player] Hand of Protection; Divine Protection
+
+5. DZIEDINĀŠANA UN BRĪVĪBA
+--------------------------
+Parasti: Word of Glory uz mouseover draugu, citādi sev
+Shift: Flash of Light uz mouseover draugu, citādi sev
+Ctrl: Hand of Freedom uz mouseover draugu, citādi sev
+
+#showtooltip
+/cast [mod:shift,@mouseover,help,nodead][mod:shift,@player] Flash of Light; [mod:ctrl,@mouseover,help,nodead][mod:ctrl,@player] Hand of Freedom; [@mouseover,help,nodead][@player] Word of Glory
+
+6. INTERRUPT, STUN UN TAUNT
+---------------------------
+Parasti: Rebuke
+Shift: Hammer of Justice uz focus, ja tāds ir, citādi uz pašreizējo mērķi
+Ctrl: Hand of Reckoning uz mouseover ienaidnieku, citādi uz mērķi
+
+#showtooltip
+/cast [mod:shift,@focus,harm,nodead][mod:shift] Hammer of Justice; [mod:ctrl,@mouseover,harm,nodead][mod:ctrl] Hand of Reckoning; Rebuke
+
+7. SEAL IZVĒLE
+--------------
+Parasti: Seal of Truth vienam mērķim
+Shift: Seal of Righteousness vairākiem mērķiem
+
+#showtooltip
+/cast [mod:shift] Seal of Righteousness; Seal of Truth
+
+Ieteicamais minimālais izvietojums
+---------------------------------
+1. poga: Holy Power ģenerators
+2. poga: Holy Power izlietošana
+3. poga: Burst
+4. poga: Aizsardzība
+5. poga: Dziedināšana/brīvība
+6. poga: Interrupt/stun/taunt
+
+Vienam mērķim pamatā pārmaiņus izmanto 1. makrosa variantus, uzturi
+Inquisition ar Shift+2 un pie 3 Holy Power lieto parasto 2. pogu. Vairākiem
+pretiniekiem Templar's Verdict vietā lieto Ctrl+2 (Divine Storm).
