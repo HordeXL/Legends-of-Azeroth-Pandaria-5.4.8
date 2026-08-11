@@ -400,7 +400,13 @@ bool ApplySoloArenaLoadout(Player* participant, uint32 requesterGuid, uint32& ch
     if (!participant || !participant->IsAlive() || participant->IsBeingTeleported() ||
         participant->GetGroup() || participant->InBattlegroundQueue() || participant->InBattleground())
     {
-        error = "participant is offline, dead, teleporting, grouped, queued, or inside a battleground";
+        error = participant ? Trinity::StringFormat(
+            "participant %s not ready (alive=%u teleporting=%u group=%u queue=%u battleground=%u)",
+            participant->GetName().c_str(), participant->IsAlive() ? 1u : 0u,
+            participant->IsBeingTeleported() ? 1u : 0u,
+            participant->GetGroup() ? 1u : 0u,
+            participant->InBattlegroundQueue() ? 1u : 0u,
+            participant->InBattleground() ? 1u : 0u) : "participant is offline";
         return false;
     }
 
@@ -854,6 +860,40 @@ bool GetSoloArenaAutomaticParticipants(std::vector<Player*>& participants)
         participants.push_back(participant);
     }
     return !participants.empty();
+}
+
+bool GetSoloArenaAutomaticLoadoutReadyParticipants(
+    std::vector<Player*>& participants, std::string& waitingReason)
+{
+    waitingReason.clear();
+    if (!GetSoloArenaAutomaticParticipants(participants))
+    {
+        waitingReason = "one or more participants are still logging in";
+        return false;
+    }
+
+    for (Player* participant : participants)
+    {
+        if (!participant->IsInWorld() || participant->IsBeingTeleported())
+        {
+            waitingReason = Trinity::StringFormat("%s is still entering the world",
+                participant->GetName().c_str());
+            return false;
+        }
+        if (!participant->IsAlive() || participant->GetGroup() ||
+            participant->InBattlegroundQueue() || participant->InBattleground())
+        {
+            waitingReason = Trinity::StringFormat(
+                "%s is not ready (alive=%u group=%u queue=%u battleground=%u)",
+                participant->GetName().c_str(), participant->IsAlive() ? 1u : 0u,
+                participant->GetGroup() ? 1u : 0u,
+                participant->InBattlegroundQueue() ? 1u : 0u,
+                participant->InBattleground() ? 1u : 0u);
+            return false;
+        }
+    }
+
+    return true;
 }
 
 bool LoadSoloArenaAutomaticCandidates(Player* requester,
@@ -3811,7 +3851,7 @@ void UpdateSoloArenaAutomaticQueue(uint32 diff)
                     "candidate selection or login request failed" : error.c_str());
             break;
         case SoloArenaAutomaticState::WaitForBots:
-            if (GetSoloArenaAutomaticParticipants(participants) &&
+            if (GetSoloArenaAutomaticLoadoutReadyParticipants(participants, error) &&
                 participants.size() == size_t(SoloArenaAutomaticTeamSize * 2))
                 SetSoloArenaAutomaticState(SoloArenaAutomaticState::ApplyLoadout);
             break;

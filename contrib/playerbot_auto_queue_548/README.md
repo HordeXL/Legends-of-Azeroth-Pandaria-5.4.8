@@ -1,7 +1,7 @@
 # Playerbot auto-queue patches for MoP 5.4.8
 
 Status: experimental. The active source contains the staged Solo Arena series
-through `0024`; `0002` and `0003` remain intentionally unapplied. Runtime work has
+through `0025`; `0002` and `0003` remain intentionally unapplied. Runtime work has
 already verified the earlier staged login, grouping, queue, entry, combat, exit,
 health, protected temporary loadout, and recovery paths. Patch `0021` provides the
 Arena Battlemaster 2v2/3v3/5v5 frontend and includes one idempotent world SQL update
@@ -948,6 +948,32 @@ No WorldServer process was present during this build, and Codex did not start on
 Fresh runtime verification of the real buff cast and corrected Blade's Edge gate
 facing remains required.
 
+Patch `0025` fixes a bot-login race exposed by the first two post-`0024` 2v2
+requests. The Battlemaster option was received correctly both times, but
+`WaitForBots` advanced after roughly 0.5 seconds as soon as connected Player
+objects existed. Colora was still entering the world when temporary loadout
+application reached her, so the guarded transaction rolled Patrie and Gerna back
+and cancelled the match. `WaitForBots` now also requires every exact participant
+to be alive, in-world, no longer teleporting, ungrouped, unqueued, and outside a
+battleground before equipment mutation begins. Transient login/world-entry states
+are therefore waited out under the existing 120-second preparation timeout.
+Detailed participant state is retained if the later guarded loadout check ever
+fails. No SQL, item deletion, or timeout expansion is included:
+
+```powershell
+git apply --check contrib/playerbot_auto_queue_548/patches/0025-playerbots-solo-arena-wait-for-bot-world-entry.patch
+git apply contrib/playerbot_auto_queue_548/patches/0025-playerbots-solo-arena-wait-for-bot-world-entry.patch
+```
+
+The isolated patch passes reverse and whitespace checks; SHA-256 is
+`C0299B5F17EA5A66E1DF61A5A02722CE4C5E9802CD53A0EBF637773874D65041`.
+The `modules` target and complete x64 RelWithDebInfo WorldServer compile and link
+successfully. The resulting `worldserver.exe` is `61,669,888` bytes, dated
+`2026-08-11 14:13:52`, with SHA-256
+`917B06CF7BF7FA264EA52B3E9FA5068073400DD0A3D99E23F99B2171E783212C`.
+Codex did not start or stop WorldServer. A fresh automatic 2v2 runtime test remains
+required.
+
 Do not enable LFG and battleground functional testing simultaneously until each has passed
 separately. `MaxBotsPerCycle` is shared by both systems.
 
@@ -956,6 +982,9 @@ separately. `MaxBotsPerCycle` is shared by both systems.
 Stop WorldServer, remove only the patches that were applied, in reverse order, then rebuild:
 
 ```powershell
+git apply -R --check contrib/playerbot_auto_queue_548/patches/0025-playerbots-solo-arena-wait-for-bot-world-entry.patch
+git apply -R contrib/playerbot_auto_queue_548/patches/0025-playerbots-solo-arena-wait-for-bot-world-entry.patch
+
 git apply -R --check contrib/playerbot_auto_queue_548/patches/0024-playerbots-solo-arena-real-buffs-gate-facing.patch
 git apply -R contrib/playerbot_auto_queue_548/patches/0024-playerbots-solo-arena-real-buffs-gate-facing.patch
 
