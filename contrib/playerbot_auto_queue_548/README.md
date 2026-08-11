@@ -997,7 +997,12 @@ After the user stopped WorldServer, the complete x64 RelWithDebInfo target compi
 and linked successfully. The resulting `worldserver.exe` is `61,669,888` bytes,
 dated `2026-08-11 16:14:55`, with SHA-256
 `6F164257B72630C985CA7427D25A1FC00B0F479952E656AC90530117445DD774`.
-Codex did not start WorldServer. One completed Arena runtime retest remains required.
+Codex did not start WorldServer. The completed automatic 2v2 runtime retest passed:
+Patrie, Gerna, and Colora each restored all five original items on the first attempt,
+every restore reported `remaining=0`, and no
+`Item::RemoveFromUpdate - owner not found` line occurred. Final checks found zero
+recovery rows, staged online bots, groups, group members, and crash files. Patch
+`0026` is therefore runtime verified.
 
 Do not enable LFG and battleground functional testing simultaneously until each has passed
 separately. `MaxBotsPerCycle` is shared by both systems.
