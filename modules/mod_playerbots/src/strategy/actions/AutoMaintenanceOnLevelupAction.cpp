@@ -36,11 +36,10 @@ void AutoMaintenanceOnLevelupAction::AutoPickTalents()
     //if (!sPlayerbotAIConfig->autoPickTalents || !sRandomPlayerbotMgr->IsRandomBot(bot))
         //return;
 
-    if ((bot->CalculateTalentsPoints() - bot->GetUsedTalentCount()) <= 0)
-        return;
-
     BotFactory factory(bot, bot->GetLevel());
-    factory.InitTalentsTree(false);
+    if ((bot->CalculateTalentsPoints() - bot->GetUsedTalentCount()) > 0)
+        factory.InitTalentsTree(false);
+    factory.InitGlyphs();
 
     //PlayerbotFactory factory(bot, bot->GetLevel());
     //factory.InitTalentsTree(true, true, true);

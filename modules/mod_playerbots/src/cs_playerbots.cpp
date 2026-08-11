@@ -16,6 +16,7 @@
 #include "Chat.h"
 #include "BattlegroundMgr.h"
 #include "BattlegroundQueue.h"
+#include "BotFactory.h"
 #include "DatabaseEnv.h"
 #include "DisableMgr.h"
 #include "Group.h"
@@ -34,6 +35,7 @@
 #include "RatedPvp.h"
 #include "ScriptMgr.h"
 #include "WorldSession.h"
+#include "World.h"
 
 #include <algorithm>
 #include <array>
@@ -58,6 +60,7 @@ uint32 SoloArenaOpponentGroup = 0;
 bool SoloArenaQueuesStaged = false;
 bool SoloArenaMatchScheduled = false;
 uint32 SoloArenaEnteredInstance = 0;
+bool SoloArenaAutomaticRewardProcessed = false;
 uint32 SoloArenaAutomaticExitTimer = 0;
 std::set<uint32> SoloArenaAutomaticHealthRestoreScheduled;
 std::set<uint32> SoloArenaLoadoutRecoveryBots;
@@ -1148,6 +1151,23 @@ bool ApplySoloArenaAutomaticLoadouts(std::string& error)
 
     for (Player* participant : participants)
     {
+        if (participant->GetGUID().GetCounter() != SoloArenaStagedRequester)
+        {
+            BotFactory factory(participant, participant->GetLevel());
+            factory.InitTalentsTree(false);
+            factory.InitGlyphs();
+
+            uint32 talentCount = participant->GetUsedTalentCount();
+            uint32 glyphCount = 0;
+            for (uint8 slot = 0; slot < MAX_GLYPH_SLOT_INDEX; ++slot)
+                if (participant->GetGlyph(participant->GetActiveSpec(), slot))
+                    ++glyphCount;
+            TC_LOG_INFO("server",
+                "SoloArena automatic build name=%s guid=%u specialization=%u talents=%u glyphs=%u",
+                participant->GetName().c_str(), participant->GetGUID().GetCounter(),
+                uint32(participant->GetSpecialization()), talentCount, glyphCount);
+        }
+
         uint32 changed = 0;
         if (!ApplySoloArenaLoadout(participant, SoloArenaStagedRequester, changed, error))
         {
@@ -1374,6 +1394,67 @@ bool EnterSoloArenaAutomaticMatch(std::string& error)
     SoloArenaMatchScheduled = false;
     return true;
 }
+
+void ProcessSoloArenaAutomaticReward(Battleground* arena)
+{
+    if (SoloArenaAutomaticRewardProcessed || !arena || !arena->IsArena() ||
+        arena->GetInstanceID() != SoloArenaEnteredInstance ||
+        arena->GetStatus() != STATUS_WAIT_LEAVE)
+        return;
+
+    // Mark first, including a loss/draw, so repeated exit polling can never
+    // award the same completed instance twice.
+    SoloArenaAutomaticRewardProcessed = true;
+    if (!sPlayerbotAIConfig->autoQueueArenaRewardEnabled)
+        return;
+
+    Player* requester = SoloArenaStagedRequester ? ObjectAccessor::FindConnectedPlayer(
+        ObjectGuid::Create<HighGuid::Player>(SoloArenaStagedRequester)) : nullptr;
+    if (!requester)
+    {
+        TC_LOG_ERROR("server",
+            "SoloArena reward skipped instance=%u requester=%u reason=requester-offline",
+            arena->GetInstanceID(), SoloArenaStagedRequester);
+        return;
+    }
+
+    uint8 winner = arena->GetWinner();
+    Team winnerTeam = winner == WINNER_ALLIANCE ? ALLIANCE :
+        (winner == WINNER_HORDE ? HORDE : Team(0));
+    if (!winnerTeam || requester->GetBGTeam() != winnerTeam)
+    {
+        ChatHandler(requester->GetSession()).SendSysMessage(
+            winner == WINNER_NONE ? "Solo Arena ended without a winner; no reward was granted." :
+                "Solo Arena defeat; no conquest reward was granted.");
+        TC_LOG_INFO("server",
+            "SoloArena reward result=none instance=%u requester=%s guid=%u arena=%uv%u winner=%u",
+            arena->GetInstanceID(), requester->GetName().c_str(),
+            requester->GetGUID().GetCounter(), uint32(SoloArenaAutomaticTeamSize),
+            uint32(SoloArenaAutomaticTeamSize), uint32(winner));
+        return;
+    }
+
+    uint32 conquest = SoloArenaAutomaticTeamSize == ARENA_TYPE_5v5 ?
+        sPlayerbotAIConfig->autoQueueArenaReward5v5 :
+        (SoloArenaAutomaticTeamSize == ARENA_TYPE_3v3 ?
+            sPlayerbotAIConfig->autoQueueArenaReward3v3 :
+            sPlayerbotAIConfig->autoQueueArenaReward2v2);
+    if (!conquest)
+        return;
+
+    requester->UpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_WIN_ARENA,
+        arena->GetMapId());
+    requester->ModifyCurrency(CURRENCY_TYPE_CONQUEST_META_ARENA,
+        int32(conquest * 100));
+    ChatHandler(requester->GetSession()).PSendSysMessage(
+        "Solo Arena %uv%u victory reward: %u conquest points.",
+        uint32(SoloArenaAutomaticTeamSize), uint32(SoloArenaAutomaticTeamSize), conquest);
+    TC_LOG_INFO("server",
+        "SoloArena reward result=win instance=%u requester=%s guid=%u arena=%uv%u conquest=%u",
+        arena->GetInstanceID(), requester->GetName().c_str(),
+        requester->GetGUID().GetCounter(), uint32(SoloArenaAutomaticTeamSize),
+        uint32(SoloArenaAutomaticTeamSize), conquest);
+}
 }
 
 void HandleSoloArenaClientLeave(Player* player)
@@ -1386,6 +1467,8 @@ void HandleSoloArenaClientLeave(Player* player)
     if (!arena || !arena->IsArena() || arena->GetInstanceID() != SoloArenaEnteredInstance ||
         arena->GetStatus() != STATUS_WAIT_LEAVE)
         return;
+
+    ProcessSoloArenaAutomaticReward(arena);
 
     uint32 restored = 0;
     uint32 remaining = 0;
@@ -1417,6 +1500,7 @@ void UpdateSoloArenaAutomaticExit(uint32 diff)
     Battleground* arena = sBattlegroundMgr->GetBattleground(instanceId, BATTLEGROUND_TYPE_NONE);
     if (arena && arena->IsArena() && arena->GetStatus() == STATUS_WAIT_LEAVE)
     {
+        ProcessSoloArenaAutomaticReward(arena);
         std::vector<uint32> participantGuids = GetSoloArenaTrackedParticipantGuids();
         for (uint32 guid : participantGuids)
         {
@@ -3456,6 +3540,7 @@ void ResetSoloArenaAutomaticState()
     SoloArenaQueuesStaged = false;
     SoloArenaMatchScheduled = false;
     SoloArenaEnteredInstance = 0;
+    SoloArenaAutomaticRewardProcessed = false;
     SoloArenaAutomaticHealthRestoreScheduled.clear();
     SoloArenaAutomaticExitTimer = 0;
 }
@@ -3526,6 +3611,7 @@ bool HandleSoloArenaAutomaticJoinRequest(Player* player, uint8 arenaSlot)
     SoloArenaAutomaticElapsed = 0;
     SoloArenaAutomaticUpdateTimer = 0;
     SoloArenaAutomaticCleanupReason.clear();
+    SoloArenaAutomaticRewardProcessed = false;
     SetSoloArenaAutomaticState(SoloArenaAutomaticState::Login);
     ChatHandler(player->GetSession()).PSendSysMessage(
         "Automatic Solo Arena %uv%u accepted. Selecting and preparing %u bots...",

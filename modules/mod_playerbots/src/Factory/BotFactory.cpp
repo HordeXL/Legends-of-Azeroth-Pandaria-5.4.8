@@ -1,6 +1,7 @@
 #include "BotFactory.h"
 
 #include <random>
+#include <set>
 #include <utility>
  
 #include "AccountMgr.h"
@@ -27,6 +28,8 @@
 #include "RandomItemManager.h"
 #include "SharedDefines.h"
 #include "SpellAuraDefines.h"
+#include "SpellInfo.h"
+#include "SpellMgr.h"
 #include "World.h"
   
 BotFactory::BotFactory(Player* bot, uint32 level, uint32 itemQuality, uint32 gearScoreLimit)
@@ -159,6 +162,8 @@ void BotFactory::Randomize(bool incremental)
         }
     }
 
+    InitTalentsTree(false);
+    InitGlyphs();
     InitPet();
  
     bot->SetMoney(urand(level * 100000, level * 5 * 100000));
@@ -300,7 +305,53 @@ void BotFactory::InitPet()
         pet->ToggleAutocast(spellInfo, true);
     }
 }
-#include <fstream>
+namespace
+{
+uint32 GetPlayerbotBuildSpellScore(Player* bot, SpellInfo const* modifier)
+{
+    if (!bot || !modifier)
+        return 0;
+
+    uint32 score = 0;
+    for (auto const& effect : modifier->Effects)
+    {
+        if (!effect.SpellClassMask)
+            continue;
+
+        for (auto const& knownSpell : bot->GetSpellMap())
+        {
+            uint32 spellId = knownSpell.first;
+            if (!bot->HasSpell(spellId))
+                continue;
+
+            SpellInfo const* known = sSpellMgr->GetSpellInfo(spellId);
+            if (known && known->SpellFamilyName == modifier->SpellFamilyName &&
+                (effect.SpellClassMask & known->SpellFamilyFlags))
+                ++score;
+        }
+    }
+    return score;
+}
+
+uint32 GetPlayerbotTalentScore(Player* bot, TalentEntry const* talent)
+{
+    if (!bot || !talent)
+        return 0;
+
+    uint32 score = 0;
+    if (talent->ReplacesSpell && bot->HasSpell(talent->ReplacesSpell))
+        score += 10000;
+
+    score += GetPlayerbotBuildSpellScore(bot, sSpellMgr->GetSpellInfo(talent->SpellId)) * 100;
+
+    // DBC-valid ties remain deterministic but differ by active specialization.
+    uint32 preferredColumn = (uint32(bot->GetSpecialization()) + talent->Row) % 3;
+    score += talent->Col == preferredColumn ? 3 :
+        ((talent->Col + 1) % 3 == preferredColumn ? 2 : 1);
+    return score;
+}
+}
+
 void BotFactory::InitTalentsTree(bool reset)
 {
     /*std::map<uint32, std::list<const TalentEntry*>> talents_dbc;
@@ -367,7 +418,42 @@ void BotFactory::InitTalentsTree(bool reset)
     if (!availablepoints || spec_tab == 99) return;
 
     const std::vector<uint16>& talents = sPlayerbotAIConfig->premadeSpecLink[bot->GetClass()][spec_tab];
-    if (talents.empty()) return;
+    if (talents.empty())
+    {
+        // The inherited premade links are WotLK-style and are intentionally not
+        // treated as MoP talent IDs. Build a valid 5.4.8 baseline directly from
+        // Talent.dbc, preserving every already selected row.
+        for (uint32 row = 0; row < 6 && availablepoints > 0; ++row)
+        {
+            bool rowAlreadySelected = false;
+            TalentEntry const* selected = nullptr;
+            uint32 selectedScore = 0;
+            for (uint32 talentId = 0; talentId < sTalentStore.GetNumRows(); ++talentId)
+            {
+                TalentEntry const* talent = sTalentStore.LookupEntry(talentId);
+                if (!talent || talent->PlayerClass != bot->GetClass() || talent->Row != row)
+                    continue;
+                if (bot->HasSpell(talent->SpellId))
+                {
+                    rowAlreadySelected = true;
+                    break;
+                }
+
+                uint32 score = GetPlayerbotTalentScore(bot, talent);
+                if (!selected || score > selectedScore ||
+                    (score == selectedScore && talent->TalentID < selected->TalentID))
+                {
+                    selected = talent;
+                    selectedScore = score;
+                }
+            }
+
+            if (!rowAlreadySelected && selected && bot->LearnTalent(uint16(selected->TalentID)))
+                --availablepoints;
+        }
+        bot->SendTalentsInfoData();
+        return;
+    }
 
     
     std::vector<uint16> talent_to_learn;
@@ -388,6 +474,71 @@ void BotFactory::InitTalentsTree(bool reset)
             p << c;
         bot->GetSession()->HandleLearnTalentOpcode(p);
     }
+}
+
+void BotFactory::InitGlyphs()
+{
+    if (!bot || bot->GetLevel() < 25 || bot->GetSpecialization() == SPEC_NONE)
+        return;
+
+    std::vector<uint32> const* glyphSpells = sSpellMgr->GetGlyphsForClass(bot->GetClass());
+    if (!glyphSpells || glyphSpells->empty())
+        return;
+
+    std::set<uint32> usedGlyphs;
+    for (uint8 slot = 0; slot < MAX_GLYPH_SLOT_INDEX; ++slot)
+        if (uint32 glyph = bot->GetGlyph(bot->GetActiveSpec(), slot))
+            usedGlyphs.insert(glyph);
+
+    for (uint8 slot = 0; slot < MAX_GLYPH_SLOT_INDEX; ++slot)
+    {
+        if (bot->GetGlyph(bot->GetActiveSpec(), slot))
+            continue;
+
+        GlyphSlotEntry const* glyphSlot = sGlyphSlotStore.LookupEntry(bot->GetGlyphSlot(slot));
+        if (!glyphSlot)
+            continue;
+
+        uint32 selectedGlyph = 0;
+        uint32 selectedScore = 0;
+        for (uint32 glyphSpellId : *glyphSpells)
+        {
+            SpellInfo const* glyphCast = sSpellMgr->GetSpellInfo(glyphSpellId);
+            if (!glyphCast)
+                continue;
+
+            for (auto const& effect : glyphCast->Effects)
+            {
+                if (effect.Effect != SPELL_EFFECT_APPLY_GLYPH || effect.MiscValue <= 0)
+                    continue;
+
+                uint32 glyphId = uint32(effect.MiscValue);
+                GlyphPropertiesEntry const* glyph = sGlyphPropertiesStore.LookupEntry(glyphId);
+                if (!glyph || glyph->TypeFlags != glyphSlot->TypeFlags || usedGlyphs.count(glyphId))
+                    continue;
+
+                uint32 score = GetPlayerbotBuildSpellScore(
+                    bot, sSpellMgr->GetSpellInfo(glyph->SpellId)) * 100;
+                // Specialization-sensitive deterministic tie-breaker. This is a
+                // valid baseline, not a claim of a hand-tuned tournament build.
+                score += 99 - ((glyphId + uint32(bot->GetSpecialization()) * 17 + slot * 7) % 100);
+                if (!selectedGlyph || score > selectedScore ||
+                    (score == selectedScore && glyphId < selectedGlyph))
+                {
+                    selectedGlyph = glyphId;
+                    selectedScore = score;
+                }
+            }
+        }
+
+        if (selectedGlyph)
+        {
+            bot->SetGlyph(slot, selectedGlyph);
+            usedGlyphs.insert(selectedGlyph);
+        }
+    }
+
+    bot->SendTalentsInfoData();
 }
 
 void BotFactory::ClearEverything()

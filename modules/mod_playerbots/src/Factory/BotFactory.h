@@ -18,6 +18,7 @@ public:
     void InitEquipment(bool incremental, bool second_chance = false);
     void InitPet();
     void InitTalentsTree(bool reset);
+    void InitGlyphs();
 private:
     void Prepare();
     void CancelAuras();

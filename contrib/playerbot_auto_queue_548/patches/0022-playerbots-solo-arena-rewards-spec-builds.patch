@@ -1,0 +1,488 @@
+diff --git a/modules/mod_playerbots/config/playerbots.conf.dist b/modules/mod_playerbots/config/playerbots.conf.dist
+index dbdfb14c..d7172abe 100644
+--- a/modules/mod_playerbots/config/playerbots.conf.dist
++++ b/modules/mod_playerbots/config/playerbots.conf.dist
+@@ -861,6 +861,15 @@ AiPlayerbot.AutoQueue.Arena.AutomaticForceTolviron = 0
+ # Values below 30 seconds are clamped to 30.
+ AiPlayerbot.AutoQueue.Arena.AutomaticTimeout = 120
+ 
++# Optional reward for the real player who wins an automatically orchestrated
++# Solo Arena match. The three values are UI conquest points; the core applies
++# its normal high-precision currency conversion and conquest cap. A loss or
++# draw gives no reward. The per-instance guard prevents duplicate rewards.
++AiPlayerbot.AutoQueue.Arena.Reward.Enabled = 0
++AiPlayerbot.AutoQueue.Arena.Reward.Conquest.2v2 = 180
++AiPlayerbot.AutoQueue.Arena.Reward.Conquest.3v3 = 270
++AiPlayerbot.AutoQueue.Arena.Reward.Conquest.5v5 = 450
++
+ # Required Configuration for RandomBotAutoJoinBG
+ #
+ # Known issue: When enabling a lot of brackats in combination with multiple instances,
+diff --git a/modules/mod_playerbots/src/Factory/BotFactory.cpp b/modules/mod_playerbots/src/Factory/BotFactory.cpp
+index beb71d14..8323b31b 100644
+--- a/modules/mod_playerbots/src/Factory/BotFactory.cpp
++++ b/modules/mod_playerbots/src/Factory/BotFactory.cpp
+@@ -1,6 +1,7 @@
+ #include "BotFactory.h"
+ 
+ #include <random>
++#include <set>
+ #include <utility>
+  
+ #include "AccountMgr.h"
+@@ -27,6 +28,8 @@
+ #include "RandomItemManager.h"
+ #include "SharedDefines.h"
+ #include "SpellAuraDefines.h"
++#include "SpellInfo.h"
++#include "SpellMgr.h"
+ #include "World.h"
+   
+ BotFactory::BotFactory(Player* bot, uint32 level, uint32 itemQuality, uint32 gearScoreLimit)
+@@ -159,6 +162,8 @@ void BotFactory::Randomize(bool incremental)
+         }
+     }
+ 
++    InitTalentsTree(false);
++    InitGlyphs();
+     InitPet();
+  
+     bot->SetMoney(urand(level * 100000, level * 5 * 100000));
+@@ -300,7 +305,53 @@ void BotFactory::InitPet()
+         pet->ToggleAutocast(spellInfo, true);
+     }
+ }
+-#include <fstream>
++namespace
++{
++uint32 GetPlayerbotBuildSpellScore(Player* bot, SpellInfo const* modifier)
++{
++    if (!bot || !modifier)
++        return 0;
++
++    uint32 score = 0;
++    for (auto const& effect : modifier->Effects)
++    {
++        if (!effect.SpellClassMask)
++            continue;
++
++        for (auto const& knownSpell : bot->GetSpellMap())
++        {
++            uint32 spellId = knownSpell.first;
++            if (!bot->HasSpell(spellId))
++                continue;
++
++            SpellInfo const* known = sSpellMgr->GetSpellInfo(spellId);
++            if (known && known->SpellFamilyName == modifier->SpellFamilyName &&
++                (effect.SpellClassMask & known->SpellFamilyFlags))
++                ++score;
++        }
++    }
++    return score;
++}
++
++uint32 GetPlayerbotTalentScore(Player* bot, TalentEntry const* talent)
++{
++    if (!bot || !talent)
++        return 0;
++
++    uint32 score = 0;
++    if (talent->ReplacesSpell && bot->HasSpell(talent->ReplacesSpell))
++        score += 10000;
++
++    score += GetPlayerbotBuildSpellScore(bot, sSpellMgr->GetSpellInfo(talent->SpellId)) * 100;
++
++    // DBC-valid ties remain deterministic but differ by active specialization.
++    uint32 preferredColumn = (uint32(bot->GetSpecialization()) + talent->Row) % 3;
++    score += talent->Col == preferredColumn ? 3 :
++        ((talent->Col + 1) % 3 == preferredColumn ? 2 : 1);
++    return score;
++}
++}
++
+ void BotFactory::InitTalentsTree(bool reset)
+ {
+     /*std::map<uint32, std::list<const TalentEntry*>> talents_dbc;
+@@ -367,7 +418,42 @@ void BotFactory::InitTalentsTree(bool reset)
+     if (!availablepoints || spec_tab == 99) return;
+ 
+     const std::vector<uint16>& talents = sPlayerbotAIConfig->premadeSpecLink[bot->GetClass()][spec_tab];
+-    if (talents.empty()) return;
++    if (talents.empty())
++    {
++        // The inherited premade links are WotLK-style and are intentionally not
++        // treated as MoP talent IDs. Build a valid 5.4.8 baseline directly from
++        // Talent.dbc, preserving every already selected row.
++        for (uint32 row = 0; row < 6 && availablepoints > 0; ++row)
++        {
++            bool rowAlreadySelected = false;
++            TalentEntry const* selected = nullptr;
++            uint32 selectedScore = 0;
++            for (uint32 talentId = 0; talentId < sTalentStore.GetNumRows(); ++talentId)
++            {
++                TalentEntry const* talent = sTalentStore.LookupEntry(talentId);
++                if (!talent || talent->PlayerClass != bot->GetClass() || talent->Row != row)
++                    continue;
++                if (bot->HasSpell(talent->SpellId))
++                {
++                    rowAlreadySelected = true;
++                    break;
++                }
++
++                uint32 score = GetPlayerbotTalentScore(bot, talent);
++                if (!selected || score > selectedScore ||
++                    (score == selectedScore && talent->TalentID < selected->TalentID))
++                {
++                    selected = talent;
++                    selectedScore = score;
++                }
++            }
++
++            if (!rowAlreadySelected && selected && bot->LearnTalent(uint16(selected->TalentID)))
++                --availablepoints;
++        }
++        bot->SendTalentsInfoData();
++        return;
++    }
+ 
+     
+     std::vector<uint16> talent_to_learn;
+@@ -390,6 +476,71 @@ void BotFactory::InitTalentsTree(bool reset)
+     }
+ }
+ 
++void BotFactory::InitGlyphs()
++{
++    if (!bot || bot->GetLevel() < 25 || bot->GetSpecialization() == SPEC_NONE)
++        return;
++
++    std::vector<uint32> const* glyphSpells = sSpellMgr->GetGlyphsForClass(bot->GetClass());
++    if (!glyphSpells || glyphSpells->empty())
++        return;
++
++    std::set<uint32> usedGlyphs;
++    for (uint8 slot = 0; slot < MAX_GLYPH_SLOT_INDEX; ++slot)
++        if (uint32 glyph = bot->GetGlyph(bot->GetActiveSpec(), slot))
++            usedGlyphs.insert(glyph);
++
++    for (uint8 slot = 0; slot < MAX_GLYPH_SLOT_INDEX; ++slot)
++    {
++        if (bot->GetGlyph(bot->GetActiveSpec(), slot))
++            continue;
++
++        GlyphSlotEntry const* glyphSlot = sGlyphSlotStore.LookupEntry(bot->GetGlyphSlot(slot));
++        if (!glyphSlot)
++            continue;
++
++        uint32 selectedGlyph = 0;
++        uint32 selectedScore = 0;
++        for (uint32 glyphSpellId : *glyphSpells)
++        {
++            SpellInfo const* glyphCast = sSpellMgr->GetSpellInfo(glyphSpellId);
++            if (!glyphCast)
++                continue;
++
++            for (auto const& effect : glyphCast->Effects)
++            {
++                if (effect.Effect != SPELL_EFFECT_APPLY_GLYPH || effect.MiscValue <= 0)
++                    continue;
++
++                uint32 glyphId = uint32(effect.MiscValue);
++                GlyphPropertiesEntry const* glyph = sGlyphPropertiesStore.LookupEntry(glyphId);
++                if (!glyph || glyph->TypeFlags != glyphSlot->TypeFlags || usedGlyphs.count(glyphId))
++                    continue;
++
++                uint32 score = GetPlayerbotBuildSpellScore(
++                    bot, sSpellMgr->GetSpellInfo(glyph->SpellId)) * 100;
++                // Specialization-sensitive deterministic tie-breaker. This is a
++                // valid baseline, not a claim of a hand-tuned tournament build.
++                score += 99 - ((glyphId + uint32(bot->GetSpecialization()) * 17 + slot * 7) % 100);
++                if (!selectedGlyph || score > selectedScore ||
++                    (score == selectedScore && glyphId < selectedGlyph))
++                {
++                    selectedGlyph = glyphId;
++                    selectedScore = score;
++                }
++            }
++        }
++
++        if (selectedGlyph)
++        {
++            bot->SetGlyph(slot, selectedGlyph);
++            usedGlyphs.insert(selectedGlyph);
++        }
++    }
++
++    bot->SendTalentsInfoData();
++}
++
+ void BotFactory::ClearEverything()
+ {
+     bot->GiveLevel(bot->GetClass() == CLASS_DEATH_KNIGHT ? sWorld->getIntConfig(CONFIG_START_HEROIC_PLAYER_LEVEL)
+@@ -693,4 +844,4 @@ void BotFactory::InitEquipment(bool incremental, bool second_chance)
+             bot->AutoUnequipOffhandIfNeed();
+         }
+     }
+-}
+\ No newline at end of file
++}
+diff --git a/modules/mod_playerbots/src/Factory/BotFactory.h b/modules/mod_playerbots/src/Factory/BotFactory.h
+index a31eb22b..6135de59 100644
+--- a/modules/mod_playerbots/src/Factory/BotFactory.h
++++ b/modules/mod_playerbots/src/Factory/BotFactory.h
+@@ -18,6 +18,7 @@ public:
+     void InitEquipment(bool incremental, bool second_chance = false);
+     void InitPet();
+     void InitTalentsTree(bool reset);
++    void InitGlyphs();
+ private:
+     void Prepare();
+     void CancelAuras();
+@@ -33,4 +34,4 @@ protected:
+     PlayerbotAI* botAI;
+ };
+ 
+-#endif
+\ No newline at end of file
++#endif
+diff --git a/modules/mod_playerbots/src/Manager/PlayerbotMgr.cpp b/modules/mod_playerbots/src/Manager/PlayerbotMgr.cpp
+index 6513287a..efe8aa4d 100644
+--- a/modules/mod_playerbots/src/Manager/PlayerbotMgr.cpp
++++ b/modules/mod_playerbots/src/Manager/PlayerbotMgr.cpp
+@@ -732,6 +732,7 @@ std::vector<std::string> PlayerbotHolder::HandlePlayerbotCommand(char const* arg
+             bot->ActivateSpec(0);
+             BotFactory factory(bot, bot->GetLevel());
+             factory.InitTalentsTree(false);
++            factory.InitGlyphs();
+             factory.InitEquipment(true);
+             GET_PLAYERBOT_AI(bot)->ResetStrategies();
+             GET_PLAYERBOT_AI(bot)->Reset(true);
+@@ -828,6 +829,7 @@ std::vector<std::string> PlayerbotHolder::HandlePlayerbotCommand(char const* arg
+                 sRandomPlayerbotMgr->Randomize(bot);
+                 BotFactory factory(bot, bot->GetLevel());
+                 factory.InitTalentsTree(true);
++                factory.InitGlyphs();
+                 factory.InitEquipment(true);
+             }).detach();
+             
+diff --git a/modules/mod_playerbots/src/Utils/PlayerbotAIConfig.cpp b/modules/mod_playerbots/src/Utils/PlayerbotAIConfig.cpp
+index 5dca1931..9e4d2b2a 100644
+--- a/modules/mod_playerbots/src/Utils/PlayerbotAIConfig.cpp
++++ b/modules/mod_playerbots/src/Utils/PlayerbotAIConfig.cpp
+@@ -191,6 +191,19 @@ bool PlayerbotAIConfig::Initialize()
+         "AiPlayerbot.AutoQueue.Arena.AutomaticTimeout", 120) * IN_MILLISECONDS;
+     if (autoQueueArenaAutomaticTimeout < 30 * IN_MILLISECONDS)
+         autoQueueArenaAutomaticTimeout = 30 * IN_MILLISECONDS;
++    autoQueueArenaRewardEnabled = sConfigMgr->GetBoolDefault(
++        "AiPlayerbot.AutoQueue.Arena.Reward.Enabled", false);
++    auto loadSoloArenaReward = [](char const* key, int32 defaultValue) -> uint32
++    {
++        int32 value = sConfigMgr->GetIntDefault(key, defaultValue);
++        return value <= 0 ? 0 : uint32(value > 10000 ? 10000 : value);
++    };
++    autoQueueArenaReward2v2 = loadSoloArenaReward(
++        "AiPlayerbot.AutoQueue.Arena.Reward.Conquest.2v2", 180);
++    autoQueueArenaReward3v3 = loadSoloArenaReward(
++        "AiPlayerbot.AutoQueue.Arena.Reward.Conquest.3v3", 270);
++    autoQueueArenaReward5v5 = loadSoloArenaReward(
++        "AiPlayerbot.AutoQueue.Arena.Reward.Conquest.5v5", 450);
+ 
+     randomChangeMultiplier = sConfigMgr->GetFloatDefault("AiPlayerbot.RandomChangeMultiplier", 1.0);
+ 
+diff --git a/modules/mod_playerbots/src/Utils/PlayerbotAIConfig.h b/modules/mod_playerbots/src/Utils/PlayerbotAIConfig.h
+index 775114f3..75282055 100644
+--- a/modules/mod_playerbots/src/Utils/PlayerbotAIConfig.h
++++ b/modules/mod_playerbots/src/Utils/PlayerbotAIConfig.h
+@@ -76,10 +76,11 @@ public:
+     bool autoQueueArenaStageEnter, autoQueueArenaStageHealthRestore, autoQueueArenaStageCombatStatus;
+     bool autoQueueArenaStageAutomaticExit;
+     bool autoQueueArenaAutomatic, autoQueueArenaAutomaticBattlemasterSolo;
+-    bool autoQueueArenaAutomaticForceTolviron;
++    bool autoQueueArenaAutomaticForceTolviron, autoQueueArenaRewardEnabled;
+     uint32 autoQueueCheckInterval, autoQueueMaxBotsPerCycle;
+     uint32 autoQueueArenaMinEquippedItems, autoQueueArenaMinAverageItemLevel, autoQueueArenaMinPvpItems;
+     uint32 autoQueueArenaAutomaticTimeout;
++    uint32 autoQueueArenaReward2v2, autoQueueArenaReward3v3, autoQueueArenaReward5v5;
+ 
+     std::string premadeSpecName[MAX_CLASSES][MAX_SPECIALIZATIONS - 1];
+     std::vector<uint16> premadeSpecLink[MAX_CLASSES][MAX_SPECIALIZATIONS - 1];
+diff --git a/modules/mod_playerbots/src/cs_playerbots.cpp b/modules/mod_playerbots/src/cs_playerbots.cpp
+index c39e0ac0..10dd8be5 100644
+--- a/modules/mod_playerbots/src/cs_playerbots.cpp
++++ b/modules/mod_playerbots/src/cs_playerbots.cpp
+@@ -16,6 +16,7 @@
+ #include "Chat.h"
+ #include "BattlegroundMgr.h"
+ #include "BattlegroundQueue.h"
++#include "BotFactory.h"
+ #include "DatabaseEnv.h"
+ #include "DisableMgr.h"
+ #include "Group.h"
+@@ -34,6 +35,7 @@
+ #include "RatedPvp.h"
+ #include "ScriptMgr.h"
+ #include "WorldSession.h"
++#include "World.h"
+ 
+ #include <algorithm>
+ #include <array>
+@@ -58,6 +60,7 @@ uint32 SoloArenaOpponentGroup = 0;
+ bool SoloArenaQueuesStaged = false;
+ bool SoloArenaMatchScheduled = false;
+ uint32 SoloArenaEnteredInstance = 0;
++bool SoloArenaAutomaticRewardProcessed = false;
+ uint32 SoloArenaAutomaticExitTimer = 0;
+ std::set<uint32> SoloArenaAutomaticHealthRestoreScheduled;
+ std::set<uint32> SoloArenaLoadoutRecoveryBots;
+@@ -1148,6 +1151,23 @@ bool ApplySoloArenaAutomaticLoadouts(std::string& error)
+ 
+     for (Player* participant : participants)
+     {
++        if (participant->GetGUID().GetCounter() != SoloArenaStagedRequester)
++        {
++            BotFactory factory(participant, participant->GetLevel());
++            factory.InitTalentsTree(false);
++            factory.InitGlyphs();
++
++            uint32 talentCount = participant->GetUsedTalentCount();
++            uint32 glyphCount = 0;
++            for (uint8 slot = 0; slot < MAX_GLYPH_SLOT_INDEX; ++slot)
++                if (participant->GetGlyph(participant->GetActiveSpec(), slot))
++                    ++glyphCount;
++            TC_LOG_INFO("server",
++                "SoloArena automatic build name=%s guid=%u specialization=%u talents=%u glyphs=%u",
++                participant->GetName().c_str(), participant->GetGUID().GetCounter(),
++                uint32(participant->GetSpecialization()), talentCount, glyphCount);
++        }
++
+         uint32 changed = 0;
+         if (!ApplySoloArenaLoadout(participant, SoloArenaStagedRequester, changed, error))
+         {
+@@ -1374,6 +1394,67 @@ bool EnterSoloArenaAutomaticMatch(std::string& error)
+     SoloArenaMatchScheduled = false;
+     return true;
+ }
++
++void ProcessSoloArenaAutomaticReward(Battleground* arena)
++{
++    if (SoloArenaAutomaticRewardProcessed || !arena || !arena->IsArena() ||
++        arena->GetInstanceID() != SoloArenaEnteredInstance ||
++        arena->GetStatus() != STATUS_WAIT_LEAVE)
++        return;
++
++    // Mark first, including a loss/draw, so repeated exit polling can never
++    // award the same completed instance twice.
++    SoloArenaAutomaticRewardProcessed = true;
++    if (!sPlayerbotAIConfig->autoQueueArenaRewardEnabled)
++        return;
++
++    Player* requester = SoloArenaStagedRequester ? ObjectAccessor::FindConnectedPlayer(
++        ObjectGuid::Create<HighGuid::Player>(SoloArenaStagedRequester)) : nullptr;
++    if (!requester)
++    {
++        TC_LOG_ERROR("server",
++            "SoloArena reward skipped instance=%u requester=%u reason=requester-offline",
++            arena->GetInstanceID(), SoloArenaStagedRequester);
++        return;
++    }
++
++    uint8 winner = arena->GetWinner();
++    Team winnerTeam = winner == WINNER_ALLIANCE ? ALLIANCE :
++        (winner == WINNER_HORDE ? HORDE : Team(0));
++    if (!winnerTeam || requester->GetBGTeam() != winnerTeam)
++    {
++        ChatHandler(requester->GetSession()).SendSysMessage(
++            winner == WINNER_NONE ? "Solo Arena ended without a winner; no reward was granted." :
++                "Solo Arena defeat; no conquest reward was granted.");
++        TC_LOG_INFO("server",
++            "SoloArena reward result=none instance=%u requester=%s guid=%u arena=%uv%u winner=%u",
++            arena->GetInstanceID(), requester->GetName().c_str(),
++            requester->GetGUID().GetCounter(), uint32(SoloArenaAutomaticTeamSize),
++            uint32(SoloArenaAutomaticTeamSize), uint32(winner));
++        return;
++    }
++
++    uint32 conquest = SoloArenaAutomaticTeamSize == ARENA_TYPE_5v5 ?
++        sPlayerbotAIConfig->autoQueueArenaReward5v5 :
++        (SoloArenaAutomaticTeamSize == ARENA_TYPE_3v3 ?
++            sPlayerbotAIConfig->autoQueueArenaReward3v3 :
++            sPlayerbotAIConfig->autoQueueArenaReward2v2);
++    if (!conquest)
++        return;
++
++    requester->UpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_WIN_ARENA,
++        arena->GetMapId());
++    requester->ModifyCurrency(CURRENCY_TYPE_CONQUEST_META_ARENA,
++        int32(conquest * 100));
++    ChatHandler(requester->GetSession()).PSendSysMessage(
++        "Solo Arena %uv%u victory reward: %u conquest points.",
++        uint32(SoloArenaAutomaticTeamSize), uint32(SoloArenaAutomaticTeamSize), conquest);
++    TC_LOG_INFO("server",
++        "SoloArena reward result=win instance=%u requester=%s guid=%u arena=%uv%u conquest=%u",
++        arena->GetInstanceID(), requester->GetName().c_str(),
++        requester->GetGUID().GetCounter(), uint32(SoloArenaAutomaticTeamSize),
++        uint32(SoloArenaAutomaticTeamSize), conquest);
++}
+ }
+ 
+ void HandleSoloArenaClientLeave(Player* player)
+@@ -1387,6 +1468,8 @@ void HandleSoloArenaClientLeave(Player* player)
+         arena->GetStatus() != STATUS_WAIT_LEAVE)
+         return;
+ 
++    ProcessSoloArenaAutomaticReward(arena);
++
+     uint32 restored = 0;
+     uint32 remaining = 0;
+     std::string restoreError;
+@@ -1417,6 +1500,7 @@ void UpdateSoloArenaAutomaticExit(uint32 diff)
+     Battleground* arena = sBattlegroundMgr->GetBattleground(instanceId, BATTLEGROUND_TYPE_NONE);
+     if (arena && arena->IsArena() && arena->GetStatus() == STATUS_WAIT_LEAVE)
+     {
++        ProcessSoloArenaAutomaticReward(arena);
+         std::vector<uint32> participantGuids = GetSoloArenaTrackedParticipantGuids();
+         for (uint32 guid : participantGuids)
+         {
+@@ -3456,6 +3540,7 @@ void ResetSoloArenaAutomaticState()
+     SoloArenaQueuesStaged = false;
+     SoloArenaMatchScheduled = false;
+     SoloArenaEnteredInstance = 0;
++    SoloArenaAutomaticRewardProcessed = false;
+     SoloArenaAutomaticHealthRestoreScheduled.clear();
+     SoloArenaAutomaticExitTimer = 0;
+ }
+@@ -3526,6 +3611,7 @@ bool HandleSoloArenaAutomaticJoinRequest(Player* player, uint8 arenaSlot)
+     SoloArenaAutomaticElapsed = 0;
+     SoloArenaAutomaticUpdateTimer = 0;
+     SoloArenaAutomaticCleanupReason.clear();
++    SoloArenaAutomaticRewardProcessed = false;
+     SetSoloArenaAutomaticState(SoloArenaAutomaticState::Login);
+     ChatHandler(player->GetSession()).PSendSysMessage(
+         "Automatic Solo Arena %uv%u accepted. Selecting and preparing %u bots...",
+diff --git a/modules/mod_playerbots/src/strategy/actions/AutoMaintenanceOnLevelupAction.cpp b/modules/mod_playerbots/src/strategy/actions/AutoMaintenanceOnLevelupAction.cpp
+index 7e314a0d..e7d68e47 100644
+--- a/modules/mod_playerbots/src/strategy/actions/AutoMaintenanceOnLevelupAction.cpp
++++ b/modules/mod_playerbots/src/strategy/actions/AutoMaintenanceOnLevelupAction.cpp
+@@ -36,11 +36,10 @@ void AutoMaintenanceOnLevelupAction::AutoPickTalents()
+     //if (!sPlayerbotAIConfig->autoPickTalents || !sRandomPlayerbotMgr->IsRandomBot(bot))
+         //return;
+ 
+-    if ((bot->CalculateTalentsPoints() - bot->GetUsedTalentCount()) <= 0)
+-        return;
+-
+     BotFactory factory(bot, bot->GetLevel());
+-    factory.InitTalentsTree(false);
++    if ((bot->CalculateTalentsPoints() - bot->GetUsedTalentCount()) > 0)
++        factory.InitTalentsTree(false);
++    factory.InitGlyphs();
+ 
+     //PlayerbotFactory factory(bot, bot->GetLevel());
+     //factory.InitTalentsTree(true, true, true);
+warning: in the working copy of 'modules/mod_playerbots/config/playerbots.conf.dist', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'modules/mod_playerbots/src/Factory/BotFactory.cpp', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'modules/mod_playerbots/src/Factory/BotFactory.h', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'modules/mod_playerbots/src/Manager/PlayerbotMgr.cpp', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'modules/mod_playerbots/src/Utils/PlayerbotAIConfig.cpp', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'modules/mod_playerbots/src/Utils/PlayerbotAIConfig.h', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'modules/mod_playerbots/src/cs_playerbots.cpp', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'modules/mod_playerbots/src/strategy/actions/AutoMaintenanceOnLevelupAction.cpp', LF will be replaced by CRLF the next time Git touches it

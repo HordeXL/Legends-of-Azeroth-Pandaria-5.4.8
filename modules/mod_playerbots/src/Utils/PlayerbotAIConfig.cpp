@@ -191,6 +191,19 @@ bool PlayerbotAIConfig::Initialize()
         "AiPlayerbot.AutoQueue.Arena.AutomaticTimeout", 120) * IN_MILLISECONDS;
     if (autoQueueArenaAutomaticTimeout < 30 * IN_MILLISECONDS)
         autoQueueArenaAutomaticTimeout = 30 * IN_MILLISECONDS;
+    autoQueueArenaRewardEnabled = sConfigMgr->GetBoolDefault(
+        "AiPlayerbot.AutoQueue.Arena.Reward.Enabled", false);
+    auto loadSoloArenaReward = [](char const* key, int32 defaultValue) -> uint32
+    {
+        int32 value = sConfigMgr->GetIntDefault(key, defaultValue);
+        return value <= 0 ? 0 : uint32(value > 10000 ? 10000 : value);
+    };
+    autoQueueArenaReward2v2 = loadSoloArenaReward(
+        "AiPlayerbot.AutoQueue.Arena.Reward.Conquest.2v2", 180);
+    autoQueueArenaReward3v3 = loadSoloArenaReward(
+        "AiPlayerbot.AutoQueue.Arena.Reward.Conquest.3v3", 270);
+    autoQueueArenaReward5v5 = loadSoloArenaReward(
+        "AiPlayerbot.AutoQueue.Arena.Reward.Conquest.5v5", 450);
 
     randomChangeMultiplier = sConfigMgr->GetFloatDefault("AiPlayerbot.RandomChangeMultiplier", 1.0);
 

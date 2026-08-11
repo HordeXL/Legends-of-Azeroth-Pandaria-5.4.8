@@ -1,20 +1,12 @@
 # Playerbot auto-queue patches for MoP 5.4.8
 
-Status: experimental. Patches `0001`, `0004`, `0005`, `0006`, `0007`, `0008`, `0009`, `0010`, `0011`, `0012`, and `0013` are applied to
-the active source. Patches through `0012` are compiled and runtime-verified.
-The first `0013` runtime pass verified the real-player client-button health path,
-but exposed stuck staged bots; `0013` is revised, compiled, and awaiting retest. Patches
-`0002` and `0003` are not applied. Patch `0021` includes one idempotent world
-SQL update for the shared Arena Battlemaster menu plus its exact rollback file;
-earlier patches contain no SQL. The explicitly gated `0005` login, `0006` grouping, and `0007`
-non-rated queue stages use normal core paths and can therefore save character/group
-state or temporarily change in-memory queue state. Patch `0009` adds an additional
-invite-only matchmaking diagnostic. Patch `0010` adds a separately gated staged
-accept/teleport diagnostic plus exact pre-countdown cleanup. Patch `0011` adds a
-separately gated post-return health refill after destination-map stat recalculation.
-Patch `0012` adds a separately gated, read-only countdown/combat-status snapshot.
-Patch `0013` adds separately gated health/tracker handling for normal completed-match
-client-button and automatic exits of only the four exact staged participants.
+Status: experimental. The active source contains the staged Solo Arena series
+through `0022`; `0002` and `0003` remain intentionally unapplied. Runtime work has
+already verified the earlier staged login, grouping, queue, entry, combat, exit,
+health, protected temporary loadout, and recovery paths. Patch `0021` provides the
+Arena Battlemaster 2v2/3v3/5v5 frontend and includes one idempotent world SQL update
+plus its exact rollback. Patch `0022` adds no SQL; it is compiled and awaits runtime
+verification of size-dependent rewards and generated bot talents/glyphs.
 
 The active `Build/bin/RelWithDebInfo/playerbots.conf` currently enables the `0001`
 observer with `DryRun = 1`, all three queue categories visible, a five-second check
@@ -38,9 +30,10 @@ Observer output uses the active `server` logger category so it is written to
 `playerbots` INFO category.
 
 This patch series is intentionally split into reversible stages. Apply it only after the
-server files and all active databases have been backed up. None of these patches contains
-SQL, but staged login/logout and ordinary group create/disband paths can update the
-character and group tables.
+server files and all active databases have been backed up. Only `0021` contains world
+SQL; staged login/logout and ordinary group create/disband paths can update the
+character and group tables, and temporary Arena equipment uses its documented
+characters-database recovery journal.
 
 ## Why this is a separate MoP implementation
 
@@ -869,6 +862,38 @@ SHA-256 is
 `288FC824FCC9796ADA0A8CEA405A8D98CD903004E35F6FBF7EDCE0569F3D7A32`.
 Runtime tests for 2v2, 3v3, and 5v5 remain required after a fresh server restart.
 
+Patch `0022` adds configurable automatic-match victory rewards and a MoP-native
+baseline build generator for random bots:
+
+```powershell
+git apply --check contrib/playerbot_auto_queue_548/patches/0022-playerbots-solo-arena-rewards-spec-builds.patch
+git apply contrib/playerbot_auto_queue_548/patches/0022-playerbots-solo-arena-rewards-spec-builds.patch
+```
+
+Only the real requester can receive the reward, and only after the tracked
+automatic Arena reaches `STATUS_WAIT_LEAVE` with the requester's Arena team as
+winner. A loss, draw, disabled reward, zero configured amount, or offline
+requester gives no reward. A per-instance guard prevents repeated exit polling
+or the client Leave path from paying twice. Distributed defaults keep rewards
+disabled; the configurable defaults are 180, 270, and 450 UI conquest points
+for 2v2, 3v3, and 5v5 respectively. Currency is awarded through the core's
+normal high-precision conquest path and therefore retains its ordinary cap.
+
+The same patch fills missing random-bot talents from the 5.4.8 `Talent.dbc`
+rows and fills missing glyph slots only with class-valid, slot-compatible,
+non-duplicate glyph properties. Selection scores known specialization spells
+and uses a deterministic specialization-sensitive fallback. Existing selected
+talent rows and non-empty glyph slots are preserved. This is a valid 5.4.8
+baseline, not a hand-tuned best-in-slot PvP build. Automatic Arena staging runs
+the build preparation before protected temporary equipment is applied; normal
+bot randomization, specialization changes, class-bot creation, and level-up
+maintenance also fill missing build choices.
+
+The implementation contains no database schema or data migration. The x64
+RelWithDebInfo WorldServer compiles and links successfully. Runtime verification
+of all three Arena sizes, reward amounts, duplicate protection, and generated
+builds remains required; Codex did not start the server for this patch.
+
 Do not enable LFG and battleground functional testing simultaneously until each has passed
 separately. `MaxBotsPerCycle` is shared by both systems.
 
@@ -877,6 +902,9 @@ separately. `MaxBotsPerCycle` is shared by both systems.
 Stop WorldServer, remove only the patches that were applied, in reverse order, then rebuild:
 
 ```powershell
+git apply -R --check contrib/playerbot_auto_queue_548/patches/0022-playerbots-solo-arena-rewards-spec-builds.patch
+git apply -R contrib/playerbot_auto_queue_548/patches/0022-playerbots-solo-arena-rewards-spec-builds.patch
+
 git apply -R --check contrib/playerbot_auto_queue_548/patches/0021-playerbots-arena-battlemaster-2v2-3v3-5v5.patch
 git apply -R contrib/playerbot_auto_queue_548/patches/0021-playerbots-arena-battlemaster-2v2-3v3-5v5.patch
 
@@ -1015,6 +1043,12 @@ The active `playerbots.conf` entries may then be removed manually or left disabl
   teammates; opposing-faction opponents; the matching Arena queue type; normal
   gates/combat/leave; full health; exact original equipment restoration; zero
   recovery rows/groups/queue slots; and all 3, 5, or 9 staged bots offline.
+- Arena rewards and bot builds: with `0022` applied, win and lose one automatic
+  match of each size. Verify only the real winning requester receives conquest
+  (default 180/270/450 for 2v2/3v3/5v5), a loss/draw gives none, and repeated
+  exit polling never duplicates the reward. Confirm every staged bot reports
+  six talents and six unique, slot-compatible glyphs. Existing non-empty talent
+  rows and glyph slots must remain unchanged.
 - Shutdown/restart: verify no bot remains stuck in LFG or battleground queue state.
 - Keep `AiPlayerbot.AutoQueue.Arena = 0` during functional LFG/BG testing; enable it
   only for the read-only `0004` preview while `DryRun = 1`.

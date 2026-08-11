@@ -861,6 +861,15 @@ AiPlayerbot.AutoQueue.Arena.AutomaticForceTolviron = 0
 # Values below 30 seconds are clamped to 30.
 AiPlayerbot.AutoQueue.Arena.AutomaticTimeout = 120
 
+# Optional reward for the real player who wins an automatically orchestrated
+# Solo Arena match. The three values are UI conquest points; the core applies
+# its normal high-precision currency conversion and conquest cap. A loss or
+# draw gives no reward. The per-instance guard prevents duplicate rewards.
+AiPlayerbot.AutoQueue.Arena.Reward.Enabled = 0
+AiPlayerbot.AutoQueue.Arena.Reward.Conquest.2v2 = 180
+AiPlayerbot.AutoQueue.Arena.Reward.Conquest.3v3 = 270
+AiPlayerbot.AutoQueue.Arena.Reward.Conquest.5v5 = 450
+
 # Required Configuration for RandomBotAutoJoinBG
 #
 # Known issue: When enabling a lot of brackats in combination with multiple instances,
