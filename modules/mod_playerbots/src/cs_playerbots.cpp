@@ -382,6 +382,17 @@ bool RestoreSoloArenaLoadout(Player* participant, char const* reason, uint32& re
                 remainingSlots, error.c_str());
             return false;
         }
+
+        // SwapItem marks the restored item for a map update. Staged bots can leave
+        // the Arena and log out before that map processes its update set. Remove
+        // the marker while the owner still belongs to the same map; the inventory
+        // transaction above has already persisted the exact restored position.
+        // Otherwise Item::~Item later attempts RemoveFromUpdate after the bot has
+        // left ObjectAccessor and emits "owner not found" for every restored slot.
+        for (uint8 equipmentSlot : completedSlots)
+            if (Item* restored = participant->GetItemByPos(
+                INVENTORY_SLOT_BAG_0, equipmentSlot))
+                restored->ClearUpdateMask(true);
     }
 
     remainingSlots = GetSoloArenaLoadoutBackupCount(ownerGuid);

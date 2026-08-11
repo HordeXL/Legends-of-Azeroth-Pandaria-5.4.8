@@ -1,7 +1,7 @@
 # Playerbot auto-queue patches for MoP 5.4.8
 
 Status: experimental. The active source contains the staged Solo Arena series
-through `0025`; `0002` and `0003` remain intentionally unapplied. Runtime work has
+through `0026`; `0002` and `0003` remain intentionally unapplied. Runtime work has
 already verified the earlier staged login, grouping, queue, entry, combat, exit,
 health, protected temporary loadout, and recovery paths. Patch `0021` provides the
 Arena Battlemaster 2v2/3v3/5v5 frontend and includes one idempotent world SQL update
@@ -971,8 +971,33 @@ The `modules` target and complete x64 RelWithDebInfo WorldServer compile and lin
 successfully. The resulting `worldserver.exe` is `61,669,888` bytes, dated
 `2026-08-11 14:13:52`, with SHA-256
 `917B06CF7BF7FA264EA52B3E9FA5068073400DD0A3D99E23F99B2171E783212C`.
-Codex did not start or stop WorldServer. A fresh automatic 2v2 runtime test remains
-required.
+Codex did not start or stop WorldServer. The first automatic 2v2 runtime test passed:
+`WaitForBots` held for 14.276 seconds until every exact bot was fully in-world, the
+Arena reached `active` after 18.419 seconds, priest Fortitude and warlock Dark Intent
+were cast during preparation, the victory awarded 180 conquest, and guarded cleanup
+completed. This verifies the `0025` world-entry race correction.
+
+Patch `0026` addresses the remaining restored-item map-update warnings observed
+during that successful exit. `SwapItem` marks each restored original item for a map
+update, but a staged bot can leave the Arena and log out before that Arena map drains
+its update set. The restore transaction now clears only the completed restored item
+markers immediately after their exact inventory positions are committed, while the
+owner still belongs to the same map. It does not suppress the core warning, remove an
+original item, change the recovery journal ordering, or touch unrelated inventory:
+
+```powershell
+git apply --check contrib/playerbot_auto_queue_548/patches/0026-playerbots-solo-arena-flush-restored-item-updates.patch
+git apply contrib/playerbot_auto_queue_548/patches/0026-playerbots-solo-arena-flush-restored-item-updates.patch
+```
+
+The isolated patch SHA-256 is
+`C42D16C11696CBC3B47A8B7C1466039935512A88B1FA33C13C162B86F50B2216`.
+Its source passes `git diff --check`, and the affected module compiled successfully.
+After the user stopped WorldServer, the complete x64 RelWithDebInfo target compiled
+and linked successfully. The resulting `worldserver.exe` is `61,669,888` bytes,
+dated `2026-08-11 16:14:55`, with SHA-256
+`6F164257B72630C985CA7427D25A1FC00B0F479952E656AC90530117445DD774`.
+Codex did not start WorldServer. One completed Arena runtime retest remains required.
 
 Do not enable LFG and battleground functional testing simultaneously until each has passed
 separately. `MaxBotsPerCycle` is shared by both systems.
@@ -982,6 +1007,9 @@ separately. `MaxBotsPerCycle` is shared by both systems.
 Stop WorldServer, remove only the patches that were applied, in reverse order, then rebuild:
 
 ```powershell
+git apply -R --check contrib/playerbot_auto_queue_548/patches/0026-playerbots-solo-arena-flush-restored-item-updates.patch
+git apply -R contrib/playerbot_auto_queue_548/patches/0026-playerbots-solo-arena-flush-restored-item-updates.patch
+
 git apply -R --check contrib/playerbot_auto_queue_548/patches/0025-playerbots-solo-arena-wait-for-bot-world-entry.patch
 git apply -R contrib/playerbot_auto_queue_548/patches/0025-playerbots-solo-arena-wait-for-bot-world-entry.patch
 
@@ -1145,6 +1173,10 @@ The active `playerbots.conf` entries may then be removed manually or left disabl
   appears on the appropriate bot or its own party (especially priest Fortitude on
   the real requester). Opposing teams must not buff one another; normal combat and
   guarded cleanup must still complete with every staged bot offline.
+- Restored-item update cleanup: with `0026` applied, complete and leave one automatic
+  Arena after all temporary five-piece sets were applied. Verify every loadout restore
+  reaches `remaining=0`, the recovery journal is empty, and no restored item emits
+  `Item::RemoveFromUpdate - owner not found` while staged bots log out.
 - Shutdown/restart: verify no bot remains stuck in LFG or battleground queue state.
 - Keep `AiPlayerbot.AutoQueue.Arena = 0` during functional LFG/BG testing; enable it
   only for the read-only `0004` preview while `DryRun = 1`.
