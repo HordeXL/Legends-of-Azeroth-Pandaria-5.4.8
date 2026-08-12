@@ -134,6 +134,40 @@ struct SoloArenaLoadoutPlan
     std::array<uint32, 5> HordeItems;
 };
 
+void PrepareSoloArenaBotForLogout(Player* bot, char const* context)
+{
+    if (!bot)
+        return;
+
+    uint32 guid = bot->GetGUID().GetCounter();
+    bool wasAlive = bot->IsAlive();
+    bool wasCharmed = bot->IsCharmed();
+    uint32 oldHealth = bot->GetHealth();
+
+    if (wasCharmed)
+        bot->RemoveCharmAuras();
+
+    // WorldSession::LogoutPlayer treats any remaining attacker or charm as a
+    // combat logout and kills the character. Arena participants can retain a
+    // stale hostile reference for a few updates after leaving the instance,
+    // so clear both sides before RandomPlayerbotMgr saves and logs the bot out.
+    bot->CombatStop();
+    bot->getHostileRefManager().deleteReferences();
+
+    if (!bot->IsAlive())
+    {
+        bot->ResurrectPlayer(1.0f, false);
+        bot->SpawnCorpseBones();
+    }
+    bot->SetFullHealth();
+
+    TC_LOG_INFO("server",
+        "SoloArena prepared bot logout context=%s name=%s guid=%u alive=%u charmed=%u health=%u/%u",
+        context ? context : "unknown", bot->GetName().c_str(), guid,
+        wasAlive ? 1u : 0u, wasCharmed ? 1u : 0u, oldHealth,
+        bot->GetMaxHealth());
+}
+
 SoloArenaLoadoutPlan const* GetSoloArenaLoadoutPlan(Specializations specialization)
 {
     // Season 15 Prideful five-piece sets. Item order is head, shoulders,
@@ -2195,6 +2229,7 @@ public:
                     continue;
                 }
 
+                PrepareSoloArenaBotForLogout(recoveryBot, "recovery");
                 sRandomPlayerbotMgr->LogoutPlayerBot(guid);
                 itr = SoloArenaLoadoutRecoveryBots.erase(itr);
             }
@@ -2824,6 +2859,7 @@ public:
                 bool wasOnline = bot != nullptr;
                 if (bot)
                 {
+                    PrepareSoloArenaBotForLogout(bot, "manual-staged-cleanup");
                     sRandomPlayerbotMgr->LogoutPlayerBot(guid);
                     ++loggedOut;
                 }
@@ -3723,7 +3759,10 @@ bool CleanupSoloArenaAutomaticStep()
             bot->InBattleground() || bot->IsBeingTeleported()))
             return false;
         if (bot)
+        {
+            PrepareSoloArenaBotForLogout(bot, "automatic-cleanup");
             sRandomPlayerbotMgr->LogoutPlayerBot(guid);
+        }
         itr = SoloArenaStagedBots.erase(itr);
     }
     return true;

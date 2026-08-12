@@ -1,7 +1,7 @@
 # Playerbot auto-queue patches for MoP 5.4.8
 
 Status: experimental. The active source contains the staged Solo Arena series
-through `0026`; `0002` and `0003` remain intentionally unapplied. Runtime work has
+through `0027`; `0002` and `0003` remain intentionally unapplied. Runtime work has
 already verified the earlier staged login, grouping, queue, entry, combat, exit,
 health, protected temporary loadout, and recovery paths. Patch `0021` provides the
 Arena Battlemaster 2v2/3v3/5v5 frontend and includes one idempotent world SQL update
@@ -10,6 +10,12 @@ cycle is runtime verified. Patch `0023` added the first preparation implementati
 runtime evidence showed that its generic strategy toggle did not guarantee a cast
 and that Blade's Edge needs its real diagonal gate direction. Patch `0024` corrects
 both without SQL or global Arena-coordinate changes.
+
+As recorded on 2026-08-12, this patch archive is now closed. Keep every existing
+file through `0027`, but do not create `0028` or any other new reversible `.patch`
+file. Continue future implementation directly in the tracked source and SQL update
+files, with progress and verification recorded in
+`doc/startup-log-fix-plan-2026-07-09.md`.
 
 The active `Build/bin/RelWithDebInfo/playerbots.conf` currently enables the `0001`
 observer with `DryRun = 1`, all three queue categories visible, a five-second check
