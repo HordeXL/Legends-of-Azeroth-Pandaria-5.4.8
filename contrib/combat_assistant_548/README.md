@@ -23,19 +23,31 @@ for the 5.4.8 client. Patch 0001 supports Retribution Paladin only.
    Shield is the fallback if the racial is unknown or unavailable.
 2. At less than 15% health, an instant self-heal: Eternal Flame, Word of Glory,
    or Flash of Light only when three-stack Selfless Healer makes it instant.
-3. Hand of Freedom for root or movement slow.
-4. Rebuke when the hostile target is casting an interruptible spell.
-5. Cleanse when the Retribution Paladin has a removable poison or disease.
+3. Divine Protection when at most 70% health after losing at least 20 percentage
+   points of health during the current two-second damage window.
+4. If Divine Protection is unavailable during that burst, Hand of Purity is
+   offered for harmful periodic damage when that talent is learned; otherwise
+   an absent Sacred Shield is offered when that talent is learned.
+5. Hand of Protection on the lowest-health attacked group member at 25% health
+   or below, when the normal spell checks allow it.
+6. Hand of Freedom for root or movement slow.
+7. Rebuke when the hostile target is casting an interruptible spell.
+8. Cleanse when the Retribution Paladin has a removable poison or disease.
    Harmful magic is not selected because magic dispel requires Holy's Sacred
    Cleansing capability in this client version.
-6. Inquisition when at least three Holy Power (or Divine Purpose) is available
+9. Inquisition when at least three Holy Power (or Divine Purpose) is available
    and the buff is absent.
-7. A flashing/free Divine Crusader Divine Storm proc.
-8. Execution Sentence, when learned and usable.
-9. Hammer of Wrath, when usable.
-10. Templar's Verdict at three Holy Power or with Divine Purpose.
-11. Art of War Exorcism.
-12. Crusader Strike, Judgment, then Exorcism as builders.
+10. A flashing/free Divine Crusader Divine Storm proc.
+11. Execution Sentence, when learned and usable.
+12. Hammer of Wrath, when usable.
+13. Templar's Verdict at three Holy Power or with Divine Purpose.
+14. Art of War Exorcism.
+15. Crusader Strike, Judgment, then Exorcism as builders.
+
+Hand of Protection uses its server-selected ally directly and does not alter the
+player's selected hostile target. Lay on Hands is intentionally not in the
+assistant whitelist, so arena restrictions cannot leave the assistant waiting
+on an unusable Lay on Hands recommendation.
 
 Normal cast-time healing remains manual. Only the explicit sub-15% instant-heal
 emergency rule is included.

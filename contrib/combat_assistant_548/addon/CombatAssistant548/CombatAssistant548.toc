@@ -2,7 +2,7 @@
 ## Title: Combat Assistant 5.4.8
 ## Notes: One-button recommendation UI for the guarded server-side 5.4.8 helper.
 ## Author: Legends of Azeroth local patch
-## Version: 0.2.1
+## Version: 0.3.1
 ## SavedVariables: CombatAssistant548DB
 
 CombatAssistant548.lua

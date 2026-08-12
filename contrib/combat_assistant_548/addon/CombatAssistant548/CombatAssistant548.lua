@@ -19,6 +19,10 @@ local reasonText = {
     ESCAPE_CC = "Break crowd control",
     ESCAPE_MOVEMENT = "Break root / slow",
     EMERGENCY_HEAL = "Emergency instant heal (<15%)",
+    BURST_DEFENSE = "Reduce incoming burst damage",
+    PERIODIC_DEFENSE = "Reduce harmful periodic damage",
+    ABSORB_DEFENSE = "Apply defensive absorb shield",
+    ALLY_PROTECTION = "Protect critical attacked ally",
     INTERRUPT = "Interrupt",
     CLEANSE = "Cleanse poison / disease",
     BUFF = "Maintain Inquisition",
@@ -128,6 +132,8 @@ local function UpdateDisplay()
         icon:SetDesaturated(false)
         if state.reason == "RACIAL_ESCAPE" or state.reason == "ESCAPE_CC" or
             state.reason == "ESCAPE_MOVEMENT" or state.reason == "EMERGENCY_HEAL" or
+            state.reason == "BURST_DEFENSE" or state.reason == "ALLY_PROTECTION" or
+            state.reason == "PERIODIC_DEFENSE" or state.reason == "ABSORB_DEFENSE" or
             state.reason == "CLEANSE" then
             button.border:SetVertexColor(1, 0.2, 0.2, 1)
         elseif state.reason == "INTERRUPT" then

@@ -8,6 +8,7 @@
 #include "CombatAssistant.h"
 
 #include "Chat.h"
+#include "Group.h"
 #include "Player.h"
 #include "PlayerbotAIConfig.h"
 #include "ScriptMgr.h"
@@ -29,8 +30,11 @@ enum CombatAssistantPaladinSpells : uint32
 {
     SPELL_DIVINE_SHIELD       = 642,
     SPELL_EXORCISM            = 879,
+    SPELL_DIVINE_PROTECTION   = 498,
     SPELL_HAND_OF_FREEDOM     = 1044,
+    SPELL_HAND_OF_PROTECTION  = 1022,
     SPELL_CLEANSE             = 4987,
+    SPELL_SACRED_SHIELD       = 20925,
     SPELL_FLASH_OF_LIGHT      = 19750,
     SPELL_JUDGMENT            = 20271,
     SPELL_HAMMER_OF_WRATH     = 24275,
@@ -44,6 +48,7 @@ enum CombatAssistantPaladinSpells : uint32
     SPELL_DIVINE_PURPOSE      = 90174,
     SPELL_REBUKE              = 96231,
     SPELL_EXECUTION_SENTENCE  = 114157,
+    SPELL_HAND_OF_PURITY      = 114039,
     SPELL_ETERNAL_FLAME       = 114163,
     SPELL_SELFLESS_HEALER     = 114250,
     SPELL_SELFLESS_HEALER_UI  = 128863,
@@ -62,6 +67,9 @@ struct CombatRecommendation
 struct CombatAssistantPlayerState
 {
     uint32 UpdateTimer = 0;
+    uint32 DamageWindowTimer = 0;
+    float DamageWindowStartPct = 100.0f;
+    float RecentDamagePct = 0.0f;
     std::string LastPayload;
 };
 
@@ -138,6 +146,76 @@ bool HasMovementLossOfControl(Player* player)
     return player->HasRootAura() || player->HasDecreaseSpeedAura();
 }
 
+void UpdateRecentDamage(Player* player, CombatAssistantPlayerState& state, uint32 diff)
+{
+    float const healthPct = player->GetHealthPct();
+    if (!state.DamageWindowTimer)
+    {
+        state.DamageWindowTimer = 2000;
+        state.DamageWindowStartPct = healthPct;
+        state.RecentDamagePct = 0.0f;
+        return;
+    }
+
+    float const healthLost = state.DamageWindowStartPct - healthPct;
+    if (healthLost > state.RecentDamagePct)
+        state.RecentDamagePct = healthLost;
+
+    if (state.DamageWindowTimer > diff)
+        state.DamageWindowTimer -= diff;
+    else
+    {
+        state.DamageWindowTimer = 2000;
+        state.DamageWindowStartPct = healthPct;
+        state.RecentDamagePct = 0.0f;
+    }
+}
+
+bool IsTakingBurstDamage(Player* player)
+{
+    auto const itr = CombatAssistantStates.find(player->GetGUID().GetCounter());
+    return itr != CombatAssistantStates.end() && player->IsInCombat() &&
+        player->GetHealthPct() <= 70.0f && itr->second.RecentDamagePct >= 20.0f;
+}
+
+Player* SelectCriticalAttackedGroupMember(Player* player)
+{
+    Group* group = player->GetGroup();
+    if (!group)
+        return nullptr;
+
+    Player* selected = nullptr;
+    float lowestHealthPct = 26.0f;
+    for (GroupReference* reference = group->GetFirstMember(); reference; reference = reference->next())
+    {
+        Player* member = reference->GetSource();
+        if (!member || member == player || !member->IsAlive() || member->GetMap() != player->GetMap())
+            continue;
+
+        bool activelyAttacked = false;
+        for (Unit* attacker : member->getAttackers())
+        {
+            if (attacker && attacker->IsAlive() && attacker->GetVictim() == member)
+            {
+                activelyAttacked = true;
+                break;
+            }
+        }
+        if (!activelyAttacked)
+            continue;
+
+        float const healthPct = member->GetHealthPct();
+        if (healthPct <= 25.0f && healthPct < lowestHealthPct &&
+            CanCast(player, SPELL_HAND_OF_PROTECTION, member))
+        {
+            selected = member;
+            lowestHealthPct = healthPct;
+        }
+    }
+
+    return selected;
+}
+
 bool HasInstantSelflessHealer(Player* player)
 {
     if (player->HasAura(SPELL_SELFLESS_HEALER_UI))
@@ -165,6 +243,24 @@ bool HasRetributionCleanseTarget(Player* player)
 
         SpellInfo const* spellInfo = aura->GetSpellInfo();
         if (spellInfo && (spellInfo->GetDispelMask() & dispelMask))
+            return true;
+    }
+
+    return false;
+}
+
+bool HasHarmfulPeriodicDamage(Player* player)
+{
+    for (auto const& auraPair : player->GetAppliedAuras())
+    {
+        AuraApplication const* application = auraPair.second;
+        if (!application || application->IsPositive())
+            continue;
+
+        Aura const* aura = application->GetBase();
+        SpellInfo const* spellInfo = aura ? aura->GetSpellInfo() : nullptr;
+        if (spellInfo && (spellInfo->HasAura(SPELL_AURA_PERIODIC_DAMAGE) ||
+            spellInfo->HasAura(SPELL_AURA_PERIODIC_DAMAGE_PERCENT)))
             return true;
     }
 
@@ -226,6 +322,21 @@ CombatRecommendation SelectRetributionRecommendation(Player* player)
 
     if (CombatRecommendation emergencyHeal = SelectEmergencyHeal(player))
         return emergencyHeal;
+
+    if (IsTakingBurstDamage(player))
+    {
+        if (CanCast(player, SPELL_DIVINE_PROTECTION, player))
+            return { SPELL_DIVINE_PROTECTION, player, "BURST_DEFENSE" };
+
+        if (HasHarmfulPeriodicDamage(player) && CanCast(player, SPELL_HAND_OF_PURITY, player))
+            return { SPELL_HAND_OF_PURITY, player, "PERIODIC_DEFENSE" };
+
+        if (!player->HasAura(SPELL_SACRED_SHIELD) && CanCast(player, SPELL_SACRED_SHIELD, player))
+            return { SPELL_SACRED_SHIELD, player, "ABSORB_DEFENSE" };
+    }
+
+    if (Player* member = SelectCriticalAttackedGroupMember(player))
+        return { SPELL_HAND_OF_PROTECTION, member, "ALLY_PROTECTION" };
 
     if (HasMovementLossOfControl(player) && CanCast(player, SPELL_HAND_OF_FREEDOM, player))
         return { SPELL_HAND_OF_FREEDOM, player, "ESCAPE_MOVEMENT" };
@@ -409,6 +520,7 @@ public:
             return;
 
         CombatAssistantPlayerState& state = CombatAssistantStates[player->GetGUID().GetCounter()];
+        UpdateRecentDamage(player, state, diff);
         if (state.UpdateTimer > diff)
         {
             state.UpdateTimer -= diff;
