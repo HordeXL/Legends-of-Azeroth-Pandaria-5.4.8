@@ -1904,8 +1904,36 @@ void WorldSession::HandleTimeSyncResp(WorldPacket& recvData)
     uint32 counter, clientTicks;
     recvData >> counter >> clientTicks;
 
+    // A playerbot can answer the request synchronously while login packets are
+    // still being dispatched. If the same outgoing packet is observed twice,
+    // the first response consumes the pending counter and the second response
+    // reaches this handler with an empty queue. Never dereference front() until
+    // the response has been matched to a pending request.
+    while (!_player->m_timeSyncQueue.empty() &&
+        _player->m_timeSyncQueue.front() < counter)
+    {
+        TC_LOG_DEBUG("network",
+            "Discarding stale time sync counter %u for player %s before response %u",
+            _player->m_timeSyncQueue.front(), _player->GetName().c_str(), counter);
+        _player->m_timeSyncQueue.pop();
+    }
+
+    if (_player->m_timeSyncQueue.empty())
+    {
+        TC_LOG_DEBUG("network",
+            "Ignoring time sync response %u from player %s with no pending request",
+            counter, _player->GetName().c_str());
+        return;
+    }
+
     if (counter != _player->m_timeSyncQueue.front())
-        TC_LOG_DEBUG("network", "Wrong time sync counter from player %s (cheater?)", _player->GetName().c_str());
+    {
+        TC_LOG_DEBUG("network",
+            "Ignoring out of order time sync response %u from player %s, expected %u",
+            counter, _player->GetName().c_str(),
+            _player->m_timeSyncQueue.front());
+        return;
+    }
 
     TC_LOG_DEBUG("network", "Time sync received: counter %u, client ticks %u, time since last sync %u", counter, clientTicks, clientTicks - _player->m_timeSyncClient);
 
