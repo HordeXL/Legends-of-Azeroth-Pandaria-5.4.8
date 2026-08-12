@@ -1012,7 +1012,12 @@ bool LoadSoloArenaAutomaticCandidates(Player* requester,
             activeSpec = 0;
         candidate.Specialization = Specializations(specs[activeSpec]);
         candidate.Role = GetSoloArenaPreviewRole(candidate.Specialization);
-        if ((!IsSoloArenaDamage(candidate.Role) && candidate.Role != SoloArenaPreviewRole::Healer) ||
+        // This 5.4.8 playerbots port has no MonkAiObjectContext or Monk class
+        // actions. A Monk can be classified as damage/healer, but once staged it
+        // only has the generic bot context and cannot perform its specialization.
+        // Do not fill an Arena team slot with a non-functional bot.
+        if (candidate.Class == CLASS_MONK ||
+            (!IsSoloArenaDamage(candidate.Role) && candidate.Role != SoloArenaPreviewRole::Healer) ||
             !GetSoloArenaLoadoutPlan(candidate.Specialization))
         {
             ++rejectedSpec;
@@ -1258,22 +1263,27 @@ bool ApplySoloArenaAutomaticLoadouts(std::string& error)
 
     for (Player* participant : participants)
     {
-        if (participant->GetGUID().GetCounter() != SoloArenaStagedRequester)
+        if (participant->GetGUID().GetCounter() == SoloArenaStagedRequester)
         {
-            BotFactory factory(participant, participant->GetLevel());
-            factory.InitTalentsTree(false);
-            factory.InitGlyphs();
-
-            uint32 talentCount = participant->GetUsedTalentCount();
-            uint32 glyphCount = 0;
-            for (uint8 slot = 0; slot < MAX_GLYPH_SLOT_INDEX; ++slot)
-                if (participant->GetGlyph(participant->GetActiveSpec(), slot))
-                    ++glyphCount;
             TC_LOG_INFO("server",
-                "SoloArena automatic build name=%s guid=%u specialization=%u talents=%u glyphs=%u",
-                participant->GetName().c_str(), participant->GetGUID().GetCounter(),
-                uint32(participant->GetSpecialization()), talentCount, glyphCount);
+                "SoloArena automatic loadout skipped requester name=%s guid=%u; player equipment remains unchanged",
+                participant->GetName().c_str(), participant->GetGUID().GetCounter());
+            continue;
         }
+
+        BotFactory factory(participant, participant->GetLevel());
+        factory.InitTalentsTree(false);
+        factory.InitGlyphs();
+
+        uint32 talentCount = participant->GetUsedTalentCount();
+        uint32 glyphCount = 0;
+        for (uint8 slot = 0; slot < MAX_GLYPH_SLOT_INDEX; ++slot)
+            if (participant->GetGlyph(participant->GetActiveSpec(), slot))
+                ++glyphCount;
+        TC_LOG_INFO("server",
+            "SoloArena automatic build name=%s guid=%u specialization=%u talents=%u glyphs=%u",
+            participant->GetName().c_str(), participant->GetGUID().GetCounter(),
+            uint32(participant->GetSpecialization()), talentCount, glyphCount);
 
         uint32 changed = 0;
         if (!ApplySoloArenaLoadout(participant, SoloArenaStagedRequester, changed, error))
@@ -1716,14 +1726,10 @@ void HandleSoloArenaClientLeave(Player* player)
 
     ProcessSoloArenaAutomaticReward(arena);
 
-    uint32 restored = 0;
-    uint32 remaining = 0;
-    std::string restoreError;
-    if (!RestoreSoloArenaLoadout(player, "client-leave", restored, remaining, restoreError))
-        TC_LOG_ERROR("server",
-            "SoloArena client-leave loadout restore incomplete name=%s guid=%u restored=%u remaining=%u error=%s",
-            player->GetName().c_str(), player->GetGUID().GetCounter(), restored, remaining,
-            restoreError.c_str());
+    // The real requester can still be dead and attached to the Arena map while
+    // the client Leave request is being processed. The core refuses equipment
+    // swaps in that transition. Keep the recovery journal intact and restore the
+    // requester's exact original items in automatic-exit-finalize after landing.
     ScheduleSoloArenaAutomaticHealthRestore(player, "client-leave");
 }
 
@@ -1752,7 +1758,11 @@ void UpdateSoloArenaAutomaticExit(uint32 diff)
         {
             Player* participant = guid ? ObjectAccessor::FindConnectedPlayer(
                 ObjectGuid::Create<HighGuid::Player>(guid)) : nullptr;
-            if (participant)
+            // Staged bots must restore before their session is logged out. The
+            // real requester remains connected and is restored only after the
+            // client has completed its return teleport; trying here every 250 ms
+            // only produces repeated, expected SwapItem failures while dead.
+            if (participant && guid != SoloArenaStagedRequester)
             {
                 uint32 restored = 0;
                 uint32 remaining = 0;
@@ -2284,7 +2294,10 @@ public:
                 }
 
                 uint32 changedTotal = 0;
-                for (uint8 index = 0; index < 4; ++index)
+                handler->PSendSysMessage(
+                    "Solo Arena temporary loadout requester %s: skipped; player equipment remains unchanged.",
+                    participants[0]->GetName().c_str());
+                for (uint8 index = 1; index < 4; ++index)
                 {
                     uint32 changed = 0;
                     std::string applyError;
@@ -3419,7 +3432,8 @@ public:
                 activeSpec = 0;
             candidate.Specialization = Specializations(specs[activeSpec]);
             candidate.Role = GetSoloArenaPreviewRole(candidate.Specialization);
-            if (!IsSoloArenaDamage(candidate.Role) && candidate.Role != SoloArenaPreviewRole::Healer)
+            if (candidate.Class == CLASS_MONK ||
+                (!IsSoloArenaDamage(candidate.Role) && candidate.Role != SoloArenaPreviewRole::Healer))
             {
                 ++rejectedSpec;
                 continue;
@@ -3927,7 +3941,12 @@ void UpdateSoloArenaAutomaticQueue(uint32 diff)
         case SoloArenaAutomaticState::ApplyLoadout:
             if (ApplySoloArenaAutomaticLoadouts(error) &&
                 GetSoloArenaAutomaticParticipants(participants) &&
-                std::all_of(participants.begin(), participants.end(), HasExpectedSoloArenaLoadout))
+                std::all_of(participants.begin(), participants.end(), [](Player* participant)
+                {
+                    return participant &&
+                        (participant->GetGUID().GetCounter() == SoloArenaStagedRequester ||
+                         HasExpectedSoloArenaLoadout(participant));
+                }))
                 SetSoloArenaAutomaticState(SoloArenaAutomaticState::Group);
             else
                 BeginSoloArenaAutomaticCleanup(error.empty() ?
