@@ -51,6 +51,44 @@ local powerLabel
 local lockLabel
 local elapsed = 0
 
+local function BindRecommendedAbilityToTwo(showMessage)
+    if InCombatLockdown and InCombatLockdown() then
+        if showMessage then
+            print("Combat Assistant 5.4.8: leave combat, then use /ca548 bind2.")
+        end
+        return false
+    end
+
+    local ok = SetBinding("2", "COMBATASSISTANT548_PRESS")
+    if not ok then
+        if showMessage then
+            print("Combat Assistant 5.4.8: could not bind key 2.")
+        end
+        return false
+    end
+
+    SaveBindings(GetCurrentBindingSet())
+    CombatAssistant548DB.boundTwo = true
+    if showMessage then
+        print("Combat Assistant 5.4.8: recommended ability is bound to key 2.")
+    end
+    return true
+end
+
+local function UnbindRecommendedAbilityFromTwo()
+    if InCombatLockdown and InCombatLockdown() then
+        print("Combat Assistant 5.4.8: leave combat, then use /ca548 unbind2.")
+        return
+    end
+
+    if GetBindingAction("2") == "COMBATASSISTANT548_PRESS" then
+        SetBinding("2")
+        SaveBindings(GetCurrentBindingSet())
+    end
+    CombatAssistant548DB.boundTwo = false
+    print("Combat Assistant 5.4.8: key 2 is no longer bound to the assistant.")
+end
+
 local function CopyDefaults()
     CombatAssistant548DB = CombatAssistant548DB or {}
     for key, value in pairs(defaults) do
@@ -226,6 +264,9 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         if RegisterAddonMessagePrefix then
             RegisterAddonMessagePrefix(PREFIX)
         end
+        if not CombatAssistant548DB.boundTwo then
+            BindRecommendedAbilityToTwo(true)
+        end
         SendChatMessage(".combatassist status", "SAY")
     elseif event == "CHAT_MSG_ADDON" then
         local prefix, message = ...
@@ -282,7 +323,11 @@ SlashCmdList.COMBATASSISTANT548 = function(message)
         UpdateMovableState()
     elseif message == "status" then
         SendChatMessage(".combatassist status", "SAY")
+    elseif message == "bind2" then
+        BindRecommendedAbilityToTwo(true)
+    elseif message == "unbind2" then
+        UnbindRecommendedAbilityFromTwo()
     else
-        print("Combat Assistant 5.4.8: /ca548 show | hide | unlock | lock | status")
+        print("Combat Assistant 5.4.8: /ca548 show | hide | unlock | lock | status | bind2 | unbind2")
     end
 end

@@ -55,5 +55,10 @@ has to be dragged from the spell book or placed on a normal action bar. The
 optional Key Bindings entry only lets a keyboard key press the same addon
 button. `/ca548 show` restores it if it was hidden.
 
+Version 0.2.1 binds the recommendation button to key `2` once on login and
+saves that WoW key binding. This replaces the action previously assigned to
+`2`. Use `/ca548 bind2` to restore the binding or `/ca548 unbind2` to release
+the key; binding changes must be made outside combat.
+
 The source copy in this directory is intended to remain tracked in Git so the
 matching addon is never lost when the server patch is moved to another machine.

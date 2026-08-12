@@ -1,9 +1,9 @@
 diff --git a/contrib/combat_assistant_548/README.md b/contrib/combat_assistant_548/README.md
 new file mode 100644
-index 00000000..b5a4672f
+index 00000000..9341fd31
 --- /dev/null
 +++ b/contrib/combat_assistant_548/README.md
-@@ -0,0 +1,59 @@
+@@ -0,0 +1,64 @@
 +# Combat Assistant 5.4.8
 +
 +This is an isolated, reversible prototype of a modern single-button assistant
@@ -61,6 +61,11 @@ index 00000000..b5a4672f
 +optional Key Bindings entry only lets a keyboard key press the same addon
 +button. `/ca548 show` restores it if it was hidden.
 +
++Version 0.2.1 binds the recommendation button to key `2` once on login and
++saves that WoW key binding. This replaces the action previously assigned to
++`2`. Use `/ca548 bind2` to restore the binding or `/ca548 unbind2` to release
++the key; binding changes must be made outside combat.
++
 +The source copy in this directory is intended to remain tracked in Git so the
 +matching addon is never lost when the server patch is moved to another machine.
 diff --git a/contrib/combat_assistant_548/addon/CombatAssistant548/Bindings.xml b/contrib/combat_assistant_548/addon/CombatAssistant548/Bindings.xml
@@ -76,10 +81,10 @@ index 00000000..ebb33c11
 +</Bindings>
 diff --git a/contrib/combat_assistant_548/addon/CombatAssistant548/CombatAssistant548.lua b/contrib/combat_assistant_548/addon/CombatAssistant548/CombatAssistant548.lua
 new file mode 100644
-index 00000000..a955038a
+index 00000000..86588b40
 --- /dev/null
 +++ b/contrib/combat_assistant_548/addon/CombatAssistant548/CombatAssistant548.lua
-@@ -0,0 +1,288 @@
+@@ -0,0 +1,333 @@
 +local ADDON_NAME = ...
 +local PREFIX = "CA548"
 +
@@ -132,6 +137,44 @@ index 00000000..a955038a
 +local powerLabel
 +local lockLabel
 +local elapsed = 0
++
++local function BindRecommendedAbilityToTwo(showMessage)
++    if InCombatLockdown and InCombatLockdown() then
++        if showMessage then
++            print("Combat Assistant 5.4.8: leave combat, then use /ca548 bind2.")
++        end
++        return false
++    end
++
++    local ok = SetBinding("2", "COMBATASSISTANT548_PRESS")
++    if not ok then
++        if showMessage then
++            print("Combat Assistant 5.4.8: could not bind key 2.")
++        end
++        return false
++    end
++
++    SaveBindings(GetCurrentBindingSet())
++    CombatAssistant548DB.boundTwo = true
++    if showMessage then
++        print("Combat Assistant 5.4.8: recommended ability is bound to key 2.")
++    end
++    return true
++end
++
++local function UnbindRecommendedAbilityFromTwo()
++    if InCombatLockdown and InCombatLockdown() then
++        print("Combat Assistant 5.4.8: leave combat, then use /ca548 unbind2.")
++        return
++    end
++
++    if GetBindingAction("2") == "COMBATASSISTANT548_PRESS" then
++        SetBinding("2")
++        SaveBindings(GetCurrentBindingSet())
++    end
++    CombatAssistant548DB.boundTwo = false
++    print("Combat Assistant 5.4.8: key 2 is no longer bound to the assistant.")
++end
 +
 +local function CopyDefaults()
 +    CombatAssistant548DB = CombatAssistant548DB or {}
@@ -308,6 +351,9 @@ index 00000000..a955038a
 +        if RegisterAddonMessagePrefix then
 +            RegisterAddonMessagePrefix(PREFIX)
 +        end
++        if not CombatAssistant548DB.boundTwo then
++            BindRecommendedAbilityToTwo(true)
++        end
 +        SendChatMessage(".combatassist status", "SAY")
 +    elseif event == "CHAT_MSG_ADDON" then
 +        local prefix, message = ...
@@ -364,13 +410,17 @@ index 00000000..a955038a
 +        UpdateMovableState()
 +    elseif message == "status" then
 +        SendChatMessage(".combatassist status", "SAY")
++    elseif message == "bind2" then
++        BindRecommendedAbilityToTwo(true)
++    elseif message == "unbind2" then
++        UnbindRecommendedAbilityFromTwo()
 +    else
-+        print("Combat Assistant 5.4.8: /ca548 show | hide | unlock | lock | status")
++        print("Combat Assistant 5.4.8: /ca548 show | hide | unlock | lock | status | bind2 | unbind2")
 +    end
 +end
 diff --git a/contrib/combat_assistant_548/addon/CombatAssistant548/CombatAssistant548.toc b/contrib/combat_assistant_548/addon/CombatAssistant548/CombatAssistant548.toc
 new file mode 100644
-index 00000000..c152af7f
+index 00000000..f951e80e
 --- /dev/null
 +++ b/contrib/combat_assistant_548/addon/CombatAssistant548/CombatAssistant548.toc
 @@ -0,0 +1,9 @@
@@ -378,7 +428,7 @@ index 00000000..c152af7f
 +## Title: Combat Assistant 5.4.8
 +## Notes: One-button recommendation UI for the guarded server-side 5.4.8 helper.
 +## Author: Legends of Azeroth local patch
-+## Version: 0.2.0
++## Version: 0.2.1
 +## SavedVariables: CombatAssistant548DB
 +
 +CombatAssistant548.lua
