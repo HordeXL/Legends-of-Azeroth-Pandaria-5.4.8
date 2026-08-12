@@ -1182,6 +1182,11 @@ The active `playerbots.conf` entries may then be removed manually or left disabl
   Arena after all temporary five-piece sets were applied. Verify every loadout restore
   reaches `remaining=0`, the recovery journal is empty, and no restored item emits
   `Item::RemoveFromUpdate - owner not found` while staged bots log out.
+- Selected-bot resurrection: with `0027` applied, start automatic 3v3 when at least
+  one selected staged bot is saved as a ghost. Verify one `SoloArena revived selected
+  bot` line for that exact bot, normal progress past `wait-bots`, full health, no
+  resurrection sickness, and normal loadout/group/queue/Arena cleanup. The real
+  requester and unselected random bots must remain unchanged.
 - Shutdown/restart: verify no bot remains stuck in LFG or battleground queue state.
 - Keep `AiPlayerbot.AutoQueue.Arena = 0` during functional LFG/BG testing; enable it
   only for the read-only `0004` preview while `DryRun = 1`.

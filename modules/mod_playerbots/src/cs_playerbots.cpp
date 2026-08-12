@@ -891,6 +891,24 @@ bool GetSoloArenaAutomaticLoadoutReadyParticipants(
                 participant->GetName().c_str());
             return false;
         }
+
+        uint32 guid = participant->GetGUID().GetCounter();
+        if (!participant->IsAlive() &&
+            SoloArenaStagedBots.find(guid) != SoloArenaStagedBots.end() &&
+            !participant->GetGroup() && !participant->InBattlegroundQueue() &&
+            !participant->InBattleground())
+        {
+            bool hadGhostFlag = participant->HasPlayerFlag(PLAYER_FLAGS_GHOST);
+            uint32 oldHealth = participant->GetHealth();
+            participant->ResurrectPlayer(1.0f, false);
+            participant->SpawnCorpseBones();
+            participant->SetFullHealth();
+            TC_LOG_INFO("server",
+                "SoloArena revived selected bot name=%s guid=%u ghost=%u health=%u/%u",
+                participant->GetName().c_str(), guid, hadGhostFlag ? 1u : 0u,
+                oldHealth, participant->GetMaxHealth());
+        }
+
         if (!participant->IsAlive() || participant->GetGroup() ||
             participant->InBattlegroundQueue() || participant->InBattleground())
         {
