@@ -1,8 +1,8 @@
 diff --git a/contrib/combat_assistant_548/README.md b/contrib/combat_assistant_548/README.md
-index b5a4672f..b284f585 100644
+index 9341fd31..b9c491a3 100644
 --- a/contrib/combat_assistant_548/README.md
 +++ b/contrib/combat_assistant_548/README.md
-@@ -23,19 +23,23 @@ for the 5.4.8 client. Patch 0001 supports Retribution Paladin only.
+@@ -23,19 +23,31 @@ for the 5.4.8 client. Patch 0001 supports Retribution Paladin only.
     Shield is the fallback if the racial is unknown or unavailable.
  2. At less than 15% health, an instant self-heal: Eternal Flame, Word of Glory,
     or Flash of Light only when three-stack Selfless Healer makes it instant.
@@ -11,15 +11,18 @@ index b5a4672f..b284f585 100644
 -5. Cleanse when the Retribution Paladin has a removable poison or disease.
 +3. Divine Protection when at most 70% health after losing at least 20 percentage
 +   points of health during the current two-second damage window.
-+4. Hand of Protection on the lowest-health attacked group member at 25% health
++4. If Divine Protection is unavailable during that burst, Hand of Purity is
++   offered for harmful periodic damage when that talent is learned; otherwise
++   an absent Sacred Shield is offered when that talent is learned.
++5. Hand of Protection on the lowest-health attacked group member at 25% health
 +   or below, when the normal spell checks allow it.
-+5. Hand of Freedom for root or movement slow.
-+6. Rebuke when the hostile target is casting an interruptible spell.
-+7. Cleanse when the Retribution Paladin has a removable poison or disease.
++6. Hand of Freedom for root or movement slow.
++7. Rebuke when the hostile target is casting an interruptible spell.
++8. Cleanse when the Retribution Paladin has a removable poison or disease.
     Harmful magic is not selected because magic dispel requires Holy's Sacred
     Cleansing capability in this client version.
 -6. Inquisition when at least three Holy Power (or Divine Purpose) is available
-+8. Inquisition when at least three Holy Power (or Divine Purpose) is available
++9. Inquisition when at least three Holy Power (or Divine Purpose) is available
     and the buff is absent.
 -7. A flashing/free Divine Crusader Divine Storm proc.
 -8. Execution Sentence, when learned and usable.
@@ -27,130 +30,59 @@ index b5a4672f..b284f585 100644
 -10. Templar's Verdict at three Holy Power or with Divine Purpose.
 -11. Art of War Exorcism.
 -12. Crusader Strike, Judgment, then Exorcism as builders.
-+9. A flashing/free Divine Crusader Divine Storm proc.
-+10. Execution Sentence, when learned and usable.
-+11. Hammer of Wrath, when usable.
-+12. Templar's Verdict at three Holy Power or with Divine Purpose.
-+13. Art of War Exorcism.
-+14. Crusader Strike, Judgment, then Exorcism as builders.
++10. A flashing/free Divine Crusader Divine Storm proc.
++11. Execution Sentence, when learned and usable.
++12. Hammer of Wrath, when usable.
++13. Templar's Verdict at three Holy Power or with Divine Purpose.
++14. Art of War Exorcism.
++15. Crusader Strike, Judgment, then Exorcism as builders.
++
++Hand of Protection uses its server-selected ally directly and does not alter the
++player's selected hostile target. Lay on Hands is intentionally not in the
++assistant whitelist, so arena restrictions cannot leave the assistant waiting
++on an unusable Lay on Hands recommendation.
  
  Normal cast-time healing remains manual. Only the explicit sub-15% instant-heal
  emergency rule is included.
-@@ -55,5 +59,10 @@ has to be dragged from the spell book or placed on a normal action bar. The
- optional Key Bindings entry only lets a keyboard key press the same addon
- button. `/ca548 show` restores it if it was hidden.
- 
-+Version 0.2.1 binds the recommendation button to key `2` once on login and
-+saves that WoW key binding. This replaces the action previously assigned to
-+`2`. Use `/ca548 bind2` to restore the binding or `/ca548 unbind2` to release
-+the key; binding changes must be made outside combat.
-+
- The source copy in this directory is intended to remain tracked in Git so the
- matching addon is never lost when the server patch is moved to another machine.
 diff --git a/contrib/combat_assistant_548/addon/CombatAssistant548/CombatAssistant548.lua b/contrib/combat_assistant_548/addon/CombatAssistant548/CombatAssistant548.lua
-index a955038a..a48ff12f 100644
+index 86588b40..fb94b1cf 100644
 --- a/contrib/combat_assistant_548/addon/CombatAssistant548/CombatAssistant548.lua
 +++ b/contrib/combat_assistant_548/addon/CombatAssistant548/CombatAssistant548.lua
-@@ -19,6 +19,8 @@ local reasonText = {
+@@ -19,6 +19,10 @@ local reasonText = {
      ESCAPE_CC = "Break crowd control",
      ESCAPE_MOVEMENT = "Break root / slow",
      EMERGENCY_HEAL = "Emergency instant heal (<15%)",
 +    BURST_DEFENSE = "Reduce incoming burst damage",
++    PERIODIC_DEFENSE = "Reduce harmful periodic damage",
++    ABSORB_DEFENSE = "Apply defensive absorb shield",
 +    ALLY_PROTECTION = "Protect critical attacked ally",
      INTERRUPT = "Interrupt",
      CLEANSE = "Cleanse poison / disease",
      BUFF = "Maintain Inquisition",
-@@ -51,6 +53,44 @@ local powerLabel
- local lockLabel
- local elapsed = 0
- 
-+local function BindRecommendedAbilityToTwo(showMessage)
-+    if InCombatLockdown and InCombatLockdown() then
-+        if showMessage then
-+            print("Combat Assistant 5.4.8: leave combat, then use /ca548 bind2.")
-+        end
-+        return false
-+    end
-+
-+    local ok = SetBinding("2", "COMBATASSISTANT548_PRESS")
-+    if not ok then
-+        if showMessage then
-+            print("Combat Assistant 5.4.8: could not bind key 2.")
-+        end
-+        return false
-+    end
-+
-+    SaveBindings(GetCurrentBindingSet())
-+    CombatAssistant548DB.boundTwo = true
-+    if showMessage then
-+        print("Combat Assistant 5.4.8: recommended ability is bound to key 2.")
-+    end
-+    return true
-+end
-+
-+local function UnbindRecommendedAbilityFromTwo()
-+    if InCombatLockdown and InCombatLockdown() then
-+        print("Combat Assistant 5.4.8: leave combat, then use /ca548 unbind2.")
-+        return
-+    end
-+
-+    if GetBindingAction("2") == "COMBATASSISTANT548_PRESS" then
-+        SetBinding("2")
-+        SaveBindings(GetCurrentBindingSet())
-+    end
-+    CombatAssistant548DB.boundTwo = false
-+    print("Combat Assistant 5.4.8: key 2 is no longer bound to the assistant.")
-+end
-+
- local function CopyDefaults()
-     CombatAssistant548DB = CombatAssistant548DB or {}
-     for key, value in pairs(defaults) do
-@@ -90,6 +130,7 @@ local function UpdateDisplay()
+@@ -128,6 +132,8 @@ local function UpdateDisplay()
          icon:SetDesaturated(false)
          if state.reason == "RACIAL_ESCAPE" or state.reason == "ESCAPE_CC" or
              state.reason == "ESCAPE_MOVEMENT" or state.reason == "EMERGENCY_HEAL" or
 +            state.reason == "BURST_DEFENSE" or state.reason == "ALLY_PROTECTION" or
++            state.reason == "PERIODIC_DEFENSE" or state.reason == "ABSORB_DEFENSE" or
              state.reason == "CLEANSE" then
              button.border:SetVertexColor(1, 0.2, 0.2, 1)
          elseif state.reason == "INTERRUPT" then
-@@ -226,6 +267,9 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
-         if RegisterAddonMessagePrefix then
-             RegisterAddonMessagePrefix(PREFIX)
-         end
-+        if not CombatAssistant548DB.boundTwo then
-+            BindRecommendedAbilityToTwo(true)
-+        end
-         SendChatMessage(".combatassist status", "SAY")
-     elseif event == "CHAT_MSG_ADDON" then
-         local prefix, message = ...
-@@ -282,7 +326,11 @@ SlashCmdList.COMBATASSISTANT548 = function(message)
-         UpdateMovableState()
-     elseif message == "status" then
-         SendChatMessage(".combatassist status", "SAY")
-+    elseif message == "bind2" then
-+        BindRecommendedAbilityToTwo(true)
-+    elseif message == "unbind2" then
-+        UnbindRecommendedAbilityFromTwo()
-     else
--        print("Combat Assistant 5.4.8: /ca548 show | hide | unlock | lock | status")
-+        print("Combat Assistant 5.4.8: /ca548 show | hide | unlock | lock | status | bind2 | unbind2")
-     end
- end
 diff --git a/contrib/combat_assistant_548/addon/CombatAssistant548/CombatAssistant548.toc b/contrib/combat_assistant_548/addon/CombatAssistant548/CombatAssistant548.toc
-index c152af7f..c886bb02 100644
+index f951e80e..7ddcd66b 100644
 --- a/contrib/combat_assistant_548/addon/CombatAssistant548/CombatAssistant548.toc
 +++ b/contrib/combat_assistant_548/addon/CombatAssistant548/CombatAssistant548.toc
 @@ -2,7 +2,7 @@
  ## Title: Combat Assistant 5.4.8
  ## Notes: One-button recommendation UI for the guarded server-side 5.4.8 helper.
  ## Author: Legends of Azeroth local patch
--## Version: 0.2.0
-+## Version: 0.3.0
+-## Version: 0.2.1
++## Version: 0.3.1
  ## SavedVariables: CombatAssistant548DB
  
  CombatAssistant548.lua
 diff --git a/modules/mod_playerbots/src/CombatAssistant.cpp b/modules/mod_playerbots/src/CombatAssistant.cpp
-index f4b06481..3b133358 100644
+index f4b06481..fd6fd0dd 100644
 --- a/modules/mod_playerbots/src/CombatAssistant.cpp
 +++ b/modules/mod_playerbots/src/CombatAssistant.cpp
 @@ -8,6 +8,7 @@
@@ -161,7 +93,7 @@ index f4b06481..3b133358 100644
  #include "Player.h"
  #include "PlayerbotAIConfig.h"
  #include "ScriptMgr.h"
-@@ -29,7 +30,9 @@ enum CombatAssistantPaladinSpells : uint32
+@@ -29,8 +30,11 @@ enum CombatAssistantPaladinSpells : uint32
  {
      SPELL_DIVINE_SHIELD       = 642,
      SPELL_EXORCISM            = 879,
@@ -169,9 +101,19 @@ index f4b06481..3b133358 100644
      SPELL_HAND_OF_FREEDOM     = 1044,
 +    SPELL_HAND_OF_PROTECTION  = 1022,
      SPELL_CLEANSE             = 4987,
++    SPELL_SACRED_SHIELD       = 20925,
      SPELL_FLASH_OF_LIGHT      = 19750,
      SPELL_JUDGMENT            = 20271,
-@@ -62,6 +65,9 @@ struct CombatRecommendation
+     SPELL_HAMMER_OF_WRATH     = 24275,
+@@ -44,6 +48,7 @@ enum CombatAssistantPaladinSpells : uint32
+     SPELL_DIVINE_PURPOSE      = 90174,
+     SPELL_REBUKE              = 96231,
+     SPELL_EXECUTION_SENTENCE  = 114157,
++    SPELL_HAND_OF_PURITY      = 114039,
+     SPELL_ETERNAL_FLAME       = 114163,
+     SPELL_SELFLESS_HEALER     = 114250,
+     SPELL_SELFLESS_HEALER_UI  = 128863,
+@@ -62,6 +67,9 @@ struct CombatRecommendation
  struct CombatAssistantPlayerState
  {
      uint32 UpdateTimer = 0;
@@ -181,7 +123,7 @@ index f4b06481..3b133358 100644
      std::string LastPayload;
  };
  
-@@ -138,6 +144,76 @@ bool HasMovementLossOfControl(Player* player)
+@@ -138,6 +146,76 @@ bool HasMovementLossOfControl(Player* player)
      return player->HasRootAura() || player->HasDecreaseSpeedAura();
  }
  
@@ -258,12 +200,46 @@ index f4b06481..3b133358 100644
  bool HasInstantSelflessHealer(Player* player)
  {
      if (player->HasAura(SPELL_SELFLESS_HEALER_UI))
-@@ -227,6 +303,12 @@ CombatRecommendation SelectRetributionRecommendation(Player* player)
+@@ -171,6 +249,24 @@ bool HasRetributionCleanseTarget(Player* player)
+     return false;
+ }
+ 
++bool HasHarmfulPeriodicDamage(Player* player)
++{
++    for (auto const& auraPair : player->GetAppliedAuras())
++    {
++        AuraApplication const* application = auraPair.second;
++        if (!application || application->IsPositive())
++            continue;
++
++        Aura const* aura = application->GetBase();
++        SpellInfo const* spellInfo = aura ? aura->GetSpellInfo() : nullptr;
++        if (spellInfo && (spellInfo->HasAura(SPELL_AURA_PERIODIC_DAMAGE) ||
++            spellInfo->HasAura(SPELL_AURA_PERIODIC_DAMAGE_PERCENT)))
++            return true;
++    }
++
++    return false;
++}
++
+ CombatRecommendation SelectEmergencyHeal(Player* player)
+ {
+     if (player->GetHealthPct() >= 15.0f)
+@@ -227,6 +323,21 @@ CombatRecommendation SelectRetributionRecommendation(Player* player)
      if (CombatRecommendation emergencyHeal = SelectEmergencyHeal(player))
          return emergencyHeal;
  
-+    if (IsTakingBurstDamage(player) && CanCast(player, SPELL_DIVINE_PROTECTION, player))
-+        return { SPELL_DIVINE_PROTECTION, player, "BURST_DEFENSE" };
++    if (IsTakingBurstDamage(player))
++    {
++        if (CanCast(player, SPELL_DIVINE_PROTECTION, player))
++            return { SPELL_DIVINE_PROTECTION, player, "BURST_DEFENSE" };
++
++        if (HasHarmfulPeriodicDamage(player) && CanCast(player, SPELL_HAND_OF_PURITY, player))
++            return { SPELL_HAND_OF_PURITY, player, "PERIODIC_DEFENSE" };
++
++        if (!player->HasAura(SPELL_SACRED_SHIELD) && CanCast(player, SPELL_SACRED_SHIELD, player))
++            return { SPELL_SACRED_SHIELD, player, "ABSORB_DEFENSE" };
++    }
 +
 +    if (Player* member = SelectCriticalAttackedGroupMember(player))
 +        return { SPELL_HAND_OF_PROTECTION, member, "ALLY_PROTECTION" };
@@ -271,7 +247,7 @@ index f4b06481..3b133358 100644
      if (HasMovementLossOfControl(player) && CanCast(player, SPELL_HAND_OF_FREEDOM, player))
          return { SPELL_HAND_OF_FREEDOM, player, "ESCAPE_MOVEMENT" };
  
-@@ -409,6 +491,7 @@ public:
+@@ -409,6 +520,7 @@ public:
              return;
  
          CombatAssistantPlayerState& state = CombatAssistantStates[player->GetGUID().GetCounter()];
