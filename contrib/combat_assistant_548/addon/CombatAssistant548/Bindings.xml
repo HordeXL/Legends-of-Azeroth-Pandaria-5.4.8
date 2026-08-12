@@ -1,0 +1,5 @@
+<Bindings>
+    <Binding name="COMBATASSISTANT548_PRESS" header="COMBATASSISTANT548_HEADER">
+        CombatAssistant548_Press()
+    </Binding>
+</Bindings>

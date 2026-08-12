@@ -83,6 +83,9 @@ public:
     uint32 autoQueueArenaAutomaticTimeout;
     uint32 autoQueueArenaReward2v2, autoQueueArenaReward3v3, autoQueueArenaReward5v5;
 
+    bool combatAssistantEnabled;
+    uint32 combatAssistantPushInterval;
+
     std::string premadeSpecName[MAX_CLASSES][MAX_SPECIALIZATIONS - 1];
     std::vector<uint16> premadeSpecLink[MAX_CLASSES][MAX_SPECIALIZATIONS - 1];
 

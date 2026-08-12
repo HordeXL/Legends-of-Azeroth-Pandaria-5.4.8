@@ -38,6 +38,8 @@
 #include <random>
 #include <thread>
 
+#include "CombatAssistant.h"
+
 #ifndef _PLAYERBOT_CONFIG
 # define _PLAYERBOT_CONFIG  "playerbots.conf"
 #endif
@@ -331,4 +333,5 @@ void AddSC_mod_playerbots()
     new PlayerbotsPlayerScript();
 
     AddSC_playerbots_commandscript();
+    AddSC_playerbots_combat_assistant();
 }

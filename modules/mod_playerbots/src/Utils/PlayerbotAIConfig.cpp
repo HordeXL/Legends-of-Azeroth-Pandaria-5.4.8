@@ -209,6 +209,14 @@ bool PlayerbotAIConfig::Initialize()
     autoQueueArenaReward5v5 = loadSoloArenaReward(
         "AiPlayerbot.AutoQueue.Arena.Reward.Conquest.5v5", 450);
 
+    combatAssistantEnabled = sConfigMgr->GetBoolDefault("AiPlayerbot.CombatAssistant.Enabled", false);
+    combatAssistantPushInterval = sConfigMgr->GetIntDefault(
+        "AiPlayerbot.CombatAssistant.PushInterval", 200);
+    if (combatAssistantPushInterval < 100)
+        combatAssistantPushInterval = 100;
+    else if (combatAssistantPushInterval > 2000)
+        combatAssistantPushInterval = 2000;
+
     randomChangeMultiplier = sConfigMgr->GetFloatDefault("AiPlayerbot.RandomChangeMultiplier", 1.0);
 
     randomBotCombatStrategies = sConfigMgr->GetStringDefault("AiPlayerbot.RandomBotCombatStrategies", "-threat");

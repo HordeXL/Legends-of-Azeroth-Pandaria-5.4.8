@@ -880,6 +880,17 @@ AiPlayerbot.AutoQueue.Arena.Reward.Conquest.2v2 = 180
 AiPlayerbot.AutoQueue.Arena.Reward.Conquest.3v3 = 270
 AiPlayerbot.AutoQueue.Arena.Reward.Conquest.5v5 = 450
 
+# Optional one-button combat recommendation prototype for real players. The
+# tracked 5.4.8 addon displays the recommended spell and each physical click
+# requests one normal core-validated cast. No triggered casts, automatic loops,
+# cooldown bypasses, range bypasses, or line-of-sight bypasses are used. The
+# only healing decision is a guarded instant self-heal below 15% health. Patch
+# 0001 supports Retribution Paladin only.
+AiPlayerbot.CombatAssistant.Enabled = 0
+
+# Milliseconds between changed-state addon updates. Clamped to 100..2000.
+AiPlayerbot.CombatAssistant.PushInterval = 200
+
 # Required Configuration for RandomBotAutoJoinBG
 #
 # Known issue: When enabling a lot of brackats in combination with multiple instances,
