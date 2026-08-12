@@ -143,6 +143,7 @@ void PrepareSoloArenaBotForLogout(Player* bot, char const* context)
     bool wasAlive = bot->IsAlive();
     bool wasCharmed = bot->IsCharmed();
     uint32 oldHealth = bot->GetHealth();
+    uint32 oldAttackers = uint32(bot->getAttackers().size());
 
     if (wasCharmed)
         bot->RemoveCharmAuras();
@@ -162,10 +163,10 @@ void PrepareSoloArenaBotForLogout(Player* bot, char const* context)
     bot->SetFullHealth();
 
     TC_LOG_INFO("server",
-        "SoloArena prepared bot logout context=%s name=%s guid=%u alive=%u charmed=%u health=%u/%u",
+        "SoloArena prepared bot logout context=%s name=%s guid=%u alive=%u charmed=%u attackers=%u/%u health=%u/%u",
         context ? context : "unknown", bot->GetName().c_str(), guid,
-        wasAlive ? 1u : 0u, wasCharmed ? 1u : 0u, oldHealth,
-        bot->GetMaxHealth());
+        wasAlive ? 1u : 0u, wasCharmed ? 1u : 0u, oldAttackers,
+        uint32(bot->getAttackers().size()), oldHealth, bot->GetMaxHealth());
 }
 
 SoloArenaLoadoutPlan const* GetSoloArenaLoadoutPlan(Specializations specialization)
