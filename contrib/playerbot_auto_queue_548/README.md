@@ -1193,6 +1193,11 @@ The active `playerbots.conf` entries may then be removed manually or left disabl
   bot` line for that exact bot, normal progress past `wait-bots`, full health, no
   resurrection sickness, and normal loadout/group/queue/Arena cleanup. The real
   requester and unselected random bots must remain unchanged.
+- Post-`0027` direct-source cleanup: complete a 3v3 which included a revived saved
+  ghost, leave normally, and verify every staged bot logs a `prepared bot logout`
+  line, remains alive at full health in `characters`, has no ghost aura or corpse,
+  and leaves no group, queue, loadout-recovery, or crash residue. This continuation
+  is intentionally not stored as a new patch because the patch archive is closed.
 - Shutdown/restart: verify no bot remains stuck in LFG or battleground queue state.
 - Keep `AiPlayerbot.AutoQueue.Arena = 0` during functional LFG/BG testing; enable it
   only for the read-only `0004` preview while `DryRun = 1`.
