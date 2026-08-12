@@ -44,6 +44,8 @@
 #include "Map.h"
 #include "MapInstanced.h"
 #include "MapManager.h"
+#include "LFGMgr.h"
+#include "MotionMaster.h"
 #include "Player.h"
 #include "GameEventMgr.h"
 #include "SharedDefines.h"
@@ -72,6 +74,105 @@ BattlegroundMgr* BattlegroundMgr::instance()
 {
     static BattlegroundMgr instance;
     return &instance;
+}
+
+bool BattlegroundMgr::QueuePlayer(Player* player, BattlegroundTypeId bgTypeId)
+{
+    if (!player || !player->IsInWorld() || player->InBattleground() ||
+        DisableMgr::IsDisabledFor(DISABLE_TYPE_BATTLEGROUND, bgTypeId, nullptr))
+        return false;
+
+    Battleground* bg = GetBattlegroundTemplate(bgTypeId);
+    if (!bg || !player->GetBGAccessByLevel(bgTypeId))
+        return false;
+
+    PvPDifficultyEntry const* bracketEntry =
+        GetBattlegroundBracketByLevel(bg->GetMapId(), player->GetLevel());
+    if (!bracketEntry || player->IsUsingLfg(true) || !player->CanJoinToBattleground(bg))
+        return false;
+
+    BattlegroundQueueTypeId queueType = BGQueueTypeId(bgTypeId, 0);
+    BattlegroundQueueTypeId randomQueueType = BGQueueTypeId(BATTLEGROUND_RB, 0);
+    if (player->GetBattlegroundQueueIndex(randomQueueType) < PLAYER_MAX_BATTLEGROUND_QUEUES ||
+        (player->InBattlegroundQueue() && bgTypeId == BATTLEGROUND_RB) ||
+        player->GetBattlegroundQueueIndex(queueType) < PLAYER_MAX_BATTLEGROUND_QUEUES ||
+        !player->HasFreeBattlegroundQueueId())
+        return false;
+
+    BattlegroundQueue& queue = GetBattlegroundQueue(queueType);
+    GroupQueueInfo* info = queue.AddGroup(
+        player, nullptr, bgTypeId, bracketEntry, 0, false, false, 0, 0);
+    if (!info)
+        return false;
+
+    uint32 averageWait = queue.GetAverageQueueWaitTime(info, bracketEntry->GetBracketId());
+    uint32 queueSlot = player->AddBattlegroundQueueId(queueType);
+    player->AddBattlegroundQueueJoinTime(bgTypeId, info->JoinTime);
+
+    WorldPacket data;
+    BuildBattlegroundStatusPacket(&data, bg, player, queueSlot, STATUS_WAIT_QUEUE,
+        averageWait, info->JoinTime, 0);
+    player->GetSession()->SendPacket(&data);
+    ScheduleQueueUpdate(0, 0, queueType, bgTypeId, bracketEntry->GetBracketId());
+    return true;
+}
+
+bool BattlegroundMgr::AcceptQueueInvite(Player* player, uint8 queueSlot)
+{
+    if (!player || queueSlot >= PLAYER_MAX_BATTLEGROUND_QUEUES)
+        return false;
+
+    BattlegroundQueueTypeId queueType = player->GetBattlegroundQueueTypeId(queueSlot);
+    if (queueType == BATTLEGROUND_QUEUE_NONE ||
+        !player->IsInvitedForBattlegroundQueueType(queueType))
+        return false;
+
+    BattlegroundQueue& queue = GetBattlegroundQueue(queueType);
+    GroupQueueInfo info;
+    if (!queue.GetPlayerGroupInfoData(player->GetGUID(), &info) ||
+        !info.IsInvitedToBGInstanceGUID)
+        return false;
+
+    BattlegroundTypeId bgTypeId = BGTemplateId(queueType);
+    Battleground* bg = GetBattleground(info.IsInvitedToBGInstanceGUID,
+        bgTypeId == BATTLEGROUND_AA ? BATTLEGROUND_TYPE_NONE : bgTypeId);
+    if (!bg)
+        return false;
+
+    bgTypeId = bg->GetTypeID();
+    PvPDifficultyEntry const* bracketEntry =
+        GetBattlegroundBracketByLevel(bg->GetMapId(), player->GetLevel());
+    if (!bracketEntry || (!info.ArenaType &&
+        (!player->CanJoinToBattleground(bg) || player->GetLevel() > bg->GetMaxLevel())))
+        return false;
+
+    if (!player->InBattleground())
+        player->SetBattlegroundEntryPoint();
+    if (!player->IsAlive())
+    {
+        player->ResurrectPlayer(1.0f);
+        player->SpawnCorpseBones();
+    }
+    if (player->IsInFlight())
+    {
+        player->GetMotionMaster()->MovementExpired();
+        player->CleanupAfterTaxiFlight();
+    }
+
+    WorldPacket data;
+    BuildBattlegroundStatusPacket(&data, bg, player, queueSlot, STATUS_IN_PROGRESS,
+        player->GetBattlegroundQueueJoinTime(bgTypeId), bg->GetElapsedTime(), bg->GetArenaType());
+    player->GetSession()->SendPacket(&data);
+
+    queue.RemovePlayer(player->GetGUID(), false);
+    if (Battleground* currentBg = player->GetBattleground())
+        currentBg->RemovePlayerAtLeave(player->GetGUID(), false, true);
+
+    player->SetBattlegroundId(bg->GetInstanceID(), bgTypeId);
+    player->SetBGTeam(info.Team);
+    sLFGMgr->RemovePlayerQueuesOnPartyFound(player->GetGUID());
+    SendToBattleground(player, info.IsInvitedToBGInstanceGUID, bgTypeId);
+    return true;
 }
 
 void BattlegroundMgr::DeleteAllBattlegrounds()

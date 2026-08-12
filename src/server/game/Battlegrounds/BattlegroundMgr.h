@@ -105,6 +105,11 @@ class BattlegroundMgr
 
         void SendToBattleground(Player* player, uint32 InstanceID, BattlegroundTypeId bgTypeId);
 
+        // Server-side queue helpers for autonomous playerbots. They follow the
+        // same validation and state transitions as the 5.4.8 client handlers.
+        bool QueuePlayer(Player* player, BattlegroundTypeId bgTypeId);
+        bool AcceptQueueInvite(Player* player, uint8 queueSlot);
+
         /* Battleground queues */
         BattlegroundQueue& GetBattlegroundQueue(BattlegroundQueueTypeId bgQueueTypeId) { return *m_battlegroundQueues[bgQueueTypeId]; }
         void ScheduleQueueUpdate(uint32 arenaMatchmakerRating, uint8 arenaType, BattlegroundQueueTypeId bgQueueTypeId, BattlegroundTypeId bgTypeId, BattlegroundBracketId bracket_id);
