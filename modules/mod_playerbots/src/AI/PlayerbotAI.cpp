@@ -239,6 +239,17 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
         bot->IsDuringRemoveFromWorld())
         return;
 
+    // Playerbot sessions are not driven through WorldSession's normal socket
+    // receive queue. Process synthetic time-sync replies here, after the login
+    // callback and the outgoing SendPacket stack have completely returned.
+    while (!_pendingTimeSyncCounters.empty())
+    {
+        WorldPacket response(CMSG_TIME_SYNC_RESP, 8);
+        response << _pendingTimeSyncCounters.front() << uint32(getMSTime());
+        _pendingTimeSyncCounters.pop();
+        bot->GetSession()->HandleTimeSyncResp(response);
+    }
+
     AllowActivity();
 
     if (!CanUpdateAI())
@@ -1106,12 +1117,13 @@ void PlayerbotAI::HandleBotOutgoingPacket(WorldPacket const& packet)
         WorldPacket p = packet;
         uint32 counter;
         p >> counter;
-        uint32 clientTicks = time(NULL);
-        WorldPacket packet(CMSG_TIME_SYNC_RESP);
-        packet.rpos(0);
-        packet << counter << clientTicks;
 
-        bot->GetSession()->HandleTimeSyncResp(packet);
+        // SendPacket invokes this hook while Player::SendTimeSync is still on
+        // the stack. Handling the synthetic client reply synchronously here
+        // re-enters the session during login and can invalidate the player
+        // state when several offline bots are staged at once. Save only the
+        // counter; UpdateAI handles it after the login stack has returned.
+        _pendingTimeSyncCounters.push(counter);
         break;
     }
     default:

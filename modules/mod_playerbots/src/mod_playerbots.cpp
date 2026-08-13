@@ -104,6 +104,7 @@ public:
     void OnUpdate(uint32 diff) override
     {
         sBracketMgr->Update(diff);
+        UpdateAutomatedPvpLoadoutRecovery(diff);
         UpdateSoloArenaAutomaticQueue(diff);
         UpdateSoloArenaAutomaticExit(diff);
     }

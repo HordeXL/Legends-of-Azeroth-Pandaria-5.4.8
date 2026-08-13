@@ -235,6 +235,7 @@ protected:
     PacketHandlingHelper botOutgoingPacketHandlers;
     PacketHandlingHelper masterIncomingPacketHandlers;
     PacketHandlingHelper masterOutgoingPacketHandlers;
+    std::queue<uint32> _pendingTimeSyncCounters;
     //CompositeChatFilter chatFilter;
     //PlayerbotSecurity security;
     //std::map<std::string, time_t> whispers;

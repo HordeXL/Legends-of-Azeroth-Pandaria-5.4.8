@@ -65,6 +65,7 @@ bool SoloArenaAutomaticRewardProcessed = false;
 uint32 SoloArenaAutomaticExitTimer = 0;
 std::set<uint32> SoloArenaAutomaticHealthRestoreScheduled;
 std::set<uint32> SoloArenaLoadoutRecoveryBots;
+uint32 AutomatedPvpLoadoutRecoveryTimer = 0;
 std::set<uint32> SoloArenaAutomaticPreparationBuffedBots;
 bool SoloArenaAutomaticPreparationFacingApplied = false;
 
@@ -360,6 +361,39 @@ bool RestoreSoloArenaLoadout(Player* participant, char const* reason, uint32& re
                     continue;
                 }
                 temporary = participant->GetItemByGuid(ObjectGuid(HighGuid::Item, row.TemporaryItemGuid));
+            }
+            else if (!equipped && original && !temporary)
+            {
+                // A process crash can persist the original item's move to the
+                // backpack after the journal commit but before the temporary
+                // item reaches its equipment slot. In that exact state the
+                // recorded equipment slot is empty, the exact original GUID is
+                // still owned by the character and the exact temporary GUID no
+                // longer exists. Re-equip only that recorded original instance.
+                uint16 originalPos = original->GetPos();
+                participant->SwapItem(originalPos, equipmentPos);
+                equipped = participant->GetItemByPos(
+                    INVENTORY_SLOT_BAG_0, row.EquipmentSlot);
+                if (!equipped ||
+                    equipped->GetGUID().GetCounter() != row.OriginalItemGuid)
+                {
+                    // Normal SwapItem validation can reject old generated bot
+                    // gear even though this is the exact previously equipped
+                    // instance. The journal, owner GUID, entry and empty target
+                    // slot have all been verified, so restore that known item
+                    // through the core remove/equip primitives.
+                    participant->RemoveItem(
+                        original->GetBagSlot(), original->GetSlot(), true);
+                    participant->EquipItem(equipmentPos, original, true);
+                    equipped = participant->GetItemByPos(
+                        INVENTORY_SLOT_BAG_0, row.EquipmentSlot);
+                    if (!equipped ||
+                        equipped->GetGUID().GetCounter() != row.OriginalItemGuid)
+                    {
+                        error = "core refused the guarded empty-slot crash recovery";
+                        continue;
+                    }
+                }
             }
             else
             {
@@ -3882,6 +3916,98 @@ bool CastAutomatedPvpPreparationBuff(Player* bot)
             return true;
 
     return false;
+}
+
+void UpdateAutomatedPvpLoadoutRecovery(uint32 diff)
+{
+    if (AutomatedPvpLoadoutRecoveryTimer > diff)
+    {
+        AutomatedPvpLoadoutRecoveryTimer -= diff;
+        return;
+    }
+    AutomatedPvpLoadoutRecoveryTimer = 5000;
+
+    uint32 recoveryRows = GetSoloArenaLoadoutBackupCount();
+    if (recoveryRows && !IsSoloArenaAutomationBusy())
+    {
+        QueryResult owners = CharacterDatabase.Query(
+            "SELECT DISTINCT b.`owner_guid`,c.`name`,c.`account` "
+            "FROM `solo_arena_loadout_backup` b "
+            "JOIN `characters` c ON c.`guid`=b.`owner_guid` ORDER BY b.`owner_guid`");
+        if (owners)
+        {
+            do
+            {
+                Field* fields = owners->Fetch();
+                uint32 ownerGuid = fields[0].GetUInt32();
+                std::string ownerName = fields[1].GetString();
+                uint32 accountId = fields[2].GetUInt32();
+                ObjectGuid guid = ObjectGuid::Create<HighGuid::Player>(ownerGuid);
+                Player* owner = ObjectAccessor::FindConnectedPlayer(guid);
+
+                if (owner)
+                {
+                    PlayerbotAI* botAI = GET_PLAYERBOT_AI(owner);
+                    if (!botAI || botAI->IsRealPlayer() || owner->GetGroup() ||
+                        owner->InBattlegroundQueue() || owner->InBattleground() ||
+                        owner->IsBeingTeleported() || owner->IsInCombat())
+                        continue;
+
+                    uint32 restored = 0;
+                    uint32 remaining = 0;
+                    std::string error;
+                    if (!RestoreSoloArenaLoadout(owner, "automatic-crash-recovery",
+                        restored, remaining, error))
+                    {
+                        TC_LOG_ERROR("server",
+                            "Automatic PvP loadout recovery pending name=%s guid=%u restored=%u remaining=%u error=%s",
+                            ownerName.c_str(), ownerGuid, restored, remaining, error.c_str());
+                    }
+                    continue;
+                }
+
+                bool randomBotAccount = std::find(
+                    sPlayerbotAIConfig->randomBotAccounts.begin(),
+                    sPlayerbotAIConfig->randomBotAccounts.end(), accountId) !=
+                    sPlayerbotAIConfig->randomBotAccounts.end();
+                if (!randomBotAccount || sRandomPlayerbotMgr->IsBotLoading(guid))
+                    continue;
+
+                SoloArenaLoadoutRecoveryBots.insert(ownerGuid);
+                sRandomPlayerbotMgr->AddPlayerBot(guid, 0);
+                TC_LOG_INFO("server",
+                    "Automatic PvP loadout recovery requested bot login name=%s guid=%u rows=%u",
+                    ownerName.c_str(), ownerGuid, GetSoloArenaLoadoutBackupCount(ownerGuid));
+            }
+            while (owners->NextRow());
+        }
+    }
+
+    // Only bots explicitly logged in by this recovery path are logged out.
+    // Bots that were already online before recovery retain their normal state.
+    for (auto itr = SoloArenaLoadoutRecoveryBots.begin();
+         itr != SoloArenaLoadoutRecoveryBots.end();)
+    {
+        ObjectGuid guid = ObjectGuid::Create<HighGuid::Player>(*itr);
+        if (sRandomPlayerbotMgr->IsBotLoading(guid))
+        {
+            ++itr;
+            continue;
+        }
+
+        Player* recoveryBot = sRandomPlayerbotMgr->GetPlayerBot(guid);
+        if (!recoveryBot || GetSoloArenaLoadoutBackupCount(*itr) ||
+            recoveryBot->GetGroup() || recoveryBot->InBattlegroundQueue() ||
+            recoveryBot->InBattleground() || recoveryBot->IsBeingTeleported())
+        {
+            ++itr;
+            continue;
+        }
+
+        PrepareSoloArenaBotForLogout(recoveryBot, "automatic-crash-recovery");
+        sRandomPlayerbotMgr->LogoutPlayerBot(guid);
+        itr = SoloArenaLoadoutRecoveryBots.erase(itr);
+    }
 }
 
 bool HandleSoloArenaAutomaticJoinRequest(Player* player, uint8 arenaSlot)
