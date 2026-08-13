@@ -24,6 +24,7 @@
 #include <iomanip>
 #include <map>
 #include <random>
+#include <set>
 #include <sstream>
 
 #include "AccountMgr.h"
@@ -93,6 +94,10 @@ namespace
 
     std::map<uint32, BgAutoQueueManagedBot> BgAutoQueueManagedBots;
     std::map<uint32, BgAutoQueueStagedLogin> BgAutoQueueStagedLogins;
+    // Do not repeatedly wake the same character after it failed the runtime
+    // eligibility check. The set is intentionally process-local: a clean
+    // restart retries the character after any transient state has cleared.
+    std::set<uint32> BgAutoQueueIneligibleBots;
 
     bool IsBgHealerSpecialization(Specializations specialization)
     {
@@ -110,23 +115,56 @@ namespace
     }
 
     bool CanAutoQueueBgBot(Player* bot, TeamId team, uint32 mapId,
-                           BattlegroundBracketId bracket)
+                           BattlegroundBracketId bracket,
+                           std::string* rejectionReason = nullptr)
     {
-        // Monk class actions are not implemented in this 5.4.8 playerbots port.
-        if (!bot || IsSoloArenaAutomationBusy() ||
-            IsSoloArenaManagedPlayer(bot->GetGUID().GetCounter()) ||
-            BgAutoQueueManagedBots.find(bot->GetGUID().GetCounter()) !=
-                BgAutoQueueManagedBots.end() ||
-            bot->GetClass() == CLASS_MONK || !bot->IsInWorld() ||
-            !HasAutomatedPvpBotLoadout(bot->GetSpecialization()) ||
-            bot->GetTeamId() != team || bot->GetGroup() ||
-            bot->IsUsingLfg() || bot->InBattleground() || bot->InBattlegroundQueue() ||
-            bot->IsInCombat() || bot->IsInFlight() || bot->GetMap()->Instanceable())
+        auto reject = [rejectionReason](char const* reason)
+        {
+            if (rejectionReason)
+                *rejectionReason = reason;
             return false;
+        };
+
+        // Monk class actions are not implemented in this 5.4.8 playerbots port.
+        if (!bot)
+            return reject("missing-player");
+        if (IsSoloArenaAutomationBusy())
+            return reject("solo-arena-automation-busy");
+        if (IsSoloArenaManagedPlayer(bot->GetGUID().GetCounter()))
+            return reject("solo-arena-managed");
+        if (BgAutoQueueManagedBots.count(bot->GetGUID().GetCounter()))
+            return reject("already-bg-managed");
+        if (bot->GetClass() == CLASS_MONK)
+            return reject("unsupported-monk");
+        if (!bot->IsInWorld())
+            return reject("not-in-world");
+        if (!HasAutomatedPvpBotLoadout(bot->GetSpecialization()))
+            return reject("unsupported-specialization");
+        if (bot->GetTeamId() != team)
+            return reject("wrong-team");
+        if (bot->GetGroup())
+            return reject("already-grouped");
+        if (bot->IsUsingLfg())
+            return reject("using-lfg");
+        if (bot->InBattleground())
+            return reject("already-in-battleground");
+        if (bot->InBattlegroundQueue())
+            return reject("already-in-pvp-queue");
+        if (bot->IsInCombat())
+            return reject("in-combat");
+        if (bot->IsInFlight())
+            return reject("in-flight");
+        if (!bot->GetMap() || bot->GetMap()->Instanceable())
+            return reject("instance-map");
 
         PvPDifficultyEntry const* botBracket =
             GetBattlegroundBracketByLevel(mapId, bot->GetLevel());
-        return botBracket && botBracket->GetBracketId() == bracket;
+        if (!botBracket || botBracket->GetBracketId() != bracket)
+            return reject("wrong-level-bracket");
+
+        if (rejectionReason)
+            rejectionReason->clear();
+        return true;
     }
 }
 
@@ -332,10 +370,20 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
     {
         for (Player* player : _players)
         {
-            countPvpQueues(player, realBg, realArena);
-
             if (!player || !player->IsInWorld())
                 continue;
+
+            uint32 playerGuid = player->GetGUID().GetCounter();
+            // Request-driven bots are intentionally logged in through the
+            // normal playerbot holder and may also appear in _players. Never
+            // count them as real requesters or the observer starts building a
+            // bot-only queue after the actual player has left.
+            if (GetPlayerBot(player->GetGUID()) ||
+                BgAutoQueueManagedBots.count(playerGuid) ||
+                BgAutoQueueStagedLogins.count(playerGuid))
+                continue;
+
+            countPvpQueues(player, realBg, realArena);
             for (uint8 slot = 0; slot < PLAYER_MAX_BATTLEGROUND_QUEUES; ++slot)
             {
                 BattlegroundQueueTypeId queueType = player->GetBattlegroundQueueTypeId(slot);
@@ -365,11 +413,12 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
 
         for (auto const& botPair : playerBots)
         {
-            if (IsRandomBot(botPair.second))
+            Player* bot = botPair.second;
+            if (bot && (IsRandomBot(bot) ||
+                BgAutoQueueManagedBots.count(bot->GetGUID().GetCounter())))
             {
-                countPvpQueues(botPair.second, botBg, botArena);
+                countPvpQueues(bot, botBg, botArena);
 
-                Player* bot = botPair.second;
                 for (uint8 slot = 0; slot < PLAYER_MAX_BATTLEGROUND_QUEUES; ++slot)
                 {
                     BattlegroundQueueTypeId queueType = bot->GetBattlegroundQueueTypeId(slot);
@@ -455,11 +504,17 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
                 continue;
             }
 
-            if (!CanAutoQueueBgBot(bot, staged.Team, staged.MapId, staged.Bracket))
+            std::string rejectionReason;
+            if (!CanAutoQueueBgBot(bot, staged.Team, staged.MapId,
+                staged.Bracket, &rejectionReason))
             {
+                BgAutoQueueIneligibleBots.insert(botGuid);
                 TC_LOG_ERROR("server",
-                    "AutoQueue BG staged bot became ineligible name=%s guid=%u type=%u",
-                    bot->GetName().c_str(), botGuid, uint32(staged.Type));
+                    "AutoQueue BG staged bot became ineligible name=%s guid=%u type=%u reason=%s team=%u expected-team=%u spec=%u level=%u map=%u",
+                    bot->GetName().c_str(), botGuid, uint32(staged.Type),
+                    rejectionReason.c_str(), uint32(bot->GetTeamId()),
+                    uint32(staged.Team), uint32(bot->GetSpecialization()),
+                    uint32(bot->GetLevel()), bot->GetMapId());
                 if (!bot->InBattleground() && !bot->InBattlegroundQueue())
                     LogoutPlayerBot(guid);
                 itr = BgAutoQueueStagedLogins.erase(itr);
@@ -646,7 +701,10 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
         {
             Player* bot = GetPlayerBot(ObjectGuid::Create<HighGuid::Player>(
                 managedPair.first));
-            if (!bot || !IsRandomBot(bot))
+            // Membership in BgAutoQueueManagedBots is the ownership boundary.
+            // Request-driven offline bots are not necessarily marked as
+            // random bots, but their invitations still have to be accepted.
+            if (!bot || !bot->IsInWorld())
                 continue;
 
             for (uint8 slot = 0; slot < PLAYER_MAX_BATTLEGROUND_QUEUES; ++slot)
@@ -669,7 +727,10 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
                 continue;
 
             Battleground* bg = sBattlegroundMgr->GetBattlegroundTemplate(demand.Type);
-            uint32 targetPerTeam = bg ? bg->GetMinPlayersPerTeam() : 0;
+            // MinPlayersPerTeam is only the threshold at which the core may
+            // start a match (WSG is 5). Automation should fill the playable
+            // roster, whose real WSG size is 10 per faction.
+            uint32 targetPerTeam = bg ? bg->GetMaxPlayersPerTeam() : 0;
             if (!targetPerTeam)
                 continue;
 
@@ -754,6 +815,7 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
                             if (candidateTeam == PANDAREN_NEUTRAL ||
                                 TeamId(candidateTeam == ALLIANCE ? TEAM_ALLIANCE : TEAM_HORDE) != team ||
                                 playerClass == CLASS_MONK ||
+                                BgAutoQueueIneligibleBots.count(candidateGuid) ||
                                 BgAutoQueueStagedLogins.count(candidateGuid) ||
                                 BgAutoQueueManagedBots.count(candidateGuid) ||
                                 ObjectAccessor::FindPlayer(candidateObjectGuid) ||
