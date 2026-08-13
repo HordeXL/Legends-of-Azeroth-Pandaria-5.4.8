@@ -47,6 +47,7 @@
 // queue, equipment backup or cleanup lifecycle.
 bool IsSoloArenaManagedPlayer(uint32 guidLow);
 bool IsSoloArenaAutomationBusy();
+bool HasAutomatedPvpBotLoadout(Specializations specialization);
 bool ApplyAutomatedPvpBotLoadout(Player* bot, uint32 requesterGuid,
     uint32& changedSlots, std::string& error);
 bool RestoreAutomatedPvpBotLoadout(Player* bot, char const* reason,

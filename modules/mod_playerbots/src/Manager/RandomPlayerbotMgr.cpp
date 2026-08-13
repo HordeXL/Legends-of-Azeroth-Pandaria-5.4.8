@@ -118,6 +118,7 @@ namespace
             BgAutoQueueManagedBots.find(bot->GetGUID().GetCounter()) !=
                 BgAutoQueueManagedBots.end() ||
             bot->GetClass() == CLASS_MONK || !bot->IsInWorld() ||
+            !HasAutomatedPvpBotLoadout(bot->GetSpecialization()) ||
             bot->GetTeamId() != team || bot->GetGroup() ||
             bot->IsUsingLfg() || bot->InBattleground() || bot->InBattlegroundQueue() ||
             bot->IsInCombat() || bot->IsInFlight() || bot->GetMap()->Instanceable())
@@ -768,6 +769,9 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
                                 activeSpec = 0;
                             bool healer = IsBgHealerSpecialization(
                                 Specializations(specs[activeSpec]));
+                            if (!HasAutomatedPvpBotLoadout(
+                                Specializations(specs[activeSpec])))
+                                continue;
                             if (needHealer && !healer)
                             {
                                 if (!fallbackGuid)

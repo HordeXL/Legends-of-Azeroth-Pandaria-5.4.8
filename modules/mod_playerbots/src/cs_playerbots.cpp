@@ -3860,6 +3860,11 @@ bool ApplyAutomatedPvpBotLoadout(Player* bot, uint32 requesterGuid,
     return false;
 }
 
+bool HasAutomatedPvpBotLoadout(Specializations specialization)
+{
+    return GetSoloArenaLoadoutPlan(specialization) != nullptr;
+}
+
 bool RestoreAutomatedPvpBotLoadout(Player* bot, char const* reason,
     uint32& restoredSlots, uint32& remainingSlots, std::string& error)
 {
