@@ -5,6 +5,10 @@
 
 #include "NearestUnitsValue.h"
 
+#include "GridObject.h"
+#include "CellImpl.h"
+#include "GridNotifiers.h"
+#include "GridNotifiersImpl.h"
 #include "Playerbots.h"
 
 GuidVector NearestUnitsValue::Calculate()
@@ -20,4 +24,16 @@ GuidVector NearestUnitsValue::Calculate()
     }
 
     return results;
+}
+
+void NearestNpcsValue::FindUnits(std::list<Unit*>& targets)
+{
+    Trinity::AnyUnitInObjectRangeCheck check(bot, range, true);
+    Trinity::UnitListSearcher<Trinity::AnyUnitInObjectRangeCheck> searcher(bot, targets, check);
+    Cell::VisitAllObjects(bot, searcher, range);
+}
+
+bool NearestNpcsValue::AcceptUnit(Unit* unit)
+{
+    return unit && !unit->IsPlayer();
 }

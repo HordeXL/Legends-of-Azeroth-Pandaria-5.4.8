@@ -10,6 +10,7 @@
 #include "Event.h"
 #include "ObjectDefines.h"
 #include "ObjectGuid.h"
+#include "NearestUnitsValue.h"
 #include "Playerbots.h"
 #include "ServerFacade.h"
 #include "Corpse.h"
@@ -84,56 +85,93 @@ bool ReleaseSpiritAction::Execute(Event event)
 
 bool AutoReleaseSpiritAction::Execute(Event event)
 {
-    // Death Count to prevent skeleton piles
-    Player* master = GetMaster();
-    if (!master || (master && GET_PLAYERBOT_AI(master)))
+    // Release only once. Re-sending CMSG_REPOP_REQUEST every dead-engine tick while
+    // already a ghost can reset movement/state while the bot is waiting at a BG
+    // spirit guide.
+    if (!bot->HasPlayerFlag(PLAYER_FLAGS_GHOST))
     {
-        uint32 dCount = AI_VALUE(uint32, "death count");
-        context->GetValue<uint32>("death count")->Set(dCount + 1);
+        // Count the death once, at the living-to-ghost transition, rather than on
+        // every dead-engine update while waiting for a resurrection wave.
+        Player* master = GetMaster();
+        if (!master || GET_PLAYERBOT_AI(master))
+        {
+            uint32 dCount = AI_VALUE(uint32, "death count");
+            context->GetValue<uint32>("death count")->Set(dCount + 1);
+        }
+
+        TC_LOG_DEBUG("playerbots", "Bot %s %s:%u <%s> auto released", bot->GetGUID().ToString().c_str(),
+                  bot->GetTeamId() == TEAM_ALLIANCE ? "A" : "H", bot->GetLevel(), bot->GetName().c_str());
+
+        WorldPacket packet(CMSG_REPOP_REQUEST);
+        packet << uint8(0);
+        bot->GetSession()->HandleRepopRequestOpcode(packet);
+
+        TC_LOG_DEBUG("playerbots", "Bot %s %s:%u <%s> releases spirit", bot->GetGUID().ToString().c_str(),
+                  bot->GetTeamId() == TEAM_ALLIANCE ? "A" : "H", bot->GetLevel(), bot->GetName().c_str());
     }
 
-    TC_LOG_DEBUG("playerbots", "Bot %s %s:%u <%s> auto released", bot->GetGUID().ToString().c_str(),
-              bot->GetTeamId() == TEAM_ALLIANCE ? "A" : "H", bot->GetLevel(), bot->GetName().c_str());
-
-    WorldPacket packet(CMSG_REPOP_REQUEST);
-    packet << uint8(0);
-    bot->GetSession()->HandleRepopRequestOpcode(packet);
-
-    TC_LOG_DEBUG("playerbots", "Bot %s %s:%u <%s> releases spirit", bot->GetGUID().ToString().c_str(),
-              bot->GetTeamId() == TEAM_ALLIANCE ? "A" : "H", bot->GetLevel(), bot->GetName().c_str());
-
-    if (bot->InBattleground() && (time(NULL) - bg_gossip_time >= 15 || !bot->HasAura(SPELL_WAITING_FOR_RESURRECT)))
+    if (bot->InBattleground())
     {
-        GuidVector npcs = AI_VALUE(GuidVector, "nearest npcs");
-        ObjectGuid guid;
-        Unit* unit;
-        for (GuidVector::iterator i = npcs.begin(); i != npcs.end(); i++)
+        // SPELL_WAITING_FOR_RESURRECT means Battleground::AddPlayerToResurrectQueue
+        // accepted this ghost. Keep it idle inside the spirit-guide resurrection
+        // area until the normal 30-second BG resurrection wave makes it alive.
+        if (bot->HasAura(SPELL_WAITING_FOR_RESURRECT))
         {
-            unit = botAI->GetUnit(*i);
-            if (unit && unit->IsSpiritService())
-            {
-                guid = unit->GetGUID();
-                break;
-            }
-        }
-        if (!guid)
-        {
+            bot->StopMoving();
+            bot->GetMotionMaster()->Clear();
+            bot->GetMotionMaster()->MoveIdle();
+            botAI->SetNextCheckDelay(1000);
             return true;
         }
-        if (bot->GetDistance(unit) >= INTERACTION_DISTANCE)
+
+        // A few large battleground graveyards place their guide beyond the normal
+        // AI sight radius. This lookup runs only until the bot joins a resurrection
+        // queue; the waiting aura then keeps subsequent updates idle and cheap.
+        GuidVector npcs = NearestNpcsValue(botAI, 2000.0f).Calculate();
+        Unit* spiritGuide = nullptr;
+        for (GuidVector::iterator i = npcs.begin(); i != npcs.end(); i++)
         {
-            // bot needs to actually click spirit-healer in BG to get res timer going
-            // and in IOC it's not within clicking range when they res in own base
+            Unit* unit = botAI->GetUnit(*i);
+            if (!unit || !unit->IsSpiritGuide() || !unit->IsFriendlyTo(bot))
+                continue;
+
+            if (!spiritGuide || bot->GetDistance(unit) < bot->GetDistance(spiritGuide))
+                spiritGuide = unit;
+        }
+
+        if (!spiritGuide)
+        {
+            bot->StopMoving();
+            bot->GetMotionMaster()->Clear();
+            bot->GetMotionMaster()->MoveIdle();
+            botAI->SetNextCheckDelay(1000);
+            return true;
+        }
+
+        if (bot->GetDistance(spiritGuide) >= INTERACTION_DISTANCE)
+        {
+            // Some battleground graveyards place the ghost outside interaction
+            // distance. Move only to the friendly guide, never toward combat or an
+            // objective while dead.
             MotionMaster& mm = *bot->GetMotionMaster();
             mm.Clear();
-            mm.MovePoint(bot->GetMapId(), unit->GetPositionX(), unit->GetPositionY(), unit->GetPositionZ(), true);
+            mm.MovePoint(0, spiritGuide->GetPositionX(), spiritGuide->GetPositionY(),
+                spiritGuide->GetPositionZ(), true);
         }
-        else if (!botAI->IsRealPlayer()) // below doesnt work properly on realplayer, but its also not needed
+        else if (!botAI->IsRealPlayer())
         {
-            bg_gossip_time = time(NULL);
-            WorldPacket packet(CMSG_GOSSIP_HELLO);
-            packet << guid;
-            bot->GetSession()->HandleGossipHelloOpcode(packet);
+            bot->StopMoving();
+            bot->GetMotionMaster()->Clear();
+            bot->GetMotionMaster()->MoveIdle();
+
+            if (Battleground* battleground = bot->GetBattleground())
+            {
+                battleground->AddPlayerToResurrectQueue(spiritGuide->GetGUID(), bot->GetGUID());
+                TC_LOG_DEBUG("playerbots", "Bot %s %s:%u <%s> waits at battleground spirit guide %s",
+                    bot->GetGUID().ToString().c_str(),
+                    bot->GetTeamId() == TEAM_ALLIANCE ? "A" : "H", bot->GetLevel(),
+                    bot->GetName().c_str(), spiritGuide->GetGUID().ToString().c_str());
+            }
         }
     }
     botAI->SetNextCheckDelay(1000);

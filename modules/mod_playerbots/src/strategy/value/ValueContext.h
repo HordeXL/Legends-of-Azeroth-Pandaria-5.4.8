@@ -108,6 +108,7 @@ public:
         creators["pull target"] = &ValueContext::pull_target;
         creators["invalid target"] = &ValueContext::invalid_target;
         creators["nearest friendly players"] = &ValueContext::nearest_friendly_players;
+        creators["nearest npcs"] = &ValueContext::nearest_npcs;
         creators["closest friendly players"] = &ValueContext::closest_friendly_players;
         creators["nearest enemy players"] = &ValueContext::nearest_enemy_players;
         creators["enemy player target"] = &ValueContext::enemy_player_target;
@@ -209,6 +210,7 @@ private:
     static UntypedValue* prioritized_targets(PlayerbotAI* botAI) { return new PrioritizedTargetsValue(botAI); }
 
     static UntypedValue* master(PlayerbotAI* botAI) { return new MasterTargetValue(botAI); }
+    static UntypedValue* nearest_npcs(PlayerbotAI* botAI) { return new NearestNpcsValue(botAI); }
     static UntypedValue* all_targets(PlayerbotAI* botAI) { return new AllTargetsValue(botAI); }
     static UntypedValue* self_target(PlayerbotAI* botAI) { return new SelfTargetValue(botAI); }
     static UntypedValue* pet_target(PlayerbotAI* botAI) { return new PetTargetValue(botAI); }

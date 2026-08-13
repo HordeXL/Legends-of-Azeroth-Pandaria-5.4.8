@@ -27,6 +27,12 @@
 
 bool ReviveFromCorpseAction::Execute(Event event)
 {
+    // Battleground ghosts must wait for the spirit-guide resurrection wave.
+    // Corpse reclaim is an overworld/dungeon path and must not make dead BG bots
+    // leave their graveyard to run toward combat or their body.
+    if (bot->InBattleground())
+        return false;
+
     Player* master = botAI->GetGroupMaster();
     Corpse* corpse = bot->GetCorpse();
 
@@ -281,7 +287,15 @@ bool SpiritHealerAction::Execute(Event event)
 
     if (bot->GetDistance2d(ClosestGrave->x, ClosestGrave->y) < sPlayerbotAIConfig->sightDistance)
     {
-        GuidVector npcs = AI_VALUE(GuidVector, "nearest npcs");
+        Value<GuidVector>* nearestNpcsValue = context->GetValue<GuidVector>("nearest npcs");
+        if (!nearestNpcsValue)
+        {
+            TC_LOG_ERROR("playerbots", "Bot %s could not resolve nearest NPCs at spirit healer",
+                bot->GetGUID().ToString().c_str());
+            return false;
+        }
+
+        GuidVector npcs = nearestNpcsValue->Get();
         for (GuidVector::iterator i = npcs.begin(); i != npcs.end(); i++)
         {
             Unit* unit = botAI->GetUnit(*i);
