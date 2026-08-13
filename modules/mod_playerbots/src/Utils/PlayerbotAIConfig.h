@@ -72,6 +72,8 @@ public:
     std::vector<uint32> randomBotAccounts;
 
     bool autoQueueEnabled, autoQueueDryRun, autoQueueLfg, autoQueueBattleground, autoQueueArena;
+    bool autoQueueBattlegroundAutomatic, autoQueueBattlegroundLoadout;
+    bool autoQueueBattlegroundPreparationBuffs;
     bool autoQueueArenaStageLogin, autoQueueArenaStageGroup, autoQueueArenaStageQueue, autoQueueArenaStageMatch;
     bool autoQueueArenaStageEnter, autoQueueArenaStageHealthRestore, autoQueueArenaStageCombatStatus;
     bool autoQueueArenaStageAutomaticExit;
@@ -79,6 +81,7 @@ public:
     bool autoQueueArenaAutomaticForceTolviron, autoQueueArenaPreparationBuffs;
     bool autoQueueArenaPreparationFaceOpponent, autoQueueArenaRewardEnabled;
     uint32 autoQueueCheckInterval, autoQueueMaxBotsPerCycle;
+    uint32 autoQueueBattlegroundMaxBotsPerCycle;
     uint32 autoQueueArenaMinEquippedItems, autoQueueArenaMinAverageItemLevel, autoQueueArenaMinPvpItems;
     uint32 autoQueueArenaAutomaticTimeout;
     uint32 autoQueueArenaReward2v2, autoQueueArenaReward3v3, autoQueueArenaReward5v5;

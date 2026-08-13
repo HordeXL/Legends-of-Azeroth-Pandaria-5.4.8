@@ -42,4 +42,15 @@
 #define GAI_VALUE(type, name) sSharedValueContext->getGlobalValue<type>(name)->Get()
 #define GAI_VALUE2(type, name, param) sSharedValueContext->getGlobalValue<type>(name, param)->Get()
 
+// Shared guards used by the independent PvP automation paths.  Battleground
+// filling must never claim a bot while Solo Arena owns its login, group,
+// queue, equipment backup or cleanup lifecycle.
+bool IsSoloArenaManagedPlayer(uint32 guidLow);
+bool IsSoloArenaAutomationBusy();
+bool ApplyAutomatedPvpBotLoadout(Player* bot, uint32 requesterGuid,
+    uint32& changedSlots, std::string& error);
+bool RestoreAutomatedPvpBotLoadout(Player* bot, char const* reason,
+    uint32& restoredSlots, uint32& remainingSlots, std::string& error);
+bool CastAutomatedPvpPreparationBuff(Player* bot);
+
 #endif

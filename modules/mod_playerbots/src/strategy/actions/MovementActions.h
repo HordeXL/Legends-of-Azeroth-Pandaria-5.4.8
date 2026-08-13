@@ -151,3 +151,20 @@ public:
 private:
     float distance;
 };
+
+// Objective controller used only by automated playerbots inside a running
+// battleground.  It keeps combat as the first priority and otherwise moves
+// toward a mode-specific objective (flags, bases, orbs, carts, or enemy line).
+class BattlegroundObjectiveAction : public MovementAction
+{
+public:
+    explicit BattlegroundObjectiveAction(PlayerbotAI* botAI)
+        : MovementAction(botAI, "battleground objective") { }
+
+    bool Execute(Event event) override;
+    bool isUseful() override;
+
+private:
+    bool EngageEnemy(Player* enemy);
+    bool MoveToOrUse(GameObject* object, float interactDistance = 5.0f);
+};

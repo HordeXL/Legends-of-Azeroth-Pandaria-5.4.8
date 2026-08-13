@@ -773,14 +773,35 @@ AiPlayerbot.RandomBotJoinBG = 1
 # Enable Auto join BG - have bots start BG's and Arenas on their own
 AiPlayerbot.RandomBotAutoJoinBG = 0
 
-# Experimental MoP 5.4.8 queue filler. Patch 0001 is observer-only:
-# it reports real-player and random-bot demand but never joins a queue.
-# Keep all values disabled until the observer output has been verified.
+# MoP 5.4.8 queue observer and request-driven fillers. Defaults remain off;
+# enable only the independently tested category and its category-specific
+# Automatic switch. DryRun remains the shared observer/Arena safety setting.
 AiPlayerbot.AutoQueue.Enabled = 0
 AiPlayerbot.AutoQueue.DryRun = 1
 AiPlayerbot.AutoQueue.LFG = 0
 AiPlayerbot.AutoQueue.Battleground = 0
 AiPlayerbot.AutoQueue.Arena = 0
+
+# Request-driven Battleground integration. Unlike the shared observer DryRun
+# flag, this switch controls mutations only for Battlegrounds and therefore
+# does not disturb the verified Solo Arena safety configuration. It never
+# creates a bot-only match and removes claimed bots if the requester leaves.
+AiPlayerbot.AutoQueue.Battleground.Automatic = 0
+
+# Temporarily equip only managed random bots with the mapped specialization
+# Prideful five-piece PvP set. The real requester is never changed. Exact
+# original item instances are journaled and restored after Battleground exit.
+AiPlayerbot.AutoQueue.Battleground.Loadout = 0
+
+# Ask managed bots to cast class-supported party buffs through normal AI while
+# the Battleground is in its preparation countdown. Failed attempts retry.
+AiPlayerbot.AutoQueue.Battleground.PreparationBuffs = 0
+
+# Maximum managed random bots admitted to Battleground queues during one
+# observer pass. This is separate from the conservative shared/Arena limit so
+# 10v10 through 40v40 Battlegrounds can be filled in a reasonable time. At
+# least one real requester is still required; zero is clamped to one.
+AiPlayerbot.AutoQueue.Battleground.MaxBotsPerCycle = 10
 
 # Observer interval in seconds. Values below 1 are clamped to 1 second.
 AiPlayerbot.AutoQueue.CheckInterval = 5

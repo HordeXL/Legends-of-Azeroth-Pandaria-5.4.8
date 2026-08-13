@@ -22,6 +22,7 @@
 #include "RangedCombatStrategy.h"
 #include "StayStrategy.h"
 #include "WorldPacketHandlerStrategy.h"
+#include "BattlegroundStrategy.h"
 
 class StrategyContext : public NamedObjectContext<Strategy>
 {
@@ -36,6 +37,7 @@ public:
         creators["ranged"] = &StrategyContext::ranged;
         creators["dead"] = &StrategyContext::dead;
         creators["group"] = &StrategyContext::group;
+        creators["battleground"] = &StrategyContext::battleground;
 
         creators["formation"] = &StrategyContext::combat_formation;
         creators["move from group"] = &StrategyContext::move_from_group;
@@ -60,6 +62,7 @@ private:
     static Strategy* ranged(PlayerbotAI* botAI) { return new RangedCombatStrategy(botAI); }
     static Strategy* dead(PlayerbotAI* botAI) { return new DeadStrategy(botAI); }
     static Strategy* group(PlayerbotAI* botAI) { return new GroupStrategy(botAI); }
+    static Strategy* battleground(PlayerbotAI* botAI) { return new BattlegroundStrategy(botAI); }
     static Strategy* combat_formation(PlayerbotAI* ai) { return new CombatFormationStrategy(ai); }
     static Strategy* move_from_group(PlayerbotAI* botAI) { return new MoveFromGroupStrategy(botAI); }
 

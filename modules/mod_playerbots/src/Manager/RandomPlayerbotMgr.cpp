@@ -24,6 +24,7 @@
 #include <iomanip>
 #include <map>
 #include <random>
+#include <sstream>
 
 #include "AccountMgr.h"
 #include "Battleground.h"
@@ -45,6 +46,7 @@
 #include "Player.h"
 #include "PlayerbotAI.h"
 #include "PlayerbotAIConfig.h"
+#include "PlayerbotSpec.h"
 #include "PerformanceMonitor.h"
 #include "Playerbots.h"
 #include "RandomItemManager.h"
@@ -62,14 +64,61 @@ namespace
         BattlegroundBracketId Bracket = BG_BRACKET_ID_FIRST;
         uint32 RealPlayers[2] = { 0, 0 };
         uint32 BotPlayers[2] = { 0, 0 };
+        uint32 Healers[2] = { 0, 0 };
+        uint32 RequesterGuid[2] = { 0, 0 };
     };
+
+    struct BgAutoQueueManagedBot
+    {
+        BattlegroundQueueTypeId QueueType = BATTLEGROUND_QUEUE_NONE;
+        BattlegroundTypeId Type = BATTLEGROUND_TYPE_NONE;
+        BattlegroundBracketId Bracket = BG_BRACKET_ID_FIRST;
+        uint32 RequesterGuid = 0;
+        bool Entered = false;
+        bool LoadoutApplied = false;
+        bool PreparationBuffed = false;
+        bool StrategyInitialized = false;
+    };
+
+    struct BgAutoQueueStagedLogin
+    {
+        BattlegroundQueueTypeId QueueType = BATTLEGROUND_QUEUE_NONE;
+        BattlegroundTypeId Type = BATTLEGROUND_TYPE_NONE;
+        uint32 MapId = 0;
+        BattlegroundBracketId Bracket = BG_BRACKET_ID_FIRST;
+        TeamId Team = TEAM_NEUTRAL;
+        uint32 RequesterGuid = 0;
+        bool Healer = false;
+    };
+
+    std::map<uint32, BgAutoQueueManagedBot> BgAutoQueueManagedBots;
+    std::map<uint32, BgAutoQueueStagedLogin> BgAutoQueueStagedLogins;
+
+    bool IsBgHealerSpecialization(Specializations specialization)
+    {
+        switch (specialization)
+        {
+            case SPEC_PALADIN_HOLY:
+            case SPEC_DRUID_RESTORATION:
+            case SPEC_PRIEST_DISCIPLINE:
+            case SPEC_PRIEST_HOLY:
+            case SPEC_SHAMAN_RESTORATION:
+                return true;
+            default:
+                return false;
+        }
+    }
 
     bool CanAutoQueueBgBot(Player* bot, TeamId team, uint32 mapId,
                            BattlegroundBracketId bracket)
     {
         // Monk class actions are not implemented in this 5.4.8 playerbots port.
-        if (!bot || bot->GetClass() == CLASS_MONK || !bot->IsInWorld() ||
-            bot->GetTeamId() != team || !bot->IsAlive() || bot->GetGroup() ||
+        if (!bot || IsSoloArenaAutomationBusy() ||
+            IsSoloArenaManagedPlayer(bot->GetGUID().GetCounter()) ||
+            BgAutoQueueManagedBots.find(bot->GetGUID().GetCounter()) !=
+                BgAutoQueueManagedBots.end() ||
+            bot->GetClass() == CLASS_MONK || !bot->IsInWorld() ||
+            bot->GetTeamId() != team || bot->GetGroup() ||
             bot->IsUsingLfg() || bot->InBattleground() || bot->InBattlegroundQueue() ||
             bot->IsInCombat() || bot->IsInFlight() || bot->GetMap()->Instanceable())
             return false;
@@ -305,6 +354,11 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
                 demand.MapId = bg->GetMapId();
                 demand.Bracket = bracket->GetBracketId();
                 ++demand.RealPlayers[player->GetTeamId()];
+                if (PlayerBotSpec::IsHeal(player, true))
+                    ++demand.Healers[player->GetTeamId()];
+                if (!demand.RequesterGuid[player->GetTeamId()])
+                    demand.RequesterGuid[player->GetTeamId()] =
+                        player->GetGUID().GetCounter();
             }
         }
 
@@ -334,28 +388,270 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
                     demand.MapId = bg->GetMapId();
                     demand.Bracket = bracket->GetBracketId();
                     ++demand.BotPlayers[bot->GetTeamId()];
+                    if (PlayerBotSpec::IsHeal(bot, true))
+                        ++demand.Healers[bot->GetTeamId()];
                 }
             }
+        }
+
+        // A bot whose login was requested for this BG already owns a future
+        // team slot. Count it now so the five-second observer cannot request
+        // duplicate logins while the character is still entering the world.
+        for (auto const& stagedPair : BgAutoQueueStagedLogins)
+        {
+            BgAutoQueueStagedLogin const& staged = stagedPair.second;
+            auto demandItr = bgDemands.find({ staged.QueueType, staged.Bracket });
+            if (demandItr == bgDemands.end() || staged.Team > TEAM_HORDE)
+                continue;
+            ++demandItr->second.BotPlayers[staged.Team];
+            if (staged.Healer)
+                ++demandItr->second.Healers[staged.Team];
         }
     }
 
     uint32 bgInvitesAccepted = 0;
     uint32 bgBotsJoined = 0;
+    uint32 bgBotsStaged = 0;
     if (sPlayerbotAIConfig->autoQueueBattleground &&
-        !sPlayerbotAIConfig->autoQueueDryRun)
+        sPlayerbotAIConfig->autoQueueBattlegroundAutomatic)
     {
-        // Accept only real, non-Arena invitations already owned by random bots.
-        for (auto const& botPair : playerBots)
+        // Complete request-driven offline logins before examining already
+        // managed queue members. This keeps RandomBotAutologin optional: a
+        // real BG request can wake only the characters it actually needs.
+        for (auto itr = BgAutoQueueStagedLogins.begin();
+             itr != BgAutoQueueStagedLogins.end();)
         {
-            Player* bot = botPair.second;
-            if (!IsRandomBot(bot))
+            uint32 botGuid = itr->first;
+            BgAutoQueueStagedLogin const staged = itr->second;
+            ObjectGuid guid = ObjectGuid::Create<HighGuid::Player>(botGuid);
+            Player* requester = staged.RequesterGuid ?
+                ObjectAccessor::FindConnectedPlayer(
+                    ObjectGuid::Create<HighGuid::Player>(staged.RequesterGuid)) : nullptr;
+            bool requesterActive = requester && requester->IsInWorld() &&
+                requester->InBattlegroundQueueForBattlegroundQueueType(staged.QueueType);
+            Player* bot = GetPlayerBot(guid);
+
+            if (!requesterActive)
+            {
+                if (bot && !bot->InBattleground() && !bot->InBattlegroundQueue())
+                    LogoutPlayerBot(guid);
+                if (IsBotLoading(guid))
+                {
+                    ++itr;
+                    continue;
+                }
+                TC_LOG_INFO("server",
+                    "AutoQueue BG canceled staged login guid=%u requester=%u type=%u",
+                    botGuid, staged.RequesterGuid, uint32(staged.Type));
+                itr = BgAutoQueueStagedLogins.erase(itr);
+                continue;
+            }
+
+            if (!bot || !bot->IsInWorld() || IsBotLoading(guid) ||
+                bot->IsBeingTeleported())
+            {
+                ++itr;
+                continue;
+            }
+
+            if (!CanAutoQueueBgBot(bot, staged.Team, staged.MapId, staged.Bracket))
+            {
+                TC_LOG_ERROR("server",
+                    "AutoQueue BG staged bot became ineligible name=%s guid=%u type=%u",
+                    bot->GetName().c_str(), botGuid, uint32(staged.Type));
+                if (!bot->InBattleground() && !bot->InBattlegroundQueue())
+                    LogoutPlayerBot(guid);
+                itr = BgAutoQueueStagedLogins.erase(itr);
+                continue;
+            }
+
+            if (!bot->IsAlive())
+            {
+                Revive(bot);
+                bot->SetHealth(bot->GetMaxHealth());
+            }
+
+            bool loadoutApplied = false;
+            if (sPlayerbotAIConfig->autoQueueBattlegroundLoadout)
+            {
+                uint32 changed = 0;
+                std::string loadoutError;
+                if (!ApplyAutomatedPvpBotLoadout(bot, staged.RequesterGuid,
+                    changed, loadoutError))
+                {
+                    TC_LOG_ERROR("server",
+                        "AutoQueue BG staged loadout refused name=%s guid=%u requester=%u error=%s",
+                        bot->GetName().c_str(), botGuid, staged.RequesterGuid,
+                        loadoutError.c_str());
+                    LogoutPlayerBot(guid);
+                    itr = BgAutoQueueStagedLogins.erase(itr);
+                    continue;
+                }
+                loadoutApplied = true;
+            }
+
+            if (!sBattlegroundMgr->QueuePlayer(bot, staged.Type))
+            {
+                if (loadoutApplied)
+                {
+                    uint32 restored = 0;
+                    uint32 remaining = 0;
+                    std::string restoreError;
+                    RestoreAutomatedPvpBotLoadout(bot, "battleground-staged-queue-failed",
+                        restored, remaining, restoreError);
+                }
+                LogoutPlayerBot(guid);
+                itr = BgAutoQueueStagedLogins.erase(itr);
+                continue;
+            }
+
+            BgAutoQueueManagedBots[botGuid] =
+                { staged.QueueType, staged.Type, staged.Bracket,
+                  staged.RequesterGuid, false, loadoutApplied, false, false };
+            ++bgBotsJoined;
+            TC_LOG_INFO("server",
+                "AutoQueue BG staged bot joined name=%s guid=%u team=%u type=%u bracket=%u requester=%u",
+                bot->GetName().c_str(), botGuid, uint32(staged.Team),
+                uint32(staged.Type), uint32(staged.Bracket), staged.RequesterGuid);
+            itr = BgAutoQueueStagedLogins.erase(itr);
+        }
+
+        // Reconcile only bots claimed by this feature.  If the real requester
+        // abandons the queue before entry, remove our bot rather than leaving
+        // behind an autonomous bot-only queue.  Once either side has entered
+        // the match, normal battleground lifecycle owns it until exit.
+        for (auto itr = BgAutoQueueManagedBots.begin();
+             itr != BgAutoQueueManagedBots.end();)
+        {
+            uint32 botGuid = itr->first;
+            BgAutoQueueManagedBot& managed = itr->second;
+            Player* bot = GetPlayerBot(
+                ObjectGuid::Create<HighGuid::Player>(botGuid));
+            if (!bot || !bot->IsInWorld())
+            {
+                TC_LOG_WARN("server",
+                    "AutoQueue BG released unavailable managed bot guid=%u type=%u",
+                    botGuid, uint32(managed.Type));
+                itr = BgAutoQueueManagedBots.erase(itr);
+                continue;
+            }
+
+            bool inManagedQueue = bot->InBattlegroundQueueForBattlegroundQueueType(
+                managed.QueueType);
+            if (bot->InBattleground())
+            {
+                managed.Entered = true;
+                Battleground* activeBg = bot->GetBattleground();
+                if (activeBg && activeBg->IsBattleground() &&
+                    !managed.StrategyInitialized)
+                {
+                    if (PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot))
+                    {
+                        botAI->ResetStrategies();
+                        managed.StrategyInitialized = true;
+                        TC_LOG_INFO("server",
+                            "AutoQueue BG objective strategy initialized name=%s guid=%u instance=%u type=%u",
+                            bot->GetName().c_str(), botGuid, activeBg->GetInstanceID(),
+                            uint32(managed.Type));
+                    }
+                }
+                if (activeBg && activeBg->GetStatus() == STATUS_WAIT_JOIN &&
+                    sPlayerbotAIConfig->autoQueueBattlegroundPreparationBuffs &&
+                    !managed.PreparationBuffed &&
+                    CastAutomatedPvpPreparationBuff(bot))
+                {
+                    managed.PreparationBuffed = true;
+                    TC_LOG_INFO("server",
+                        "AutoQueue BG preparation buff name=%s guid=%u instance=%u type=%u",
+                        bot->GetName().c_str(), botGuid, activeBg->GetInstanceID(),
+                        uint32(managed.Type));
+                }
+            }
+
+            Player* requester = managed.RequesterGuid ?
+                ObjectAccessor::FindConnectedPlayer(
+                    ObjectGuid::Create<HighGuid::Player>(managed.RequesterGuid)) : nullptr;
+            bool requesterActive = requester && requester->IsInWorld() &&
+                (requester->InBattlegroundQueueForBattlegroundQueueType(
+                    managed.QueueType) || requester->InBattleground() ||
+                    requester->IsBeingTeleported());
+
+            if (!managed.Entered && inManagedQueue && !requesterActive)
+            {
+                sBattlegroundMgr->RemovePlayerFromQueue(bot, managed.QueueType);
+                if (managed.LoadoutApplied)
+                {
+                    uint32 restored = 0;
+                    uint32 remaining = 0;
+                    std::string restoreError;
+                    if (!RestoreAutomatedPvpBotLoadout(bot,
+                        "battleground-requester-left", restored, remaining,
+                        restoreError))
+                    {
+                        TC_LOG_ERROR("server",
+                            "AutoQueue BG requester-left restore pending name=%s guid=%u restored=%u remaining=%u error=%s",
+                            bot->GetName().c_str(), botGuid, restored, remaining,
+                            restoreError.c_str());
+                        ++itr;
+                        continue;
+                    }
+                }
+                TC_LOG_INFO("server",
+                    "AutoQueue BG removed bot name=%s guid=%u because requester=%u left type=%u",
+                    bot->GetName().c_str(), botGuid, managed.RequesterGuid,
+                    uint32(managed.Type));
+                itr = BgAutoQueueManagedBots.erase(itr);
+                continue;
+            }
+
+            if (!bot->InBattleground() && !inManagedQueue &&
+                !bot->IsBeingTeleported())
+            {
+                if (managed.LoadoutApplied)
+                {
+                    if (!bot->IsAlive())
+                        Revive(bot);
+                    bot->SetHealth(bot->GetMaxHealth());
+                    uint32 restored = 0;
+                    uint32 remaining = 0;
+                    std::string restoreError;
+                    if (!RestoreAutomatedPvpBotLoadout(bot, "battleground-exit",
+                        restored, remaining, restoreError))
+                    {
+                        TC_LOG_ERROR("server",
+                            "AutoQueue BG loadout restore pending name=%s guid=%u restored=%u remaining=%u error=%s",
+                            bot->GetName().c_str(), botGuid, restored, remaining,
+                            restoreError.c_str());
+                        ++itr;
+                        continue;
+                    }
+                }
+                TC_LOG_INFO("server",
+                    "AutoQueue BG lifecycle completed bot name=%s guid=%u type=%u entered=%u",
+                    bot->GetName().c_str(), botGuid, uint32(managed.Type),
+                    managed.Entered ? 1 : 0);
+                if (PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot))
+                    botAI->ResetStrategies();
+                itr = BgAutoQueueManagedBots.erase(itr);
+                continue;
+            }
+
+            ++itr;
+        }
+
+        // Accept only non-Arena invitations owned by this automation.  Other
+        // playerbot queue systems remain untouched.
+        for (auto const& managedPair : BgAutoQueueManagedBots)
+        {
+            Player* bot = GetPlayerBot(ObjectGuid::Create<HighGuid::Player>(
+                managedPair.first));
+            if (!bot || !IsRandomBot(bot))
                 continue;
 
             for (uint8 slot = 0; slot < PLAYER_MAX_BATTLEGROUND_QUEUES; ++slot)
             {
                 BattlegroundQueueTypeId queueType = bot->GetBattlegroundQueueTypeId(slot);
-                if (queueType != BATTLEGROUND_QUEUE_NONE &&
-                    !BattlegroundMgr::BGArenaType(queueType) &&
+                if (queueType == managedPair.second.QueueType &&
                     sBattlegroundMgr->AcceptQueueInvite(bot, slot))
                 {
                     ++bgInvitesAccepted;
@@ -378,41 +674,227 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
 
             for (TeamId team : { TEAM_ALLIANCE, TEAM_HORDE })
             {
+                uint32 requesterGuid = demand.RequesterGuid[team] ?
+                    demand.RequesterGuid[team] :
+                    demand.RequesterGuid[team == TEAM_ALLIANCE ?
+                        TEAM_HORDE : TEAM_ALLIANCE];
                 while (demand.RealPlayers[team] + demand.BotPlayers[team] < targetPerTeam &&
-                    bgBotsJoined < sPlayerbotAIConfig->autoQueueMaxBotsPerCycle)
+                    bgBotsJoined + bgBotsStaged <
+                        sPlayerbotAIConfig->autoQueueBattlegroundMaxBotsPerCycle)
                 {
                     Player* selectedBot = nullptr;
-                    for (auto const& botPair : playerBots)
+                    uint32 desiredHealers = std::max<uint32>(1, targetPerTeam / 5);
+                    bool needHealer = demand.Healers[team] < desiredHealers;
+                    for (uint8 pass = 0; pass < 2 && !selectedBot; ++pass)
                     {
-                        Player* bot = botPair.second;
-                        if (IsRandomBot(bot) && CanAutoQueueBgBot(
-                            bot, team, demand.MapId, demand.Bracket))
+                        for (auto const& botPair : playerBots)
                         {
+                            Player* bot = botPair.second;
+                            if (!IsRandomBot(bot) || !CanAutoQueueBgBot(
+                                bot, team, demand.MapId, demand.Bracket))
+                                continue;
+
+                            // First pass reserves the required healer share.
+                            // The second pass is a safe fallback when no
+                            // eligible healer exists, so the BG cannot stall.
+                            if (!pass && needHealer &&
+                                !PlayerBotSpec::IsHeal(bot, true))
+                                continue;
+
                             selectedBot = bot;
                             break;
                         }
                     }
 
-                    if (!selectedBot ||
-                        !sBattlegroundMgr->QueuePlayer(selectedBot, demand.Type))
+                    if (!selectedBot)
+                    {
+                        // No suitable random bot is online. Select an unused
+                        // offline character from the configured random-bot
+                        // accounts and stage its login. The next observer tick
+                        // applies the protected loadout and queues it.
+                        if (sPlayerbotAIConfig->randomBotAccounts.empty())
+                            break;
+
+                        Player* requester = requesterGuid ?
+                            ObjectAccessor::FindConnectedPlayer(
+                                ObjectGuid::Create<HighGuid::Player>(requesterGuid)) : nullptr;
+                        if (!requester)
+                            break;
+
+                        uint32 minAccount = sPlayerbotAIConfig->randomBotAccounts.front();
+                        uint32 maxAccount = sPlayerbotAIConfig->randomBotAccounts.back();
+                        QueryResult candidates = CharacterDatabase.PQuery(
+                            "SELECT guid,name,race,class,talentTree,activespec "
+                            "FROM characters WHERE account >= %u AND account <= %u "
+                            "AND level=%u AND online=0 AND instance_id=0 "
+                            "AND guid NOT IN (SELECT guid FROM guild_member) "
+                            "AND guid NOT IN (SELECT memberGuid FROM group_member) "
+                            "AND guid NOT IN (SELECT owner_guid FROM solo_arena_loadout_backup) "
+                            "ORDER BY guid",
+                            minAccount, maxAccount, requester->GetLevel());
+                        if (!candidates)
+                            break;
+
+                        uint32 selectedGuid = 0;
+                        std::string selectedName;
+                        bool selectedHealer = false;
+                        uint32 fallbackGuid = 0;
+                        std::string fallbackName;
+                        bool fallbackHealer = false;
+                        do
+                        {
+                            Field* fields = candidates->Fetch();
+                            uint32 candidateGuid = fields[0].GetUInt32();
+                            ObjectGuid candidateObjectGuid =
+                                ObjectGuid::Create<HighGuid::Player>(candidateGuid);
+                            uint8 race = fields[2].GetUInt8();
+                            uint8 playerClass = fields[3].GetUInt8();
+                            uint32 candidateTeam = Player::TeamForRace(race);
+                            if (candidateTeam == PANDAREN_NEUTRAL ||
+                                TeamId(candidateTeam == ALLIANCE ? TEAM_ALLIANCE : TEAM_HORDE) != team ||
+                                playerClass == CLASS_MONK ||
+                                BgAutoQueueStagedLogins.count(candidateGuid) ||
+                                BgAutoQueueManagedBots.count(candidateGuid) ||
+                                ObjectAccessor::FindPlayer(candidateObjectGuid) ||
+                                GetPlayerBot(candidateObjectGuid) || IsBotLoading(candidateObjectGuid))
+                                continue;
+
+                            uint32 specs[MAX_TALENT_SPECS] = { 0, 0 };
+                            std::istringstream talentTrees(fields[4].GetString());
+                            for (uint8 spec = 0; spec < MAX_TALENT_SPECS; ++spec)
+                                talentTrees >> specs[spec];
+                            uint8 activeSpec = fields[5].GetUInt8();
+                            if (activeSpec >= MAX_TALENT_SPECS)
+                                activeSpec = 0;
+                            bool healer = IsBgHealerSpecialization(
+                                Specializations(specs[activeSpec]));
+                            if (needHealer && !healer)
+                            {
+                                if (!fallbackGuid)
+                                {
+                                    fallbackGuid = candidateGuid;
+                                    fallbackName = fields[1].GetString();
+                                    fallbackHealer = false;
+                                }
+                                continue;
+                            }
+
+                            selectedGuid = candidateGuid;
+                            selectedName = fields[1].GetString();
+                            selectedHealer = healer;
+                            break;
+                        }
+                        while (candidates->NextRow());
+
+                        // If this team has no unused healer, allow a DPS bot
+                        // rather than leaving the entire battleground stalled.
+                        if (!selectedGuid && fallbackGuid)
+                        {
+                            selectedGuid = fallbackGuid;
+                            selectedName = fallbackName;
+                            selectedHealer = fallbackHealer;
+                        }
+                        if (!selectedGuid)
+                            break;
+
+                        ObjectGuid selectedObjectGuid =
+                            ObjectGuid::Create<HighGuid::Player>(selectedGuid);
+                        BgAutoQueueStagedLogins[selectedGuid] =
+                            { demandPair.first.first, demand.Type, demand.MapId,
+                              demand.Bracket, team, requesterGuid, selectedHealer };
+                        AddPlayerBot(selectedObjectGuid, 0);
+                        ++demand.BotPlayers[team];
+                        if (selectedHealer)
+                            ++demand.Healers[team];
+                        ++bgBotsStaged;
+                        TC_LOG_INFO("server",
+                            "AutoQueue BG staged login name=%s guid=%u team=%u type=%u bracket=%u healer=%u requester=%u",
+                            selectedName.c_str(), selectedGuid, uint32(team),
+                            uint32(demand.Type), uint32(demand.Bracket),
+                            selectedHealer ? 1u : 0u, requesterGuid);
+                        continue;
+                    }
+
+                    // A random bot may have died in the open world before it
+                    // was selected. Restore it through the existing bot
+                    // lifecycle before queueing; never apply this to the real
+                    // requester.
+                    if (!selectedBot->IsAlive())
+                    {
+                        Revive(selectedBot);
+                        if (!selectedBot->IsAlive())
+                        {
+                            TC_LOG_ERROR("server",
+                                "AutoQueue BG could not revive selected bot name=%s guid=%u",
+                                selectedBot->GetName().c_str(),
+                                selectedBot->GetGUID().GetCounter());
+                            break;
+                        }
+                        selectedBot->SetHealth(selectedBot->GetMaxHealth());
+                        TC_LOG_INFO("server",
+                            "AutoQueue BG revived selected bot name=%s guid=%u before queue",
+                            selectedBot->GetName().c_str(),
+                            selectedBot->GetGUID().GetCounter());
+                    }
+
+                    bool loadoutApplied = false;
+                    if (sPlayerbotAIConfig->autoQueueBattlegroundLoadout)
+                    {
+                        uint32 changed = 0;
+                        std::string loadoutError;
+                        if (!ApplyAutomatedPvpBotLoadout(selectedBot,
+                            requesterGuid, changed, loadoutError))
+                        {
+                            TC_LOG_ERROR("server",
+                                "AutoQueue BG skipped bot loadout name=%s guid=%u requester=%u error=%s",
+                                selectedBot->GetName().c_str(),
+                                selectedBot->GetGUID().GetCounter(), requesterGuid,
+                                loadoutError.c_str());
+                            break;
+                        }
+                        loadoutApplied = true;
+                    }
+
+                    if (!sBattlegroundMgr->QueuePlayer(selectedBot, demand.Type))
+                    {
+                        if (loadoutApplied)
+                        {
+                            uint32 restored = 0;
+                            uint32 remaining = 0;
+                            std::string restoreError;
+                            RestoreAutomatedPvpBotLoadout(selectedBot,
+                                "battleground-queue-failed", restored, remaining,
+                                restoreError);
+                        }
                         break;
+                    }
 
                     ++demand.BotPlayers[team];
+                    if (PlayerBotSpec::IsHeal(selectedBot, true))
+                        ++demand.Healers[team];
                     ++bgBotsJoined;
+                    BgAutoQueueManagedBots[selectedBot->GetGUID().GetCounter()] =
+                        { demandPair.first.first, demand.Type, demand.Bracket,
+                          requesterGuid, false, loadoutApplied, false, false };
                     TC_LOG_INFO("server",
-                        "AutoQueue BG joined bot name=%s guid=%u team=%u type=%u bracket=%u target-per-team=%u",
+                        "AutoQueue BG joined bot name=%s guid=%u team=%u type=%u bracket=%u target-per-team=%u healers=%u/%u requester=%u",
                         selectedBot->GetName().c_str(), selectedBot->GetGUID().GetCounter(),
-                        uint32(team), uint32(demand.Type), uint32(demand.Bracket), targetPerTeam);
+                        uint32(team), uint32(demand.Type), uint32(demand.Bracket),
+                        targetPerTeam, demand.Healers[team], desiredHealers,
+                        requesterGuid);
                 }
             }
         }
     }
 
     TC_LOG_INFO("server",
-        "AutoQueue observer (dry-run=%u, max-bots=%u): LFG real/bot=%u/%u, BG real/bot=%u/%u joined=%u accepted=%u demands=%u, Arena real/bot=%u/%u",
+        "AutoQueue observer (dry-run=%u, max-bots=%u, bg-max-bots=%u): LFG real/bot=%u/%u, BG real/bot=%u/%u staged=%u joined=%u accepted=%u demands=%u pending=%u managed=%u, Arena real/bot=%u/%u",
         sPlayerbotAIConfig->autoQueueDryRun ? 1 : 0, sPlayerbotAIConfig->autoQueueMaxBotsPerCycle,
-        realLfg, botLfg, realBg, botBg, bgBotsJoined, bgInvitesAccepted,
-        uint32(bgDemands.size()), realArena, botArena);
+        sPlayerbotAIConfig->autoQueueBattlegroundMaxBotsPerCycle,
+        realLfg, botLfg, realBg, botBg, bgBotsStaged, bgBotsJoined, bgInvitesAccepted,
+        uint32(bgDemands.size()), uint32(BgAutoQueueStagedLogins.size()),
+        uint32(BgAutoQueueManagedBots.size()),
+        realArena, botArena);
 }
 
 uint32 RandomPlayerbotMgr::AddRandomBots()

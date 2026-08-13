@@ -166,6 +166,16 @@ bool PlayerbotAIConfig::Initialize()
     autoQueueDryRun = sConfigMgr->GetBoolDefault("AiPlayerbot.AutoQueue.DryRun", true);
     autoQueueLfg = sConfigMgr->GetBoolDefault("AiPlayerbot.AutoQueue.LFG", false);
     autoQueueBattleground = sConfigMgr->GetBoolDefault("AiPlayerbot.AutoQueue.Battleground", false);
+    autoQueueBattlegroundAutomatic = sConfigMgr->GetBoolDefault(
+        "AiPlayerbot.AutoQueue.Battleground.Automatic", false);
+    autoQueueBattlegroundLoadout = sConfigMgr->GetBoolDefault(
+        "AiPlayerbot.AutoQueue.Battleground.Loadout", false);
+    autoQueueBattlegroundPreparationBuffs = sConfigMgr->GetBoolDefault(
+        "AiPlayerbot.AutoQueue.Battleground.PreparationBuffs", false);
+    autoQueueBattlegroundMaxBotsPerCycle = sConfigMgr->GetIntDefault(
+        "AiPlayerbot.AutoQueue.Battleground.MaxBotsPerCycle", 10);
+    if (!autoQueueBattlegroundMaxBotsPerCycle)
+        autoQueueBattlegroundMaxBotsPerCycle = 1;
     autoQueueArena = sConfigMgr->GetBoolDefault("AiPlayerbot.AutoQueue.Arena", false);
     autoQueueCheckInterval = sConfigMgr->GetIntDefault("AiPlayerbot.AutoQueue.CheckInterval", 5) * IN_MILLISECONDS;
     if (!autoQueueCheckInterval)

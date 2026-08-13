@@ -22,6 +22,7 @@ public:
     {
         creators["say hello"] = &ActionContext::hello;
         creators["move random"] = &ActionContext::move_random;
+        creators["battleground objective"] = &ActionContext::battleground_objective;
 
         creators["follow"] = &ActionContext::follow;
         creators["flee"] = &ActionContext::flee;
@@ -46,6 +47,7 @@ public:
         creators["attack"] = &ActionContext::melee;
         creators["melee"] = &ActionContext::melee;
         creators["attack anything"] = &ActionContext::attack_anything;
+        creators["attack enemy player"] = &ActionContext::attack_enemy_player;
 
         creators["toggle pet spell"] = &ActionContext::toggle_pet_spell;
         creators["pet attack"] = &ActionContext::pet_attack;
@@ -62,6 +64,7 @@ public:
 private:
     static Action* hello(PlayerbotAI* botAI) { return new SayHelloAction(botAI); }
     static Action* move_random(PlayerbotAI* botAI) { return new MoveRandomAction(botAI); }
+    static Action* battleground_objective(PlayerbotAI* botAI) { return new BattlegroundObjectiveAction(botAI); }
 
     static Action* follow(PlayerbotAI* botAI) { return new FollowAction(botAI); }
     static Action* flee(PlayerbotAI* botAI) { return new FleeAction(botAI); }
@@ -85,6 +88,7 @@ private:
     static Action* dps_aoe(PlayerbotAI* botAI) { return new DpsAoeAction(botAI); }
     static Action* melee(PlayerbotAI* botAI) { return new MeleeAction(botAI); }
     static Action* attack_anything(PlayerbotAI* botAI) { return new AttackAnythingAction(botAI); }
+    static Action* attack_enemy_player(PlayerbotAI* botAI) { return new AttackEnemyPlayerAction(botAI); }
 
     static Action* toggle_pet_spell(PlayerbotAI* ai) { return new TogglePetSpellAutoCastAction(ai); }
     static Action* pet_attack(PlayerbotAI* ai) { return new PetAttackAction(ai); }

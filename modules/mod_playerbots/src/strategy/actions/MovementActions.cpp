@@ -42,6 +42,19 @@
 #include "Vehicle.h"
 #include "WaypointMovementGenerator.h"
 #include "Corpse.h"
+#include "Battleground.h"
+#include "BattlegroundAB.h"
+#include "BattlegroundAV.h"
+#include "BattlegroundBFG.h"
+#include "BattlegroundDG.h"
+#include "BattlegroundEY.h"
+#include "BattlegroundIC.h"
+#include "BattlegroundSA.h"
+#include "BattlegroundSM.h"
+#include "BattlegroundTOK.h"
+#include "BattlegroundTP.h"
+#include "BattlegroundWS.h"
+#include "ObjectAccessor.h"
 
 MovementAction::MovementAction(PlayerbotAI* botAI, std::string const name) : Action(botAI, name)
 {
@@ -1461,4 +1474,446 @@ bool TankFaceAction::Execute(Event event)
         return false;
     Position nearest = GetNearestPosition(availablePos);
     return MoveTo(bot->GetMapId(), nearest.GetPositionX(), nearest.GetPositionY(), nearest.GetPositionZ(), false, false, false, true, MovementPriority::MOVEMENT_COMBAT);
+}
+
+bool BattlegroundObjectiveAction::isUseful()
+{
+    Battleground* bg = bot->GetBattleground();
+    return bg && bg->IsBattleground() &&
+        (bg->GetStatus() == STATUS_WAIT_JOIN || bg->GetStatus() == STATUS_IN_PROGRESS);
+}
+
+bool BattlegroundObjectiveAction::EngageEnemy(Player* enemy)
+{
+    if (!enemy || !enemy->IsInWorld() || enemy->isDead() ||
+        enemy->GetMapId() != bot->GetMapId() ||
+        !bot->IsValidAttackTarget(enemy) || !bot->IsWithinLOSInMap(enemy))
+        return false;
+
+    Unit* currentTarget = context->GetValue<Unit*>("current target")->Get();
+    context->GetValue<Unit*>("old target")->Set(currentTarget);
+    context->GetValue<Unit*>("current target")->Set(enemy);
+    context->GetValue<ObjectGuid>("pull target")->Set(enemy->GetGUID());
+    context->GetValue<GuidVector>("prioritized targets")->Set({ enemy->GetGUID() });
+    bot->SetSelection(enemy->GetGUID());
+    bot->SetTarget(enemy->GetGUID());
+
+    bool melee = bot->IsWithinMeleeRange(enemy) || PlayerBotSpec::IsMelee(bot);
+    if (bot->GetVictim() != enemy)
+        bot->Attack(enemy, melee);
+    botAI->ChangeEngine(BOT_STATE_COMBAT);
+    return true;
+}
+
+bool BattlegroundObjectiveAction::MoveToOrUse(GameObject* object, float interactDistance)
+{
+    if (!object || !object->IsInWorld() || !object->isSpawned())
+        return false;
+
+    if (bot->GetDistance(object) <= interactDistance &&
+        bot->CanUseBattlegroundObject(object))
+    {
+        bot->RemoveAurasByType(SPELL_AURA_MOD_STEALTH);
+        bot->RemoveAurasByType(SPELL_AURA_MOD_INVISIBILITY);
+        if (Battleground* bg = bot->GetBattleground())
+            bg->EventPlayerClickedOnFlag(bot, object);
+        return true;
+    }
+
+    return MoveTo(object, interactDistance - 1.0f,
+        MovementPriority::MOVEMENT_FORCED);
+}
+
+bool BattlegroundObjectiveAction::Execute(Event /*event*/)
+{
+    Battleground* bg = bot->GetBattleground();
+    if (!bg || bg->IsArena())
+        return false;
+
+    if (bg->GetStatus() == STATUS_WAIT_JOIN)
+    {
+        // Reusing the Arena-tested class buff helper keeps preparation casts
+        // class-aware.  It never changes the real requester's equipment.
+        if (sPlayerbotAIConfig->autoQueueBattlegroundPreparationBuffs)
+            CastAutomatedPvpPreparationBuff(bot);
+        return true;
+    }
+
+    if (bg->GetStatus() != STATUS_IN_PROGRESS || !bot->IsAlive() ||
+        bot->IsBeingTeleported())
+        return false;
+
+    // Do not abandon a fight already in progress.  The class combat engine
+    // remains responsible for damage, healing, dispels and crowd control.
+    Unit* victim = bot->GetVictim();
+    if (victim && victim->IsPlayer() && victim->IsAlive())
+        return false;
+
+    TeamId ownTeam = bot->GetBGTeamId();
+    TeamId enemyTeam = ownTeam == TEAM_ALLIANCE ? TEAM_HORDE : TEAM_ALLIANCE;
+
+    // Flag-carrier threats override every navigation role in CTF maps.
+    uint32 type = bg->GetTypeID();
+    if (type == BATTLEGROUND_RB)
+        type = bg->GetTypeID(true);
+    bool ctf = type == BATTLEGROUND_WS || type == BATTLEGROUND_TP;
+    if (ctf)
+    {
+        ObjectGuid enemyCarrierGuid = bg->GetFlagPickerGUID(ownTeam);
+        if (Player* enemyCarrier = ObjectAccessor::FindConnectedPlayer(enemyCarrierGuid))
+            if (bot->GetDistance(enemyCarrier) < 100.0f && EngageEnemy(enemyCarrier))
+                return true;
+
+        ObjectGuid allyCarrierGuid = bg->GetFlagPickerGUID(enemyTeam);
+        bool carryingEnemyFlag = allyCarrierGuid == bot->GetGUID();
+        bool stealthDefender = (bot->GetClass() == CLASS_ROGUE ||
+            bot->GetClass() == CLASS_DRUID) &&
+            (bot->GetGUID().GetCounter() % 3 == 0);
+        bool defender = stealthDefender || bot->GetGUID().GetCounter() % 5 == 0;
+
+        uint32 ownFlagObject = 0;
+        uint32 enemyFlagObject = 0;
+        if (type == BATTLEGROUND_WS)
+        {
+            ownFlagObject = ownTeam == TEAM_ALLIANCE ?
+                BG_WS_OBJECT_A_FLAG : BG_WS_OBJECT_H_FLAG;
+            enemyFlagObject = enemyTeam == TEAM_ALLIANCE ?
+                BG_WS_OBJECT_A_FLAG : BG_WS_OBJECT_H_FLAG;
+        }
+        else
+        {
+            ownFlagObject = ownTeam == TEAM_ALLIANCE ?
+                BG_TP_OBJECT_A_FLAG : BG_TP_OBJECT_H_FLAG;
+            enemyFlagObject = enemyTeam == TEAM_ALLIANCE ?
+                BG_TP_OBJECT_A_FLAG : BG_TP_OBJECT_H_FLAG;
+        }
+
+        // Dropped flags are dynamic gameobjects and therefore are not found
+        // through the two base-object indices above. Return our dropped flag
+        // before resuming a defensive role, and let attackers recover a
+        // nearby dropped enemy flag instead of running to its empty base.
+        ObjectGuid ownDroppedFlag;
+        ObjectGuid enemyDroppedFlag;
+        uint32 ownFaction = ownTeam == TEAM_ALLIANCE ? ALLIANCE : HORDE;
+        uint32 enemyFaction = enemyTeam == TEAM_ALLIANCE ? ALLIANCE : HORDE;
+        if (type == BATTLEGROUND_WS)
+        {
+            if (BattlegroundWS* ws = dynamic_cast<BattlegroundWS*>(bg))
+            {
+                ownDroppedFlag = ws->GetDroppedFlagGUID(ownFaction);
+                enemyDroppedFlag = ws->GetDroppedFlagGUID(enemyFaction);
+            }
+        }
+        else if (BattlegroundTP* tp = dynamic_cast<BattlegroundTP*>(bg))
+        {
+            ownDroppedFlag = tp->GetDroppedFlagGUID(ownFaction);
+            enemyDroppedFlag = tp->GetDroppedFlagGUID(enemyFaction);
+        }
+
+        if (ownDroppedFlag)
+            if (GameObject* dropped = bg->GetBgMap()->GetGameObject(ownDroppedFlag))
+                if (bot->GetDistance(dropped) < 120.0f && MoveToOrUse(dropped))
+                    return true;
+
+        if (enemyDroppedFlag)
+            if (GameObject* dropped = bg->GetBgMap()->GetGameObject(enemyDroppedFlag))
+                if (bot->GetDistance(dropped) < 80.0f && MoveToOrUse(dropped))
+                    return true;
+
+        if (carryingEnemyFlag)
+        {
+            GameObject* ownBase = bg->GetBGObject(ownFlagObject);
+            return ownBase && MoveTo(ownBase, 2.0f,
+                MovementPriority::MOVEMENT_FORCED);
+        }
+
+        if (defender)
+        {
+            if (!bot->IsInCombat() && stealthDefender)
+            {
+                if (bot->GetClass() == CLASS_ROGUE)
+                    botAI->DoSpecificAction("stealth", Event(), true);
+                else if (bot->GetClass() == CLASS_DRUID)
+                    botAI->DoSpecificAction("prowl", Event(), true);
+            }
+
+            GameObject* ownBase = bg->GetBGObject(ownFlagObject);
+            if (ownBase && bot->GetDistance(ownBase) > 18.0f)
+                return MoveTo(ownBase, 10.0f,
+                    MovementPriority::MOVEMENT_FORCED);
+
+            // A defender holds position until an intruder is detected.
+            if (Unit* nearbyEnemy = context->GetValue<Unit*>("enemy player target")->Get())
+                if (bot->GetDistance(nearbyEnemy) < 45.0f)
+                    return EngageEnemy(nearbyEnemy->ToPlayer());
+            return true;
+        }
+
+        // Some attackers escort the friendly carrier instead of stacking all
+        // bots on the enemy flag room.
+        if (allyCarrierGuid && bot->GetGUID().GetCounter() % 3 == 1)
+        {
+            if (Player* allyCarrier = ObjectAccessor::FindConnectedPlayer(allyCarrierGuid))
+                if (allyCarrier != bot)
+                    return MoveTo(allyCarrier, 8.0f,
+                        MovementPriority::MOVEMENT_FORCED);
+        }
+
+        return MoveToOrUse(bg->GetBGObject(enemyFlagObject));
+    }
+
+    // Fight nearby enemies or enemies attacking a group member before
+    // returning to the objective.  EnemyPlayerValue also prioritizes weak
+    // enemies and visible flag carriers.
+    if (Unit* nearbyEnemy = context->GetValue<Unit*>("enemy player target")->Get())
+        if (bot->GetDistance(nearbyEnemy) < 40.0f &&
+            EngageEnemy(nearbyEnemy->ToPlayer()))
+            return true;
+
+    // Capture-point maps: choose a stable per-bot node so the whole team does
+    // not form one train.  Visible hostile/neutral banners are clicked only
+    // after the normal core CanUseBattlegroundObject validation succeeds.
+    if (type == BATTLEGROUND_AB)
+    {
+        uint8 node = bot->GetGUID().GetCounter() % BG_AB_DYNAMIC_NODES_COUNT;
+        uint32 first = node * 8;
+        for (uint32 offset = 0; offset < 5; ++offset)
+            if (GameObject* banner = bg->GetBGObject(first + offset))
+                if (banner->isSpawned() && MoveToOrUse(banner))
+                    return true;
+    }
+    else if (type == BATTLEGROUND_BFG)
+    {
+        uint8 node = bot->GetGUID().GetCounter() % BG_BFG_DYNAMIC_NODES_COUNT;
+        uint32 first = node * 8;
+        for (uint32 offset = 0; offset < 5; ++offset)
+            if (GameObject* banner = bg->GetBGObject(first + offset))
+                if (banner->isSpawned() && MoveToOrUse(banner))
+                    return true;
+    }
+    else if (type == BATTLEGROUND_TOK)
+    {
+        for (uint32 offset = 0; offset < BG_TOK_MAX_ORBS; ++offset)
+        {
+            uint32 index = BG_TOK_OBJECT_ORB_1 +
+                ((offset + bot->GetGUID().GetCounter()) % BG_TOK_MAX_ORBS);
+            if (GameObject* orb = bg->GetBGObject(index))
+                if (orb->isSpawned() && MoveToOrUse(orb))
+                    return true;
+        }
+    }
+
+    // Eye of the Storm combines proximity-controlled towers with one flag.
+    // Flag carriers are escorted/intercepted; otherwise part of the team
+    // captures towers while the rest contests the central flag.
+    else if (type == BATTLEGROUND_EY)
+    {
+        ObjectGuid carrierGuid = bg->GetFlagPickerGUID();
+        if (carrierGuid)
+        {
+            if (Player* carrier = ObjectAccessor::FindConnectedPlayer(carrierGuid))
+            {
+                if (carrier == bot)
+                {
+                    uint8 point = bot->GetGUID().GetCounter() % EY_POINTS_MAX;
+                    return MoveTo(bg->GetMapId(), BG_EY_TriggerPositions[point][0],
+                        BG_EY_TriggerPositions[point][1], BG_EY_TriggerPositions[point][2],
+                        false, true, false, false, MovementPriority::MOVEMENT_FORCED);
+                }
+
+                if (carrier->GetBGTeamId() != ownTeam)
+                    return EngageEnemy(carrier);
+
+                if (bot->GetGUID().GetCounter() % 3 == 0)
+                    return MoveTo(carrier, 8.0f, MovementPriority::MOVEMENT_FORCED);
+            }
+        }
+
+        if (bot->GetGUID().GetCounter() % 3 == 1)
+            return MoveToOrUse(bg->GetBGObject(BG_EY_OBJECT_FLAG_NETHERSTORM));
+
+        uint8 point = bot->GetGUID().GetCounter() % EY_POINTS_MAX;
+        return MoveTo(bg->GetMapId(), BG_EY_TriggerPositions[point][0],
+            BG_EY_TriggerPositions[point][1], BG_EY_TriggerPositions[point][2],
+            false, true, false, false, MovementPriority::MOVEMENT_FORCED);
+    }
+
+    // Deepwind Gorge: split between mine capture points and cart duty.  All
+    // pickup/capture credit remains in BattlegroundDG's normal handlers.
+    else if (type == BATTLEGROUND_DG)
+    {
+        ObjectGuid enemyCartCarrier = bg->GetFlagPickerGUID(ownTeam);
+        if (Player* carrier = ObjectAccessor::FindConnectedPlayer(enemyCartCarrier))
+            if (EngageEnemy(carrier))
+                return true;
+
+        ObjectGuid friendlyCartCarrier = bg->GetFlagPickerGUID(enemyTeam);
+        if (friendlyCartCarrier == bot->GetGUID())
+        {
+            uint8 base = ownTeam == TEAM_ALLIANCE ? 0 : 1;
+            return MoveTo(bg->GetMapId(), BG_DG_CartPositions[base][0],
+                BG_DG_CartPositions[base][1], BG_DG_CartPositions[base][2],
+                false, true, false, false, MovementPriority::MOVEMENT_FORCED);
+        }
+
+        if (friendlyCartCarrier && bot->GetGUID().GetCounter() % 4 == 1)
+            if (Player* carrier = ObjectAccessor::FindConnectedPlayer(friendlyCartCarrier))
+                return MoveTo(carrier, 8.0f, MovementPriority::MOVEMENT_FORCED);
+
+        if (bot->GetGUID().GetCounter() % 4 == 0)
+        {
+            uint32 cart = enemyTeam == TEAM_ALLIANCE ?
+                BG_DG_OBJECT_CART_ALLIANCE : BG_DG_OBJECT_CART_HORDE;
+            if (MoveToOrUse(bg->GetBGObject(cart)))
+                return true;
+
+            uint32 dropped = enemyTeam == TEAM_ALLIANCE ?
+                BG_DG_OBJECT_CART_ALLY_GROUND : BG_DG_OBJECT_CART_HORDE_GROUND;
+            if (MoveToOrUse(bg->GetBGObject(dropped)))
+                return true;
+        }
+
+        uint8 node = bot->GetGUID().GetCounter() % BG_DG_ALL_NODES_COUNT;
+        if (Creature* capturePoint = bg->GetBGCreature(
+            BG_DG_OBJECT_CAPT_POINT_START + node))
+        {
+            if (bot->GetDistance(capturePoint) <= 8.0f &&
+                bg->CanSeeSpellClick(bot, capturePoint))
+            {
+                bot->RemoveAurasByType(SPELL_AURA_MOD_STEALTH);
+                bot->RemoveAurasByType(SPELL_AURA_MOD_INVISIBILITY);
+                bg->EventPlayerClickedOnFlag(bot, capturePoint);
+                return true;
+            }
+            return MoveTo(capturePoint, 6.0f, MovementPriority::MOVEMENT_FORCED);
+        }
+    }
+
+    // Silvershard carts are controlled by proximity.  Stable distribution
+    // prevents every bot from following the same cart.
+    else if (type == BATTLEGROUND_SM)
+    {
+        uint8 firstCart = bot->GetGUID().GetCounter() % SM_MINE_CART_MAX;
+        for (uint8 offset = 0; offset < SM_MINE_CART_MAX; ++offset)
+        {
+            uint8 cart = (firstCart + offset) % SM_MINE_CART_MAX;
+            if (Creature* mineCart = bg->GetBGCreature(BG_SM_CartTypes[cart]))
+                if (mineCart->IsAlive())
+                    return MoveTo(mineCart, 8.0f, MovementPriority::MOVEMENT_FORCED);
+        }
+    }
+
+    // Alterac Valley has many dynamically swapped banner objects.  Walk a
+    // stable, per-bot order and use only a currently spawned, faction-valid
+    // banner; the AV script still validates assault versus defence.
+    else if (type == BATTLEGROUND_AV)
+    {
+        uint32 first = bot->GetGUID().GetCounter() %
+            (BG_AV_OBJECT_FLAG_N_SNOWFALL_GRAVE + 1);
+        for (uint32 offset = 0; offset <= BG_AV_OBJECT_FLAG_N_SNOWFALL_GRAVE; ++offset)
+        {
+            uint32 index = (first + offset) %
+                (BG_AV_OBJECT_FLAG_N_SNOWFALL_GRAVE + 1);
+            if (GameObject* banner = bg->GetBGObject(index))
+                if (banner->isSpawned() && bot->CanUseBattlegroundObject(banner) &&
+                    MoveToOrUse(banner))
+                    return true;
+        }
+    }
+
+    // Isle of Conquest node banners are replaced in-place as ownership
+    // changes.  Prefer the five strategic resource/vehicle nodes, then push
+    // the enemy keep commander when no usable node remains.
+    else if (type == BATTLEGROUND_IC)
+    {
+        uint8 firstNode = bot->GetGUID().GetCounter() % 5;
+        for (uint8 offset = 0; offset < 5; ++offset)
+        {
+            uint8 node = (firstNode + offset) % 5;
+            if (GameObject* banner = bg->GetBGObject(nodePointInitial[node].gameobject_type))
+                if (banner->isSpawned() && bot->CanUseBattlegroundObject(banner) &&
+                    MoveToOrUse(banner))
+                    return true;
+        }
+
+        uint32 commander = ownTeam == TEAM_ALLIANCE ?
+            BG_IC_NPC_OVERLORD_AGMAR : BG_IC_NPC_HIGH_COMMANDER_HALFORD_WYRMBANE;
+        if (Creature* boss = bg->GetBGCreature(commander))
+        {
+            if (boss->IsAlive() && bot->IsValidAttackTarget(boss))
+            {
+                bot->SetSelection(boss->GetGUID());
+                bot->SetTarget(boss->GetGUID());
+                if (bot->GetDistance(boss) <= 35.0f)
+                {
+                    bot->Attack(boss, PlayerBotSpec::IsMelee(bot));
+                    botAI->ChangeEngine(BOT_STATE_COMBAT);
+                    return true;
+                }
+                return MoveTo(boss, 20.0f, MovementPriority::MOVEMENT_FORCED);
+            }
+        }
+    }
+
+    // Strand of the Ancients: attackers preferentially enter an available
+    // demolisher and drive it toward the relic.  Defenders spread across the
+    // outer gates and fall back toward the relic.  Gate damage remains a
+    // vehicle/class-combat responsibility, never fabricated objective credit.
+    else if (type == BATTLEGROUND_SA)
+    {
+        BattlegroundSA* strand = dynamic_cast<BattlegroundSA*>(bg);
+        bool attacker = strand && strand->Attackers == ownTeam;
+        if (attacker && !bot->GetVehicle())
+        {
+            uint8 firstDemolisher = bot->GetGUID().GetCounter() % 8;
+            for (uint8 offset = 0; offset < 8; ++offset)
+            {
+                uint32 index = BG_SA_DEMOLISHER_1 +
+                    ((firstDemolisher + offset) % 8);
+                if (Creature* demolisher = bg->GetBGCreature(index))
+                {
+                    if (!demolisher->IsAlive() || !demolisher->IsFriendlyTo(bot))
+                        continue;
+                    if (bot->GetDistance(demolisher) <= 5.0f)
+                    {
+                        demolisher->HandleSpellClick(bot);
+                        return true;
+                    }
+                    return MoveTo(demolisher, 3.0f,
+                        MovementPriority::MOVEMENT_FORCED);
+                }
+            }
+        }
+
+        if (!attacker)
+        {
+            uint32 gate = (bot->GetGUID().GetCounter() % 2) ?
+                BG_SA_GREEN_GATE : BG_SA_BLUE_GATE;
+            if (GameObject* gateObject = bg->GetBGObject(gate))
+                if (gateObject->IsInWorld() && bot->GetDistance(gateObject) > 22.0f)
+                    return MoveTo(gateObject, 16.0f,
+                        MovementPriority::MOVEMENT_FORCED);
+        }
+
+        if (GameObject* relic = bg->GetBGObject(BG_SA_TITAN_RELIC))
+            return MoveTo(relic, attacker ? 4.0f : 18.0f,
+                MovementPriority::MOVEMENT_FORCED);
+    }
+
+    // Safe fallback for any future map: advance toward the centre line
+    // between both spawn points.
+    // This keeps bots participating and fighting without fabricating direct
+    // objective credit or bypassing the battleground's normal handlers.
+    float ownX, ownY, ownZ, ownO;
+    float enemyX, enemyY, enemyZ, enemyO;
+    bg->GetTeamStartLoc(ownTeam == TEAM_ALLIANCE ? ALLIANCE : HORDE,
+        ownX, ownY, ownZ, ownO);
+    bg->GetTeamStartLoc(enemyTeam == TEAM_ALLIANCE ? ALLIANCE : HORDE,
+        enemyX, enemyY, enemyZ, enemyO);
+    float lane = float(bot->GetGUID().GetCounter() % 5) * 0.08f - 0.16f;
+    float targetX = (ownX + enemyX) * 0.5f + (enemyY - ownY) * lane;
+    float targetY = (ownY + enemyY) * 0.5f - (enemyX - ownX) * lane;
+    float targetZ = (ownZ + enemyZ) * 0.5f;
+    return MoveTo(bg->GetMapId(), targetX, targetY, targetZ, false, true,
+        false, false, MovementPriority::MOVEMENT_FORCED);
 }

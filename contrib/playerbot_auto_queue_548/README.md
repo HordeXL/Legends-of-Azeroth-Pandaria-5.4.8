@@ -17,12 +17,60 @@ file. Continue future implementation directly in the tracked source and SQL upda
 files, with progress and verification recorded in
 `doc/startup-log-fix-plan-2026-07-09.md`.
 
-The active `Build/bin/RelWithDebInfo/playerbots.conf` currently enables the `0001`
-observer with `DryRun = 1`, all three queue categories visible, a five-second check
-interval, and `MaxBotsPerCycle = 1`. This records queue counts only and cannot enqueue
-bots. Runtime verification passed on 2026-08-05: periodic `dry-run=1` lines reached
-`Logs/Server.log`, all empty-queue counters were `0/0`, no related errors occurred,
-and no random bots were automatically logged in.
+## Direct-source Battleground continuation (2026-08-12)
+
+The old archived `0003` patch remains unapplied; it is not the active BG
+implementation. A newer request-driven Battleground integration now lives directly
+in tracked source. It observes a real player's normal specific or Random BG queue,
+fills both factions only to the template minimum, accepts only invitations owned by
+this feature, and never creates a bot-only match.
+
+Only managed random bots receive the temporary specialization/faction Prideful
+five-piece. The connected requester is protected. Original item-instance GUIDs use
+the guarded `characters.solo_arena_loadout_backup` journal and retryable recovery
+path already proven by Solo Arena. Dead selected bots are revived before queueing;
+unsupported Monk bots are excluded because this port has no Monk class AI. Team
+selection first seeks roughly one healer per five required players, with a safe DPS
+fallback. The independent BG admission limit is
+`AiPlayerbot.AutoQueue.Battleground.MaxBotsPerCycle` (default `10`).
+
+BG demand does not depend on global random-bot autologin. If no suitable bot is
+already online, the system stages unused offline random-bot characters of the exact
+level and required faction, counts each pending login as a reserved team slot, and
+only equips/queues it after login completes. Neutral Pandaren, Monks, guild/group
+members, recovery-journal owners and already loading/managed characters are rejected.
+Leaving the real queue cancels pending logins, preserving the no bot-only rule.
+
+Managed bots cast supported class/party buffs during `STATUS_WAIT_JOIN`, reset into
+a dedicated `battleground` strategy on entry, and retain their ordinary class combat,
+healing, dispel and crowd-control engines. Objective routing covers every playable BG
+template present in the local 5.4.8 world database:
+
+- Warsong Gulch and Twin Peaks: flag pickup/capture, carrier escort/interception,
+  dynamic dropped-flag recovery, and stealth-capable base defenders;
+- Arathi Basin and Battle for Gilneas: stable distribution across capture nodes;
+- Eye of the Storm: tower distribution plus centre-flag capture/escort/intercept;
+- Temple of Kotmogu: distributed orb pickup;
+- Deepwind Gorge: mine capture, enemy cart theft, return and escort/intercept;
+- Silvershard Mines: distribution across active proximity-controlled mine carts;
+- Alterac Valley: dynamic assault/defence banners through normal AV handlers;
+- Isle of Conquest: strategic node capture followed by the enemy commander;
+- Strand: attacker demolisher/relic and defender gate/relic roles.
+
+All interaction and objective credit still pass through normal BG handlers; the
+module fabricates no capture, score or reward. Unknown future maps use a safe centre
+advance/combat fallback. Compile/startup verification is complete, but the gameplay
+matrix in the project plan remains mandatory before production use.
+
+The active `Build/bin/RelWithDebInfo/playerbots.conf` keeps the shared observer at
+`DryRun = 1`, all three queue categories visible, a five-second check interval, and
+shared `MaxBotsPerCycle = 1`. The newer category-specific Battleground switches are
+enabled separately (`Battleground.Automatic`, `Loadout`, and `PreparationBuffs`),
+with `Battleground.MaxBotsPerCycle = 10`. Shared dry-run protection therefore remains
+in effect for the older generic observer and does not disable the explicitly enabled
+request-driven BG implementation. The original observer-only runtime verification
+passed on 2026-08-05; the direct-source BG startup checks are recorded above and in
+the project plan.
 
 The active configuration also contains the `0004` screening defaults (12 visible
 equipped items, average item level 450, and two PvP-stat-bearing items). Patch `0004`

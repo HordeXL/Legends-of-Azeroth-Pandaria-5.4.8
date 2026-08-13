@@ -3815,6 +3815,70 @@ void ResetSoloArenaAutomaticState()
 }
 }
 
+bool IsSoloArenaManagedPlayer(uint32 guidLow)
+{
+    if (!guidLow)
+        return false;
+
+    if (guidLow == SoloArenaAutomaticRequester ||
+        guidLow == SoloArenaStagedRequester ||
+        SoloArenaStagedBots.find(guidLow) != SoloArenaStagedBots.end())
+        return true;
+
+    return std::find(SoloArenaAutomaticRequesterTeam.begin(),
+               SoloArenaAutomaticRequesterTeam.end(), guidLow) !=
+               SoloArenaAutomaticRequesterTeam.end() ||
+        std::find(SoloArenaAutomaticOpponentTeam.begin(),
+               SoloArenaAutomaticOpponentTeam.end(), guidLow) !=
+               SoloArenaAutomaticOpponentTeam.end();
+}
+
+bool IsSoloArenaAutomationBusy()
+{
+    return SoloArenaAutomaticQueueState != SoloArenaAutomaticState::Idle ||
+        !SoloArenaStagedBots.empty() || SoloArenaRequesterGroup ||
+        SoloArenaOpponentGroup || SoloArenaQueuesStaged ||
+        SoloArenaEnteredInstance;
+}
+
+bool ApplyAutomatedPvpBotLoadout(Player* bot, uint32 requesterGuid,
+    uint32& changedSlots, std::string& error)
+{
+    if (!bot)
+    {
+        changedSlots = 0;
+        error = "bot is offline";
+        return false;
+    }
+
+    if (PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot))
+        if (!botAI->IsRealPlayer())
+            return ApplySoloArenaLoadout(bot, requesterGuid, changedSlots, error);
+
+    changedSlots = 0;
+    error = "real-player equipment is protected";
+    return false;
+}
+
+bool RestoreAutomatedPvpBotLoadout(Player* bot, char const* reason,
+    uint32& restoredSlots, uint32& remainingSlots, std::string& error)
+{
+    return RestoreSoloArenaLoadout(bot, reason, restoredSlots, remainingSlots, error);
+}
+
+bool CastAutomatedPvpPreparationBuff(Player* bot)
+{
+    PlayerbotAI* botAI = bot ? GET_PLAYERBOT_AI(bot) : nullptr;
+    if (!botAI || botAI->IsRealPlayer())
+        return false;
+
+    for (char const* action : GetSoloArenaPreparationBuffActions(bot))
+        if (botAI->DoSpecificAction(action, Event(), true))
+            return true;
+
+    return false;
+}
+
 bool HandleSoloArenaAutomaticJoinRequest(Player* player, uint8 arenaSlot)
 {
     if (!sPlayerbotAIConfig->autoQueueArenaAutomatic || !player)

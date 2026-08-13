@@ -6,6 +6,8 @@
 #include "AiFactory.h"
 
 #include "BotAIObjectContext.h"
+#include "DatabaseEnv.h"
+#include "Battleground.h"
 
 #include "Engine.h"
 #include "Group.h"
@@ -239,6 +241,8 @@ void AiFactory::AddDefaultCombatStrategies(Player* player, PlayerbotAI* const fa
         engine->addStrategy("avoid aoe", false);
     }
     engine->addStrategy("formation", false);
+    if (player->InBattleground() && player->GetBattleground() && !player->GetBattleground()->IsArena())
+        engine->addStrategy("battleground", false);
 
     const Specializations& spec = player->GetSpecialization();
     switch (player->GetClass())
@@ -566,6 +570,10 @@ void AiFactory::AddDefaultNonCombatStrategies(Player* player, PlayerbotAI* const
     {
         nonCombatEngine->addStrategiesNoInit("nc", "food", "chat", "follow", "default", "quest", "loot", "gather", "duel",
             "buff", "mount", "emote", nullptr);
+    }
+    else if (player->GetBattleground() && !player->GetBattleground()->IsArena())
+    {
+        nonCombatEngine->addStrategy("battleground", false);
     }
     nonCombatEngine->addStrategy("say hello");
 }
