@@ -28,17 +28,19 @@ this feature, and never creates a bot-only match.
 Only managed random bots receive the temporary specialization/faction Prideful
 five-piece. The connected requester is protected. Original item-instance GUIDs use
 the guarded `characters.solo_arena_loadout_backup` journal and retryable recovery
-path already proven by Solo Arena. Dead selected bots are revived before queueing;
-unsupported Monk bots are excluded because this port has no Monk class AI. Team
-selection first seeks roughly one healer per five required players, with a safe DPS
-fallback. The independent BG admission limit is
+path already proven by Solo Arena. Dead selected bots are revived before queueing.
+Death Knights use the existing Blood/Frost/Unholy class AI. Monks now have native
+5.4.8 Brewmaster, Mistweaver and Windwalker action contexts; Windwalker and
+Mistweaver also have automated PvP loadouts. Team selection first seeks roughly one
+healer per five required players, with a safe DPS fallback. The independent BG
+admission limit is
 `AiPlayerbot.AutoQueue.Battleground.MaxBotsPerCycle` (default `10`).
 
 BG demand does not depend on global random-bot autologin. If no suitable bot is
 already online, the system stages unused offline random-bot characters of the exact
 level and required faction, counts each pending login as a reserved team slot, and
-only equips/queues it after login completes. Neutral Pandaren, Monks, guild/group
-members, recovery-journal owners and already loading/managed characters are rejected.
+only equips/queues it after login completes. Neutral Pandaren, guild/group members,
+recovery-journal owners and already loading/managed characters are rejected.
 Leaving the real queue cancels pending logins, preserving the no bot-only rule.
 
 Managed bots cast supported class/party buffs during `STATUS_WAIT_JOIN`, reset into

@@ -1095,12 +1095,7 @@ bool LoadSoloArenaAutomaticCandidates(Player* requester,
             activeSpec = 0;
         candidate.Specialization = Specializations(specs[activeSpec]);
         candidate.Role = GetSoloArenaPreviewRole(candidate.Specialization);
-        // This 5.4.8 playerbots port has no MonkAiObjectContext or Monk class
-        // actions. A Monk can be classified as damage/healer, but once staged it
-        // only has the generic bot context and cannot perform its specialization.
-        // Do not fill an Arena team slot with a non-functional bot.
-        if (candidate.Class == CLASS_MONK ||
-            (!IsSoloArenaDamage(candidate.Role) && candidate.Role != SoloArenaPreviewRole::Healer) ||
+        if ((!IsSoloArenaDamage(candidate.Role) && candidate.Role != SoloArenaPreviewRole::Healer) ||
             !GetSoloArenaLoadoutPlan(candidate.Specialization))
         {
             ++rejectedSpec;
@@ -3522,8 +3517,7 @@ public:
                 activeSpec = 0;
             candidate.Specialization = Specializations(specs[activeSpec]);
             candidate.Role = GetSoloArenaPreviewRole(candidate.Specialization);
-            if (candidate.Class == CLASS_MONK ||
-                (!IsSoloArenaDamage(candidate.Role) && candidate.Role != SoloArenaPreviewRole::Healer))
+            if (!IsSoloArenaDamage(candidate.Role) && candidate.Role != SoloArenaPreviewRole::Healer)
             {
                 ++rejectedSpec;
                 continue;

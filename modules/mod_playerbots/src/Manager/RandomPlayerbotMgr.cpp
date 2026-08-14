@@ -150,10 +150,6 @@ namespace
             return reject("solo-arena-managed");
         if (LfgAutoQueueManagedBots.count(bot->GetGUID().GetCounter()))
             return reject("already-lfg-managed");
-        // This port still lacks complete monk class actions. Do not put a
-        // non-functional tank/healer/DPS into a real player's dungeon.
-        if (bot->GetClass() == CLASS_MONK)
-            return reject("unsupported-monk");
         if (!bot->IsInWorld())
             return reject("not-in-world");
         if (uint8(bot->GetTeam()) != team)
@@ -226,6 +222,7 @@ namespace
             case SPEC_PRIEST_DISCIPLINE:
             case SPEC_PRIEST_HOLY:
             case SPEC_SHAMAN_RESTORATION:
+            case SPEC_MONK_MISTWEAVER:
                 return true;
             default:
                 return false;
@@ -243,7 +240,6 @@ namespace
             return false;
         };
 
-        // Monk class actions are not implemented in this 5.4.8 playerbots port.
         if (!bot)
             return reject("missing-player");
         if (IsSoloArenaAutomationBusy())
@@ -252,8 +248,6 @@ namespace
             return reject("solo-arena-managed");
         if (BgAutoQueueManagedBots.count(bot->GetGUID().GetCounter()))
             return reject("already-bg-managed");
-        if (bot->GetClass() == CLASS_MONK)
-            return reject("unsupported-monk");
         if (!bot->IsInWorld())
             return reject("not-in-world");
         if (!HasAutomatedPvpBotLoadout(bot->GetSpecialization()))
@@ -817,9 +811,7 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
                         ObjectGuid candidateObjectGuid =
                             ObjectGuid::Create<HighGuid::Player>(candidateGuid);
                         uint8 race = fields[2].GetUInt8();
-                        uint8 playerClass = fields[3].GetUInt8();
-                        if (playerClass == CLASS_MONK ||
-                            uint8(Player::TeamForRace(race)) != demand.Team ||
+                        if (uint8(Player::TeamForRace(race)) != demand.Team ||
                             LfgAutoQueueIneligibleBots.count(candidateGuid) ||
                             LfgAutoQueueStagedLogins.count(candidateGuid) ||
                             LfgAutoQueueManagedBots.count(candidateGuid) ||
@@ -1363,11 +1355,9 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
                             ObjectGuid candidateObjectGuid =
                                 ObjectGuid::Create<HighGuid::Player>(candidateGuid);
                             uint8 race = fields[2].GetUInt8();
-                            uint8 playerClass = fields[3].GetUInt8();
                             uint32 candidateTeam = Player::TeamForRace(race);
                             if (candidateTeam == PANDAREN_NEUTRAL ||
                                 TeamId(candidateTeam == ALLIANCE ? TEAM_ALLIANCE : TEAM_HORDE) != team ||
-                                playerClass == CLASS_MONK ||
                                 BgAutoQueueIneligibleBots.count(candidateGuid) ||
                                 BgAutoQueueStagedLogins.count(candidateGuid) ||
                                 BgAutoQueueManagedBots.count(candidateGuid) ||

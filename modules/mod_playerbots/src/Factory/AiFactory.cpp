@@ -31,6 +31,7 @@
 #include "RogueAiObjectContext.h"
 #include "ShamanAiObjectContext.h"
 #include "MageAiObjectContext.h"
+#include "MonkAiObjectContext.h"
 #include "WarriorAIObjectContext.h"
 #include "WarlockAiObjectContext.h"
 
@@ -58,8 +59,8 @@ AiObjectContext* AiFactory::createAiObjectContext(Player* player, PlayerbotAI* b
             return new RogueAiObjectContext(botAI);
         case CLASS_DEATH_KNIGHT:
             return new DKAiObjectContext(botAI);
-        //case CLASS_MONK:
-            //return new MonkAiObjectContext(botAI);
+        case CLASS_MONK:
+            return new MonkAiObjectContext(botAI);
     }
 
     return new BotAiObjectContext(botAI);
@@ -378,13 +379,13 @@ void AiFactory::AddDefaultCombatStrategies(Player* player, PlayerbotAI* const fa
         case CLASS_MONK:
         {
             if (spec == Specializations::SPEC_MONK_BREWMASTER)
-                engine->addStrategiesNoInit("tank", "tank assist", "aoe", nullptr);
+                engine->addStrategiesNoInit("brewmaster", "tank assist", nullptr);
             else if (spec == Specializations::SPEC_MONK_MISTWEAVER)
-                engine->addStrategiesNoInit("heal", nullptr);
+                engine->addStrategiesNoInit("mistweaver", "cure", nullptr);
             else
-                engine->addStrategiesNoInit("melee", "melee aoe", "dps assist", nullptr);
+                engine->addStrategiesNoInit("windwalker", "dps assist", "cure", nullptr);
 
-            engine->addStrategiesNoInit("dps assist", "cure", nullptr);
+            engine->addStrategy("dps assist", false);
         }
         break;
     }
@@ -402,9 +403,7 @@ void AiFactory::AddDefaultCombatStrategies(Player* player, PlayerbotAI* const fa
         // party health, available mana and class-specific safety checks.  They
         // were left disabled globally, which made a healer stand idle after
         // every damage teammate died (most visibly in Arena and BG).  Enable
-        // them only for classes that actually register this strategy.  Monk
-        // healer actions are incomplete in this 5.4.8 module and automated
-        // queue selection excludes monks separately.
+        // them only for classes that actually register this strategy.
         switch (player->GetClass())
         {
             case CLASS_PRIEST:
