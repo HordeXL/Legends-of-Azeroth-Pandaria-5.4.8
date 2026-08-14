@@ -55,6 +55,8 @@ class ReachPartyMemberToHealAction : public ReachTargetAction
 public:
     ReachPartyMemberToHealAction(PlayerbotAI* botAI);
 
+    bool Execute(Event event) override;
+    bool isUseful() override;
     std::string const GetTargetName() override;
 };
 

@@ -102,8 +102,11 @@ bool PartyMemberToHeal::Check(Unit* player)
     // return player && player != bot && player->GetMapId() == bot->GetMapId() && player->IsInWorld() &&
     //     sServerFacade->GetDistance2d(bot, player) < (player->IsPlayer() && botAI->IsTank((Player*)player) ? 50.0f
     //     : 40.0f);
+    // Keep an injured group member selectable while line of sight is blocked.
+    // The reach-party-member action needs this target in order to reposition
+    // around pillars and walls; requiring LOS here made healers wait in place.
     return player->GetMapId() == bot->GetMapId() && !player->IsCharmed() &&
-        bot->GetDistance2d(player) < sPlayerbotAIConfig->healDistance * 2 && bot->IsWithinLOSInMap(player);
+        bot->GetDistance2d(player) < sPlayerbotAIConfig->healDistance * 2;
 }
 
 Unit* PartyMemberToProtect::Calculate()

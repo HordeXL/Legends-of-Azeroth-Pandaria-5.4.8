@@ -797,7 +797,7 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
                         "AND guid NOT IN (SELECT guid FROM guild_member) "
                         "AND guid NOT IN (SELECT memberGuid FROM group_member) "
                         "AND guid NOT IN (SELECT owner_guid FROM solo_arena_loadout_backup) "
-                        "ORDER BY guid",
+                        "ORDER BY RAND()",
                         minAccount, maxAccount, requester->GetLevel());
                     if (!candidates)
                         break;
@@ -1292,26 +1292,26 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
                     Player* selectedBot = nullptr;
                     uint32 desiredHealers = std::max<uint32>(1, targetPerTeam / 5);
                     bool needHealer = demand.Healers[team] < desiredHealers;
-                    for (uint8 pass = 0; pass < 2 && !selectedBot; ++pass)
+                    std::vector<Player*> eligibleBots;
+                    std::vector<Player*> eligibleHealers;
+                    for (auto const& botPair : playerBots)
                     {
-                        for (auto const& botPair : playerBots)
-                        {
-                            Player* bot = botPair.second;
-                            if (!IsRandomBot(bot) || !CanAutoQueueBgBot(
-                                bot, team, demand.MapId, demand.Bracket))
-                                continue;
+                        Player* bot = botPair.second;
+                        if (!IsRandomBot(bot) || !CanAutoQueueBgBot(
+                            bot, team, demand.MapId, demand.Bracket))
+                            continue;
 
-                            // First pass reserves the required healer share.
-                            // The second pass is a safe fallback when no
-                            // eligible healer exists, so the BG cannot stall.
-                            if (!pass && needHealer &&
-                                !PlayerBotSpec::IsHeal(bot, true))
-                                continue;
-
-                            selectedBot = bot;
-                            break;
-                        }
+                        eligibleBots.push_back(bot);
+                        if (PlayerBotSpec::IsHeal(bot, true))
+                            eligibleHealers.push_back(bot);
                     }
+
+                    std::vector<Player*> const& selectionPool =
+                        needHealer && !eligibleHealers.empty() ?
+                            eligibleHealers : eligibleBots;
+                    if (!selectionPool.empty())
+                        selectedBot = selectionPool[
+                            urand(0, uint32(selectionPool.size() - 1))];
 
                     if (!selectedBot)
                     {
@@ -1337,7 +1337,7 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
                             "AND guid NOT IN (SELECT guid FROM guild_member) "
                             "AND guid NOT IN (SELECT memberGuid FROM group_member) "
                             "AND guid NOT IN (SELECT owner_guid FROM solo_arena_loadout_backup) "
-                            "ORDER BY guid",
+                            "ORDER BY RAND()",
                             minAccount, maxAccount, requester->GetLevel());
                         if (!candidates)
                             break;

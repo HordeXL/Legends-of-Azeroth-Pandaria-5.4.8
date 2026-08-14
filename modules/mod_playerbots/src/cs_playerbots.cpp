@@ -955,6 +955,7 @@ SoloArenaPreviewCandidate const* FindSoloArenaCandidate(
     uint32 wantedTeam, bool requireTeam, uint8 forbiddenClass,
     std::vector<uint32> const& excluded)
 {
+    std::vector<SoloArenaPreviewCandidate const*> eligible;
     for (SoloArenaPreviewCandidate const& candidate : candidates)
     {
         if (candidate.Role != wantedRole &&
@@ -966,10 +967,16 @@ SoloArenaPreviewCandidate const* FindSoloArenaCandidate(
             continue;
         if (std::find(excluded.begin(), excluded.end(), candidate.Guid) != excluded.end())
             continue;
-        return &candidate;
+        eligible.push_back(&candidate);
     }
 
-    return nullptr;
+    if (eligible.empty())
+        return nullptr;
+
+    // Candidates have already passed faction, specialization and equipment
+    // requirements. Random choice prevents every match from reusing the
+    // first (highest GUID/score ordered) characters.
+    return eligible[urand(0, uint32(eligible.size() - 1))];
 }
 
 Player* FindSoloArenaParticipant(uint32 guid)

@@ -52,6 +52,34 @@ ReachPartyMemberToHealAction::ReachPartyMemberToHealAction(PlayerbotAI* botAI)
 {
 }
 
+bool ReachPartyMemberToHealAction::Execute(Event /*event*/)
+{
+    Unit* target = GetTarget();
+    if (!target)
+        return false;
+
+    if (!bot->IsWithinLOSInMap(target))
+    {
+        // Move close enough for the path generator to route around the
+        // obstacle. ReachCombatTo intentionally stops once spell range is
+        // satisfied and therefore cannot repair a blocked line of sight.
+        return MoveTo(target, sPlayerbotAIConfig->contactDistance,
+            MovementPriority::MOVEMENT_COMBAT);
+    }
+
+    return ReachCombatTo(target, distance);
+}
+
+bool ReachPartyMemberToHealAction::isUseful()
+{
+    if (bot->GetCurrentSpell(CURRENT_CHANNELED_SPELL) != nullptr)
+        return false;
+
+    Unit* target = GetTarget();
+    return target && (!bot->IsWithinCombatRange(target, distance) ||
+        !bot->IsWithinLOSInMap(target));
+}
+
 std::string const ReachPartyMemberToHealAction::GetTargetName() { return "party member to heal"; }
 
 ReachPartyMemberToResurrectAction::ReachPartyMemberToResurrectAction(PlayerbotAI* botAI)
