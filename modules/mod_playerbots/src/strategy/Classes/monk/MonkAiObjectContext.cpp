@@ -7,9 +7,38 @@
 
 #include "GenericTriggers.h"
 #include "MonkActions.h"
+#include "MonkBuffs.h"
 #include "MonkStrategies.h"
 #include "NamedObjectContext.h"
 #include "Playerbots.h"
+
+class LegacyOfTheEmperorOnPartyTrigger : public BuffOnPartyTrigger
+{
+public:
+    LegacyOfTheEmperorOnPartyTrigger(PlayerbotAI* botAI)
+        : BuffOnPartyTrigger(botAI, "legacy of the emperor")
+    {
+    }
+
+    Value<Unit*>* GetTargetValue() override
+    {
+        return context->GetValue<Unit*>("party member without aura", MonkBuffs::StatBuffs());
+    }
+};
+
+class LegacyOfTheWhiteTigerOnPartyTrigger : public BuffOnPartyTrigger
+{
+public:
+    LegacyOfTheWhiteTigerOnPartyTrigger(PlayerbotAI* botAI)
+        : BuffOnPartyTrigger(botAI, "legacy of the white tiger")
+    {
+    }
+
+    Value<Unit*>* GetTargetValue() override
+    {
+        return context->GetValue<Unit*>("party member without aura", MonkBuffs::CriticalStrikeBuffs());
+    }
+};
 
 class MonkStrategyFactoryInternal : public NamedObjectContext<Strategy>
 {
@@ -58,11 +87,11 @@ private:
     }
     static Trigger* legacy_emperor_party(PlayerbotAI* botAI)
     {
-        return new BuffOnPartyTrigger(botAI, "legacy of the emperor");
+        return new LegacyOfTheEmperorOnPartyTrigger(botAI);
     }
     static Trigger* legacy_tiger_party(PlayerbotAI* botAI)
     {
-        return new BuffOnPartyTrigger(botAI, "legacy of the white tiger");
+        return new LegacyOfTheWhiteTigerOnPartyTrigger(botAI);
     }
 };
 

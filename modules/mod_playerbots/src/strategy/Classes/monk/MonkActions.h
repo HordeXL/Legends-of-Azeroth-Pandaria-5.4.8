@@ -7,6 +7,7 @@
 #define _PLAYERBOT_MONKACTIONS_H
 
 #include "GenericSpellActions.h"
+#include "MonkBuffs.h"
 #include "Playerbots.h"
 
 class PlayerbotAI;
@@ -52,8 +53,34 @@ CURE_PARTY_ACTION(CastDetoxDiseaseOnPartyAction, "detox", DISPEL_DISEASE);
 CURE_PARTY_ACTION(CastDetoxMagicOnPartyAction, "detox", DISPEL_MAGIC);
 RESS_ACTION(CastResuscitateAction, "resuscitate");
 BUFF_ACTION(CastLegacyOfTheEmperorAction, "legacy of the emperor");
-BUFF_PARTY_ACTION(CastLegacyOfTheEmperorOnPartyAction, "legacy of the emperor");
 BUFF_ACTION(CastLegacyOfTheWhiteTigerAction, "legacy of the white tiger");
-BUFF_PARTY_ACTION(CastLegacyOfTheWhiteTigerOnPartyAction, "legacy of the white tiger");
+
+class CastLegacyOfTheEmperorOnPartyAction : public BuffOnPartyAction
+{
+public:
+    CastLegacyOfTheEmperorOnPartyAction(PlayerbotAI* botAI)
+        : BuffOnPartyAction(botAI, "legacy of the emperor")
+    {
+    }
+
+    Value<Unit*>* GetTargetValue() override
+    {
+        return context->GetValue<Unit*>("party member without aura", MonkBuffs::StatBuffs());
+    }
+};
+
+class CastLegacyOfTheWhiteTigerOnPartyAction : public BuffOnPartyAction
+{
+public:
+    CastLegacyOfTheWhiteTigerOnPartyAction(PlayerbotAI* botAI)
+        : BuffOnPartyAction(botAI, "legacy of the white tiger")
+    {
+    }
+
+    Value<Unit*>* GetTargetValue() override
+    {
+        return context->GetValue<Unit*>("party member without aura", MonkBuffs::CriticalStrikeBuffs());
+    }
+};
 
 #endif
