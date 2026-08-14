@@ -2201,6 +2201,13 @@ class spell_item_nitro_boots : public SpellScriptLoader
             void HandleDummy(SpellEffIndex /* effIndex */)
             {
                 Unit* caster = GetCaster();
+                // Nitro Boosts are usable in battlegrounds, but the MoP flag
+                // carrier rule requires the carried objective to be dropped.
+                // Rocket Boots already use the same native BG handler below.
+                if (Player* player = caster->ToPlayer())
+                    if (Battleground* bg = player->GetBattleground())
+                        bg->EventPlayerDroppedFlag(player);
+
                 caster->CastSpell(caster, roll_chance_i(95) ? SPELL_NITRO_BOOTS_SUCCESS : SPELL_NITRO_BOOTS_BACKFIRE, true, GetCastItem());
             }
 

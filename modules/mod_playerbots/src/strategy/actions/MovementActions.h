@@ -167,4 +167,6 @@ public:
 private:
     bool EngageEnemy(Player* enemy);
     bool MoveToOrUse(GameObject* object, float interactDistance = 5.0f);
+    bool TryBattlegroundMount();
+    time_t nextMountAttempt = 0;
 };

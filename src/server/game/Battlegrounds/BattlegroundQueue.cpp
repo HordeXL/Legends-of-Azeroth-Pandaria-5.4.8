@@ -26,6 +26,7 @@
 #include "ObjectMgr.h"
 #include "Player.h"
 #include "Config.h"
+#include "World.h"
 #include <numeric>
 
 namespace Trinity
@@ -401,6 +402,12 @@ void BattlegroundQueue::RemovePlayer(ObjectGuid guid, bool decreaseInvitedCount,
     itr = m_QueuedPlayers.find(guid);
     if (itr == m_QueuedPlayers.end())
     {
+        // During Ctrl+C shutdown sessions and managed playerbots can be torn
+        // down after the queue container has already released its entry. This
+        // is an expected idempotent cleanup, not a live queue corruption.
+        if (World::IsStopped())
+            return;
+
         std::string playerName = "Unknown";
         if (Player* player = ObjectAccessor::FindPlayer(guid))
             playerName = player->GetName();

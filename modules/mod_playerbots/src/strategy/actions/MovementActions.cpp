@@ -367,24 +367,28 @@ bool MovementAction::MoveTo(uint32 mapId, float x, float y, float z, bool idle, 
                 bot->SetStandState(UNIT_STAND_STATE_STAND);
 
             MotionMaster& mm = *bot->GetMotionMaster();
+            if (path.empty())
+                return false;
             G3D::Vector3 endP = path.back();
             mm.Clear();
             if (!backwards)
             {
-                mm.MovePoint(0, x, y, z, generatePath);
+                mm.MovePoint(0, endP.x, endP.y, endP.z, generatePath);
             }
             else
             {
-                mm.MovePointBackwards(0, x, y, z, generatePath);
+                mm.MovePointBackwards(0, endP.x, endP.y, endP.z, generatePath);
             }
-             float delay = 1000.0f * MoveDelay(distance, backwards);
+            distance = bot->GetExactDist(endP.x, endP.y, endP.z);
+            float delay = 1000.0f * MoveDelay(distance, backwards);
             if (lessDelay)
             {
                 delay -= botAI->GetReactDelay();
             }
             delay = std::max(.0f, delay);
             delay = std::min((float)sPlayerbotAIConfig->maxWaitForMove, delay);
-            AI_VALUE(LastMovement&, "last movement").Set(mapId, x, y, z, bot->GetOrientation(), delay, priority);
+            AI_VALUE(LastMovement&, "last movement").Set(mapId, endP.x, endP.y,
+                endP.z, bot->GetOrientation(), delay, priority);
             return true;
         }
     }
@@ -1487,7 +1491,8 @@ bool BattlegroundObjectiveAction::EngageEnemy(Player* enemy)
 {
     if (!enemy || !enemy->IsInWorld() || enemy->isDead() ||
         enemy->GetMapId() != bot->GetMapId() ||
-        !bot->IsValidAttackTarget(enemy) || !bot->IsWithinLOSInMap(enemy))
+        !bot->IsValidAttackTarget(enemy) || !bot->IsWithinLOSInMap(enemy) ||
+        std::fabs(bot->GetPositionZ() - enemy->GetPositionZ()) > 15.0f)
         return false;
 
     Unit* currentTarget = context->GetValue<Unit*>("current target")->Get();
@@ -1524,6 +1529,53 @@ bool BattlegroundObjectiveAction::MoveToOrUse(GameObject* object, float interact
         MovementPriority::MOVEMENT_FORCED);
 }
 
+bool BattlegroundObjectiveAction::TryBattlegroundMount()
+{
+    time_t now = time(nullptr);
+    if (now < nextMountAttempt)
+        return false;
+
+    // "mount" is a non-combat strategy name in this module, not a concrete
+    // ActionContext action. Calling DoSpecificAction("mount") therefore never
+    // cast anything inside a BG. Locate a real learned mount spell and cast it
+    // through the normal PlayerbotAI spell validation instead.
+    std::vector<uint32> mountSpells;
+    for (auto const& spellPair : bot->GetSpellMap())
+    {
+        PlayerSpell const* learned = spellPair.second;
+        if (!learned || learned->state == PLAYERSPELL_REMOVED || !learned->active)
+            continue;
+
+        SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellPair.first);
+        if (!spellInfo || spellInfo->IsPassive() ||
+            !spellInfo->HasAura(SPELL_AURA_MOUNTED))
+            continue;
+
+        mountSpells.push_back(spellPair.first);
+    }
+
+    // Prefer the newest learned rank/variant, but fall back through every
+    // mount because the current BG/map can reject a flying-only or otherwise
+    // unsuitable spell while accepting a normal ground mount.
+    std::sort(mountSpells.rbegin(), mountSpells.rend());
+    for (uint32 spellId : mountSpells)
+    {
+        if (!botAI->CanCastSpell(spellId, bot) ||
+            !botAI->CastSpell(spellId, bot))
+            continue;
+
+        nextMountAttempt = now + 5;
+        TC_LOG_INFO("server",
+            "Playerbot BG mount cast bot=%s guid=%u spell=%u map=%u",
+            bot->GetName().c_str(), bot->GetGUID().GetCounter(), spellId,
+            bot->GetMapId());
+        return true;
+    }
+
+    nextMountAttempt = now + 5;
+    return false;
+}
+
 bool BattlegroundObjectiveAction::Execute(Event /*event*/)
 {
     Battleground* bg = bot->GetBattleground();
@@ -1532,22 +1584,24 @@ bool BattlegroundObjectiveAction::Execute(Event /*event*/)
 
     if (bg->GetStatus() == STATUS_WAIT_JOIN)
     {
-        // Reusing the Arena-tested class buff helper keeps preparation casts
-        // class-aware.  It never changes the real requester's equipment.
-        if (sPlayerbotAIConfig->autoQueueBattlegroundPreparationBuffs)
-            CastAutomatedPvpPreparationBuff(bot);
+        // Request-driven BG lifecycle owns the one successful preparation
+        // cast per bot. Calling the helper again from this high-frequency
+        // objective action caused mutually exclusive buffs to be recast.
         return true;
     }
 
-    if (bg->GetStatus() != STATUS_IN_PROGRESS || !bot->IsAlive() ||
-        bot->IsBeingTeleported())
+    if (bg->GetStatus() != STATUS_IN_PROGRESS || bot->IsBeingTeleported())
         return false;
 
-    // Do not abandon a fight already in progress.  The class combat engine
-    // remains responsible for damage, healing, dispels and crowd control.
-    Unit* victim = bot->GetVictim();
-    if (victim && victim->IsPlayer() && victim->IsAlive())
-        return false;
+    // Dead BG players must remain at the Spirit Guide until the native
+    // resurrection wave revives them. Returning false here allowed unrelated
+    // non-combat movement actions to make ghosts run away from the resurrection
+    // area and miss every subsequent wave.
+    if (!bot->IsAlive())
+    {
+        bot->GetMotionMaster()->Clear();
+        return true;
+    }
 
     // Objective movement must never make a bot passive while an enemy is
     // actively damaging it. In particular, a stealthed flag defender can be
@@ -1586,23 +1640,69 @@ bool BattlegroundObjectiveAction::Execute(Event /*event*/)
     {
         Unit* nearbyEnemy = context->GetValue<Unit*>("enemy player target")->Get();
         if ((!nearbyEnemy || bot->GetDistance(nearbyEnemy) > 45.0f) &&
-            botAI->DoSpecificAction("mount", Event(), true))
+            TryBattlegroundMount())
             return true;
     }
 
     if (ctf)
     {
         ObjectGuid enemyCarrierGuid = bg->GetFlagPickerGUID(ownTeam);
-        if (Player* enemyCarrier = ObjectAccessor::FindConnectedPlayer(enemyCarrierGuid))
-            if (bot->GetDistance(enemyCarrier) < 100.0f && EngageEnemy(enemyCarrier))
-                return true;
-
         ObjectGuid allyCarrierGuid = bg->GetFlagPickerGUID(enemyTeam);
+        Player* enemyCarrier = ObjectAccessor::FindConnectedPlayer(enemyCarrierGuid);
+        Player* allyCarrier = ObjectAccessor::FindConnectedPlayer(allyCarrierGuid);
         bool carryingEnemyFlag = allyCarrierGuid == bot->GetGUID();
+        uint32 roleSlot = bot->GetGUID().GetCounter() % 10;
         bool stealthDefender = (bot->GetClass() == CLASS_ROGUE ||
             bot->GetClass() == CLASS_DRUID) &&
-            (bot->GetGUID().GetCounter() % 3 == 0);
-        bool defender = stealthDefender || bot->GetGUID().GetCounter() % 5 == 0;
+            roleSlot == 2;
+        bool defender = stealthDefender || roleSlot == 0 || roleSlot == 5;
+        bool escort = allyCarrier && !carryingEnemyFlag && !defender;
+
+        // Combat is normally retained, but dedicated flag runners and escorts
+        // must not spend an entire timed match chasing an unrelated target.
+        // Never disengage while somebody is actually attacking this bot, while
+        // low on health, or while the current victim is threatening our carrier.
+        Unit* victim = bot->GetVictim();
+        if (victim && victim->IsPlayer() && victim->IsAlive())
+        {
+            bool victimReachable = bot->IsWithinLOSInMap(victim) &&
+                std::fabs(bot->GetPositionZ() - victim->GetPositionZ()) <= 15.0f;
+            bool victimThreatensCarrier = false;
+            if (allyCarrier)
+                for (Unit* attacker : allyCarrier->getAttackers())
+                    if (attacker == victim)
+                    {
+                        victimThreatensCarrier = true;
+                        break;
+                    }
+
+            Player* victimPlayer = victim->ToPlayer();
+            bool victimNearEnemyGraveyard = false;
+            if (victimPlayer)
+                if (WorldSafeLocsEntry const* graveyard =
+                    bg->GetClosestGraveYard(victimPlayer))
+                    victimNearEnemyGraveyard = victimPlayer->GetDistance(
+                        graveyard->x, graveyard->y, graveyard->z) < 55.0f;
+
+            bool runnerMayDisengage = !allyCarrier && !defender &&
+                bot->GetDistance(victim) > 25.0f;
+            bool escortMayDisengage = escort && !victimThreatensCarrier &&
+                bot->GetDistance(allyCarrier) > 30.0f;
+            bool graveyardMayDisengage = !victimThreatensCarrier &&
+                victimNearEnemyGraveyard;
+            if ((!victimReachable || runnerMayDisengage ||
+                escortMayDisengage || graveyardMayDisengage) &&
+                bot->getAttackers().empty() && bot->GetHealthPct() > 50.0f)
+            {
+                context->GetValue<Unit*>("current target")->Set(nullptr);
+                bot->SetTarget(ObjectGuid::Empty);
+                bot->SetSelection(ObjectGuid());
+                bot->AttackStop();
+                botAI->ChangeEngine(BOT_STATE_NON_COMBAT);
+            }
+            else
+                return false;
+        }
 
         uint32 ownFlagObject = 0;
         uint32 enemyFlagObject = 0;
@@ -1645,12 +1745,14 @@ bool BattlegroundObjectiveAction::Execute(Event /*event*/)
 
         if (ownDroppedFlag)
             if (GameObject* dropped = bg->GetBgMap()->GetGameObject(ownDroppedFlag))
-                if (bot->GetDistance(dropped) < 120.0f && MoveToOrUse(dropped))
+                if ((defender || bot->GetDistance(dropped) < 45.0f) &&
+                    MoveToOrUse(dropped))
                     return true;
 
         if (enemyDroppedFlag)
             if (GameObject* dropped = bg->GetBgMap()->GetGameObject(enemyDroppedFlag))
-                if (bot->GetDistance(dropped) < 80.0f && MoveToOrUse(dropped))
+                if (!defender && bot->GetDistance(dropped) < 160.0f &&
+                    MoveToOrUse(dropped))
                     return true;
 
         if (carryingEnemyFlag)
@@ -1689,6 +1791,42 @@ bool BattlegroundObjectiveAction::Execute(Event /*event*/)
                 MovementPriority::MOVEMENT_FORCED);
         }
 
+        // When a player or bot has the enemy flag, most mobile teammates form
+        // an escort. First attack enemies that are actually hitting the carrier;
+        // otherwise stay close enough to peel, heal and crowd-control rather
+        // than continuing an unrelated midfield fight.
+        if (escort)
+        {
+            Player* closestThreat = nullptr;
+            float closestDistance = 120.0f;
+            for (Unit* attacker : allyCarrier->getAttackers())
+            {
+                Player* enemy = attacker ? attacker->ToPlayer() : nullptr;
+                if (!enemy || !enemy->IsAlive())
+                    continue;
+
+                float distance = bot->GetDistance(enemy);
+                if (distance < closestDistance)
+                {
+                    closestDistance = distance;
+                    closestThreat = enemy;
+                }
+            }
+
+            if (closestThreat && EngageEnemy(closestThreat))
+                return true;
+
+            return MoveTo(allyCarrier, 9.0f,
+                MovementPriority::MOVEMENT_FORCED);
+        }
+
+        // Only the defensive/interceptor group abandons its assignment to hunt
+        // the enemy carrier. Previously the whole team did so, leaving its own
+        // carrier completely unprotected whenever both flags were held.
+        if (enemyCarrier && defender && bot->GetDistance(enemyCarrier) < 180.0f &&
+            EngageEnemy(enemyCarrier))
+            return true;
+
         if (defender)
         {
             if (!bot->IsInCombat() && stealthDefender)
@@ -1711,17 +1849,26 @@ bool BattlegroundObjectiveAction::Execute(Event /*event*/)
             return true;
         }
 
-        // Some attackers escort the friendly carrier instead of stacking all
-        // bots on the enemy flag room.
-        if (allyCarrierGuid && bot->GetGUID().GetCounter() % 3 == 1)
-        {
-            if (Player* allyCarrier = ObjectAccessor::FindConnectedPlayer(allyCarrierGuid))
-                if (allyCarrier != bot)
-                    return MoveTo(allyCarrier, 8.0f,
-                        MovementPriority::MOVEMENT_FORCED);
-        }
-
         return MoveToOrUse(bg->GetBGObject(enemyFlagObject));
+    }
+
+    // Do not abandon a non-CTF fight already in progress. The class combat
+    // engine remains responsible for damage, healing, dispels and crowd control.
+    Unit* victim = bot->GetVictim();
+    if (victim && victim->IsPlayer() && victim->IsAlive())
+    {
+        if (bot->IsWithinLOSInMap(victim) &&
+            std::fabs(bot->GetPositionZ() - victim->GetPositionZ()) <= 15.0f)
+            return false;
+
+        if (bot->getAttackers().empty())
+        {
+            context->GetValue<Unit*>("current target")->Set(nullptr);
+            bot->SetTarget(ObjectGuid::Empty);
+            bot->SetSelection(ObjectGuid());
+            bot->AttackStop();
+            botAI->ChangeEngine(BOT_STATE_NON_COMBAT);
+        }
     }
 
     // Fight nearby enemies or enemies attacking a group member before

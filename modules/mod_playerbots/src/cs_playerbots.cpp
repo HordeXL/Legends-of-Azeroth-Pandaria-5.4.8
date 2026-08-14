@@ -30,6 +30,7 @@
 #include "Player.h"
 #include "Playerbots.h"
 #include "PlayerbotMgr.h"
+#include "PlayerbotSpec.h"
 #include "PerformanceMonitor.h"
 #include "PlayerbotAIConfig.h"
 #include "RandomPlayerbotMgr.h"
@@ -1644,7 +1645,14 @@ std::vector<char const*> GetSoloArenaPreparationBuffActions(Player* bot)
         case CLASS_WARRIOR:      return { "battle shout" };
         case CLASS_DEATH_KNIGHT: return { "horn of winter" };
         case CLASS_WARLOCK:      return { "dark intent" };
-        case CLASS_SHAMAN:       return { "water shield", "lightning shield" };
+        // Water Shield and Lightning Shield are mutually exclusive. Returning
+        // both made the preparation loop alternate between them for the entire
+        // countdown. A healer needs mana regeneration; damage specializations
+        // keep the offensive shield instead.
+        case CLASS_SHAMAN:
+            return PlayerBotSpec::IsHeal(bot, true) ?
+                std::vector<char const*> { "water shield" } :
+                std::vector<char const*> { "lightning shield" };
         case CLASS_HUNTER:       return { "trueshot aura", "aspect of the hawk" };
         default:                 return {};
     }

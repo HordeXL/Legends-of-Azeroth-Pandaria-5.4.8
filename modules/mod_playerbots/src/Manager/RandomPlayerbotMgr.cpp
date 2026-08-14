@@ -1034,17 +1034,44 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
             if (!CanAutoQueueBgBot(bot, staged.Team, staged.MapId,
                 staged.Bracket, &rejectionReason))
             {
-                BgAutoQueueIneligibleBots.insert(botGuid);
-                TC_LOG_ERROR("server",
-                    "AutoQueue BG staged bot became ineligible name=%s guid=%u type=%u reason=%s team=%u expected-team=%u spec=%u level=%u map=%u",
-                    bot->GetName().c_str(), botGuid, uint32(staged.Type),
-                    rejectionReason.c_str(), uint32(bot->GetTeamId()),
-                    uint32(staged.Team), uint32(bot->GetSpecialization()),
-                    uint32(bot->GetLevel()), bot->GetMapId());
-                if (!bot->InBattleground() && !bot->InBattlegroundQueue())
-                    LogoutPlayerBot(guid);
-                itr = BgAutoQueueStagedLogins.erase(itr);
-                continue;
+                // Offline random bots can retain a stale open-world combat
+                // state while they are being loaded specifically for this
+                // queue.  It is transient and safe to clear before the bot
+                // has joined a group, PvP queue or battleground.  Re-run the
+                // complete eligibility test afterwards so no other rejection
+                // is accidentally bypassed.
+                if (rejectionReason == "in-combat")
+                {
+                    bot->CombatStopWithPets(true);
+                    rejectionReason.clear();
+                    if (CanAutoQueueBgBot(bot, staged.Team, staged.MapId,
+                        staged.Bracket, &rejectionReason))
+                    {
+                        TC_LOG_INFO("server",
+                            "AutoQueue BG cleared transient combat state name=%s guid=%u type=%u",
+                            bot->GetName().c_str(), botGuid, uint32(staged.Type));
+                    }
+                }
+
+                if (rejectionReason.empty())
+                {
+                    // The retry succeeded; continue with the normal staged
+                    // loadout and queue path below.
+                }
+                else
+                {
+                    BgAutoQueueIneligibleBots.insert(botGuid);
+                    TC_LOG_WARN("server",
+                        "AutoQueue BG staged bot became ineligible name=%s guid=%u type=%u reason=%s team=%u expected-team=%u spec=%u level=%u map=%u",
+                        bot->GetName().c_str(), botGuid, uint32(staged.Type),
+                        rejectionReason.c_str(), uint32(bot->GetTeamId()),
+                        uint32(staged.Team), uint32(bot->GetSpecialization()),
+                        uint32(bot->GetLevel()), bot->GetMapId());
+                    if (!bot->InBattleground() && !bot->InBattlegroundQueue())
+                        LogoutPlayerBot(guid);
+                    itr = BgAutoQueueStagedLogins.erase(itr);
+                    continue;
+                }
             }
 
             if (!bot->IsAlive())
