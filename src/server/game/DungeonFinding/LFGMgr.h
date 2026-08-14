@@ -416,6 +416,9 @@ class LFGMgr
         void InitBoot(ObjectGuid gguid, ObjectGuid kguid, ObjectGuid vguid, std::string const& reason);
         /// Updates player boot proposal with new player answer
         void UpdateBoot(ObjectGuid guid, bool accept);
+        /// Answers the pending proposal containing this player. Server-driven
+        /// playerbots do not emit the client proposal response packet.
+        bool AnswerProposalForPlayer(ObjectGuid guid, bool accept);
         /// Updates proposal to join dungeon with player answer
         void UpdateProposal(uint32 proposalId, ObjectGuid guid, bool accept);
         /// Updates the role check with player answer

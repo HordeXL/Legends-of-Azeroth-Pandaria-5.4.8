@@ -779,6 +779,11 @@ AiPlayerbot.RandomBotAutoJoinBG = 0
 AiPlayerbot.AutoQueue.Enabled = 0
 AiPlayerbot.AutoQueue.DryRun = 1
 AiPlayerbot.AutoQueue.LFG = 0
+
+# Fill a real player's LFG request with role-correct request-driven bots.
+# This path keeps each bot's normal PvE equipment; Arena/BG PvP loadouts are
+# never applied here. Leave disabled until a controlled local test.
+AiPlayerbot.AutoQueue.LFG.Automatic = 0
 AiPlayerbot.AutoQueue.Battleground = 0
 AiPlayerbot.AutoQueue.Arena = 0
 

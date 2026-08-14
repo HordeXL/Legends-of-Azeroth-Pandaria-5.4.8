@@ -28,6 +28,7 @@
 #include <sstream>
 
 #include "AccountMgr.h"
+#include "AiFactory.h"
 #include "Battleground.h"
 #include "BattlegroundMgr.h"
 #include "BotFactory.h"
@@ -58,6 +59,123 @@
 
 namespace
 {
+    struct LfgAutoQueueDemand
+    {
+        uint8 Team = 0;
+        uint32 RequesterGuid = 0;
+        lfg::LfgDungeonSet Dungeons;
+        uint32 NeededTanks = 0;
+        uint32 NeededHealers = 0;
+        uint32 NeededDamage = 0;
+    };
+
+    struct LfgAutoQueueStagedLogin
+    {
+        uint8 Team = 0;
+        uint32 RequesterGuid = 0;
+        lfg::LfgDungeonSet Dungeons;
+        lfg::LfgRoles Role = lfg::PLAYER_ROLE_NONE;
+    };
+
+    struct LfgAutoQueueManagedBot
+    {
+        uint32 RequesterGuid = 0;
+        lfg::LfgRoles Role = lfg::PLAYER_ROLE_NONE;
+        bool EnteredDungeon = false;
+        bool PreparationBuffed = false;
+        bool GroupLeadershipEnsured = false;
+    };
+
+    std::map<uint32, LfgAutoQueueStagedLogin> LfgAutoQueueStagedLogins;
+    std::map<uint32, LfgAutoQueueManagedBot> LfgAutoQueueManagedBots;
+    std::set<uint32> LfgAutoQueueIneligibleBots;
+
+    lfg::LfgRoles GetLfgRole(Player* player)
+    {
+        if (!player)
+            return lfg::PLAYER_ROLE_NONE;
+
+        switch (AiFactory::GetPlayerRoles(player))
+        {
+            case BOT_ROLE_TANK:
+                return lfg::PLAYER_ROLE_TANK;
+            case BOT_ROLE_HEALER:
+                return lfg::PLAYER_ROLE_HEALER;
+            case BOT_ROLE_DPS:
+                return lfg::PLAYER_ROLE_DAMAGE;
+            default:
+                return lfg::PLAYER_ROLE_NONE;
+        }
+    }
+
+    lfg::LfgRoles GetLfgRole(Specializations specialization)
+    {
+        switch (specialization)
+        {
+            case SPEC_WARRIOR_PROTECTION:
+            case SPEC_PALADIN_PROTECTION:
+            case SPEC_DEATH_KNIGHT_BLOOD:
+            case SPEC_DRUID_GUARDIAN:
+            case SPEC_MONK_BREWMASTER:
+                return lfg::PLAYER_ROLE_TANK;
+            case SPEC_PALADIN_HOLY:
+            case SPEC_DRUID_RESTORATION:
+            case SPEC_PRIEST_DISCIPLINE:
+            case SPEC_PRIEST_HOLY:
+            case SPEC_SHAMAN_RESTORATION:
+            case SPEC_MONK_MISTWEAVER:
+                return lfg::PLAYER_ROLE_HEALER;
+            case SPEC_NONE:
+                return lfg::PLAYER_ROLE_NONE;
+            default:
+                return lfg::PLAYER_ROLE_DAMAGE;
+        }
+    }
+
+    bool CanAutoQueueLfgBot(Player* bot, uint8 team,
+                            std::string* rejectionReason = nullptr)
+    {
+        auto reject = [rejectionReason](char const* reason)
+        {
+            if (rejectionReason)
+                *rejectionReason = reason;
+            return false;
+        };
+
+        if (!bot)
+            return reject("missing-player");
+        if (IsSoloArenaAutomationBusy())
+            return reject("solo-arena-automation-busy");
+        if (IsSoloArenaManagedPlayer(bot->GetGUID().GetCounter()))
+            return reject("solo-arena-managed");
+        if (LfgAutoQueueManagedBots.count(bot->GetGUID().GetCounter()))
+            return reject("already-lfg-managed");
+        // This port still lacks complete monk class actions. Do not put a
+        // non-functional tank/healer/DPS into a real player's dungeon.
+        if (bot->GetClass() == CLASS_MONK)
+            return reject("unsupported-monk");
+        if (!bot->IsInWorld())
+            return reject("not-in-world");
+        if (uint8(bot->GetTeam()) != team)
+            return reject("wrong-team");
+        if (GetLfgRole(bot) == lfg::PLAYER_ROLE_NONE)
+            return reject("unsupported-specialization");
+        if (bot->GetGroup())
+            return reject("already-grouped");
+        if (bot->IsUsingLfg())
+            return reject("already-using-lfg");
+        if (bot->InBattleground() || bot->InBattlegroundQueue())
+            return reject("using-pvp");
+        if (bot->IsInCombat() || bot->IsInFlight())
+            return reject("busy");
+        if (!bot->GetMap() || bot->GetMap()->Instanceable())
+            return reject("instance-map");
+
+        if (rejectionReason)
+            rejectionReason->clear();
+        return true;
+    }
+
     struct BgAutoQueueDemand
     {
         BattlegroundTypeId Type = BATTLEGROUND_TYPE_NONE;
@@ -314,6 +432,10 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
 
     uint32 realLfg = 0;
     uint32 botLfg = 0;
+    // One demand record per real requester.  Several real players may queue
+    // for the same dungeon at once but still belong to different matchmaking
+    // buckets; merging them by team+dungeon would fill the wrong party.
+    std::map<uint32, LfgAutoQueueDemand> lfgDemands;
     if (sPlayerbotAIConfig->autoQueueLfg)
     {
         for (auto const& managerPair : sLFGMgr->GetQueueManagers())
@@ -328,17 +450,421 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
                     if (!player)
                         continue;
 
-                    if (IsRandomBot(player))
+                    // Bots explicitly logged in for this request are owned by
+                    // PlayerbotHolder but do not necessarily carry the older
+                    // persistent random-bot event. Treat every holder-owned or
+                    // lifecycle-owned character as a bot, otherwise fillers
+                    // become new "real" requesters and recursively create more
+                    // demand (the same class of bug previously fixed for BG).
+                    uint32 lowGuid = guid.GetCounter();
+                    if (IsRandomBot(player) || GetPlayerBot(guid) ||
+                        LfgAutoQueueStagedLogins.count(lowGuid) ||
+                        LfgAutoQueueManagedBots.count(lowGuid))
                         hasRandomBot = true;
                     else
                         hasRealPlayer = true;
                 }
 
                 if (hasRealPlayer)
+                {
                     ++realLfg;
+                    if (!queuePair.second.Dungeons.empty())
+                    {
+                        uint32 requesterGuid = 0;
+                        for (ObjectGuid const& playerGuid : queuePair.second.Players)
+                        {
+                            Player* queued = ObjectAccessor::FindConnectedPlayer(playerGuid);
+                            if (queued && !GetPlayerBot(playerGuid))
+                            {
+                                requesterGuid = playerGuid.GetCounter();
+                                break;
+                            }
+                        }
+
+                        if (requesterGuid)
+                        {
+                            uint32 dungeonId = *queuePair.second.Dungeons.begin();
+                            lfg::DungeonQueue const& dungeonQueue =
+                                managerPair.second.GetQueue(dungeonId);
+                            lfg::Queuer queuer(queuePair.second.GUID,
+                                queuePair.second.QueueId);
+
+                            for (lfg::Bucket const& bucket : dungeonQueue.GetBuckets())
+                            {
+                                if (!bucket.Contains(queuer))
+                                    continue;
+
+                                LfgAutoQueueDemand& demand = lfgDemands[requesterGuid];
+                                demand.Team = managerPair.first;
+                                demand.RequesterGuid = requesterGuid;
+                                demand.Dungeons = queuePair.second.Dungeons;
+                                demand.NeededTanks = bucket.GetRemainingSlots(
+                                    lfg::PLAYER_ROLE_TANK);
+                                demand.NeededHealers = bucket.GetRemainingSlots(
+                                    lfg::PLAYER_ROLE_HEALER);
+                                demand.NeededDamage = bucket.GetRemainingSlots(
+                                    lfg::PLAYER_ROLE_DAMAGE);
+                                break;
+                            }
+                        }
+                    }
+                }
                 if (hasRandomBot)
                     ++botLfg;
             }
+        }
+    }
+
+    // A staged login already reserves one of the requester's missing role
+    // slots. Native LFG does not see that character until login completes, so
+    // subtract these reservations now to prevent duplicate staging on the
+    // following five-second observer tick.
+    for (auto const& stagedPair : LfgAutoQueueStagedLogins)
+    {
+        LfgAutoQueueStagedLogin const& staged = stagedPair.second;
+        if (staged.Dungeons.empty())
+            continue;
+        auto demandItr = lfgDemands.find(staged.RequesterGuid);
+        if (demandItr == lfgDemands.end() ||
+            demandItr->second.RequesterGuid != staged.RequesterGuid)
+            continue;
+
+        uint32* needed = nullptr;
+        if (staged.Role == lfg::PLAYER_ROLE_TANK)
+            needed = &demandItr->second.NeededTanks;
+        else if (staged.Role == lfg::PLAYER_ROLE_HEALER)
+            needed = &demandItr->second.NeededHealers;
+        else if (staged.Role == lfg::PLAYER_ROLE_DAMAGE)
+            needed = &demandItr->second.NeededDamage;
+        if (needed && *needed)
+            --*needed;
+    }
+
+    uint32 lfgBotsStaged = 0;
+    uint32 lfgBotsJoined = 0;
+    uint32 lfgProposalsAccepted = 0;
+    if (sPlayerbotAIConfig->autoQueueLfg &&
+        sPlayerbotAIConfig->autoQueueLfgAutomatic)
+    {
+        // Finish only the logins that were explicitly requested by a real LFG
+        // queue. Bots retain their existing PvE equipment; the PvP loadout
+        // journal is deliberately not used by this path.
+        for (auto itr = LfgAutoQueueStagedLogins.begin();
+             itr != LfgAutoQueueStagedLogins.end();)
+        {
+            uint32 botGuid = itr->first;
+            LfgAutoQueueStagedLogin const staged = itr->second;
+            ObjectGuid guid = ObjectGuid::Create<HighGuid::Player>(botGuid);
+            Player* requester = ObjectAccessor::FindConnectedPlayer(
+                ObjectGuid::Create<HighGuid::Player>(staged.RequesterGuid));
+            Player* bot = GetPlayerBot(guid);
+            bool requesterActive = requester && requester->IsInWorld() &&
+                requester->IsUsingLfg();
+
+            if (!requesterActive)
+            {
+                if (bot && !bot->IsUsingLfg() && !bot->GetGroup() &&
+                    !bot->GetMap()->Instanceable())
+                    LogoutPlayerBot(guid);
+                if (IsBotLoading(guid))
+                {
+                    ++itr;
+                    continue;
+                }
+                TC_LOG_INFO("server",
+                    "AutoQueue LFG canceled staged login guid=%u requester=%u",
+                    botGuid, staged.RequesterGuid);
+                itr = LfgAutoQueueStagedLogins.erase(itr);
+                continue;
+            }
+
+            if (!bot || !bot->IsInWorld() || IsBotLoading(guid) ||
+                bot->IsBeingTeleported())
+            {
+                ++itr;
+                continue;
+            }
+
+            std::string rejectionReason;
+            if (!CanAutoQueueLfgBot(bot, staged.Team, &rejectionReason) ||
+                GetLfgRole(bot) != staged.Role)
+            {
+                LfgAutoQueueIneligibleBots.insert(botGuid);
+                TC_LOG_ERROR("server",
+                    "AutoQueue LFG staged bot ineligible name=%s guid=%u role=%u reason=%s",
+                    bot->GetName().c_str(), botGuid, uint32(staged.Role),
+                    rejectionReason.empty() ? "wrong-role" : rejectionReason.c_str());
+                if (!bot->IsUsingLfg() && !bot->GetGroup())
+                    LogoutPlayerBot(guid);
+                itr = LfgAutoQueueStagedLogins.erase(itr);
+                continue;
+            }
+
+            if (!bot->IsAlive())
+            {
+                Revive(bot);
+                bot->SetHealth(bot->GetMaxHealth());
+            }
+
+            lfg::LfgDungeonSet dungeons = staged.Dungeons;
+            sLFGMgr->JoinLfg(bot, staged.Role, dungeons,
+                "request-driven playerbot LFG fill");
+            if (!bot->IsUsingLfg())
+            {
+                LfgAutoQueueIneligibleBots.insert(botGuid);
+                TC_LOG_ERROR("server",
+                    "AutoQueue LFG join refused name=%s guid=%u role=%u requester=%u",
+                    bot->GetName().c_str(), botGuid, uint32(staged.Role),
+                    staged.RequesterGuid);
+                LogoutPlayerBot(guid);
+                itr = LfgAutoQueueStagedLogins.erase(itr);
+                continue;
+            }
+
+            LfgAutoQueueManagedBots[botGuid] =
+                { staged.RequesterGuid, staged.Role, false, false, false };
+            ++lfgBotsJoined;
+            TC_LOG_INFO("server",
+                "AutoQueue LFG joined staged bot name=%s guid=%u role=%u requester=%u dungeons=%u",
+                bot->GetName().c_str(), botGuid, uint32(staged.Role),
+                staged.RequesterGuid, uint32(dungeons.size()));
+            itr = LfgAutoQueueStagedLogins.erase(itr);
+        }
+
+        // A real client answers its own proposal. Server-controlled bots have
+        // no client packet, therefore accept only proposals for bots owned by
+        // this request-driven lifecycle.
+        for (auto& managedPair : LfgAutoQueueManagedBots)
+        {
+            Player* bot = GetPlayerBot(ObjectGuid::Create<HighGuid::Player>(
+                managedPair.first));
+            if (!bot || !bot->IsInWorld())
+                continue;
+
+            if (sLFGMgr->AnswerProposalForPlayer(bot->GetGUID(), true))
+            {
+                ++lfgProposalsAccepted;
+                TC_LOG_INFO("server",
+                    "AutoQueue LFG accepted proposal bot=%s guid=%u role=%u",
+                    bot->GetName().c_str(), managedPair.first,
+                    uint32(managedPair.second.Role));
+            }
+
+            if (bot->GetMap() && bot->GetMap()->Instanceable())
+            {
+                managedPair.second.EnteredDungeon = true;
+                if (!bot->IsAlive())
+                {
+                    Revive(bot);
+                    bot->SetHealth(bot->GetMaxHealth());
+                }
+                if (PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot))
+                    botAI->ResetStrategies();
+
+                // Native matchmaking may randomly choose any solo queuer as
+                // leader.  For a request-driven bot party the real requester
+                // must remain the navigation master; otherwise all fillers can
+                // follow an arbitrary bot and leave the player behind.
+                if (!managedPair.second.GroupLeadershipEnsured)
+                {
+                    Player* requester = ObjectAccessor::FindConnectedPlayer(
+                        ObjectGuid::Create<HighGuid::Player>(
+                            managedPair.second.RequesterGuid));
+                    Group* group = bot->GetGroup(GroupSlot::Instance);
+                    if (!group)
+                        group = bot->GetGroup();
+                    Group* requesterGroup = nullptr;
+                    if (requester)
+                    {
+                        requesterGroup = requester->GetGroup(GroupSlot::Instance);
+                        if (!requesterGroup)
+                            requesterGroup = requester->GetGroup();
+                    }
+                    if (requester && group && requesterGroup == group)
+                    {
+                        if (group->GetLeaderGUID() != requester->GetGUID())
+                            group->ChangeLeader(requester->GetGUID());
+                        managedPair.second.GroupLeadershipEnsured =
+                            group->GetLeaderGUID() == requester->GetGUID();
+                        if (managedPair.second.GroupLeadershipEnsured)
+                            TC_LOG_INFO("server",
+                                "AutoQueue LFG real requester is group leader requester=%s guid=%u group=%u",
+                                requester->GetName().c_str(),
+                                managedPair.second.RequesterGuid,
+                                group->GetGUID().GetCounter());
+                    }
+                }
+
+                // Use only real class-supported party buffs. DoSpecificAction
+                // first checks whether the aura is useful, so duplicate class
+                // auras are not blindly recast. Revisit on later ticks until a
+                // cast succeeds, which covers teleport/GCD timing.
+                if (!managedPair.second.PreparationBuffed &&
+                    CastAutomatedPvpPreparationBuff(bot))
+                {
+                    managedPair.second.PreparationBuffed = true;
+                    TC_LOG_INFO("server",
+                        "AutoQueue LFG preparation buff cast bot=%s guid=%u role=%u map=%u",
+                        bot->GetName().c_str(), managedPair.first,
+                        uint32(managedPair.second.Role), bot->GetMapId());
+                }
+            }
+        }
+
+        // Release only bots owned by this automation after the native LFG
+        // lifecycle has fully ended. Never tear down an active dungeon group,
+        // an active queue/proposal or a teleport in progress.
+        for (auto itr = LfgAutoQueueManagedBots.begin();
+             itr != LfgAutoQueueManagedBots.end();)
+        {
+            ObjectGuid guid = ObjectGuid::Create<HighGuid::Player>(itr->first);
+            Player* bot = GetPlayerBot(guid);
+            Player* requester = ObjectAccessor::FindConnectedPlayer(
+                ObjectGuid::Create<HighGuid::Player>(itr->second.RequesterGuid));
+            bool requesterActive = requester && requester->IsInWorld() &&
+                (requester->IsUsingLfg() || requester->GetGroup() ||
+                 requester->IsBeingTeleported() ||
+                 (requester->GetMap() && requester->GetMap()->Instanceable()));
+
+            if (!bot || !bot->IsInWorld())
+            {
+                if (!IsBotLoading(guid))
+                    itr = LfgAutoQueueManagedBots.erase(itr);
+                else
+                    ++itr;
+                continue;
+            }
+
+            bool botActive = bot->IsUsingLfg() || bot->GetGroup() ||
+                bot->IsBeingTeleported() ||
+                (bot->GetMap() && bot->GetMap()->Instanceable());
+
+            // If the real requester abandons the queue before a proposal or a
+            // dungeon group exists, a server-controlled filler has no client
+            // which can press Leave Queue.  Remove only this automation-owned
+            // bot's native LFG queue entries.  Never do this after it joined a
+            // group, started teleporting, or entered an instance.
+            if (!requesterActive && bot->IsUsingLfg() && !bot->GetGroup() &&
+                !bot->IsBeingTeleported() &&
+                (!bot->GetMap() || !bot->GetMap()->Instanceable()))
+            {
+                sLFGMgr->RemovePlayerQueues(bot->GetGUID());
+                botActive = bot->IsUsingLfg();
+                TC_LOG_INFO("server",
+                    "AutoQueue LFG removed abandoned bot queue name=%s guid=%u requester=%u",
+                    bot->GetName().c_str(), itr->first,
+                    itr->second.RequesterGuid);
+            }
+
+            if (!requesterActive && !botActive)
+            {
+                if (!bot->IsAlive())
+                {
+                    Revive(bot);
+                    bot->SetHealth(bot->GetMaxHealth());
+                }
+                TC_LOG_INFO("server",
+                    "AutoQueue LFG lifecycle complete bot=%s guid=%u requester=%u entered=%u",
+                    bot->GetName().c_str(), itr->first,
+                    itr->second.RequesterGuid,
+                    itr->second.EnteredDungeon ? 1u : 0u);
+                LogoutPlayerBot(guid);
+                itr = LfgAutoQueueManagedBots.erase(itr);
+                continue;
+            }
+
+            ++itr;
+        }
+
+        // Stage exactly the roles that the native dungeon queue reports as
+        // missing. This supports normal 1/1/3 dungeons as well as LFR queue
+        // definitions without hard-coding a group size.
+        for (auto& demandPair : lfgDemands)
+        {
+            LfgAutoQueueDemand& demand = demandPair.second;
+            Player* requester = demand.RequesterGuid ?
+                ObjectAccessor::FindConnectedPlayer(
+                    ObjectGuid::Create<HighGuid::Player>(demand.RequesterGuid)) : nullptr;
+            if (!requester || !requester->IsUsingLfg() ||
+                sPlayerbotAIConfig->randomBotAccounts.empty())
+                continue;
+
+            auto stageRole = [&](lfg::LfgRoles role, uint32& needed)
+            {
+                while (needed && lfgBotsStaged <
+                    sPlayerbotAIConfig->autoQueueMaxBotsPerCycle)
+                {
+                    uint32 minAccount = sPlayerbotAIConfig->randomBotAccounts.front();
+                    uint32 maxAccount = sPlayerbotAIConfig->randomBotAccounts.back();
+                    QueryResult candidates = CharacterDatabase.PQuery(
+                        "SELECT guid,name,race,class,talentTree,activespec "
+                        "FROM characters WHERE account >= %u AND account <= %u "
+                        "AND level=%u AND online=0 AND instance_id=0 "
+                        "AND guid NOT IN (SELECT guid FROM guild_member) "
+                        "AND guid NOT IN (SELECT memberGuid FROM group_member) "
+                        "AND guid NOT IN (SELECT owner_guid FROM solo_arena_loadout_backup) "
+                        "ORDER BY guid",
+                        minAccount, maxAccount, requester->GetLevel());
+                    if (!candidates)
+                        break;
+
+                    uint32 selectedGuid = 0;
+                    std::string selectedName;
+                    do
+                    {
+                        Field* fields = candidates->Fetch();
+                        uint32 candidateGuid = fields[0].GetUInt32();
+                        ObjectGuid candidateObjectGuid =
+                            ObjectGuid::Create<HighGuid::Player>(candidateGuid);
+                        uint8 race = fields[2].GetUInt8();
+                        uint8 playerClass = fields[3].GetUInt8();
+                        if (playerClass == CLASS_MONK ||
+                            uint8(Player::TeamForRace(race)) != demand.Team ||
+                            LfgAutoQueueIneligibleBots.count(candidateGuid) ||
+                            LfgAutoQueueStagedLogins.count(candidateGuid) ||
+                            LfgAutoQueueManagedBots.count(candidateGuid) ||
+                            BgAutoQueueStagedLogins.count(candidateGuid) ||
+                            BgAutoQueueManagedBots.count(candidateGuid) ||
+                            ObjectAccessor::FindPlayer(candidateObjectGuid) ||
+                            GetPlayerBot(candidateObjectGuid) || IsBotLoading(candidateObjectGuid))
+                            continue;
+
+                        uint32 specs[MAX_TALENT_SPECS] = { 0, 0 };
+                        std::istringstream talentTrees(fields[4].GetString());
+                        for (uint8 spec = 0; spec < MAX_TALENT_SPECS; ++spec)
+                            talentTrees >> specs[spec];
+                        uint8 activeSpec = fields[5].GetUInt8();
+                        if (activeSpec >= MAX_TALENT_SPECS)
+                            activeSpec = 0;
+                        if (GetLfgRole(Specializations(specs[activeSpec])) != role)
+                            continue;
+
+                        selectedGuid = candidateGuid;
+                        selectedName = fields[1].GetString();
+                        break;
+                    }
+                    while (candidates->NextRow());
+
+                    if (!selectedGuid)
+                        break;
+
+                    ObjectGuid selectedObjectGuid =
+                        ObjectGuid::Create<HighGuid::Player>(selectedGuid);
+                    LfgAutoQueueStagedLogins[selectedGuid] =
+                        { demand.Team, demand.RequesterGuid, demand.Dungeons, role };
+                    AddPlayerBot(selectedObjectGuid, 0);
+                    --needed;
+                    ++lfgBotsStaged;
+                    TC_LOG_INFO("server",
+                        "AutoQueue LFG staged login name=%s guid=%u role=%u requester=%u dungeons=%u",
+                        selectedName.c_str(), selectedGuid, uint32(role),
+                        demand.RequesterGuid, uint32(demand.Dungeons.size()));
+                }
+            };
+
+            stageRole(lfg::PLAYER_ROLE_TANK, demand.NeededTanks);
+            stageRole(lfg::PLAYER_ROLE_HEALER, demand.NeededHealers);
+            stageRole(lfg::PLAYER_ROLE_DAMAGE, demand.NeededDamage);
         }
     }
 
@@ -954,10 +1480,13 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
     }
 
     TC_LOG_INFO("server",
-        "AutoQueue observer (dry-run=%u, max-bots=%u, bg-max-bots=%u): LFG real/bot=%u/%u, BG real/bot=%u/%u staged=%u joined=%u accepted=%u demands=%u pending=%u managed=%u, Arena real/bot=%u/%u",
+        "AutoQueue observer (dry-run=%u, max-bots=%u, bg-max-bots=%u): LFG real/bot=%u/%u staged=%u joined=%u accepted=%u demands=%u pending=%u managed=%u, BG real/bot=%u/%u staged=%u joined=%u accepted=%u demands=%u pending=%u managed=%u, Arena real/bot=%u/%u",
         sPlayerbotAIConfig->autoQueueDryRun ? 1 : 0, sPlayerbotAIConfig->autoQueueMaxBotsPerCycle,
         sPlayerbotAIConfig->autoQueueBattlegroundMaxBotsPerCycle,
-        realLfg, botLfg, realBg, botBg, bgBotsStaged, bgBotsJoined, bgInvitesAccepted,
+        realLfg, botLfg, lfgBotsStaged, lfgBotsJoined, lfgProposalsAccepted,
+        uint32(lfgDemands.size()), uint32(LfgAutoQueueStagedLogins.size()),
+        uint32(LfgAutoQueueManagedBots.size()),
+        realBg, botBg, bgBotsStaged, bgBotsJoined, bgInvitesAccepted,
         uint32(bgDemands.size()), uint32(BgAutoQueueStagedLogins.size()),
         uint32(BgAutoQueueManagedBots.size()),
         realArena, botArena);

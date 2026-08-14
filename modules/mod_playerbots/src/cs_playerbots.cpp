@@ -357,8 +357,56 @@ bool RestoreSoloArenaLoadout(Player* participant, char const* reason, uint32& re
                 equipped = participant->GetItemByPos(INVENTORY_SLOT_BAG_0, row.EquipmentSlot);
                 if (!equipped || equipped->GetGUID().GetCounter() != row.OriginalItemGuid)
                 {
-                    error = "core refused to re-equip the original item";
-                    continue;
+                    // Generated random-bot gear can fail normal SwapItem
+                    // validation (for example because an old item no longer
+                    // satisfies current template requirements). This is still
+                    // an exact journaled pair: the recorded temporary instance
+                    // occupies the recorded equipment slot and the recorded
+                    // original instance is owned by this character. Remove only
+                    // that temporary instance, then restore only that original
+                    // instance through the same guarded primitives used by the
+                    // empty-slot crash recovery below. If the final equip fails,
+                    // the journal remains and the original remains owned by the
+                    // character, so a later recovery can retry safely.
+                    equipped = participant->GetItemByPos(
+                        INVENTORY_SLOT_BAG_0, row.EquipmentSlot);
+                    if (!equipped ||
+                        equipped->GetGUID().GetCounter() != row.TemporaryItemGuid)
+                    {
+                        error = "swap failed and the recorded temporary item no longer occupies the slot";
+                        continue;
+                    }
+
+                    participant->DestroyItem(
+                        equipped->GetBagSlot(), equipped->GetSlot(), true);
+                    if (participant->GetItemByGuid(
+                        ObjectGuid(HighGuid::Item, row.TemporaryItemGuid)) ||
+                        participant->GetItemByPos(
+                            INVENTORY_SLOT_BAG_0, row.EquipmentSlot))
+                    {
+                        error = "core refused to remove the recorded temporary item";
+                        continue;
+                    }
+
+                    original = participant->GetItemByGuid(
+                        ObjectGuid(HighGuid::Item, row.OriginalItemGuid));
+                    if (!original || original->GetEntry() != row.OriginalItemEntry)
+                    {
+                        error = "recorded original item disappeared during guarded recovery";
+                        continue;
+                    }
+
+                    participant->RemoveItem(
+                        original->GetBagSlot(), original->GetSlot(), true);
+                    participant->EquipItem(equipmentPos, original, true);
+                    equipped = participant->GetItemByPos(
+                        INVENTORY_SLOT_BAG_0, row.EquipmentSlot);
+                    if (!equipped ||
+                        equipped->GetGUID().GetCounter() != row.OriginalItemGuid)
+                    {
+                        error = "core refused the guarded occupied-slot crash recovery";
+                        continue;
+                    }
                 }
                 temporary = participant->GetItemByGuid(ObjectGuid(HighGuid::Item, row.TemporaryItemGuid));
             }

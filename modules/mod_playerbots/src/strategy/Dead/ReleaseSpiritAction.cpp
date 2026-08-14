@@ -148,18 +148,13 @@ bool AutoReleaseSpiritAction::Execute(Event event)
             return true;
         }
 
-        if (bot->GetDistance(spiritGuide) >= INTERACTION_DISTANCE)
+        if (!botAI->IsRealPlayer())
         {
-            // Some battleground graveyards place the ghost outside interaction
-            // distance. Move only to the friendly guide, never toward combat or an
-            // objective while dead.
-            MotionMaster& mm = *bot->GetMotionMaster();
-            mm.Clear();
-            mm.MovePoint(0, spiritGuide->GetPositionX(), spiritGuide->GetPositionY(),
-                spiritGuide->GetPositionZ(), true);
-        }
-        else if (!botAI->IsRealPlayer())
-        {
+            // Server-controlled bots do not send the client gossip/area packet
+            // which normally enrols a ghost. The core has already placed the
+            // ghost at its graveyard when CMSG_REPOP_REQUEST was handled, so join
+            // the closest friendly guide immediately. Requiring a second movement
+            // to exact interaction distance left some ghosts outside every wave.
             bot->StopMoving();
             bot->GetMotionMaster()->Clear();
             bot->GetMotionMaster()->MoveIdle();

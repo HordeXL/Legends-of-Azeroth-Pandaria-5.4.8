@@ -1549,6 +1549,20 @@ bool BattlegroundObjectiveAction::Execute(Event /*event*/)
     if (victim && victim->IsPlayer() && victim->IsAlive())
         return false;
 
+    // Objective movement must never make a bot passive while an enemy is
+    // actively damaging it. In particular, a stealthed flag defender can be
+    // attacked before EnemyPlayerValue has refreshed; previously it could
+    // keep holding its defensive position without retaliating. The attacker's
+    // presence in Unit::getAttackers() is authoritative server-side evidence
+    // that combat has begun, so hand it to the normal combat engine before any
+    // flag, node or vehicle navigation is considered.
+    for (Unit* attacker : bot->getAttackers())
+    {
+        Player* enemy = attacker ? attacker->ToPlayer() : nullptr;
+        if (enemy && enemy->IsAlive() && EngageEnemy(enemy))
+            return true;
+    }
+
     TeamId ownTeam = bot->GetBGTeamId();
     TeamId enemyTeam = ownTeam == TEAM_ALLIANCE ? TEAM_HORDE : TEAM_ALLIANCE;
 
@@ -1557,6 +1571,25 @@ bool BattlegroundObjectiveAction::Execute(Event /*event*/)
     if (type == BATTLEGROUND_RB)
         type = bg->GetTypeID(true);
     bool ctf = type == BATTLEGROUND_WS || type == BATTLEGROUND_TP;
+
+    // Use mounts for long outdoor objective travel, but never while fighting
+    // or carrying a battleground objective.  This check runs before map role
+    // selection so it also applies to node/resource maps.  IsOutdoors keeps
+    // bots from mounting inside flag rooms and other enclosed spawn buildings.
+    bool carryingFlagAura = bot->HasAura(23333) || bot->HasAura(23335) ||
+        bot->HasAura(34976);
+    if ((carryingFlagAura || bot->IsInCombat() || !bot->getAttackers().empty()) &&
+        bot->IsMounted())
+        bot->Dismount();
+    else if (!carryingFlagAura && !bot->IsMounted() && !bot->IsInCombat() &&
+        bot->getAttackers().empty() && bot->IsOutdoors())
+    {
+        Unit* nearbyEnemy = context->GetValue<Unit*>("enemy player target")->Get();
+        if ((!nearbyEnemy || bot->GetDistance(nearbyEnemy) > 45.0f) &&
+            botAI->DoSpecificAction("mount", Event(), true))
+            return true;
+    }
+
     if (ctf)
     {
         ObjectGuid enemyCarrierGuid = bg->GetFlagPickerGUID(ownTeam);
@@ -1623,6 +1656,35 @@ bool BattlegroundObjectiveAction::Execute(Event /*event*/)
         if (carryingEnemyFlag)
         {
             GameObject* ownBase = bg->GetBGObject(ownFlagObject);
+
+            // A real client reports the capture area's trigger when it crosses
+            // the scoring zone. A server-controlled playerbot does not emit that
+            // client packet, so reaching a spawned own flag would otherwise leave
+            // it standing in the flag room forever. Use the Battleground's normal
+            // capture handler only after the carrier is physically at its returned
+            // own flag; all native status, flag-state and score checks still apply.
+            if (ownBase && ownBase->IsInWorld() && ownBase->isSpawned() &&
+                bot->GetDistance(ownBase) <= 15.0f)
+            {
+                uint32 scoreBefore = bg->GetTeamScore(ownTeam);
+                float distance = bot->GetDistance(ownBase);
+                if (type == BATTLEGROUND_WS)
+                {
+                    if (BattlegroundWS* ws = dynamic_cast<BattlegroundWS*>(bg))
+                        ws->EventPlayerCapturedFlag(bot);
+                }
+                else if (BattlegroundTP* tp = dynamic_cast<BattlegroundTP*>(bg))
+                    tp->EventPlayerCapturedFlag(bot);
+
+                TC_LOG_INFO("server",
+                    "Playerbot CTF capture attempt bot=%s guid=%u bg=%u distance=%.2f score=%u->%u carrier=%u",
+                    bot->GetName().c_str(), bot->GetGUID().GetCounter(), type,
+                    distance, scoreBefore, bg->GetTeamScore(ownTeam),
+                    bg->GetFlagPickerGUID(enemyTeam) == bot->GetGUID() ? 1u : 0u);
+
+                return true;
+            }
+
             return ownBase && MoveTo(ownBase, 2.0f,
                 MovementPriority::MOVEMENT_FORCED);
         }

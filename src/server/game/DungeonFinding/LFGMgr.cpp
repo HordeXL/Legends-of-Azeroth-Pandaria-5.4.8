@@ -531,6 +531,7 @@ void LFGMgr::JoinLfg(Player* player, LfgRoles roles, LfgDungeonSet& dungeons, co
                     break;
                 case LFG_TYPE_HEROIC:
                 case LFG_TYPE_DUNGEON:
+                case LFG_TYPE_RAID:
                     break;
                 default:
                     TC_LOG_ERROR("lfg", "Wrong dungeon type %u for dungeon %u", dungeon->type, *it);
@@ -658,7 +659,7 @@ void LFGMgr::JoinLfg(Player* player, LfgRoles roles, LfgDungeonSet& dungeons, co
     else
         players.insert(player->GetGUID());
 
-    bool isRaid = category == LFG_CATEGORY_LFR || LFG_CATEGORY_FLEX;
+    bool isRaid = category == LFG_CATEGORY_LFR || category == LFG_CATEGORY_FLEX;
     if ((playerOnCooldown || partyOnCooldown) && rDungeonId && !isRaid)
         joinData.result = playerOnCooldown ? LFG_JOIN_RANDOM_COOLDOWN : LFG_JOIN_PARTY_RANDOM_COOLDOWN;
 
@@ -1605,6 +1606,27 @@ bool LFGMgr::AddProposal(LfgProposal& proposal)
    @param[in]     guid Player guid to update answer
    @param[in]     accept Player answer
 */
+bool LFGMgr::AnswerProposalForPlayer(ObjectGuid guid, bool accept)
+{
+    uint32 proposalId = 0;
+    for (auto const& proposalPair : ProposalsStore)
+    {
+        auto playerItr = proposalPair.second.players.find(guid);
+        if (playerItr != proposalPair.second.players.end() &&
+            playerItr->second.accept == LFG_ANSWER_PENDING)
+        {
+            proposalId = proposalPair.first;
+            break;
+        }
+    }
+
+    if (!proposalId)
+        return false;
+
+    UpdateProposal(proposalId, guid, accept);
+    return true;
+}
+
 void LFGMgr::UpdateProposal(uint32 proposalId, ObjectGuid guid, bool accept)
 {
     // Check if the proposal exists

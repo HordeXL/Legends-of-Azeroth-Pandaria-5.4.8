@@ -165,6 +165,8 @@ bool PlayerbotAIConfig::Initialize()
     autoQueueEnabled = sConfigMgr->GetBoolDefault("AiPlayerbot.AutoQueue.Enabled", false);
     autoQueueDryRun = sConfigMgr->GetBoolDefault("AiPlayerbot.AutoQueue.DryRun", true);
     autoQueueLfg = sConfigMgr->GetBoolDefault("AiPlayerbot.AutoQueue.LFG", false);
+    autoQueueLfgAutomatic = sConfigMgr->GetBoolDefault(
+        "AiPlayerbot.AutoQueue.LFG.Automatic", false);
     autoQueueBattleground = sConfigMgr->GetBoolDefault("AiPlayerbot.AutoQueue.Battleground", false);
     autoQueueBattlegroundAutomatic = sConfigMgr->GetBoolDefault(
         "AiPlayerbot.AutoQueue.Battleground.Automatic", false);

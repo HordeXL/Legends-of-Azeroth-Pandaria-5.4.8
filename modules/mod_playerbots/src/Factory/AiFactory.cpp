@@ -84,7 +84,7 @@ BotRoles AiFactory::GetPlayerRoles(Player* player)
                 role = BOT_ROLE_HEALER;
             break;
         case CLASS_SHAMAN:
-            if (spec == Specializations::SPEC_DRUID_RESTORATION)
+            if (spec == Specializations::SPEC_SHAMAN_RESTORATION)
                 role = BOT_ROLE_HEALER;
             else
                 role = BOT_ROLE_DPS;
@@ -397,7 +397,25 @@ void AiFactory::AddDefaultCombatStrategies(Player* player, PlayerbotAI* const fa
     {
         //if (sPlayerbotAIConfig->autoSaveMana)
             //engine->addStrategy("save mana", false);
-        //engine->addStrategy("healer dps", false);
+
+        // The four implemented healer-DPS strategies already gate attacks on
+        // party health, available mana and class-specific safety checks.  They
+        // were left disabled globally, which made a healer stand idle after
+        // every damage teammate died (most visibly in Arena and BG).  Enable
+        // them only for classes that actually register this strategy.  Monk
+        // healer actions are incomplete in this 5.4.8 module and automated
+        // queue selection excludes monks separately.
+        switch (player->GetClass())
+        {
+            case CLASS_PRIEST:
+            case CLASS_PALADIN:
+            case CLASS_DRUID:
+            case CLASS_SHAMAN:
+                engine->addStrategy("healer dps", false);
+                break;
+            default:
+                break;
+        }
     }
 
     if (facade->IsRealPlayer() || sRandomPlayerbotMgr->IsRandomBot(player))

@@ -532,6 +532,14 @@ void Battleground::ProcessRessurect(uint32 diff)
             player->ResurrectPlayer(1.0f);
             player->CastSpell(player, SPELL_SPIRIT_HEAL_MANA, true);
             player->SpawnCorpseBones(false);
+            // The revive queue above has already been consumed.  Leaving the
+            // waiting aura on an alive player makes a subsequent death look as
+            // if it were still registered at a spirit guide, although its GUID
+            // is no longer present in either resurrection queue.  This is most
+            // visible with server-controlled players, which then wait forever
+            // after their second death.  Clear the consumed registration now so
+            // every later death can join a fresh resurrection wave normally.
+            player->RemoveAurasDueToSpell(SPELL_WAITING_FOR_RESURRECT);
         }
         m_ResurrectQueue.clear();
     }

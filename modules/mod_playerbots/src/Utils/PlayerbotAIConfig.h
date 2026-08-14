@@ -71,7 +71,8 @@ public:
     bool randomBotRandomPassword;
     std::vector<uint32> randomBotAccounts;
 
-    bool autoQueueEnabled, autoQueueDryRun, autoQueueLfg, autoQueueBattleground, autoQueueArena;
+    bool autoQueueEnabled, autoQueueDryRun, autoQueueLfg, autoQueueLfgAutomatic;
+    bool autoQueueBattleground, autoQueueArena;
     bool autoQueueBattlegroundAutomatic, autoQueueBattlegroundLoadout;
     bool autoQueueBattlegroundPreparationBuffs;
     bool autoQueueArenaStageLogin, autoQueueArenaStageGroup, autoQueueArenaStageQueue, autoQueueArenaStageMatch;
