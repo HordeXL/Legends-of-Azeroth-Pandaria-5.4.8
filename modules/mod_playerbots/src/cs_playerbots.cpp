@@ -174,7 +174,7 @@ char const* GetSupportedWorldBossName(uint32 entry)
 {
     switch (entry)
     {
-        case 56439: return "Sha of Anger";
+        case 60491: return "Sha of Anger";
         case 62346: return "Galleon";
         case 69099: return "Nalak";
         case 69161: return "Oondasta";
