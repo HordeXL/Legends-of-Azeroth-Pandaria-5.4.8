@@ -1349,6 +1349,29 @@ BossMechanicsAction::Reaction BossMechanicsAction::GetReaction() const
     if (!bot || !bot->IsInWorld() || !bot->IsAlive() || !bot->IsInCombat())
         return Reaction::None;
 
+    // Galleon (entry 62346), local boss_galion.cpp: every minute the boss
+    // summons six Salyin Warmongers (entry 62351).  Damage dealers and the
+    // off-tank must clear these adds; healers keep healing and the tank who is
+    // actively holding Galleon must not turn or abandon the boss.
+    if (!PlayerBotSpec::IsHeal(bot, true))
+    {
+        if (Creature* galleon = bot->FindNearestCreature(62346, 200.0f, true))
+        {
+            bool isMainTank = PlayerBotSpec::IsTank(bot, true) &&
+                galleon->GetVictim() == bot;
+            if (!isMainTank)
+            {
+                if (Creature* warmonger = bot->FindNearestCreature(62351, 100.0f, true))
+                {
+                    Unit* currentTarget = context->GetValue<Unit*>("current target")->Get();
+                    if (currentTarget != warmonger && bot->IsValidAttackTarget(warmonger) &&
+                        bot->IsWithinLOSInMap(warmonger))
+                        return Reaction::FocusGalleonWarmonger;
+                }
+            }
+        }
+    }
+
     // Nalak (entry 69099), local boss_nalak.cpp:
     // 136339 applies Lightning Tether and the local spell script increases
     // damage with target distance, using 20 yards as the near/far boundary.
@@ -1394,6 +1417,30 @@ bool BossMechanicsAction::Execute(Event /*event*/)
         case Reaction::ApproachNalak:
             if (Creature* nalak = bot->FindNearestCreature(69099, 200.0f, true))
                 return MoveTo(nalak, 15.0f, MovementPriority::MOVEMENT_FORCED);
+            break;
+        case Reaction::FocusGalleonWarmonger:
+            if (Creature* warmonger = bot->FindNearestCreature(62351, 100.0f, true))
+            {
+                if (!bot->IsValidAttackTarget(warmonger) ||
+                    !bot->IsWithinLOSInMap(warmonger))
+                    break;
+
+                Unit* oldTarget = context->GetValue<Unit*>("current target")->Get();
+                context->GetValue<Unit*>("old target")->Set(oldTarget);
+                context->GetValue<Unit*>("current target")->Set(warmonger);
+                context->GetValue<ObjectGuid>("pull target")->Set(warmonger->GetGUID());
+                context->GetValue<GuidVector>("prioritized targets")->Set(
+                    { warmonger->GetGUID() });
+                bot->SetSelection(warmonger->GetGUID());
+                bot->SetTarget(warmonger->GetGUID());
+
+                bool melee = bot->IsWithinMeleeRange(warmonger) ||
+                    PlayerBotSpec::IsMelee(bot);
+                if (bot->GetVictim() != warmonger)
+                    bot->Attack(warmonger, melee);
+                botAI->ChangeEngine(BOT_STATE_COMBAT);
+                return true;
+            }
             break;
         case Reaction::SpreadStormCloud:
             return MoveFromGroup(30.0f);

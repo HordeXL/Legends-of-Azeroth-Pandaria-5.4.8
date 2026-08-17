@@ -161,6 +161,7 @@ private:
     {
         None,
         ApproachNalak,
+        FocusGalleonWarmonger,
         SpreadStormCloud,
         SpreadOondastaBeam,
         SpreadOrdosBurningSoul
