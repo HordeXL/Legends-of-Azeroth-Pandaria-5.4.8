@@ -4,7 +4,7 @@
 -- Aura 49414 is an existing non-combat spirit visual used by friendly Pandaria NPCs.
 
 UPDATE `creature_template`
-SET `scale` = 1.5
+SET `scale` = 2.25
 WHERE `entry` = 990912
   AND `ScriptName` = 'npc_world_boss_bot_caller';
 
