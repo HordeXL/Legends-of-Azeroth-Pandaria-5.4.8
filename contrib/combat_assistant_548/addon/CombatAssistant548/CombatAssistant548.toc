@@ -1,8 +1,8 @@
 ## Interface: 50400
 ## Title: Combat Assistant 5.4.8
-## Notes: One-button recommendation UI for the guarded server-side 5.4.8 helper.
+## Notes: One-button recommendation UI for all 5.4.8 player classes and specializations.
 ## Author: Legends of Azeroth local patch
-## Version: 0.3.1
+## Version: 1.0.0
 ## SavedVariables: CombatAssistant548DB
 
 CombatAssistant548.lua

@@ -27,6 +27,8 @@ public:
         creators["follow"] = &ActionContext::follow;
         creators["flee"] = &ActionContext::flee;
         creators["move from group"] = &ActionContext::move_from_group;
+        creators["avoid aoe"] = &ActionContext::avoid_aoe;
+        creators["boss mechanics"] = &ActionContext::boss_mechanics;
         creators["flee to master"] = &ActionContext::flee_to_master;
         creators["guard"] = &ActionContext::guard;
         creators["runaway"] = &ActionContext::runaway;
@@ -69,6 +71,8 @@ private:
     static Action* follow(PlayerbotAI* botAI) { return new FollowAction(botAI); }
     static Action* flee(PlayerbotAI* botAI) { return new FleeAction(botAI); }
     static Action* move_from_group(PlayerbotAI* botAI) { return new MoveFromGroupAction(botAI); }
+    static Action* avoid_aoe(PlayerbotAI* botAI) { return new AvoidAoeAction(botAI); }
+    static Action* boss_mechanics(PlayerbotAI* botAI) { return new BossMechanicsAction(botAI); }
     static Action* flee_to_master(PlayerbotAI* botAI) { return new FleeToMasterAction(botAI); }
     static Action* guard(PlayerbotAI* botAI) { return new GuardAction(botAI); }
     static Action* stay(PlayerbotAI* botAI) { return new StayAction(botAI); }

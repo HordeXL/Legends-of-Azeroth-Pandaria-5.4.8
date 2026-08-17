@@ -21,6 +21,7 @@
 #include <sstream>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 namespace
 {
@@ -267,6 +268,428 @@ bool HasHarmfulPeriodicDamage(Player* player)
     return false;
 }
 
+uint32 FindKnownSpellByName(Player* player, char const* name)
+{
+    if (!player || !name || !*name)
+        return 0;
+
+    uint32 found = 0;
+    for (auto const& spellPair : player->GetSpellMap())
+    {
+        if (!spellPair.second || spellPair.second->state == PLAYERSPELL_REMOVED ||
+            !spellPair.second->active)
+            continue;
+
+        SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellPair.first);
+        if (!spellInfo || spellInfo->IsPassive() || !spellInfo->SpellName[LOCALE_enUS] ||
+            strcmp(spellInfo->SpellName[LOCALE_enUS], name))
+            continue;
+
+        found = spellPair.first;
+    }
+    return found;
+}
+
+CombatRecommendation RecommendNamed(Player* player, Unit* target,
+    char const* name, char const* reason, bool skipActiveAura = false)
+{
+    uint32 spellId = FindKnownSpellByName(player, name);
+    if (!spellId || !target)
+        return {};
+    if (skipActiveAura && target->HasAura(spellId, player->GetGUID()))
+        return {};
+    if (!CanCast(player, spellId, target))
+        return {};
+    return { spellId, target, reason };
+}
+
+CombatRecommendation RecommendFirstNamed(Player* player, Unit* target,
+    std::initializer_list<char const*> names, char const* reason,
+    bool skipActiveAura = false)
+{
+    for (char const* name : names)
+        if (CombatRecommendation recommendation = RecommendNamed(
+            player, target, name, reason, skipActiveAura))
+            return recommendation;
+    return {};
+}
+
+CombatRecommendation RecommendFirstNamed(Player* player, Unit* target,
+    std::vector<char const*> const& names, char const* reason,
+    bool skipActiveAura = false)
+{
+    for (char const* name : names)
+        if (CombatRecommendation recommendation = RecommendNamed(
+            player, target, name, reason, skipActiveAura))
+            return recommendation;
+    return {};
+}
+
+bool HasRemovableHarmfulAura(Player* player, uint32 dispelMask)
+{
+    for (auto const& auraPair : player->GetAppliedAuras())
+    {
+        AuraApplication const* application = auraPair.second;
+        if (!application || application->IsPositive())
+            continue;
+        Aura const* aura = application->GetBase();
+        SpellInfo const* spellInfo = aura ? aura->GetSpellInfo() : nullptr;
+        if (spellInfo && !aura->IsPassive() && (spellInfo->GetDispelMask() & dispelMask))
+            return true;
+    }
+    return false;
+}
+
+Player* SelectLowestGroupMember(Player* player, float maximumHealthPct,
+    bool requireAttacker)
+{
+    Player* selected = player->GetHealthPct() <= maximumHealthPct ? player : nullptr;
+    float lowestHealthPct = selected ? player->GetHealthPct() : maximumHealthPct + 1.0f;
+    Group* group = player->GetGroup();
+    if (!group)
+        return selected;
+
+    for (GroupReference* reference = group->GetFirstMember(); reference; reference = reference->next())
+    {
+        Player* member = reference->GetSource();
+        if (!member || !member->IsAlive() || member->GetMap() != player->GetMap())
+            continue;
+        if (requireAttacker && member->getAttackers().empty())
+            continue;
+        float healthPct = member->GetHealthPct();
+        if (healthPct <= maximumHealthPct && healthPct < lowestHealthPct)
+        {
+            selected = member;
+            lowestHealthPct = healthPct;
+        }
+    }
+    return selected;
+}
+
+std::vector<char const*> GetCrowdControlBreaks(uint8 playerClass)
+{
+    switch (playerClass)
+    {
+        case CLASS_WARRIOR:      return { "Berserker Rage" };
+        case CLASS_PALADIN:      return { "Divine Shield" };
+        case CLASS_HUNTER:       return { "Master's Call", "Deterrence" };
+        case CLASS_ROGUE:        return { "Cloak of Shadows", "Vanish" };
+        case CLASS_PRIEST:       return { "Dispersion" };
+        case CLASS_DEATH_KNIGHT: return { "Icebound Fortitude", "Lichborne" };
+        case CLASS_SHAMAN:       return { "Shamanistic Rage", "Tremor Totem" };
+        case CLASS_MAGE:         return { "Ice Block", "Blink" };
+        case CLASS_WARLOCK:      return { "Unbound Will" };
+        case CLASS_MONK:         return { "Nimble Brew" };
+        case CLASS_DRUID:        return { "Barkskin" };
+        default:                 return {};
+    }
+}
+
+std::vector<char const*> GetMovementBreaks(uint8 playerClass)
+{
+    switch (playerClass)
+    {
+        case CLASS_WARRIOR: return { "Heroic Leap", "Charge" };
+        case CLASS_PALADIN: return { "Hand of Freedom" };
+        case CLASS_HUNTER:  return { "Master's Call", "Disengage" };
+        case CLASS_ROGUE:   return { "Cloak of Shadows", "Vanish" };
+        case CLASS_PRIEST:  return { "Phantasm" };
+        case CLASS_SHAMAN:  return { "Windwalk Totem" };
+        case CLASS_MAGE:    return { "Blink" };
+        case CLASS_WARLOCK: return { "Unbound Will" };
+        case CLASS_MONK:    return { "Nimble Brew", "Tiger's Lust" };
+        case CLASS_DRUID:   return { "Dash", "Stampeding Roar" };
+        default:            return {};
+    }
+}
+
+std::vector<char const*> GetDefensiveSpells(uint8 playerClass)
+{
+    switch (playerClass)
+    {
+        case CLASS_WARRIOR: return { "Shield Wall", "Die by the Sword", "Last Stand", "Demoralizing Banner", "Enraged Regeneration" };
+        case CLASS_PALADIN: return { "Divine Protection", "Divine Shield", "Sacred Shield", "Hand of Purity" };
+        case CLASS_HUNTER:  return { "Deterrence", "Exhilaration" };
+        case CLASS_ROGUE:   return { "Cloak of Shadows", "Evasion", "Feint", "Combat Readiness" };
+        case CLASS_PRIEST:  return { "Dispersion", "Desperate Prayer", "Power Word: Shield", "Spectral Guise" };
+        case CLASS_DEATH_KNIGHT: return { "Icebound Fortitude", "Anti-Magic Shell", "Vampiric Blood", "Bone Shield", "Death Pact" };
+        case CLASS_SHAMAN:  return { "Shamanistic Rage", "Astral Shift", "Stone Bulwark Totem" };
+        case CLASS_MAGE:    return { "Ice Block", "Greater Invisibility", "Temporal Shield", "Ice Barrier" };
+        case CLASS_WARLOCK: return { "Unending Resolve", "Dark Bargain", "Sacrificial Pact", "Twilight Ward" };
+        case CLASS_MONK:    return { "Fortifying Brew", "Diffuse Magic", "Dampen Harm", "Elusive Brew" };
+        case CLASS_DRUID:   return { "Barkskin", "Survival Instincts", "Might of Ursoc", "Cenarion Ward" };
+        default:            return {};
+    }
+}
+
+std::vector<char const*> GetEmergencySelfHeals(uint8 playerClass)
+{
+    switch (playerClass)
+    {
+        case CLASS_WARRIOR: return { "Impending Victory", "Victory Rush", "Enraged Regeneration" };
+        case CLASS_PALADIN: return { "Eternal Flame", "Word of Glory", "Holy Shock", "Flash of Light" };
+        case CLASS_HUNTER:  return { "Exhilaration" };
+        case CLASS_ROGUE:   return { "Recuperate" };
+        case CLASS_PRIEST:  return { "Desperate Prayer", "Power Word: Shield", "Flash Heal" };
+        case CLASS_DEATH_KNIGHT: return { "Death Pact", "Death Siphon", "Death Strike" };
+        case CLASS_SHAMAN:  return { "Ancestral Swiftness", "Healing Surge" };
+        case CLASS_MAGE:    return { "Cold Snap", "Ice Barrier" };
+        case CLASS_WARLOCK: return { "Mortal Coil", "Drain Life" };
+        case CLASS_MONK:    return { "Expel Harm", "Chi Wave", "Healing Elixirs" };
+        case CLASS_DRUID:   return { "Renewal", "Cenarion Ward", "Rejuvenation" };
+        default:            return {};
+    }
+}
+
+std::vector<char const*> GetInterruptSpells(uint8 playerClass)
+{
+    switch (playerClass)
+    {
+        case CLASS_WARRIOR: return { "Pummel", "Disrupting Shout" };
+        case CLASS_PALADIN: return { "Rebuke" };
+        case CLASS_HUNTER:  return { "Counter Shot", "Silencing Shot" };
+        case CLASS_ROGUE:   return { "Kick" };
+        case CLASS_PRIEST:  return { "Silence" };
+        case CLASS_DEATH_KNIGHT: return { "Mind Freeze", "Strangulate" };
+        case CLASS_SHAMAN:  return { "Wind Shear" };
+        case CLASS_MAGE:    return { "Counterspell" };
+        case CLASS_WARLOCK: return { "Spell Lock", "Optical Blast" };
+        case CLASS_MONK:    return { "Spear Hand Strike" };
+        case CLASS_DRUID:   return { "Skull Bash", "Solar Beam" };
+        default:            return {};
+    }
+}
+
+CombatRecommendation SelectClassCleanse(Player* player)
+{
+    uint32 mask = 0;
+    std::vector<char const*> spells;
+    switch (player->GetClass())
+    {
+        case CLASS_PALADIN:
+            mask = (1 << DISPEL_DISEASE) | (1 << DISPEL_POISON);
+            if (player->GetTalentSpecialization() == SPEC_PALADIN_HOLY)
+                mask |= (1 << DISPEL_MAGIC);
+            spells = { "Cleanse" };
+            break;
+        case CLASS_PRIEST:
+            mask = (1 << DISPEL_DISEASE) | (1 << DISPEL_MAGIC);
+            spells = { "Purify" };
+            break;
+        case CLASS_SHAMAN:
+            mask = (1 << DISPEL_CURSE);
+            if (player->GetTalentSpecialization() == SPEC_SHAMAN_RESTORATION)
+                mask |= (1 << DISPEL_MAGIC);
+            spells = { "Purify Spirit", "Cleanse Spirit" };
+            break;
+        case CLASS_MAGE:
+            mask = (1 << DISPEL_CURSE);
+            spells = { "Remove Curse" };
+            break;
+        case CLASS_MONK:
+            mask = (1 << DISPEL_DISEASE) | (1 << DISPEL_POISON);
+            if (player->GetTalentSpecialization() == SPEC_MONK_MISTWEAVER)
+                mask |= (1 << DISPEL_MAGIC);
+            spells = { "Detox" };
+            break;
+        case CLASS_DRUID:
+            mask = (1 << DISPEL_CURSE) | (1 << DISPEL_POISON);
+            if (player->GetTalentSpecialization() == SPEC_DRUID_RESTORATION)
+                mask |= (1 << DISPEL_MAGIC);
+            spells = { "Nature's Cure", "Remove Corruption" };
+            break;
+        default:
+            return {};
+    }
+
+    if (!HasRemovableHarmfulAura(player, mask))
+        return {};
+    return RecommendFirstNamed(player, player, spells, "CLEANSE");
+}
+
+CombatRecommendation SelectAllyProtection(Player* player)
+{
+    Player* ally = SelectLowestGroupMember(player, 30.0f, true);
+    if (!ally || ally == player)
+        return {};
+
+    switch (player->GetClass())
+    {
+        case CLASS_WARRIOR:
+            return RecommendFirstNamed(player, ally, { "Safeguard", "Vigilance" }, "ALLY_PROTECTION");
+        case CLASS_PALADIN:
+            return RecommendFirstNamed(player, ally, { "Hand of Protection", "Hand of Sacrifice", "Sacred Shield" }, "ALLY_PROTECTION");
+        case CLASS_PRIEST:
+            return RecommendFirstNamed(player, ally, { "Pain Suppression", "Guardian Spirit", "Power Word: Shield" }, "ALLY_PROTECTION");
+        case CLASS_SHAMAN:
+            return RecommendFirstNamed(player, ally, { "Earth Shield" }, "ALLY_PROTECTION", true);
+        case CLASS_MONK:
+            return RecommendFirstNamed(player, ally, { "Life Cocoon", "Tiger's Lust" }, "ALLY_PROTECTION");
+        case CLASS_DRUID:
+            return RecommendFirstNamed(player, ally, { "Ironbark", "Cenarion Ward", "Rejuvenation" }, "ALLY_PROTECTION");
+        default:
+            return {};
+    }
+}
+
+CombatRecommendation SelectHealerRecommendation(Player* player)
+{
+    Player* ally = SelectLowestGroupMember(player, 85.0f, false);
+    if (!ally)
+        return {};
+
+    switch (player->GetTalentSpecialization())
+    {
+        case SPEC_PALADIN_HOLY:
+            return RecommendFirstNamed(player, ally, { "Holy Shock", "Eternal Flame", "Word of Glory", "Flash of Light", "Divine Light", "Holy Light" }, "HEAL_ALLY");
+        case SPEC_PRIEST_DISCIPLINE:
+            return RecommendFirstNamed(player, ally, { "Penance", "Power Word: Shield", "Prayer of Mending", "Flash Heal", "Heal" }, "HEAL_ALLY");
+        case SPEC_PRIEST_HOLY:
+            return RecommendFirstNamed(player, ally, { "Holy Word: Serenity", "Circle of Healing", "Renew", "Flash Heal", "Heal" }, "HEAL_ALLY");
+        case SPEC_SHAMAN_RESTORATION:
+            return RecommendFirstNamed(player, ally, { "Riptide", "Unleash Elements", "Healing Surge", "Greater Healing Wave", "Healing Wave" }, "HEAL_ALLY");
+        case SPEC_MONK_MISTWEAVER:
+            return RecommendFirstNamed(player, ally, { "Life Cocoon", "Renewing Mist", "Expel Harm", "Surging Mist", "Enveloping Mist", "Soothing Mist" }, "HEAL_ALLY");
+        case SPEC_DRUID_RESTORATION:
+            return RecommendFirstNamed(player, ally, { "Swiftmend", "Cenarion Ward", "Rejuvenation", "Lifebloom", "Regrowth", "Healing Touch" }, "HEAL_ALLY");
+        default:
+            return {};
+    }
+}
+
+CombatRecommendation SelectKnownTalentDamage(Player* player, Unit* target)
+{
+    switch (player->GetClass())
+    {
+        case CLASS_WARRIOR: return RecommendFirstNamed(player, target, { "Storm Bolt", "Dragon Roar", "Shockwave", "Bladestorm" }, "TALENT");
+        case CLASS_PALADIN: return RecommendFirstNamed(player, target, { "Execution Sentence", "Holy Prism" }, "TALENT");
+        case CLASS_HUNTER:  return RecommendFirstNamed(player, target, { "Glaive Toss", "Powershot", "Barrage" }, "TALENT");
+        case CLASS_ROGUE:   return RecommendFirstNamed(player, target, { "Marked for Death", "Shadowstep" }, "TALENT");
+        case CLASS_PRIEST:  return RecommendFirstNamed(player, target, { "Cascade", "Divine Star", "Halo", "Psyfiend" }, "TALENT");
+        case CLASS_DEATH_KNIGHT: return RecommendFirstNamed(player, target, { "Death Siphon", "Asphyxiate" }, "TALENT");
+        case CLASS_SHAMAN:  return RecommendFirstNamed(player, target, { "Elemental Blast", "Unleash Elements" }, "TALENT");
+        case CLASS_MAGE:    return RecommendFirstNamed(player, target, { "Nether Tempest", "Living Bomb", "Frost Bomb" }, "TALENT", true);
+        case CLASS_WARLOCK: return RecommendFirstNamed(player, target, { "Mortal Coil", "Shadowfury" }, "TALENT");
+        case CLASS_MONK:    return RecommendFirstNamed(player, target, { "Chi Wave", "Zen Sphere", "Chi Burst" }, "TALENT");
+        case CLASS_DRUID:   return RecommendFirstNamed(player, target, { "Force of Nature" }, "TALENT");
+        default:            return {};
+    }
+}
+
+CombatRecommendation SelectGenericRotation(Player* player, Unit* target)
+{
+    Specializations spec = Specializations(player->GetTalentSpecialization());
+    switch (spec)
+    {
+        case SPEC_WARRIOR_ARMS: return RecommendFirstNamed(player, target, { "Colossus Smash", "Mortal Strike", "Execute", "Overpower", "Slam" }, "DAMAGE");
+        case SPEC_WARRIOR_FURY: return RecommendFirstNamed(player, target, { "Bloodthirst", "Raging Blow", "Execute", "Wild Strike", "Heroic Strike" }, "DAMAGE");
+        case SPEC_WARRIOR_PROTECTION: return RecommendFirstNamed(player, target, { "Shield Slam", "Revenge", "Devastate", "Heroic Strike" }, "DAMAGE");
+        case SPEC_PALADIN_PROTECTION: return RecommendFirstNamed(player, target, { "Shield of the Righteous", "Judgment", "Hammer of the Righteous", "Crusader Strike", "Avenger's Shield" }, "DAMAGE");
+        case SPEC_HUNTER_BEAST_MASTERY: return RecommendFirstNamed(player, target, { "Kill Command", "Kill Shot", "Arcane Shot", "Cobra Shot" }, "DAMAGE");
+        case SPEC_HUNTER_MARKSMANSHIP: return RecommendFirstNamed(player, target, { "Chimera Shot", "Kill Shot", "Aimed Shot", "Arcane Shot", "Steady Shot" }, "DAMAGE");
+        case SPEC_HUNTER_SURVIVAL:
+            if (CombatRecommendation dot = RecommendFirstNamed(player, target, { "Black Arrow", "Serpent Sting" }, "DOT", true)) return dot;
+            return RecommendFirstNamed(player, target, { "Explosive Shot", "Kill Shot", "Arcane Shot", "Cobra Shot" }, "DAMAGE");
+        case SPEC_ROGUE_ASSASSINATION:
+            if (player->GetComboPoints() >= 4) return RecommendFirstNamed(player, target, { "Envenom", "Rupture" }, "SPEND");
+            return RecommendFirstNamed(player, target, { "Dispatch", "Mutilate" }, "BUILD");
+        case SPEC_ROGUE_COMBAT:
+            if (player->GetComboPoints() >= 4) return RecommendFirstNamed(player, target, { "Eviscerate", "Slice and Dice" }, "SPEND");
+            return RecommendFirstNamed(player, target, { "Revealing Strike", "Sinister Strike" }, "BUILD");
+        case SPEC_ROGUE_SUBTLETY:
+            if (player->GetComboPoints() >= 4) return RecommendFirstNamed(player, target, { "Eviscerate", "Rupture" }, "SPEND");
+            return RecommendFirstNamed(player, target, { "Hemorrhage", "Backstab" }, "BUILD");
+        case SPEC_PRIEST_SHADOW:
+            if (CombatRecommendation dot = RecommendFirstNamed(player, target, { "Shadow Word: Pain", "Vampiric Touch" }, "DOT", true)) return dot;
+            return RecommendFirstNamed(player, target, { "Devouring Plague", "Mind Blast", "Shadow Word: Death", "Mind Flay" }, "DAMAGE");
+        case SPEC_DEATH_KNIGHT_BLOOD: return RecommendFirstNamed(player, target, { "Death Strike", "Rune Strike", "Heart Strike", "Blood Boil" }, "DAMAGE");
+        case SPEC_DEATH_KNIGHT_FROST: return RecommendFirstNamed(player, target, { "Soul Reaper", "Obliterate", "Frost Strike", "Howling Blast" }, "DAMAGE");
+        case SPEC_DEATH_KNIGHT_UNHOLY:
+            if (CombatRecommendation dot = RecommendFirstNamed(player, target, { "Outbreak", "Plague Strike" }, "DOT", true)) return dot;
+            return RecommendFirstNamed(player, target, { "Soul Reaper", "Scourge Strike", "Death Coil", "Festering Strike" }, "DAMAGE");
+        case SPEC_SHAMAN_ELEMENTAL:
+            if (CombatRecommendation dot = RecommendNamed(player, target, "Flame Shock", "DOT", true)) return dot;
+            return RecommendFirstNamed(player, target, { "Lava Burst", "Earth Shock", "Chain Lightning", "Lightning Bolt" }, "DAMAGE");
+        case SPEC_SHAMAN_ENHANCEMENT:
+            return RecommendFirstNamed(player, target, { "Stormstrike", "Lava Lash", "Earth Shock", "Lightning Bolt", "Primal Strike" }, "DAMAGE");
+        case SPEC_MAGE_ARCANE: return RecommendFirstNamed(player, target, { "Arcane Missiles", "Arcane Barrage", "Arcane Blast" }, "DAMAGE");
+        case SPEC_MAGE_FIRE: return RecommendFirstNamed(player, target, { "Pyroblast", "Inferno Blast", "Fire Blast", "Fireball" }, "DAMAGE");
+        case SPEC_MAGE_FROST: return RecommendFirstNamed(player, target, { "Frostfire Bolt", "Ice Lance", "Frozen Orb", "Frostbolt" }, "DAMAGE");
+        case SPEC_WARLOCK_AFFLICTION:
+            if (CombatRecommendation dot = RecommendFirstNamed(player, target, { "Agony", "Corruption", "Unstable Affliction" }, "DOT", true)) return dot;
+            return RecommendFirstNamed(player, target, { "Haunt", "Drain Soul", "Malefic Grasp" }, "DAMAGE");
+        case SPEC_WARLOCK_DEMONOLOGY:
+            if (CombatRecommendation dot = RecommendNamed(player, target, "Corruption", "DOT", true)) return dot;
+            return RecommendFirstNamed(player, target, { "Soul Fire", "Hand of Gul'dan", "Touch of Chaos", "Shadow Bolt" }, "DAMAGE");
+        case SPEC_WARLOCK_DESTRUCTION:
+            if (CombatRecommendation dot = RecommendNamed(player, target, "Immolate", "DOT", true)) return dot;
+            return RecommendFirstNamed(player, target, { "Chaos Bolt", "Shadowburn", "Conflagrate", "Incinerate" }, "DAMAGE");
+        case SPEC_MONK_BREWMASTER: return RecommendFirstNamed(player, target, { "Keg Smash", "Blackout Kick", "Tiger Palm", "Jab" }, "DAMAGE");
+        case SPEC_MONK_WINDWALKER: return RecommendFirstNamed(player, target, { "Rising Sun Kick", "Fists of Fury", "Blackout Kick", "Tiger Palm", "Jab" }, "DAMAGE");
+        case SPEC_DRUID_BALANCE:
+            if (CombatRecommendation dot = RecommendFirstNamed(player, target, { "Moonfire", "Sunfire" }, "DOT", true)) return dot;
+            return RecommendFirstNamed(player, target, { "Starsurge", "Starfire", "Wrath" }, "DAMAGE");
+        case SPEC_DRUID_FERAL:
+            if (CombatRecommendation dot = RecommendFirstNamed(player, target, { "Rake", "Rip" }, "DOT", true)) return dot;
+            return RecommendFirstNamed(player, target, { "Ferocious Bite", "Shred", "Mangle" }, "DAMAGE");
+        case SPEC_DRUID_GUARDIAN: return RecommendFirstNamed(player, target, { "Savage Defense", "Mangle", "Thrash", "Lacerate", "Maul" }, "DAMAGE");
+        default: return RecommendFirstNamed(player, target, { "Smite", "Wrath", "Lightning Bolt", "Crackling Jade Lightning" }, "DAMAGE");
+    }
+}
+
+bool TargetIsCasting(Unit* target);
+
+CombatRecommendation SelectUniversalRecommendation(Player* player)
+{
+    if (HasHardLossOfControl(player))
+    {
+        if (CombatRecommendation racial = RecommendNamed(player, player,
+            "Every Man for Himself", "RACIAL_ESCAPE"))
+            return racial;
+        if (CombatRecommendation escape = RecommendFirstNamed(player, player,
+            GetCrowdControlBreaks(player->GetClass()), "ESCAPE_CC"))
+            return escape;
+    }
+
+    if (player->GetHealthPct() < 15.0f)
+        if (CombatRecommendation heal = RecommendFirstNamed(player, player,
+            GetEmergencySelfHeals(player->GetClass()), "EMERGENCY_HEAL"))
+            return heal;
+
+    if (IsTakingBurstDamage(player) || player->GetHealthPct() <= 40.0f)
+        if (CombatRecommendation defense = RecommendFirstNamed(player, player,
+            GetDefensiveSpells(player->GetClass()), "BURST_DEFENSE", true))
+            return defense;
+
+    if (CombatRecommendation protection = SelectAllyProtection(player))
+        return protection;
+
+    if (HasMovementLossOfControl(player))
+        if (CombatRecommendation movement = RecommendFirstNamed(player, player,
+            GetMovementBreaks(player->GetClass()), "ESCAPE_MOVEMENT"))
+            return movement;
+
+    Unit* target = player->GetSelectedUnit();
+    bool hostileTarget = target && player->IsValidAttackTarget(target);
+    if (hostileTarget && TargetIsCasting(target))
+        if (CombatRecommendation interrupt = RecommendFirstNamed(player, target,
+            GetInterruptSpells(player->GetClass()), "INTERRUPT"))
+            return interrupt;
+
+    if (CombatRecommendation cleanse = SelectClassCleanse(player))
+        return cleanse;
+
+    if (CombatRecommendation healing = SelectHealerRecommendation(player))
+        return healing;
+
+    if (!hostileTarget)
+        return {};
+
+    if (CombatRecommendation talent = SelectKnownTalentDamage(player, target))
+        return talent;
+    return SelectGenericRotation(player, target);
+}
+
 CombatRecommendation SelectEmergencyHeal(Player* player)
 {
     if (player->GetHealthPct() >= 15.0f)
@@ -391,28 +814,74 @@ CombatRecommendation SelectRetributionRecommendation(Player* player)
 
 CombatRecommendation SelectRecommendation(Player* player)
 {
-    if (!player || !player->IsAlive() || player->GetClass() != CLASS_PALADIN ||
-        player->GetTalentSpecialization() != SPEC_PALADIN_RETRIBUTION)
+    if (!player || !player->IsAlive())
         return {};
 
-    return SelectRetributionRecommendation(player);
+    if (player->GetClass() == CLASS_PALADIN &&
+        player->GetTalentSpecialization() == SPEC_PALADIN_RETRIBUTION)
+        return SelectRetributionRecommendation(player);
+
+    return SelectUniversalRecommendation(player);
+}
+
+std::pair<uint32, char const*> GetAssistantPower(Player* player)
+{
+    Powers power = POWER_MANA;
+    char const* name = "Mana";
+    switch (player->GetClass())
+    {
+        case CLASS_WARRIOR: power = POWER_RAGE; name = "Rage"; break;
+        case CLASS_PALADIN: power = POWER_HOLY_POWER; name = "Holy Power"; break;
+        case CLASS_HUNTER: power = POWER_FOCUS; name = "Focus"; break;
+        case CLASS_ROGUE: return { player->GetComboPoints(), "Combo" };
+        case CLASS_DEATH_KNIGHT: power = POWER_RUNIC_POWER; name = "Runic"; break;
+        case CLASS_PRIEST:
+            if (player->GetTalentSpecialization() == SPEC_PRIEST_SHADOW)
+            { power = POWER_SHADOW_ORBS; name = "Orbs"; }
+            break;
+        case CLASS_MAGE:
+            if (player->GetTalentSpecialization() == SPEC_MAGE_ARCANE)
+            { power = POWER_ARCANE_CHARGES; name = "Charges"; }
+            break;
+        case CLASS_WARLOCK:
+            if (player->GetTalentSpecialization() == SPEC_WARLOCK_AFFLICTION)
+            { power = POWER_SOUL_SHARDS; name = "Shards"; }
+            else if (player->GetTalentSpecialization() == SPEC_WARLOCK_DEMONOLOGY)
+            { power = POWER_DEMONIC_FURY; name = "Fury"; }
+            else
+            { power = POWER_BURNING_EMBERS; name = "Embers"; }
+            break;
+        case CLASS_MONK: power = POWER_CHI; name = "Chi"; break;
+        case CLASS_DRUID:
+            if (player->GetTalentSpecialization() == SPEC_DRUID_FERAL)
+            { power = POWER_ENERGY; name = "Energy"; }
+            else if (player->GetTalentSpecialization() == SPEC_DRUID_GUARDIAN)
+            { power = POWER_RAGE; name = "Rage"; }
+            else if (player->GetTalentSpecialization() == SPEC_DRUID_BALANCE)
+            { power = POWER_ECLIPSE; name = "Eclipse"; }
+            break;
+        default: break;
+    }
+
+    uint32 value = player->GetPower(power);
+    if (power == POWER_RAGE || power == POWER_RUNIC_POWER)
+        value /= 10;
+    return { value, name };
 }
 
 std::string BuildPayload(Player* player, CombatRecommendation const& recommendation)
 {
+    auto const resource = GetAssistantPower(player);
     std::ostringstream payload;
     if (!sPlayerbotAIConfig->combatAssistantEnabled)
-        payload << "OFF|0|DISABLED|0";
-    else if (player->GetClass() != CLASS_PALADIN ||
-        player->GetTalentSpecialization() != SPEC_PALADIN_RETRIBUTION)
-        payload << "OFF|0|UNSUPPORTED|0";
+        payload << "OFF|0|DISABLED|" << resource.first << '|' << resource.second;
     else if (!player->IsAlive())
-        payload << "WAIT|0|DEAD|" << player->GetPower(POWER_HOLY_POWER);
+        payload << "WAIT|0|DEAD|" << resource.first << '|' << resource.second;
     else if (recommendation)
         payload << "READY|" << recommendation.SpellId << '|' << recommendation.Reason << '|'
-            << player->GetPower(POWER_HOLY_POWER);
+            << resource.first << '|' << resource.second;
     else
-        payload << "WAIT|0|NO_CAST|" << player->GetPower(POWER_HOLY_POWER);
+        payload << "WAIT|0|NO_CAST|" << resource.first << '|' << resource.second;
     return payload.str();
 }
 
@@ -468,14 +937,6 @@ public:
             return true;
         }
 
-        if (player->GetClass() != CLASS_PALADIN ||
-            player->GetTalentSpecialization() != SPEC_PALADIN_RETRIBUTION)
-        {
-            handler->SendSysMessage("Combat Assistant prototype currently supports Retribution Paladin only.");
-            PushRecommendation(player, true);
-            return true;
-        }
-
         CombatRecommendation const recommendation = SelectRecommendation(player);
         if (!recommendation)
         {
@@ -487,8 +948,11 @@ public:
 
         if (status)
         {
-            handler->PSendSysMessage("Combat Assistant recommends spell %u (%s), Holy Power %u.",
-                recommendation.SpellId, recommendation.Reason, player->GetPower(POWER_HOLY_POWER));
+            auto const resource = GetAssistantPower(player);
+            handler->PSendSysMessage("Combat Assistant recommends spell %u (%s), %s %u, class %u, specialization %u.",
+                recommendation.SpellId, recommendation.Reason, resource.second,
+                resource.first, uint32(player->GetClass()),
+                uint32(player->GetTalentSpecialization()));
             PushRecommendation(player, true);
             return true;
         }

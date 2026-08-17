@@ -5,6 +5,7 @@
 
 #include "MovementActions.h"
 
+#include <cfloat>
 #include <cmath>
 #include <cstdlib>
 #include <iomanip>
@@ -15,6 +16,10 @@
 #include "PositionValue.h"
 #include "G3D/Vector3.h"
 #include "GameObject.h"
+#include "AreaTrigger.h"
+#include "DynamicObject.h"
+#include "GridNotifiers.h"
+#include "GridNotifiersImpl.h"
 #include "LastMovementValue.h"
 #include "Map.h"
 #include "MotionMaster.h"
@@ -1254,6 +1259,152 @@ bool MoveFromGroupAction::Execute(Event event)
     if (!distance)
         distance = 20.0f; // flee distance from config is too small for this
     return MoveFromGroup(distance);
+}
+
+bool AvoidAoeAction::FindNearestHazard(Position& position, float& radius) const
+{
+    if (!bot || !bot->IsInWorld() || !bot->IsAlive() || !bot->IsInCombat())
+        return false;
+
+    constexpr float searchRadius = 16.0f;
+    std::list<WorldObject*> nearbyObjects;
+    Trinity::AllWorldObjectsInRange check(bot, searchRadius);
+    Trinity::WorldObjectListSearcher<Trinity::AllWorldObjectsInRange> searcher(
+        bot, nearbyObjects, check);
+    bot->VisitNearbyObject(searchRadius, searcher);
+
+    bool found = false;
+    float nearestDistance = FLT_MAX;
+    for (WorldObject* object : nearbyObjects)
+    {
+        if (!object || !object->IsInWorld())
+            continue;
+
+        Unit* caster = nullptr;
+        uint32 spellId = 0;
+        float hazardRadius = 0.0f;
+
+        if (DynamicObject* dynamicObject = object->ToDynObject())
+        {
+            if (dynamicObject->GetType() != DYNAMIC_OBJECT_AREA_SPELL)
+                continue;
+
+            caster = dynamicObject->GetCaster();
+            spellId = dynamicObject->GetSpellId();
+            hazardRadius = dynamicObject->GetRadius();
+        }
+        else if (AreaTrigger* areaTrigger = object->ToAreaTrigger())
+        {
+            caster = areaTrigger->GetCaster();
+            spellId = areaTrigger->GetSpellId();
+            hazardRadius = std::max(areaTrigger->GetScaleX(), areaTrigger->GetScaleY());
+        }
+        else
+            continue;
+
+        // Do not guess about ownerless triggers or run out of friendly ground
+        // effects.  A hazard must have a hostile caster and a non-positive
+        // spell in this 5.4.8 spell store.
+        SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
+        if (!caster || !spellInfo || spellInfo->IsPositive() ||
+            !bot->IsValidAttackTarget(caster))
+            continue;
+
+        // Some AreaTrigger records do not expose their visual radius.  Use a
+        // conservative minimum while clamping malformed data so one bad DBC
+        // row cannot make a bot flee across an encounter room.
+        hazardRadius = std::max(2.0f, std::min(hazardRadius, 12.0f));
+        float distance = bot->GetExactDist2d(object);
+        if (distance > hazardRadius + 0.75f || distance >= nearestDistance)
+            continue;
+
+        position.Relocate(object);
+        radius = hazardRadius + 2.0f;
+        nearestDistance = distance;
+        found = true;
+    }
+
+    return found;
+}
+
+bool AvoidAoeAction::isUseful()
+{
+    Position position;
+    float radius = 0.0f;
+    return FindNearestHazard(position, radius);
+}
+
+bool AvoidAoeAction::Execute(Event /*event*/)
+{
+    Position position;
+    float radius = 0.0f;
+    if (!FindNearestHazard(position, radius))
+        return false;
+
+    return FleePosition(position, radius, 500);
+}
+
+BossMechanicsAction::Reaction BossMechanicsAction::GetReaction() const
+{
+    if (!bot || !bot->IsInWorld() || !bot->IsAlive() || !bot->IsInCombat())
+        return Reaction::None;
+
+    // Nalak (entry 69099), local boss_nalak.cpp:
+    // 136339 applies Lightning Tether and the local spell script increases
+    // damage with target distance, using 20 yards as the near/far boundary.
+    if (bot->HasAura(136339))
+    {
+        if (Creature* nalak = bot->FindNearestCreature(69099, 200.0f, true))
+            if (bot->GetExactDist2d(nalak) > 18.0f)
+                return Reaction::ApproachNalak;
+    }
+
+    // The same local script applies Storm Cloud (136340) to ranged/non-tank
+    // players. Its hostile area effect must be carried away from the group.
+    if (bot->HasAura(136340) && bot->GetGroup())
+        return Reaction::SpreadStormCloud;
+
+    // Oondasta (entry 69161), local boss_oondasta.cpp: Spiritfire Beam
+    // (137508) is deliberately cast on a non-tank and is documented by that
+    // script as a many-target chain. The selected player must separate from
+    // nearby members while the beam aura is present.
+    if (bot->HasAura(137508) && bot->GetGroup() &&
+        bot->FindNearestCreature(69161, 200.0f, true))
+        return Reaction::SpreadOondastaBeam;
+
+    // Ordos (entry 72057), local boss_ordos.cpp: Burning Soul (144689,
+    // effect aura 144690) is a selected-player mechanic. Keep either spell ID
+    // because the caster and target aura differ in this 5.4.8 implementation.
+    if ((bot->HasAura(144689) || bot->HasAura(144690)) && bot->GetGroup() &&
+        bot->FindNearestCreature(72057, 200.0f, true))
+        return Reaction::SpreadOrdosBurningSoul;
+
+    return Reaction::None;
+}
+
+bool BossMechanicsAction::isUseful()
+{
+    return GetReaction() != Reaction::None;
+}
+
+bool BossMechanicsAction::Execute(Event /*event*/)
+{
+    switch (GetReaction())
+    {
+        case Reaction::ApproachNalak:
+            if (Creature* nalak = bot->FindNearestCreature(69099, 200.0f, true))
+                return MoveTo(nalak, 15.0f, MovementPriority::MOVEMENT_FORCED);
+            break;
+        case Reaction::SpreadStormCloud:
+            return MoveFromGroup(30.0f);
+        case Reaction::SpreadOondastaBeam:
+            return MoveFromGroup(22.0f);
+        case Reaction::SpreadOrdosBurningSoul:
+            return MoveFromGroup(20.0f);
+        case Reaction::None:
+            break;
+    }
+    return false;
 }
 
 bool FleeAction::Execute(Event event)

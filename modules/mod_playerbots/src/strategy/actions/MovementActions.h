@@ -129,6 +129,46 @@ public:
     bool Execute(Event event) override;
 };
 
+// Leaves hostile persistent spell areas (dynamic objects and area triggers).
+// The generic "avoid aoe" strategy has existed in this module for years, but
+// it did not have a matching ActionContext action and therefore never moved.
+class AvoidAoeAction : public MovementAction
+{
+public:
+    explicit AvoidAoeAction(PlayerbotAI* botAI) : MovementAction(botAI, "avoid aoe") {}
+
+    bool Execute(Event event) override;
+    bool isUseful() override;
+
+private:
+    bool FindNearestHazard(Position& position, float& radius) const;
+};
+
+// Source-backed encounter reactions which cannot be inferred from a generic
+// floor object. Keep this list deliberately small: every entry must match the
+// local 5.4.8 boss script and spell data.
+class BossMechanicsAction : public MovementAction
+{
+public:
+    explicit BossMechanicsAction(PlayerbotAI* botAI)
+        : MovementAction(botAI, "boss mechanics") {}
+
+    bool Execute(Event event) override;
+    bool isUseful() override;
+
+private:
+    enum class Reaction : uint8
+    {
+        None,
+        ApproachNalak,
+        SpreadStormCloud,
+        SpreadOondastaBeam,
+        SpreadOrdosBurningSoul
+    };
+
+    Reaction GetReaction() const;
+};
+
 class RunAwayAction : public MovementAction
 {
 public:

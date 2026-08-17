@@ -41,6 +41,7 @@
 
 #include <algorithm>
 #include <array>
+#include <limits>
 #include <map>
 #include <set>
 #include <sstream>
@@ -68,6 +69,7 @@ std::set<uint32> SoloArenaAutomaticHealthRestoreScheduled;
 std::set<uint32> SoloArenaLoadoutRecoveryBots;
 uint32 AutomatedPvpLoadoutRecoveryTimer = 0;
 std::set<uint32> SoloArenaAutomaticPreparationBuffedBots;
+std::set<uint32> SoloArenaAutomaticCombatActivatedBots;
 bool SoloArenaAutomaticPreparationFacingApplied = false;
 
 enum class SoloArenaAutomaticState : uint8
@@ -135,6 +137,55 @@ struct SoloArenaLoadoutPlan
     std::array<uint32, 5> AllianceItems;
     std::array<uint32, 5> HordeItems;
 };
+
+enum class WorldBossPreviewRole : uint8
+{
+    None,
+    Tank,
+    Healer,
+    Damage
+};
+
+WorldBossPreviewRole GetWorldBossPreviewRole(Specializations specialization)
+{
+    switch (specialization)
+    {
+        case SPEC_PALADIN_PROTECTION:
+        case SPEC_WARRIOR_PROTECTION:
+        case SPEC_DRUID_GUARDIAN:
+        case SPEC_DEATH_KNIGHT_BLOOD:
+        case SPEC_MONK_BREWMASTER:
+            return WorldBossPreviewRole::Tank;
+        case SPEC_PALADIN_HOLY:
+        case SPEC_DRUID_RESTORATION:
+        case SPEC_PRIEST_DISCIPLINE:
+        case SPEC_PRIEST_HOLY:
+        case SPEC_SHAMAN_RESTORATION:
+        case SPEC_MONK_MISTWEAVER:
+            return WorldBossPreviewRole::Healer;
+        case SPEC_NONE:
+            return WorldBossPreviewRole::None;
+        default:
+            return WorldBossPreviewRole::Damage;
+    }
+}
+
+char const* GetSupportedWorldBossName(uint32 entry)
+{
+    switch (entry)
+    {
+        case 56439: return "Sha of Anger";
+        case 62346: return "Galleon";
+        case 69099: return "Nalak";
+        case 69161: return "Oondasta";
+        case 71952: return "Chi-Ji";
+        case 71953: return "Xuen";
+        case 71954: return "Niuzao";
+        case 71955: return "Yu'lon";
+        case 72057: return "Ordos";
+        default: return nullptr;
+    }
+}
 
 void PrepareSoloArenaBotForLogout(Player* bot, char const* context)
 {
@@ -1743,6 +1794,87 @@ void PrepareSoloArenaAutomaticParticipants(Battleground* arena,
     CastSoloArenaAutomaticPreparationBuffs(arena, participants);
 }
 
+Player* FindNearestSoloArenaOpponent(Player* participant,
+    std::vector<uint32> const& opponentGuids)
+{
+    if (!participant)
+        return nullptr;
+
+    Player* nearest = nullptr;
+    float nearestDistance = std::numeric_limits<float>::max();
+    for (uint32 guid : opponentGuids)
+    {
+        Player* candidate = FindSoloArenaParticipant(guid);
+        if (!candidate || candidate->isDead() || !candidate->IsInWorld() ||
+            candidate->GetMap() != participant->GetMap() ||
+            candidate->GetBattlegroundId() != SoloArenaEnteredInstance ||
+            !participant->IsValidAttackTarget(candidate))
+            continue;
+
+        float distance = participant->GetDistance(candidate);
+        if (distance < nearestDistance)
+        {
+            nearest = candidate;
+            nearestDistance = distance;
+        }
+    }
+    return nearest;
+}
+
+void ActivateSoloArenaAutomaticCombat(Battleground* arena,
+    std::vector<Player*> const& participants)
+{
+    if (!arena || arena->GetStatus() != STATUS_IN_PROGRESS)
+        return;
+
+    for (Player* participant : participants)
+    {
+        if (!participant || participant->isDead() ||
+            participant->GetGUID().GetCounter() == SoloArenaAutomaticRequester ||
+            SoloArenaAutomaticCombatActivatedBots.count(
+                participant->GetGUID().GetCounter()))
+            continue;
+
+        PlayerbotAI* botAI = GET_PLAYERBOT_AI(participant);
+        if (!botAI || botAI->IsRealPlayer())
+            continue;
+
+        // Healers already follow their party and must remain free to select the
+        // lowest-health ally. The activation is for damage bots that otherwise
+        // can wait at the opened gate until an enemy walks into aggro range.
+        if (PlayerBotSpec::IsHeal(participant, true))
+        {
+            SoloArenaAutomaticCombatActivatedBots.insert(
+                participant->GetGUID().GetCounter());
+            continue;
+        }
+
+        bool requesterSide = std::find(SoloArenaAutomaticRequesterTeam.begin(),
+            SoloArenaAutomaticRequesterTeam.end(),
+            participant->GetGUID().GetCounter()) != SoloArenaAutomaticRequesterTeam.end();
+        std::vector<uint32> const& opponentGuids = requesterSide ?
+            SoloArenaAutomaticOpponentTeam : SoloArenaAutomaticRequesterTeam;
+        Player* opponent = FindNearestSoloArenaOpponent(participant, opponentGuids);
+        if (!opponent)
+            continue;
+
+        botAI->GetAiObjectContext()->GetValue<Unit*>("current target")->Set(opponent);
+        participant->SetSelection(opponent->GetGUID());
+        botAI->ChangeEngine(BOT_STATE_COMBAT);
+        bool attackStarted = participant->Attack(
+            opponent, PlayerBotSpec::IsMelee(participant));
+        botAI->DoSpecificAction("pet attack", Event(), true);
+        SoloArenaAutomaticCombatActivatedBots.insert(
+            participant->GetGUID().GetCounter());
+        TC_LOG_INFO("server",
+            "SoloArena post-gate combat activated instance=%u bot=%s guid=%u class=%u target=%s target-guid=%u direct-attack=%u",
+            arena->GetInstanceID(), participant->GetName().c_str(),
+            participant->GetGUID().GetCounter(), uint32(participant->GetClass()),
+            opponent->GetName().c_str(), opponent->GetGUID().GetCounter(),
+            uint32(attackStarted));
+    }
+}
+
 void ProcessSoloArenaAutomaticReward(Battleground* arena)
 {
     if (SoloArenaAutomaticRewardProcessed || !arena || !arena->IsArena() ||
@@ -1940,6 +2072,7 @@ public:
             { "npcbot",         SEC_ADMINISTRATOR,          true,           &HandlePlayerbotCommand},
             { "pmon",           SEC_GAMEMASTER,             true,           &HandlePerfMonCommand},
             { "soloarena",      SEC_ADMINISTRATOR,          false,          &HandleSoloArenaCommand},
+            { "worldbossbots",  SEC_ADMINISTRATOR,          false,          &HandleWorldBossBotsCommand},
         };
         return commandTable;
     }
@@ -1947,6 +2080,160 @@ public:
     static bool HandlePlayerbotCommand(ChatHandler* handler, char const* args)
     {
         return PlayerbotMgr::HandlePlayerbotMgrCommand(handler, args);
+    }
+
+    static bool HandleWorldBossBotsCommand(ChatHandler* handler, char const* args)
+    {
+        uint32 raidSize = 0;
+        if (args && !strcmp(args, "preview 10"))
+            raidSize = 10;
+        else if (args && !strcmp(args, "preview 25"))
+            raidSize = 25;
+        else
+        {
+            handler->SendSysMessage(
+                "Usage: select a supported Pandaria world boss, then use .worldbossbots preview 10|25");
+            return true;
+        }
+
+        Player* requester = handler->GetSession() ? handler->GetSession()->GetPlayer() : nullptr;
+        Creature* boss = handler->getSelectedCreature();
+        char const* bossName = boss ? GetSupportedWorldBossName(boss->GetEntry()) : nullptr;
+        if (!requester || !boss || !bossName)
+        {
+            handler->SendSysMessage(
+                "Select Sha of Anger, Galleon, Nalak, Oondasta, a Celestial, or Ordos first.");
+            return true;
+        }
+
+        if (sPlayerbotAIConfig->randomBotAccounts.empty())
+        {
+            handler->SendSysMessage("No random-bot accounts are configured.");
+            return true;
+        }
+
+        uint32 requiredTanks = 2;
+        uint32 requiredHealers = raidSize == 10 ? 2 : 5;
+        uint32 requiredDamage = raidSize - requiredTanks - requiredHealers;
+        switch (GetWorldBossPreviewRole(requester->GetSpecialization()))
+        {
+            case WorldBossPreviewRole::Tank:    --requiredTanks; break;
+            case WorldBossPreviewRole::Healer:  --requiredHealers; break;
+            case WorldBossPreviewRole::Damage:  --requiredDamage; break;
+            case WorldBossPreviewRole::None:
+                handler->SendSysMessage("Your active specialization has no recognized raid role.");
+                return true;
+        }
+
+        uint32 minAccount = sPlayerbotAIConfig->randomBotAccounts.front();
+        uint32 maxAccount = sPlayerbotAIConfig->randomBotAccounts.back();
+        QueryResult result = CharacterDatabase.PQuery(
+            "SELECT guid,name,race,class,level,talentTree,activespec,equipmentCache "
+            "FROM characters WHERE account >= %u AND account <= %u AND level = %u AND online = 0 "
+            "AND guid NOT IN (SELECT memberGuid FROM group_member)",
+            minAccount, maxAccount, requester->GetLevel());
+        if (!result)
+        {
+            handler->SendSysMessage("No unused offline random-bot characters were found.");
+            return true;
+        }
+
+        uint32 availableTanks = 0;
+        uint32 availableHealers = 0;
+        uint32 availableDamage = 0;
+        uint32 rejectedFaction = 0;
+        uint32 rejectedSpec = 0;
+        uint32 rejectedGear = 0;
+        std::array<std::vector<std::string>, 3> samples;
+        do
+        {
+            Field* fields = result->Fetch();
+            uint8 race = fields[2].GetUInt8();
+            uint32 team = Player::TeamForRace(race);
+            if (team == PANDAREN_NEUTRAL || team != requester->GetTeam())
+            {
+                ++rejectedFaction;
+                continue;
+            }
+
+            uint32 specs[MAX_TALENT_SPECS] = { 0, 0 };
+            std::istringstream talentTrees(fields[5].GetString());
+            for (uint8 spec = 0; spec < MAX_TALENT_SPECS; ++spec)
+                talentTrees >> specs[spec];
+            uint8 activeSpec = fields[6].GetUInt8();
+            if (activeSpec >= MAX_TALENT_SPECS)
+                activeSpec = 0;
+            WorldBossPreviewRole role = GetWorldBossPreviewRole(
+                Specializations(specs[activeSpec]));
+            if (role == WorldBossPreviewRole::None)
+            {
+                ++rejectedSpec;
+                continue;
+            }
+
+            SoloArenaPreviewCandidate gear;
+            ReadSoloArenaGear(fields[7].GetString(), gear);
+            // This is an audit threshold, not an equipment mutation. The
+            // future coordinator must supply PvE gear separately and must
+            // journal/restore it before it may form a raid.
+            if (gear.EquippedItems < 15 || gear.AverageItemLevel < 450)
+            {
+                ++rejectedGear;
+                continue;
+            }
+
+            uint32* count = nullptr;
+            size_t sampleIndex = 0;
+            if (role == WorldBossPreviewRole::Tank)
+            {
+                count = &availableTanks;
+                sampleIndex = 0;
+            }
+            else if (role == WorldBossPreviewRole::Healer)
+            {
+                count = &availableHealers;
+                sampleIndex = 1;
+            }
+            else
+            {
+                count = &availableDamage;
+                sampleIndex = 2;
+            }
+            ++*count;
+            if (samples[sampleIndex].size() < 3)
+                samples[sampleIndex].push_back(fields[1].GetString());
+        }
+        while (result->NextRow());
+
+        auto joinedSamples = [](std::vector<std::string> const& names) -> std::string
+        {
+            if (names.empty())
+                return "none";
+            std::ostringstream stream;
+            for (size_t index = 0; index < names.size(); ++index)
+            {
+                if (index)
+                    stream << ", ";
+                stream << names[index];
+            }
+            return stream.str();
+        };
+
+        bool ready = availableTanks >= requiredTanks &&
+            availableHealers >= requiredHealers && availableDamage >= requiredDamage;
+        handler->PSendSysMessage(
+            "World-boss preview: %s (entry %u), raid=%u, requester=%s, result=%s.",
+            bossName, boss->GetEntry(), raidSize, requester->GetName().c_str(),
+            ready ? "candidate pool ready" : "candidate pool incomplete");
+        handler->PSendSysMessage(
+            "Bots needed/available: tanks=%u/%u [%s], healers=%u/%u [%s], damage=%u/%u [%s].",
+            requiredTanks, availableTanks, joinedSamples(samples[0]).c_str(),
+            requiredHealers, availableHealers, joinedSamples(samples[1]).c_str(),
+            requiredDamage, availableDamage, joinedSamples(samples[2]).c_str());
+        handler->PSendSysMessage(
+            "Audit filters: wrong/neutral faction=%u, unknown spec=%u, below 15 equipped or item-level 450=%u. No bot was logged in, grouped, equipped, or moved.",
+            rejectedFaction, rejectedSpec, rejectedGear);
+        return true;
     }
 
     static bool HandleSoloArenaCommand(ChatHandler* handler, char const* args)
@@ -3902,6 +4189,7 @@ void ResetSoloArenaAutomaticState()
     SoloArenaAutomaticHealthRestoreScheduled.clear();
     SoloArenaAutomaticExitTimer = 0;
     SoloArenaAutomaticPreparationBuffedBots.clear();
+    SoloArenaAutomaticCombatActivatedBots.clear();
     SoloArenaAutomaticPreparationFacingApplied = false;
 }
 }
@@ -4271,6 +4559,12 @@ void UpdateSoloArenaAutomaticQueue(uint32 diff)
                 if (arena && arena->GetStatus() == STATUS_WAIT_JOIN &&
                     GetSoloArenaAutomaticParticipants(participants))
                     CastSoloArenaAutomaticPreparationBuffs(arena, participants);
+                else if (arena && arena->GetStatus() == STATUS_IN_PROGRESS &&
+                    GetSoloArenaAutomaticParticipants(participants))
+                {
+                    FinishSoloArenaAutomaticPreparationBuffs();
+                    ActivateSoloArenaAutomaticCombat(arena, participants);
+                }
                 else if (!SoloArenaAutomaticPreparationBuffedBots.empty())
                     FinishSoloArenaAutomaticPreparationBuffs();
             }

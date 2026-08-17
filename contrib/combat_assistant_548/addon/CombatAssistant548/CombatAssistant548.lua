@@ -25,6 +25,9 @@ local reasonText = {
     ALLY_PROTECTION = "Protect critical attacked ally",
     INTERRUPT = "Interrupt",
     CLEANSE = "Cleanse poison / disease",
+    HEAL_ALLY = "Heal the lowest-health ally",
+    DAMAGE = "Best available damage ability",
+    DOT = "Apply missing damage over time",
     BUFF = "Maintain Inquisition",
     TALENT = "Talent damage",
     EXECUTE = "Execute",
@@ -42,7 +45,8 @@ local state = {
     mode = "WAIT",
     spellId = 0,
     reason = "NO_CAST",
-    holyPower = 0,
+    resource = 0,
+    resourceName = "Power",
     lastServerUpdate = 0,
 }
 
@@ -124,7 +128,7 @@ local function UpdateDisplay()
     end
 
     icon:SetTexture(spellTexture or "Interface\\Icons\\INV_Misc_QuestionMark")
-    powerLabel:SetText("HP " .. tostring(state.holyPower or 0))
+    powerLabel:SetText((state.resourceName or "Power") .. " " .. tostring(state.resource or 0))
     reasonLabel:SetText(reasonText[state.reason] or state.reason or "Waiting")
 
     if state.mode == "READY" and spellName then
@@ -149,7 +153,7 @@ local function UpdateDisplay()
 end
 
 local function ApplyServerMessage(message)
-    local mode, spellId, reason, holyPower = strsplit("|", message)
+    local mode, spellId, reason, resource, resourceName = strsplit("|", message)
     if not mode then
         return
     end
@@ -157,7 +161,8 @@ local function ApplyServerMessage(message)
     state.mode = mode
     state.spellId = tonumber(spellId) or 0
     state.reason = reason or "NO_CAST"
-    state.holyPower = tonumber(holyPower) or 0
+    state.resource = tonumber(resource) or 0
+    state.resourceName = resourceName or "Power"
     state.lastServerUpdate = GetTime()
     UpdateDisplay()
 end

@@ -1,23 +1,57 @@
 # Combat Assistant 5.4.8
 
-This is an isolated, reversible prototype of a modern single-button assistant
-for the 5.4.8 client. Patch 0001 supports Retribution Paladin only.
+This is an isolated single-button assistant for the 5.4.8 client. The current
+tracked source supports every playable class and every MoP specialization.
+Patch 0001 is retained as the historical Retribution-only first stage; the
+live files in `modules/mod_playerbots/src/CombatAssistant.cpp` and
+`addon/CombatAssistant548` are authoritative for the current implementation.
 
 ## Safety boundary
 
 - The client addon only displays the server recommendation and sends one
   `.combatassist cast` request for each physical click/key press.
-- The server chooses from a hard-coded Retribution whitelist. The client cannot
-  request an arbitrary spell ID.
+- The server alone chooses the recommendation from known spells for the
+  character's active specialization. The client cannot request an arbitrary
+  spell ID.
 - Every spell uses the normal non-triggered spell path. GCD, cooldown, known
   spell, resource, target, range, facing, immunity and line-of-sight checks stay
   active.
-- There is no timer-driven automatic casting. Healing is considered only by
-  the explicit sub-15% instant-heal emergency rule below.
+- There is no timer-driven automatic casting. Every cast still requires one
+  physical click or key press.
 - The feature defaults to disabled with
   `AiPlayerbot.CombatAssistant.Enabled = 0`.
 
-## Retribution priority
+## Shared priority for all classes
+
+The server reads the active specialization and known spell book on every
+request. A selected MoP talent is therefore eligible only when that character
+actually learned it; changing specialization or talents does not require an
+addon profile change.
+
+The common priority is:
+
+1. Break hard loss of control with an available class/racial answer.
+2. Use an emergency self-heal at critical health.
+3. Use the first available class defensive during dangerous health loss.
+4. Protect the lowest-health attacked group member with a class-appropriate
+   external defensive when one exists.
+5. Break roots/slows, interrupt an interruptible hostile cast, and cleanse a
+   removable harmful effect with the dispel types available to the class.
+6. For healer specializations, heal the lowest-health group member.
+7. Prefer a learned active talent when it is useful and normally castable.
+8. Continue the specialization's resource builder/spender, proc, DoT and core
+   damage priority.
+
+Direct ally spells are cast on the server-selected ally without changing the
+player's selected hostile target. Normal range, line-of-sight, immunity,
+cooldown, resource, GCD and arena restrictions remain authoritative; the
+assistant never uses triggered casts to bypass them.
+
+The all-class layer is mechanically build/start verified. Its individual
+class/spec priorities, talent choices and edge-case crowd-control answers still
+need gameplay verification before being treated as final tuning.
+
+## Retribution-specific priority
 
 1. For hard loss of control, a Human uses Every Man for Himself first; Divine
    Shield is the fallback if the racial is unknown or unavailable.
@@ -67,7 +101,7 @@ has to be dragged from the spell book or placed on a normal action bar. The
 optional Key Bindings entry only lets a keyboard key press the same addon
 button. `/ca548 show` restores it if it was hidden.
 
-Version 0.2.1 binds the recommendation button to key `2` once on login and
+Version 1.0.0 binds the recommendation button to key `2` once on login and
 saves that WoW key binding. This replaces the action previously assigned to
 `2`. Use `/ca548 bind2` to restore the binding or `/ca548 unbind2` to release
 the key; binding changes must be made outside combat.
