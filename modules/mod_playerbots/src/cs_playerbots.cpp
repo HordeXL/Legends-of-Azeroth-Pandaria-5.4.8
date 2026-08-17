@@ -36,6 +36,8 @@
 #include "RandomPlayerbotMgr.h"
 #include "RatedPvp.h"
 #include "ScriptMgr.h"
+#include "ScriptedCreature.h"
+#include "ScriptedGossip.h"
 #include "WorldSession.h"
 #include "World.h"
 
@@ -3966,6 +3968,174 @@ public:
 
 namespace
 {
+enum WorldBossCallerActions : uint32
+{
+    WORLD_BOSS_CALLER_PREVIEW_10 = GOSSIP_ACTION_INFO_DEF + 1,
+    WORLD_BOSS_CALLER_PREVIEW_25 = GOSSIP_ACTION_INFO_DEF + 2,
+    WORLD_BOSS_CALLER_STATUS = GOSSIP_ACTION_INFO_DEF + 3,
+    WORLD_BOSS_CALLER_LOCKED_10 = GOSSIP_ACTION_INFO_DEF + 4,
+    WORLD_BOSS_CALLER_LOCKED_25 = GOSSIP_ACTION_INFO_DEF + 5
+};
+
+enum WorldBossCallerRaidMask : uint8
+{
+    WORLD_BOSS_CALLER_RAID_10 = 0x01,
+    WORLD_BOSS_CALLER_RAID_25 = 0x02
+};
+
+struct WorldBossCallerConfig
+{
+    uint32 BossEntry = 0;
+    float SearchRadius = 0.0f;
+    uint8 RaidSizeMask = 0;
+    bool StrategyReady = false;
+};
+
+bool LoadWorldBossCallerConfig(Creature* caller, WorldBossCallerConfig& config)
+{
+    if (!caller || !caller->GetDBTableGUIDLow())
+        return false;
+
+    QueryResult result = WorldDatabase.PQuery(
+        "SELECT boss_entry,boss_search_radius,raid_size_mask,strategy_ready "
+        "FROM playerbot_world_boss_caller WHERE guid=%u",
+        caller->GetDBTableGUIDLow());
+    if (!result)
+        return false;
+
+    Field* fields = result->Fetch();
+    config.BossEntry = fields[0].GetUInt32();
+    config.SearchRadius = fields[1].GetFloat();
+    config.RaidSizeMask = fields[2].GetUInt8();
+    config.StrategyReady = fields[3].GetBool();
+    return GetSupportedWorldBossName(config.BossEntry) && config.SearchRadius > 0.0f;
+}
+
+Creature* FindConfiguredWorldBoss(Creature* caller, WorldBossCallerConfig const& config,
+    bool aliveOnly = true)
+{
+    return caller ? caller->FindNearestCreature(
+        config.BossEntry, config.SearchRadius, aliveOnly) : nullptr;
+}
+
+void ShowWorldBossCallerMenu(Player* player, Creature* caller)
+{
+    ClearGossipMenuFor(player);
+
+    WorldBossCallerConfig config;
+    if (!LoadWorldBossCallerConfig(caller, config))
+    {
+        ChatHandler(player->GetSession()).PSendSysMessage(
+            "Boss Bot Caller spawn %u has no valid configuration.",
+            caller ? caller->GetDBTableGUIDLow() : 0);
+        CloseGossipMenuFor(player);
+        return;
+    }
+
+    char const* bossName = GetSupportedWorldBossName(config.BossEntry);
+    if (config.RaidSizeMask & WORLD_BOSS_CALLER_RAID_10)
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT,
+            std::string("Preview 10-player pool for ") + bossName,
+            GOSSIP_SENDER_MAIN, WORLD_BOSS_CALLER_PREVIEW_10);
+    if (config.RaidSizeMask & WORLD_BOSS_CALLER_RAID_25)
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT,
+            std::string("Preview 25-player pool for ") + bossName,
+            GOSSIP_SENDER_MAIN, WORLD_BOSS_CALLER_PREVIEW_25);
+
+    AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Encounter status",
+        GOSSIP_SENDER_MAIN, WORLD_BOSS_CALLER_STATUS);
+
+    if (config.RaidSizeMask & WORLD_BOSS_CALLER_RAID_10)
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT,
+            config.StrategyReady ? "Call 10 (coordinator not enabled yet)" :
+                "Call 10 (locked: strategy not ready)",
+            GOSSIP_SENDER_MAIN, WORLD_BOSS_CALLER_LOCKED_10);
+    if (config.RaidSizeMask & WORLD_BOSS_CALLER_RAID_25)
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT,
+            config.StrategyReady ? "Call 25 (coordinator not enabled yet)" :
+                "Call 25 (locked: strategy not ready)",
+            GOSSIP_SENDER_MAIN, WORLD_BOSS_CALLER_LOCKED_25);
+
+    SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, caller->GetGUID());
+}
+
+struct npc_world_boss_bot_caller : public ScriptedAI
+{
+    npc_world_boss_bot_caller(Creature* creature) : ScriptedAI(creature) { }
+
+    bool OnGossipHello(Player* player) override
+    {
+        ShowWorldBossCallerMenu(player, me);
+        return true;
+    }
+
+    bool OnGossipSelect(Player* player, uint32 /*menuId*/, uint32 gossipListId) override
+    {
+        uint32 action = player->PlayerTalkClass->GetGossipOptionAction(gossipListId);
+        WorldBossCallerConfig config;
+        ChatHandler handler(player->GetSession());
+        if (!LoadWorldBossCallerConfig(me, config))
+        {
+            handler.PSendSysMessage("Boss Bot Caller spawn %u has no valid configuration.",
+                me->GetDBTableGUIDLow());
+            CloseGossipMenuFor(player);
+            return true;
+        }
+
+        char const* bossName = GetSupportedWorldBossName(config.BossEntry);
+        Creature* aliveBoss = FindConfiguredWorldBoss(me, config, true);
+        if (action == WORLD_BOSS_CALLER_STATUS)
+        {
+            handler.PSendSysMessage(
+                "Boss Bot Caller: %s (entry %u), active-nearby=%s, strategy=%s, Call actions=locked.",
+                bossName, config.BossEntry, aliveBoss ? "yes" : "no",
+                config.StrategyReady ? "audited" : "not ready");
+            ShowWorldBossCallerMenu(player, me);
+            return true;
+        }
+
+        if (action == WORLD_BOSS_CALLER_LOCKED_10 ||
+            action == WORLD_BOSS_CALLER_LOCKED_25)
+        {
+            handler.PSendSysMessage(
+                "Real bot Call is locked for %s. Preview is safe; no bot will be changed.",
+                bossName);
+            ShowWorldBossCallerMenu(player, me);
+            return true;
+        }
+
+        uint32 raidSize = action == WORLD_BOSS_CALLER_PREVIEW_10 ? 10 :
+            (action == WORLD_BOSS_CALLER_PREVIEW_25 ? 25 : 0);
+        uint8 requiredMask = raidSize == 10 ? WORLD_BOSS_CALLER_RAID_10 :
+            WORLD_BOSS_CALLER_RAID_25;
+        if (!raidSize || !(config.RaidSizeMask & requiredMask))
+        {
+            CloseGossipMenuFor(player);
+            return true;
+        }
+
+        if (!aliveBoss)
+        {
+            handler.PSendSysMessage(
+                "%s is not alive within %.0f yards of this caller; preview was not run.",
+                bossName, config.SearchRadius);
+            ShowWorldBossCallerMenu(player, me);
+            return true;
+        }
+
+        ObjectGuid oldSelection = player->GetTarget();
+        player->SetSelection(aliveBoss->GetGUID());
+        playerbots_commandscript::HandleWorldBossBotsCommand(
+            &handler, raidSize == 10 ? "preview 10" : "preview 25");
+        player->SetSelection(oldSelection);
+        ShowWorldBossCallerMenu(player, me);
+        return true;
+    }
+};
+}
+
+namespace
+{
 char const* SoloArenaAutomaticStateName(SoloArenaAutomaticState state)
 {
     switch (state)
@@ -4580,4 +4750,8 @@ void UpdateSoloArenaAutomaticQueue(uint32 diff)
     }
 }
 
-void AddSC_playerbots_commandscript() { new playerbots_commandscript(); }
+void AddSC_playerbots_commandscript()
+{
+    new playerbots_commandscript();
+    RegisterCreatureAI(npc_world_boss_bot_caller);
+}
