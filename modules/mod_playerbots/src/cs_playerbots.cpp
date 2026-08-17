@@ -148,6 +148,31 @@ enum class WorldBossPreviewRole : uint8
     Damage
 };
 
+struct WorldBossStagedCandidate
+{
+    uint32 Guid = 0;
+    std::string Name;
+    WorldBossPreviewRole Role = WorldBossPreviewRole::None;
+};
+
+enum class WorldBossStagedState : uint8
+{
+    Idle,
+    WaitForBots,
+    Grouped,
+    Cleanup
+};
+
+WorldBossStagedState WorldBossStageState = WorldBossStagedState::Idle;
+uint32 WorldBossStageRequester = 0;
+uint32 WorldBossStageCaller = 0;
+uint32 WorldBossStageBoss = 0;
+uint32 WorldBossStageGroup = 0;
+uint32 WorldBossStageElapsed = 0;
+uint32 WorldBossStageUpdateTimer = 0;
+std::map<uint32, WorldBossStagedCandidate> WorldBossStagedBots;
+std::string WorldBossStageCleanupReason;
+
 WorldBossPreviewRole GetWorldBossPreviewRole(Specializations specialization)
 {
     switch (specialization)
@@ -3974,7 +3999,9 @@ enum WorldBossCallerActions : uint32
     WORLD_BOSS_CALLER_PREVIEW_25 = GOSSIP_ACTION_INFO_DEF + 2,
     WORLD_BOSS_CALLER_STATUS = GOSSIP_ACTION_INFO_DEF + 3,
     WORLD_BOSS_CALLER_LOCKED_10 = GOSSIP_ACTION_INFO_DEF + 4,
-    WORLD_BOSS_CALLER_LOCKED_25 = GOSSIP_ACTION_INFO_DEF + 5
+    WORLD_BOSS_CALLER_LOCKED_25 = GOSSIP_ACTION_INFO_DEF + 5,
+    WORLD_BOSS_CALLER_STAGE_10 = GOSSIP_ACTION_INFO_DEF + 6,
+    WORLD_BOSS_CALLER_DISMISS = GOSSIP_ACTION_INFO_DEF + 7
 };
 
 enum WorldBossCallerRaidMask : uint8
@@ -4018,6 +4045,170 @@ Creature* FindConfiguredWorldBoss(Creature* caller, WorldBossCallerConfig const&
         config.BossEntry, config.SearchRadius, aliveOnly) : nullptr;
 }
 
+char const* WorldBossStagedStateName()
+{
+    switch (WorldBossStageState)
+    {
+        case WorldBossStagedState::Idle:        return "idle";
+        case WorldBossStagedState::WaitForBots: return "waiting for bots";
+        case WorldBossStagedState::Grouped:     return "raid grouped";
+        case WorldBossStagedState::Cleanup:     return "cleanup";
+    }
+    return "unknown";
+}
+
+bool StartWorldBossStage10(Player* requester, Creature* caller, Creature* boss,
+    std::string& error)
+{
+    if (!requester || !caller || !boss)
+    {
+        error = "requester, caller, or boss is missing";
+        return false;
+    }
+    if (WorldBossStageState != WorldBossStagedState::Idle)
+    {
+        error = "another world-boss staging session is already active";
+        return false;
+    }
+    if (IsSoloArenaAutomationBusy())
+    {
+        error = "Solo Arena automation currently owns playerbots";
+        return false;
+    }
+    if (requester->GetLevel() != DEFAULT_MAX_LEVEL || requester->GetGroup() ||
+        requester->InBattleground() || requester->InBattlegroundQueue() ||
+        requester->IsUsingLfg() || requester->IsInCombat())
+    {
+        error = "requester must be level 90, out of combat, ungrouped, and outside queues";
+        return false;
+    }
+    if (sPlayerbotAIConfig->randomBotAccounts.empty())
+    {
+        error = "no random-bot accounts are configured";
+        return false;
+    }
+
+    uint32 neededTanks = 2;
+    uint32 neededHealers = 2;
+    uint32 neededDamage = 6;
+    switch (GetWorldBossPreviewRole(requester->GetSpecialization()))
+    {
+        case WorldBossPreviewRole::Tank:    --neededTanks; break;
+        case WorldBossPreviewRole::Healer:  --neededHealers; break;
+        case WorldBossPreviewRole::Damage:  --neededDamage; break;
+        case WorldBossPreviewRole::None:
+            error = "requester active specialization has no recognized raid role";
+            return false;
+    }
+
+    uint32 minAccount = sPlayerbotAIConfig->randomBotAccounts.front();
+    uint32 maxAccount = sPlayerbotAIConfig->randomBotAccounts.back();
+    QueryResult result = CharacterDatabase.PQuery(
+        "SELECT guid,name,race,talentTree,activespec,equipmentCache "
+        "FROM characters WHERE account >= %u AND account <= %u AND level = %u AND online = 0 "
+        "AND guid NOT IN (SELECT memberGuid FROM group_member) ORDER BY guid",
+        minAccount, maxAccount, requester->GetLevel());
+    if (!result)
+    {
+        error = "no unused offline random-bot characters were found";
+        return false;
+    }
+
+    std::array<std::vector<WorldBossStagedCandidate>, 3> candidates;
+    do
+    {
+        Field* fields = result->Fetch();
+        uint32 guidLow = fields[0].GetUInt32();
+        ObjectGuid guid = ObjectGuid::Create<HighGuid::Player>(guidLow);
+        if (ObjectAccessor::FindConnectedPlayer(guid) ||
+            sRandomPlayerbotMgr->GetPlayerBot(guid) ||
+            sRandomPlayerbotMgr->IsBotLoading(guid))
+            continue;
+
+        uint32 team = Player::TeamForRace(fields[2].GetUInt8());
+        if (team == PANDAREN_NEUTRAL || team != requester->GetTeam())
+            continue;
+
+        uint32 specs[MAX_TALENT_SPECS] = { 0, 0 };
+        std::istringstream talentTrees(fields[3].GetString());
+        for (uint8 spec = 0; spec < MAX_TALENT_SPECS; ++spec)
+            talentTrees >> specs[spec];
+        uint8 activeSpec = fields[4].GetUInt8();
+        if (activeSpec >= MAX_TALENT_SPECS)
+            activeSpec = 0;
+        WorldBossPreviewRole role = GetWorldBossPreviewRole(
+            Specializations(specs[activeSpec]));
+        if (role == WorldBossPreviewRole::None)
+            continue;
+
+        SoloArenaPreviewCandidate gear;
+        ReadSoloArenaGear(fields[5].GetString(), gear);
+        if (gear.EquippedItems < 15 || gear.AverageItemLevel < 450)
+            continue;
+
+        size_t roleIndex = role == WorldBossPreviewRole::Tank ? 0 :
+            (role == WorldBossPreviewRole::Healer ? 1 : 2);
+        candidates[roleIndex].push_back(
+            { guidLow, fields[1].GetString(), role });
+    }
+    while (result->NextRow());
+
+    if (candidates[0].size() < neededTanks ||
+        candidates[1].size() < neededHealers ||
+        candidates[2].size() < neededDamage)
+    {
+        std::ostringstream message;
+        message << "candidate pool incomplete: tanks " << candidates[0].size()
+            << "/" << neededTanks << ", healers " << candidates[1].size()
+            << "/" << neededHealers << ", damage " << candidates[2].size()
+            << "/" << neededDamage;
+        error = message.str();
+        return false;
+    }
+
+    auto stageRole = [](std::vector<WorldBossStagedCandidate> const& roleCandidates,
+        uint32 count)
+    {
+        for (uint32 index = 0; index < count; ++index)
+        {
+            WorldBossStagedCandidate const& candidate = roleCandidates[index];
+            WorldBossStagedBots[candidate.Guid] = candidate;
+        }
+    };
+    stageRole(candidates[0], neededTanks);
+    stageRole(candidates[1], neededHealers);
+    stageRole(candidates[2], neededDamage);
+
+    WorldBossStageRequester = requester->GetGUID().GetCounter();
+    WorldBossStageCaller = caller->GetDBTableGUIDLow();
+    WorldBossStageBoss = boss->GetGUID().GetCounter();
+    WorldBossStageGroup = 0;
+    WorldBossStageElapsed = 0;
+    WorldBossStageUpdateTimer = 0;
+    WorldBossStageCleanupReason.clear();
+    WorldBossStageState = WorldBossStagedState::WaitForBots;
+
+    for (auto const& staged : WorldBossStagedBots)
+    {
+        sRandomPlayerbotMgr->AddPlayerBot(
+            ObjectGuid::Create<HighGuid::Player>(staged.first), 0);
+        TC_LOG_INFO("server",
+            "WorldBoss Call 10 staged login requested boss=%u requester=%u name=%s guid=%u role=%u; no equipment or teleport requested",
+            boss->GetEntry(), WorldBossStageRequester, staged.second.Name.c_str(),
+            staged.first, uint32(staged.second.Role));
+    }
+    return true;
+}
+
+void BeginWorldBossStageCleanup(char const* reason)
+{
+    WorldBossStageCleanupReason = reason ? reason : "requested cleanup";
+    WorldBossStageState = WorldBossStagedState::Cleanup;
+    WorldBossStageUpdateTimer = 0;
+    TC_LOG_INFO("server", "WorldBoss staged raid cleanup requested requester=%u reason=%s",
+        WorldBossStageRequester, WorldBossStageCleanupReason.c_str());
+}
+
 void ShowWorldBossCallerMenu(Player* player, Creature* caller)
 {
     ClearGossipMenuFor(player);
@@ -4044,6 +4235,15 @@ void ShowWorldBossCallerMenu(Player* player, Creature* caller)
 
     AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Encounter status",
         GOSSIP_SENDER_MAIN, WORLD_BOSS_CALLER_STATUS);
+
+    if ((config.RaidSizeMask & WORLD_BOSS_CALLER_RAID_10) &&
+        config.BossEntry == 62346)
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT,
+            "Stage Call 10 (login/group only; no move or gear)",
+            GOSSIP_SENDER_MAIN, WORLD_BOSS_CALLER_STAGE_10);
+    if (WorldBossStageState != WorldBossStagedState::Idle)
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Dismiss staged raid",
+            GOSSIP_SENDER_MAIN, WORLD_BOSS_CALLER_DISMISS);
 
     if (config.RaidSizeMask & WORLD_BOSS_CALLER_RAID_10)
         AddGossipItemFor(player, GOSSIP_ICON_CHAT,
@@ -4087,9 +4287,59 @@ struct npc_world_boss_bot_caller : public ScriptedAI
         if (action == WORLD_BOSS_CALLER_STATUS)
         {
             handler.PSendSysMessage(
-                "Boss Bot Caller: %s (entry %u), active-nearby=%s, strategy=%s, Call actions=locked.",
+                "Boss Bot Caller: %s (entry %u), active-nearby=%s, strategy=%s, staged-state=%s, staged-bots=%u, raid-group=%u.",
                 bossName, config.BossEntry, aliveBoss ? "yes" : "no",
-                config.StrategyReady ? "audited" : "not ready");
+                config.StrategyReady ? "audited" : "not ready",
+                WorldBossStagedStateName(), uint32(WorldBossStagedBots.size()),
+                WorldBossStageGroup);
+            ShowWorldBossCallerMenu(player, me);
+            return true;
+        }
+
+        if (action == WORLD_BOSS_CALLER_DISMISS)
+        {
+            if (WorldBossStageState == WorldBossStagedState::Idle)
+                handler.SendSysMessage("There is no staged world-boss raid to dismiss.");
+            else if (player->GetGUID().GetCounter() != WorldBossStageRequester)
+                handler.SendSysMessage(
+                    "Only the player who started this staged raid may dismiss it.");
+            else
+            {
+                BeginWorldBossStageCleanup("caller Dismiss selected");
+                handler.SendSysMessage(
+                    "Staged raid cleanup started. Reopen Encounter status in a few seconds.");
+            }
+            ShowWorldBossCallerMenu(player, me);
+            return true;
+        }
+
+        if (action == WORLD_BOSS_CALLER_STAGE_10)
+        {
+            if (config.BossEntry != 62346 ||
+                !(config.RaidSizeMask & WORLD_BOSS_CALLER_RAID_10))
+            {
+                handler.SendSysMessage(
+                    "The guarded Call 10 stage is currently enabled for Galleon only.");
+                ShowWorldBossCallerMenu(player, me);
+                return true;
+            }
+            if (!aliveBoss)
+            {
+                handler.PSendSysMessage(
+                    "%s is not alive within %.0f yards; no bots were logged in.",
+                    bossName, config.SearchRadius);
+                ShowWorldBossCallerMenu(player, me);
+                return true;
+            }
+
+            std::string error;
+            if (!StartWorldBossStage10(player, me, aliveBoss, error))
+                handler.PSendSysMessage("Call 10 staging refused: %s.", error.c_str());
+            else
+                handler.PSendSysMessage(
+                    "Call 10 staged %u bots for login. No equipment or teleport was changed. "
+                    "Wait a few seconds, then use Encounter status.",
+                    uint32(WorldBossStagedBots.size()));
             ShowWorldBossCallerMenu(player, me);
             return true;
         }
@@ -4132,6 +4382,210 @@ struct npc_world_boss_bot_caller : public ScriptedAI
         return true;
     }
 };
+}
+
+void UpdateWorldBossStagedRaid(uint32 diff)
+{
+    if (WorldBossStageState == WorldBossStagedState::Idle)
+        return;
+    if (WorldBossStageUpdateTimer > diff)
+    {
+        WorldBossStageUpdateTimer -= diff;
+        return;
+    }
+    WorldBossStageUpdateTimer = 1000;
+    WorldBossStageElapsed += 1000;
+
+    Player* requester = WorldBossStageRequester ? ObjectAccessor::FindConnectedPlayer(
+        ObjectGuid::Create<HighGuid::Player>(WorldBossStageRequester)) : nullptr;
+
+    if (WorldBossStageState == WorldBossStagedState::WaitForBots)
+    {
+        if (!requester)
+        {
+            BeginWorldBossStageCleanup("requester disconnected while bots were loading");
+            return;
+        }
+        if (WorldBossStageElapsed >= 60000)
+        {
+            BeginWorldBossStageCleanup("bot login timeout after 60 seconds");
+            ChatHandler(requester->GetSession()).SendSysMessage(
+                "World-boss Call 10 timed out while loading bots; automatic cleanup started.");
+            return;
+        }
+        if (requester->GetGroup() || requester->InBattleground() ||
+            requester->InBattlegroundQueue() || requester->IsUsingLfg() ||
+            requester->IsInCombat())
+        {
+            BeginWorldBossStageCleanup("requester became grouped, queued, or busy");
+            return;
+        }
+
+        std::vector<Player*> bots;
+        bots.reserve(WorldBossStagedBots.size());
+        for (auto const& staged : WorldBossStagedBots)
+        {
+            ObjectGuid guid = ObjectGuid::Create<HighGuid::Player>(staged.first);
+            if (sRandomPlayerbotMgr->IsBotLoading(guid))
+                return;
+            Player* bot = sRandomPlayerbotMgr->GetPlayerBot(guid);
+            if (!bot || !bot->IsInWorld())
+                return;
+            if (bot->GetGroup() || bot->InBattleground() ||
+                bot->InBattlegroundQueue() || bot->IsUsingLfg() ||
+                bot->IsInCombat() || bot->IsBeingTeleported())
+            {
+                BeginWorldBossStageCleanup("a staged bot became busy before grouping");
+                return;
+            }
+            bots.push_back(bot);
+        }
+
+        if (bots.size() != 9)
+        {
+            BeginWorldBossStageCleanup("Call 10 did not own exactly nine bots");
+            return;
+        }
+
+        Group* group = new Group();
+        if (!group->Create(requester))
+        {
+            delete group;
+            BeginWorldBossStageCleanup("raid group creation failed");
+            return;
+        }
+        group->ConvertToRaid();
+        for (Player* bot : bots)
+        {
+            if (!group->AddMember(bot))
+            {
+                group->Disband();
+                BeginWorldBossStageCleanup("a staged bot could not join the raid");
+                return;
+            }
+        }
+
+        auto roleFlag = [](WorldBossPreviewRole role) -> uint32
+        {
+            switch (role)
+            {
+                case WorldBossPreviewRole::Tank:   return lfg::PLAYER_ROLE_TANK;
+                case WorldBossPreviewRole::Healer: return lfg::PLAYER_ROLE_HEALER;
+                case WorldBossPreviewRole::Damage: return lfg::PLAYER_ROLE_DAMAGE;
+                case WorldBossPreviewRole::None:   return lfg::PLAYER_ROLE_NONE;
+            }
+            return lfg::PLAYER_ROLE_NONE;
+        };
+
+        WorldBossPreviewRole requesterRole = GetWorldBossPreviewRole(
+            requester->GetSpecialization());
+        group->SetMemberRole(requester->GetGUID(), roleFlag(requesterRole));
+
+        ObjectGuid mainTank;
+        ObjectGuid primaryHealer;
+        if (requesterRole == WorldBossPreviewRole::Tank)
+            mainTank = requester->GetGUID();
+        else if (requesterRole == WorldBossPreviewRole::Healer)
+            primaryHealer = requester->GetGUID();
+
+        for (Player* bot : bots)
+        {
+            auto staged = WorldBossStagedBots.find(bot->GetGUID().GetCounter());
+            if (staged == WorldBossStagedBots.end())
+                continue;
+            group->SetMemberRole(bot->GetGUID(), roleFlag(staged->second.Role));
+            if (mainTank.IsEmpty() && staged->second.Role == WorldBossPreviewRole::Tank)
+                mainTank = bot->GetGUID();
+            if (primaryHealer.IsEmpty() &&
+                staged->second.Role == WorldBossPreviewRole::Healer)
+                primaryHealer = bot->GetGUID();
+        }
+
+        // Standard raid marker indices: Moon=4 and Square=5.
+        if (!mainTank.IsEmpty())
+            group->SetTargetIcon(5, requester->GetGUID(), mainTank, 0);
+        if (!primaryHealer.IsEmpty())
+            group->SetTargetIcon(4, requester->GetGUID(), primaryHealer, 0);
+
+        WorldBossStageGroup = group->GetLowGUID();
+        WorldBossStageState = WorldBossStagedState::Grouped;
+        WorldBossStageElapsed = 0;
+        TC_LOG_INFO("server",
+            "WorldBoss Call 10 staged raid created requester=%u group=%u bots=%u; square-tank=%u moon-healer=%u; no equipment or teleport changed",
+            WorldBossStageRequester, WorldBossStageGroup,
+            uint32(WorldBossStagedBots.size()), mainTank.GetCounter(),
+            primaryHealer.GetCounter());
+        ChatHandler(requester->GetSession()).PSendSysMessage(
+            "World-boss staged raid %u is ready with %u bots. Square marks the main tank; "
+            "Moon marks the primary healer. No equipment or teleport was changed. "
+            "Use the caller's Dismiss staged raid option when finished.",
+            WorldBossStageGroup, uint32(WorldBossStagedBots.size()));
+        return;
+    }
+
+    if (WorldBossStageState != WorldBossStagedState::Cleanup)
+        return;
+
+    if (WorldBossStageGroup)
+    {
+        Group* group = sGroupMgr->GetGroupByGUID(WorldBossStageGroup);
+        if (group)
+        {
+            if (group->GetLeaderGUID().GetCounter() != WorldBossStageRequester ||
+                group->GetMembersCount() != WorldBossStagedBots.size() + 1)
+            {
+                TC_LOG_ERROR("server",
+                    "WorldBoss cleanup paused: group %u membership changed outside coordinator control",
+                    WorldBossStageGroup);
+                return;
+            }
+            group->Disband();
+            return;
+        }
+        WorldBossStageGroup = 0;
+    }
+
+    for (auto itr = WorldBossStagedBots.begin(); itr != WorldBossStagedBots.end();)
+    {
+        ObjectGuid guid = ObjectGuid::Create<HighGuid::Player>(itr->first);
+        if (sRandomPlayerbotMgr->IsBotLoading(guid))
+        {
+            ++itr;
+            continue;
+        }
+        Player* bot = sRandomPlayerbotMgr->GetPlayerBot(guid);
+        if (bot && (bot->GetGroup() || bot->InBattleground() ||
+            bot->InBattlegroundQueue() || bot->IsUsingLfg() ||
+            bot->IsBeingTeleported()))
+        {
+            ++itr;
+            continue;
+        }
+        if (bot)
+        {
+            PrepareSoloArenaBotForLogout(bot, "world-boss-stage-cleanup");
+            sRandomPlayerbotMgr->LogoutPlayerBot(guid);
+        }
+        itr = WorldBossStagedBots.erase(itr);
+    }
+
+    if (!WorldBossStagedBots.empty())
+        return;
+
+    if (requester)
+        ChatHandler(requester->GetSession()).SendSysMessage(
+            "World-boss staged raid cleanup completed.");
+    TC_LOG_INFO("server",
+        "WorldBoss staged raid cleanup completed requester=%u reason=%s",
+        WorldBossStageRequester, WorldBossStageCleanupReason.c_str());
+    WorldBossStageState = WorldBossStagedState::Idle;
+    WorldBossStageRequester = 0;
+    WorldBossStageCaller = 0;
+    WorldBossStageBoss = 0;
+    WorldBossStageGroup = 0;
+    WorldBossStageElapsed = 0;
+    WorldBossStageUpdateTimer = 0;
+    WorldBossStageCleanupReason.clear();
 }
 
 namespace
@@ -4368,6 +4822,12 @@ bool IsSoloArenaManagedPlayer(uint32 guidLow)
 {
     if (!guidLow)
         return false;
+
+    // The random-bot auto-queue paths use this shared ownership guard. Keep
+    // world-boss staged bots protected as well, even though the historical
+    // function name predates that coordinator.
+    if (WorldBossStagedBots.find(guidLow) != WorldBossStagedBots.end())
+        return true;
 
     if (guidLow == SoloArenaAutomaticRequester ||
         guidLow == SoloArenaStagedRequester ||

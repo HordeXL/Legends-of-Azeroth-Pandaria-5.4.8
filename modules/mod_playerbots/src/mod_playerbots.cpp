@@ -107,6 +107,7 @@ public:
         UpdateAutomatedPvpLoadoutRecovery(diff);
         UpdateSoloArenaAutomaticQueue(diff);
         UpdateSoloArenaAutomaticExit(diff);
+        UpdateWorldBossStagedRaid(diff);
     }
 };
 
