@@ -8,18 +8,18 @@
 
 namespace MonkBuffs
 {
-// These comma-separated qualifiers are consumed by
-// PartyMemberWithoutAuraValue.  Include every equivalent MoP raid buff so a
-// monk does not recast its legacy forever when another class or hunter pet
-// already supplies the same non-stacking effect.
+// These qualifiers are consumed by PartyMemberWithoutAuraValue.  The world
+// database spell groups contain every equivalent MoP raid buff, including
+// triggered aura variants.  Player-only selection avoids repeatedly trying
+// to apply a raid buff directly to a controlled pet which does not retain it.
 inline char const* StatBuffs()
 {
-    return "legacy of the emperor,blessing of kings,blessing of forgotten kings,mark of the wild,embrace of the shale spider";
+    return "player spell group:1118";
 }
 
 inline char const* CriticalStrikeBuffs()
 {
-    return "legacy of the white tiger,arcane brilliance,dalaran brilliance,leader of the pack,furious howl,still water";
+    return "player spell group:1141";
 }
 }
 
