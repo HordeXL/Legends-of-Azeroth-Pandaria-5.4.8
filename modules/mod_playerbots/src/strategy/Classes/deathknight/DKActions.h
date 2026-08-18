@@ -300,6 +300,13 @@ public:
     virtual bool Execute(Event event) override;
 };
 
+class CastRaiseAllyAction : public ResurrectPartyMemberAction
+{
+public:
+    CastRaiseAllyAction(PlayerbotAI* botAI) :
+        ResurrectPartyMemberAction(botAI, "raise ally") {}
+};
+
 class CastKillingMachineAction : public CastBuffSpellAction
 {
 public:

@@ -25,6 +25,26 @@
 #include "Corpse.h"
 #include "WorldPosition.h"
 
+namespace
+{
+bool IsActivePandariaWorldBossFight(Player* bot)
+{
+    if (!bot || !bot->GetGroup() || !bot->IsInWorld())
+        return false;
+
+    uint32 const entries[] =
+    {
+        62346, 60491, 56439, 69099, 69161,
+        71952, 71953, 71954, 71955, 72057
+    };
+    for (uint32 entry : entries)
+        if (Creature* boss = bot->FindNearestCreature(entry, 500.0f, true))
+            if (boss->IsAlive() && boss->IsInCombat())
+                return true;
+    return false;
+}
+}
+
 bool ReviveFromCorpseAction::Execute(Event event)
 {
     // Battleground ghosts must wait for the spirit-guide resurrection wave.
@@ -142,6 +162,12 @@ bool FindCorpseAction::Execute(Event event)
     // Should we ressurect? If so, return false.
     if (corpseDist < reclaimDist)
     {
+        // A world-boss raid that still has survivors needs the bot back in the
+        // fight. Reclaiming here uses the core's normal corpse timer and
+        // durability rules; it does not grant a free in-combat resurrection.
+        if (IsActivePandariaWorldBossFight(bot))
+            return false;
+
         if (moveToMaster)  // We are near master.
         {
             if (botPos.fDist(masterPos) < sPlayerbotAIConfig->spellDistance)

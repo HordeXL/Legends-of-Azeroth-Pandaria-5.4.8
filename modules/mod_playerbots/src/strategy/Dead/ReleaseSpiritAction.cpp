@@ -16,6 +16,26 @@
 #include "Corpse.h"
 #include "WorldPosition.h"
 
+namespace
+{
+bool IsActivePandariaWorldBossFight(Player* bot)
+{
+    if (!bot || !bot->GetGroup() || !bot->IsInWorld())
+        return false;
+
+    uint32 const entries[] =
+    {
+        62346, 60491, 56439, 69099, 69161,
+        71952, 71953, 71954, 71955, 72057
+    };
+    for (uint32 entry : entries)
+        if (Creature* boss = bot->FindNearestCreature(entry, 500.0f, true))
+            if (boss->IsAlive() && boss->IsInCombat())
+                return true;
+    return false;
+}
+}
+
 bool ReleaseSpiritAction::Execute(Event event)
 {
     if (bot->IsAlive())
@@ -186,6 +206,14 @@ bool AutoReleaseSpiritAction::isUseful()
 
     if (bot->HasPlayerFlag(PLAYER_FLAGS_GHOST))
         return false;
+
+    // Outdoor world-boss deaths differ from dungeon deaths: there is no
+    // instance-wide wipe barrier and normal players release, run back and
+    // reclaim while the surviving raid keeps the boss engaged. Do not leave a
+    // staged bot lying dead beside its living real-player master indefinitely
+    // while it waits for a combat resurrection that may be unavailable.
+    if (IsActivePandariaWorldBossFight(bot))
+        return true;
 
     if (!bot->GetGroup())
         return true;

@@ -140,6 +140,13 @@ struct SoloArenaLoadoutPlan
     std::array<uint32, 5> HordeItems;
 };
 
+struct WorldBossPveLoadoutPlan
+{
+    Specializations Specialization;
+    uint32 ItemSet;
+    std::array<uint32, 5> Items;
+};
+
 enum class WorldBossPreviewRole : uint8
 {
     None,
@@ -153,6 +160,9 @@ struct WorldBossStagedCandidate
     uint32 Guid = 0;
     std::string Name;
     WorldBossPreviewRole Role = WorldBossPreviewRole::None;
+    Specializations Specialization = SPEC_NONE;
+    uint32 PvpItems = 0;
+    uint32 AverageItemLevel = 0;
     uint32 OriginalMap = 0;
     float OriginalX = 0.0f;
     float OriginalY = 0.0f;
@@ -174,7 +184,9 @@ WorldBossStagedState WorldBossStageState = WorldBossStagedState::Idle;
 uint32 WorldBossStageRequester = 0;
 uint32 WorldBossStageCaller = 0;
 uint32 WorldBossStageBoss = 0;
+uint32 WorldBossStageBossEntry = 0;
 uint32 WorldBossStageGroup = 0;
+uint32 WorldBossStageRaidSize = 0;
 uint32 WorldBossStageElapsed = 0;
 uint32 WorldBossStageUpdateTimer = 0;
 uint32 WorldBossStageMap = 0;
@@ -183,6 +195,13 @@ float WorldBossStageY = 0.0f;
 float WorldBossStageZ = 0.0f;
 std::map<uint32, WorldBossStagedCandidate> WorldBossStagedBots;
 std::string WorldBossStageCleanupReason;
+std::set<uint32> WorldBossStageBuffedBots;
+bool WorldBossStageEncounterStarted = false;
+bool WorldBossStageWipePending = false;
+uint32 WorldBossStageBossDefeatedTimer = 0;
+
+char const* WorldBossStagedStateName();
+void BeginWorldBossStageCleanup(char const* reason);
 
 WorldBossPreviewRole GetWorldBossPreviewRole(Specializations specialization)
 {
@@ -305,6 +324,57 @@ SoloArenaLoadoutPlan const* GetSoloArenaLoadoutPlan(Specializations specializati
     return nullptr;
 }
 
+WorldBossPveLoadoutPlan const* GetWorldBossPveLoadoutPlan(
+    Specializations specialization)
+{
+    // Genuine Siege of Orgrimmar Mythic/566 T16 five-piece sets from this
+    // 5.4.8 world database. Item order is head, shoulders, chest/robe, legs,
+    // hands. These are permanent PvE upgrades for random bots; the player's
+    // equipment is never modified and replaced bot items remain in its bags.
+    static WorldBossPveLoadoutPlan const plans[] =
+    {
+        { SPEC_DEATH_KNIGHT_BLOOD, 1201, {{ 99323, 99325, 99330, 99324, 99331 }} },
+        { SPEC_DEATH_KNIGHT_FROST, 1200, {{ 99337, 99339, 99335, 99338, 99336 }} },
+        { SPEC_DEATH_KNIGHT_UNHOLY, 1200, {{ 99337, 99339, 99335, 99338, 99336 }} },
+        { SPEC_DRUID_FERAL, 1196, {{ 99421, 99423, 99419, 99422, 99420 }} },
+        { SPEC_DRUID_BALANCE, 1197, {{ 99433, 99428, 99427, 99434, 99432 }} },
+        { SPEC_DRUID_RESTORATION, 1198, {{ 99436, 99431, 99430, 99429, 99435 }} },
+        { SPEC_DRUID_GUARDIAN, 1199, {{ 99328, 99322, 99326, 99329, 99327 }} },
+        { SPEC_HUNTER_BEAST_MASTERY, 1195, {{ 99402, 99404, 99405, 99403, 99406 }} },
+        { SPEC_HUNTER_MARKSMANSHIP, 1195, {{ 99402, 99404, 99405, 99403, 99406 }} },
+        { SPEC_HUNTER_SURVIVAL, 1195, {{ 99402, 99404, 99405, 99403, 99406 }} },
+        { SPEC_MAGE_ARCANE, 1194, {{ 99398, 99401, 99400, 99399, 99397 }} },
+        { SPEC_MAGE_FIRE, 1194, {{ 99398, 99401, 99400, 99399, 99397 }} },
+        { SPEC_MAGE_FROST, 1194, {{ 99398, 99401, 99400, 99399, 99397 }} },
+        { SPEC_MONK_WINDWALKER, 1191, {{ 99384, 99386, 99382, 99385, 99383 }} },
+        { SPEC_MONK_MISTWEAVER, 1192, {{ 99389, 99381, 99391, 99390, 99388 }} },
+        { SPEC_MONK_BREWMASTER, 1193, {{ 99393, 99395, 99396, 99394, 99392 }} },
+        { SPEC_PALADIN_PROTECTION, 1188, {{ 99370, 99364, 99368, 99371, 99369 }} },
+        { SPEC_PALADIN_HOLY, 1189, {{ 99376, 99378, 99374, 99377, 99375 }} },
+        { SPEC_PALADIN_RETRIBUTION, 1190, {{ 99379, 99373, 99387, 99372, 99380 }} },
+        { SPEC_PRIEST_SHADOW, 1186, {{ 99360, 99363, 99362, 99361, 99359 }} },
+        { SPEC_PRIEST_DISCIPLINE, 1187, {{ 99366, 99358, 99357, 99367, 99365 }} },
+        { SPEC_PRIEST_HOLY, 1187, {{ 99366, 99358, 99357, 99367, 99365 }} },
+        { SPEC_ROGUE_ASSASSINATION, 1185, {{ 99348, 99350, 99356, 99349, 99355 }} },
+        { SPEC_ROGUE_COMBAT, 1185, {{ 99348, 99350, 99356, 99349, 99355 }} },
+        { SPEC_ROGUE_SUBTLETY, 1185, {{ 99348, 99350, 99356, 99349, 99355 }} },
+        { SPEC_SHAMAN_ELEMENTAL, 1182, {{ 99332, 99334, 99344, 99333, 99345 }} },
+        { SPEC_SHAMAN_ENHANCEMENT, 1183, {{ 99341, 99343, 99347, 99342, 99340 }} },
+        { SPEC_SHAMAN_RESTORATION, 1184, {{ 99353, 99346, 99351, 99354, 99352 }} },
+        { SPEC_WARLOCK_AFFLICTION, 1181, {{ 99425, 99417, 99416, 99426, 99424 }} },
+        { SPEC_WARLOCK_DEMONOLOGY, 1181, {{ 99425, 99417, 99416, 99426, 99424 }} },
+        { SPEC_WARLOCK_DESTRUCTION, 1181, {{ 99425, 99417, 99416, 99426, 99424 }} },
+        { SPEC_WARRIOR_PROTECTION, 1179, {{ 99409, 99407, 99415, 99410, 99408 }} },
+        { SPEC_WARRIOR_ARMS, 1180, {{ 99418, 99414, 99411, 99413, 99412 }} },
+        { SPEC_WARRIOR_FURY, 1180, {{ 99418, 99414, 99411, 99413, 99412 }} }
+    };
+
+    for (WorldBossPveLoadoutPlan const& plan : plans)
+        if (plan.Specialization == specialization)
+            return &plan;
+    return nullptr;
+}
+
 bool IsSoloArenaLoadoutInventoryType(uint8 index, uint32 inventoryType)
 {
     static uint32 const expected[] =
@@ -393,6 +463,246 @@ bool SaveSoloArenaInventory(Player* participant, char const* operation, std::str
     CharacterDatabaseTransaction transaction = CharacterDatabase.BeginTransaction();
     participant->SaveInventoryAndGoldToDB(transaction);
     return CommitSoloArenaCharacterTransaction(transaction, operation, error);
+}
+
+uint32 GetWorldBossLegendaryCloak(Player const* bot)
+{
+    if (!bot)
+        return 0;
+
+    Specializations specialization = bot->GetSpecialization();
+    switch (GetWorldBossPreviewRole(specialization))
+    {
+        case WorldBossPreviewRole::Tank:
+            // Agility tanks use Qian-Le; plate tanks use Qian-Ying.
+            return bot->GetClass() == CLASS_DRUID || bot->GetClass() == CLASS_MONK ?
+                102245 : 102250;
+        case WorldBossPreviewRole::Healer:
+            return 102247; // Jina-Kang, Kindness of Chi-Ji
+        case WorldBossPreviewRole::Damage:
+            switch (specialization)
+            {
+                case SPEC_DRUID_BALANCE:
+                case SPEC_MAGE_ARCANE:
+                case SPEC_MAGE_FIRE:
+                case SPEC_MAGE_FROST:
+                case SPEC_PRIEST_SHADOW:
+                case SPEC_SHAMAN_ELEMENTAL:
+                case SPEC_WARLOCK_AFFLICTION:
+                case SPEC_WARLOCK_DEMONOLOGY:
+                case SPEC_WARLOCK_DESTRUCTION:
+                    return 102246; // Xing-Ho, intellect damage
+                case SPEC_DRUID_FERAL:
+                case SPEC_HUNTER_BEAST_MASTERY:
+                case SPEC_HUNTER_MARKSMANSHIP:
+                case SPEC_HUNTER_SURVIVAL:
+                case SPEC_MONK_WINDWALKER:
+                case SPEC_ROGUE_ASSASSINATION:
+                case SPEC_ROGUE_COMBAT:
+                case SPEC_ROGUE_SUBTLETY:
+                case SPEC_SHAMAN_ENHANCEMENT:
+                    return 102248; // Fen-Yu, agility damage
+                default:
+                    return 102249; // Gong-Lu, strength damage
+            }
+        case WorldBossPreviewRole::None:
+            break;
+    }
+    return 0;
+}
+
+bool EnsureWorldBossLegendaryCloak(Player* bot, uint32& cloakEntry,
+    bool& changed, std::string& error)
+{
+    changed = false;
+    cloakEntry = GetWorldBossLegendaryCloak(bot);
+    if (!bot || !cloakEntry)
+    {
+        error = "specialization has no legendary cloak mapping";
+        return false;
+    }
+
+    Item* equipped = bot->GetItemByPos(INVENTORY_SLOT_BAG_0,
+        EQUIPMENT_SLOT_BACK);
+    if (equipped && equipped->GetEntry() == cloakEntry)
+        return true;
+
+    ItemTemplate const* itemTemplate = sObjectMgr->GetItemTemplate(cloakEntry);
+    if (!itemTemplate || itemTemplate->InventoryType != INVTYPE_CLOAK ||
+        bot->CanUseItem(itemTemplate) != EQUIP_ERR_OK)
+    {
+        error = "mapped legendary cloak failed template/use validation";
+        return false;
+    }
+
+    uint16 equipmentDestination = 0;
+    Item* cloak = bot->GetItemByEntry(cloakEntry);
+    bool created = false;
+    if (cloak)
+    {
+        if (bot->CanEquipItem(EQUIPMENT_SLOT_BACK, equipmentDestination,
+            cloak, true, true) != EQUIP_ERR_OK)
+        {
+            error = "existing legendary cloak cannot be equipped";
+            return false;
+        }
+    }
+    else
+    {
+        if (bot->CanEquipNewItem(EQUIPMENT_SLOT_BACK, equipmentDestination,
+            cloakEntry, true) != EQUIP_ERR_OK)
+        {
+            error = "legendary cloak cannot be equipped in the back slot";
+            return false;
+        }
+
+        ItemPosCountVec storageDestination;
+        if (bot->CanStoreNewItem(NULL_BAG, NULL_SLOT, storageDestination,
+            cloakEntry, 1) != EQUIP_ERR_OK)
+        {
+            error = "no free inventory slot is available for the legendary cloak swap";
+            return false;
+        }
+        cloak = bot->StoreNewItem(storageDestination, cloakEntry, true);
+        if (!cloak)
+        {
+            error = "core failed to create the mapped legendary cloak";
+            return false;
+        }
+        created = true;
+    }
+
+    uint16 cloakPosition = cloak->GetPos();
+    uint32 cloakGuid = cloak->GetGUID().GetCounter();
+    uint16 equipmentPosition = uint16(INVENTORY_SLOT_BAG_0) << 8 |
+        EQUIPMENT_SLOT_BACK;
+    bot->SwapItem(cloakPosition, equipmentPosition);
+    equipped = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_BACK);
+    if (!equipped || equipped->GetGUID().GetCounter() != cloakGuid)
+    {
+        if (created)
+            if (Item* failed = bot->GetItemByGuid(
+                ObjectGuid(HighGuid::Item, cloakGuid)))
+                bot->DestroyItem(failed->GetBagSlot(), failed->GetSlot(), true);
+        error = "core refused the legendary cloak equipment swap";
+        return false;
+    }
+
+    if (!SaveSoloArenaInventory(bot, "world-boss legendary cloak", error))
+        return false;
+
+    changed = true;
+    return true;
+}
+
+bool EnsureWorldBossPveArmor(Player* bot, uint32& itemSet,
+    uint32& changedSlots, std::string& error)
+{
+    changedSlots = 0;
+    itemSet = 0;
+    if (!bot)
+    {
+        error = "bot is offline";
+        return false;
+    }
+    if (GetSoloArenaLoadoutBackupCount(bot->GetGUID().GetCounter()))
+    {
+        error = "bot still has an active temporary PvP loadout journal";
+        return false;
+    }
+
+    WorldBossPveLoadoutPlan const* plan = GetWorldBossPveLoadoutPlan(
+        bot->GetSpecialization());
+    if (!plan)
+    {
+        error = "specialization has no mapped T16 PvE set";
+        return false;
+    }
+    itemSet = plan->ItemSet;
+
+    auto fail = [&](std::string const& reason) -> bool
+    {
+        error = reason;
+        if (changedSlots)
+        {
+            std::string saveError;
+            if (!SaveSoloArenaInventory(bot,
+                "partial world-boss T16 PvE armor", saveError))
+                error += "; partial inventory save also failed: " + saveError;
+        }
+        return false;
+    };
+
+    for (uint8 index = 0; index < plan->Items.size(); ++index)
+    {
+        uint8 equipmentSlot = SoloArenaLoadoutEquipmentSlots[index];
+        uint16 equipmentPosition = uint16(INVENTORY_SLOT_BAG_0) << 8 |
+            equipmentSlot;
+        uint32 entry = plan->Items[index];
+        Item* equipped = bot->GetItemByPos(INVENTORY_SLOT_BAG_0,
+            equipmentSlot);
+        if (equipped && equipped->GetEntry() == entry)
+            continue;
+
+        ItemTemplate const* itemTemplate = sObjectMgr->GetItemTemplate(entry);
+        if (!itemTemplate || itemTemplate->ItemSet != plan->ItemSet ||
+            itemTemplate->ItemLevel != 566 ||
+            !IsSoloArenaLoadoutInventoryType(index,
+                itemTemplate->InventoryType) ||
+            !(uint32(itemTemplate->AllowableClass) &
+                (1u << (bot->GetClass() - 1))) ||
+            bot->CanUseItem(itemTemplate) != EQUIP_ERR_OK)
+            return fail("mapped T16 item failed template/class/use validation");
+
+        if (equipped &&
+            bot->CanUnequipItem(equipmentPosition, true) != EQUIP_ERR_OK)
+            return fail("current armor cannot be moved safely to inventory");
+
+        Item* replacement = bot->GetItemByEntry(entry);
+        bool created = false;
+        uint16 equipDestination = 0;
+        if (replacement)
+        {
+            if (Player::IsEquipmentPos(replacement->GetPos()) ||
+                bot->CanEquipItem(equipmentSlot, equipDestination,
+                    replacement, true, true) != EQUIP_ERR_OK)
+                return fail("existing mapped T16 item cannot be equipped safely");
+        }
+        else
+        {
+            if (bot->CanEquipNewItem(equipmentSlot, equipDestination,
+                entry, true) != EQUIP_ERR_OK)
+                return fail("mapped T16 item cannot be equipped in its required slot");
+
+            ItemPosCountVec storageDestination;
+            if (bot->CanStoreNewItem(NULL_BAG, NULL_SLOT,
+                storageDestination, entry, 1) != EQUIP_ERR_OK)
+                return fail("not enough free inventory space to preserve old armor");
+            replacement = bot->StoreNewItem(storageDestination, entry, true);
+            if (!replacement)
+                return fail("core failed to create the mapped T16 item");
+            created = true;
+        }
+
+        uint32 replacementGuid = replacement->GetGUID().GetCounter();
+        uint16 replacementPosition = replacement->GetPos();
+        bot->SwapItem(replacementPosition, equipmentPosition);
+        equipped = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, equipmentSlot);
+        if (!equipped || equipped->GetGUID().GetCounter() != replacementGuid)
+        {
+            if (created)
+                if (Item* failed = bot->GetItemByGuid(
+                    ObjectGuid(HighGuid::Item, replacementGuid)))
+                    bot->DestroyItem(failed->GetBagSlot(), failed->GetSlot(), true);
+            return fail("core refused the T16 armor equipment swap");
+        }
+        ++changedSlots;
+    }
+
+    if (changedSlots && !SaveSoloArenaInventory(bot,
+        "world-boss T16 PvE armor", error))
+        return false;
+    return true;
 }
 
 bool RestoreSoloArenaLoadout(Player* participant, char const* reason, uint32& restoredSlots,
@@ -2122,6 +2432,60 @@ public:
 
     static bool HandleWorldBossBotsCommand(ChatHandler* handler, char const* args)
     {
+        Player* requester = handler->GetSession() ? handler->GetSession()->GetPlayer() : nullptr;
+        if (args && !strcmp(args, "status"))
+        {
+            uint32 loading = 0;
+            uint32 online = 0;
+            uint32 alive = 0;
+            uint32 grouped = 0;
+            uint32 nearby = 0;
+            for (auto const& staged : WorldBossStagedBots)
+            {
+                ObjectGuid guid = ObjectGuid::Create<HighGuid::Player>(staged.first);
+                if (sRandomPlayerbotMgr->IsBotLoading(guid))
+                    ++loading;
+                Player* bot = sRandomPlayerbotMgr->GetPlayerBot(guid);
+                if (!bot || !bot->IsInWorld())
+                    continue;
+                ++online;
+                if (bot->IsAlive())
+                    ++alive;
+                if (bot->GetGroup() && bot->GetGroup()->GetLowGUID() == WorldBossStageGroup)
+                    ++grouped;
+                if (requester && bot->GetMapId() == requester->GetMapId() &&
+                    bot->GetDistance2d(requester) <= 30.0f)
+                    ++nearby;
+            }
+            handler->PSendSysMessage(
+                "World-boss staged status: state=%s, raid-size=%u, bots=%u, loading=%u, online=%u, alive=%u, grouped=%u, nearby=%u, buffed=%u, group=%u, elapsed=%us, boss-entry=%u.",
+                WorldBossStagedStateName(), WorldBossStageRaidSize,
+                uint32(WorldBossStagedBots.size()), loading, online, alive,
+                grouped, nearby, uint32(WorldBossStageBuffedBots.size()),
+                WorldBossStageGroup, WorldBossStageElapsed / 1000,
+                WorldBossStageBossEntry);
+            if (WorldBossStageState == WorldBossStagedState::Cleanup &&
+                !WorldBossStageCleanupReason.empty())
+                handler->PSendSysMessage("Cleanup reason: %s.",
+                    WorldBossStageCleanupReason.c_str());
+            return true;
+        }
+        if (args && !strcmp(args, "dismiss"))
+        {
+            if (WorldBossStageState == WorldBossStagedState::Idle)
+                handler->SendSysMessage("There is no staged world-boss raid to dismiss.");
+            else if (!requester || requester->GetGUID().GetCounter() != WorldBossStageRequester)
+                handler->SendSysMessage(
+                    "Only the player who started this staged raid may dismiss it.");
+            else
+            {
+                BeginWorldBossStageCleanup(".worldbossbots dismiss requested");
+                handler->SendSysMessage(
+                    "World-boss staged raid cleanup started. Use .worldbossbots status to follow it.");
+            }
+            return true;
+        }
+
         uint32 raidSize = 0;
         if (args && !strcmp(args, "preview 10"))
             raidSize = 10;
@@ -2130,11 +2494,12 @@ public:
         else
         {
             handler->SendSysMessage(
-                "Usage: select a supported Pandaria world boss, then use .worldbossbots preview 10|25");
+                "Usage: select a supported Pandaria world boss, then use "
+                ".worldbossbots preview 10|25; active-stage controls: "
+                ".worldbossbots status or .worldbossbots dismiss");
             return true;
         }
 
-        Player* requester = handler->GetSession() ? handler->GetSession()->GetPlayer() : nullptr;
         Creature* boss = handler->getSelectedCreature();
         char const* bossName = boss ? GetSupportedWorldBossName(boss->GetEntry()) : nullptr;
         if (!requester || !boss || !bossName)
@@ -4012,7 +4377,8 @@ enum WorldBossCallerActions : uint32
     WORLD_BOSS_CALLER_LOCKED_10 = GOSSIP_ACTION_INFO_DEF + 4,
     WORLD_BOSS_CALLER_LOCKED_25 = GOSSIP_ACTION_INFO_DEF + 5,
     WORLD_BOSS_CALLER_STAGE_10 = GOSSIP_ACTION_INFO_DEF + 6,
-    WORLD_BOSS_CALLER_DISMISS = GOSSIP_ACTION_INFO_DEF + 7
+    WORLD_BOSS_CALLER_DISMISS = GOSSIP_ACTION_INFO_DEF + 7,
+    WORLD_BOSS_CALLER_STAGE_25 = GOSSIP_ACTION_INFO_DEF + 8
 };
 
 enum WorldBossCallerRaidMask : uint8
@@ -4069,8 +4435,8 @@ char const* WorldBossStagedStateName()
     return "unknown";
 }
 
-bool StartWorldBossStage10(Player* requester, Creature* caller, Creature* boss,
-    std::string& error)
+bool StartWorldBossStage(Player* requester, Creature* caller, Creature* boss,
+    uint32 raidSize, std::string& error)
 {
     if (!requester || !caller || !boss)
     {
@@ -4099,10 +4465,15 @@ bool StartWorldBossStage10(Player* requester, Creature* caller, Creature* boss,
         error = "no random-bot accounts are configured";
         return false;
     }
+    if (raidSize != 10 && raidSize != 25)
+    {
+        error = "raid size must be 10 or 25";
+        return false;
+    }
 
     uint32 neededTanks = 2;
-    uint32 neededHealers = 2;
-    uint32 neededDamage = 6;
+    uint32 neededHealers = raidSize == 10 ? 2 : 5;
+    uint32 neededDamage = raidSize - neededTanks - neededHealers;
     switch (GetWorldBossPreviewRole(requester->GetSpecialization()))
     {
         case WorldBossPreviewRole::Tank:    --neededTanks; break;
@@ -4149,9 +4520,10 @@ bool StartWorldBossStage10(Player* requester, Creature* caller, Creature* boss,
         uint8 activeSpec = fields[4].GetUInt8();
         if (activeSpec >= MAX_TALENT_SPECS)
             activeSpec = 0;
-        WorldBossPreviewRole role = GetWorldBossPreviewRole(
-            Specializations(specs[activeSpec]));
-        if (role == WorldBossPreviewRole::None)
+        Specializations specialization = Specializations(specs[activeSpec]);
+        WorldBossPreviewRole role = GetWorldBossPreviewRole(specialization);
+        if (role == WorldBossPreviewRole::None ||
+            !GetWorldBossPveLoadoutPlan(specialization))
             continue;
 
         SoloArenaPreviewCandidate gear;
@@ -4165,6 +4537,9 @@ bool StartWorldBossStage10(Player* requester, Creature* caller, Creature* boss,
         candidate.Guid = guidLow;
         candidate.Name = fields[1].GetString();
         candidate.Role = role;
+        candidate.Specialization = specialization;
+        candidate.PvpItems = gear.PvpItems;
+        candidate.AverageItemLevel = gear.AverageItemLevel;
         candidate.OriginalMap = fields[6].GetUInt32();
         candidate.OriginalX = fields[7].GetFloat();
         candidate.OriginalY = fields[8].GetFloat();
@@ -4173,6 +4548,21 @@ bool StartWorldBossStage10(Player* requester, Creature* caller, Creature* boss,
         candidates[roleIndex].push_back(candidate);
     }
     while (result->NextRow());
+
+    // Prefer raid-oriented characters without rewriting their inventory. A
+    // lower number of equipped PvP pieces wins; within that, use the higher
+    // average item level. The GUID tie-breaker keeps selection deterministic.
+    auto pveOrder = [](WorldBossStagedCandidate const& left,
+        WorldBossStagedCandidate const& right)
+    {
+        if (left.PvpItems != right.PvpItems)
+            return left.PvpItems < right.PvpItems;
+        if (left.AverageItemLevel != right.AverageItemLevel)
+            return left.AverageItemLevel > right.AverageItemLevel;
+        return left.Guid < right.Guid;
+    };
+    for (auto& roleCandidates : candidates)
+        std::sort(roleCandidates.begin(), roleCandidates.end(), pveOrder);
 
     if (candidates[0].size() < neededTanks ||
         candidates[1].size() < neededHealers ||
@@ -4203,7 +4593,9 @@ bool StartWorldBossStage10(Player* requester, Creature* caller, Creature* boss,
     WorldBossStageRequester = requester->GetGUID().GetCounter();
     WorldBossStageCaller = caller->GetDBTableGUIDLow();
     WorldBossStageBoss = boss->GetGUID().GetCounter();
+    WorldBossStageBossEntry = boss->GetEntry();
     WorldBossStageGroup = 0;
+    WorldBossStageRaidSize = raidSize;
     WorldBossStageElapsed = 0;
     WorldBossStageUpdateTimer = 0;
     WorldBossStageMap = 0;
@@ -4211,6 +4603,10 @@ bool StartWorldBossStage10(Player* requester, Creature* caller, Creature* boss,
     WorldBossStageY = 0.0f;
     WorldBossStageZ = 0.0f;
     WorldBossStageCleanupReason.clear();
+    WorldBossStageBuffedBots.clear();
+    WorldBossStageEncounterStarted = false;
+    WorldBossStageWipePending = false;
+    WorldBossStageBossDefeatedTimer = 0;
     WorldBossStageState = WorldBossStagedState::WaitForBots;
 
     for (auto const& staged : WorldBossStagedBots)
@@ -4218,8 +4614,8 @@ bool StartWorldBossStage10(Player* requester, Creature* caller, Creature* boss,
         sRandomPlayerbotMgr->AddPlayerBot(
             ObjectGuid::Create<HighGuid::Player>(staged.first), 0);
         TC_LOG_INFO("server",
-            "WorldBoss Call 10 staged login requested boss=%u requester=%u name=%s guid=%u role=%u; summon waits for all logins; no equipment requested",
-            boss->GetEntry(), WorldBossStageRequester, staged.second.Name.c_str(),
+            "WorldBoss Call %u staged login requested boss=%u requester=%u name=%s guid=%u role=%u; summon waits for all logins; PvE build and legendary cloak are applied after login",
+            WorldBossStageRaidSize, boss->GetEntry(), WorldBossStageRequester, staged.second.Name.c_str(),
             staged.first, uint32(staged.second.Role));
     }
     return true;
@@ -4279,25 +4675,18 @@ void ShowWorldBossCallerMenu(Player* player, Creature* caller)
     AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Encounter status",
         GOSSIP_SENDER_MAIN, WORLD_BOSS_CALLER_STATUS);
 
-    if ((config.RaidSizeMask & WORLD_BOSS_CALLER_RAID_10) &&
-        config.BossEntry == 62346)
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT,
-            "Stage Call 10 (login/group/summon; no gear)",
-            GOSSIP_SENDER_MAIN, WORLD_BOSS_CALLER_STAGE_10);
-    if (WorldBossStageState != WorldBossStagedState::Idle)
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Dismiss staged raid",
-            GOSSIP_SENDER_MAIN, WORLD_BOSS_CALLER_DISMISS);
-
     if (config.RaidSizeMask & WORLD_BOSS_CALLER_RAID_10)
         AddGossipItemFor(player, GOSSIP_ICON_CHAT,
-            config.StrategyReady ? "Call 10 (coordinator not enabled yet)" :
-                "Call 10 (locked: strategy not ready)",
-            GOSSIP_SENDER_MAIN, WORLD_BOSS_CALLER_LOCKED_10);
+            "Call 10 (PvE build, cloak, group and summon)",
+            GOSSIP_SENDER_MAIN, WORLD_BOSS_CALLER_STAGE_10);
     if (config.RaidSizeMask & WORLD_BOSS_CALLER_RAID_25)
         AddGossipItemFor(player, GOSSIP_ICON_CHAT,
-            config.StrategyReady ? "Call 25 (coordinator not enabled yet)" :
-                "Call 25 (locked: strategy not ready)",
-            GOSSIP_SENDER_MAIN, WORLD_BOSS_CALLER_LOCKED_25);
+            "Call 25 (PvE build, cloak, group and summon)",
+            GOSSIP_SENDER_MAIN, WORLD_BOSS_CALLER_STAGE_25);
+    AddGossipItemFor(player, GOSSIP_ICON_CHAT,
+        WorldBossStageState == WorldBossStagedState::Idle ?
+            "Dismiss staged raid (none active)" : "Dismiss staged raid",
+        GOSSIP_SENDER_MAIN, WORLD_BOSS_CALLER_DISMISS);
 
     SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, caller->GetGUID());
 }
@@ -4329,12 +4718,40 @@ struct npc_world_boss_bot_caller : public ScriptedAI
         Creature* aliveBoss = FindConfiguredWorldBoss(me, config, true);
         if (action == WORLD_BOSS_CALLER_STATUS)
         {
+            uint32 onlineBots = 0;
+            uint32 aliveBots = 0;
+            uint32 nearbyBots = 0;
+            uint32 groupedBots = 0;
+            for (auto const& staged : WorldBossStagedBots)
+            {
+                Player* bot = sRandomPlayerbotMgr->GetPlayerBot(
+                    ObjectGuid::Create<HighGuid::Player>(staged.first));
+                if (!bot || !bot->IsInWorld())
+                    continue;
+
+                ++onlineBots;
+                if (bot->IsAlive())
+                    ++aliveBots;
+                if (bot->GetGroup() && bot->GetGroup()->GetLowGUID() ==
+                    WorldBossStageGroup)
+                    ++groupedBots;
+                if (bot->GetMapId() == player->GetMapId() &&
+                    bot->GetDistance2d(player) <= 30.0f)
+                    ++nearbyBots;
+            }
+
             handler.PSendSysMessage(
-                "Boss Bot Caller: %s (entry %u), active-nearby=%s, strategy=%s, staged-state=%s, staged-bots=%u, raid-group=%u.",
+                "Boss Bot Caller: %s (entry %u), active-nearby=%s, strategy=%s, staged-state=%s, staged-bots=%u, online=%u, alive=%u, grouped=%u, nearby-player=%u, buffed=%u, raid-group=%u, elapsed=%us.",
                 bossName, config.BossEntry, aliveBoss ? "yes" : "no",
                 config.StrategyReady ? "audited" : "not ready",
                 WorldBossStagedStateName(), uint32(WorldBossStagedBots.size()),
-                WorldBossStageGroup);
+                onlineBots, aliveBots, groupedBots, nearbyBots,
+                uint32(WorldBossStageBuffedBots.size()), WorldBossStageGroup,
+                WorldBossStageElapsed / 1000);
+            if (WorldBossStageState == WorldBossStagedState::Cleanup &&
+                !WorldBossStageCleanupReason.empty())
+                handler.PSendSysMessage("Cleanup reason: %s.",
+                    WorldBossStageCleanupReason.c_str());
             ShowWorldBossCallerMenu(player, me);
             return true;
         }
@@ -4356,13 +4773,15 @@ struct npc_world_boss_bot_caller : public ScriptedAI
             return true;
         }
 
-        if (action == WORLD_BOSS_CALLER_STAGE_10)
+        if (action == WORLD_BOSS_CALLER_STAGE_10 ||
+            action == WORLD_BOSS_CALLER_STAGE_25)
         {
-            if (config.BossEntry != 62346 ||
-                !(config.RaidSizeMask & WORLD_BOSS_CALLER_RAID_10))
+            uint32 raidSize = action == WORLD_BOSS_CALLER_STAGE_10 ? 10 : 25;
+            uint8 requiredMask = raidSize == 10 ? WORLD_BOSS_CALLER_RAID_10 :
+                WORLD_BOSS_CALLER_RAID_25;
+            if (!(config.RaidSizeMask & requiredMask))
             {
-                handler.SendSysMessage(
-                    "The guarded Call 10 stage is currently enabled for Galleon only.");
+                handler.PSendSysMessage("Call %u is not enabled at this caller.", raidSize);
                 ShowWorldBossCallerMenu(player, me);
                 return true;
             }
@@ -4376,13 +4795,13 @@ struct npc_world_boss_bot_caller : public ScriptedAI
             }
 
             std::string error;
-            if (!StartWorldBossStage10(player, me, aliveBoss, error))
-                handler.PSendSysMessage("Call 10 staging refused: %s.", error.c_str());
+            if (!StartWorldBossStage(player, me, aliveBoss, raidSize, error))
+                handler.PSendSysMessage("Call %u staging refused: %s.", raidSize, error.c_str());
             else
                 handler.PSendSysMessage(
-                    "Call 10 staged %u bots for login. After all are ready they will be revived, "
-                    "grouped and summoned around you; no equipment will be changed.",
-                    uint32(WorldBossStagedBots.size()));
+                    "Call %u staged %u bots for login. After all are ready they will be revived, "
+                    "given a PvE build and role cloak, grouped and summoned around you.",
+                    raidSize, uint32(WorldBossStagedBots.size()));
             ShowWorldBossCallerMenu(player, me);
             return true;
         }
@@ -4449,11 +4868,21 @@ void UpdateWorldBossStagedRaid(uint32 diff)
             BeginWorldBossStageCleanup("requester disconnected while bots were loading");
             return;
         }
-        if (WorldBossStageElapsed >= 60000)
+        // A fresh server spends roughly its first minute initializing the
+        // random-bot manager. A 25-player Call also has substantially more
+        // asynchronous character queries than Solo Arena. Keep the process
+        // bounded, but allow enough time for the retry loop to recover bot
+        // logins made during that startup window.
+        uint32 loginTimeout = WorldBossStageRaidSize == 25 ? 300000 : 180000;
+        if (WorldBossStageElapsed >= loginTimeout)
         {
-            BeginWorldBossStageCleanup("bot login timeout after 60 seconds");
-            ChatHandler(requester->GetSession()).SendSysMessage(
-                "World-boss Call 10 timed out while loading bots; automatic cleanup started.");
+            std::ostringstream timeoutReason;
+            timeoutReason << "bot login timeout after "
+                << loginTimeout / 1000 << " seconds";
+            BeginWorldBossStageCleanup(timeoutReason.str().c_str());
+            ChatHandler(requester->GetSession()).PSendSysMessage(
+                "World-boss Call %u timed out after %u seconds while loading bots; automatic cleanup started.",
+                WorldBossStageRaidSize, loginTimeout / 1000);
             return;
         }
         if (requester->GetGroup() || requester->InBattleground() ||
@@ -4461,6 +4890,54 @@ void UpdateWorldBossStagedRaid(uint32 diff)
             requester->IsInCombat())
         {
             BeginWorldBossStageCleanup("requester became grouped, queued, or busy");
+            return;
+        }
+
+        uint32 readyBots = 0;
+        uint32 loadingBots = 0;
+        uint32 offlineBots = 0;
+        uint32 teleportingBots = 0;
+        for (auto const& staged : WorldBossStagedBots)
+        {
+            ObjectGuid guid = ObjectGuid::Create<HighGuid::Player>(staged.first);
+            if (sRandomPlayerbotMgr->IsBotLoading(guid))
+            {
+                ++loadingBots;
+                continue;
+            }
+            Player* bot = sRandomPlayerbotMgr->GetPlayerBot(guid);
+            if (!bot || !bot->IsInWorld())
+            {
+                ++offlineBots;
+                // A failed asynchronous login removes the GUID from
+                // botLoading. The old coordinator then waited until its
+                // timeout without ever asking again. Retry only an actually
+                // offline, non-loading bot at a conservative interval.
+                if (WorldBossStageElapsed % 15000 == 0)
+                {
+                    sRandomPlayerbotMgr->AddPlayerBot(guid, 0);
+                    TC_LOG_INFO("server",
+                        "WorldBoss Call %u login retry requested name=%s guid=%u elapsed=%us",
+                        WorldBossStageRaidSize, staged.second.Name.c_str(),
+                        staged.first, WorldBossStageElapsed / 1000);
+                }
+                continue;
+            }
+            if (bot->IsBeingTeleported())
+            {
+                ++teleportingBots;
+                continue;
+            }
+            ++readyBots;
+        }
+        if (readyBots != WorldBossStagedBots.size())
+        {
+            if (WorldBossStageElapsed % 15000 == 0)
+                ChatHandler(requester->GetSession()).PSendSysMessage(
+                    "World-boss Call %u login progress: ready=%u/%u, loading=%u, offline=%u, teleporting=%u. Dismiss remains available at every Boss Bot Caller.",
+                    WorldBossStageRaidSize, readyBots,
+                    uint32(WorldBossStagedBots.size()), loadingBots,
+                    offlineBots, teleportingBots);
             return;
         }
 
@@ -4474,24 +4951,83 @@ void UpdateWorldBossStagedRaid(uint32 diff)
             Player* bot = sRandomPlayerbotMgr->GetPlayerBot(guid);
             if (!bot || !bot->IsInWorld())
                 return;
+            if (bot->IsBeingTeleported())
+                return;
             if (bot->GetGroup() || bot->InBattleground() ||
-                bot->InBattlegroundQueue() || bot->IsUsingLfg() ||
-                bot->IsInCombat() || bot->IsBeingTeleported())
+                bot->InBattlegroundQueue() || bot->IsUsingLfg())
             {
-                BeginWorldBossStageCleanup("a staged bot became busy before grouping");
+                TC_LOG_ERROR("server",
+                    "WorldBoss staged bot became externally busy before grouping name=%s guid=%u group=%u battleground=%u queue=%u lfg=%u",
+                    bot->GetName().c_str(), bot->GetGUID().GetCounter(),
+                    bot->GetGroup() ? bot->GetGroup()->GetLowGUID() : 0,
+                    bot->InBattleground() ? 1u : 0u,
+                    bot->InBattlegroundQueue() ? 1u : 0u,
+                    bot->IsUsingLfg() ? 1u : 0u);
+                BeginWorldBossStageCleanup("a staged bot became externally owned before grouping");
                 return;
             }
+            // A random bot can finish loading at its saved position in combat,
+            // dead, or with stale hostile references. Those are precisely the
+            // transient states this coordinator owns and normalizes before it
+            // creates the raid; they must not be mistaken for another queue or
+            // group owning the bot.
+            PrepareWorldBossBotForSummon(bot);
+
+            // Fill missing PvE build data before the raid is formed. These
+            // helpers preserve an existing valid build and only initialize
+            // what the bot lacks; the requester's build is never touched.
+            BotFactory factory(bot, bot->GetLevel());
+            factory.InitTalentsTree(false);
+            factory.InitGlyphs();
+            uint32 pveItemSet = 0;
+            uint32 armorChanged = 0;
+            std::string armorError;
+            if (!EnsureWorldBossPveArmor(bot, pveItemSet,
+                armorChanged, armorError))
+            {
+                TC_LOG_ERROR("server",
+                    "WorldBoss PvE armor preparation failed name=%s guid=%u specialization=%u error=%s",
+                    bot->GetName().c_str(), staged.first,
+                    uint32(bot->GetSpecialization()), armorError.c_str());
+                BeginWorldBossStageCleanup(
+                    "a staged bot could not receive its specialization T16 PvE armor");
+                return;
+            }
+            uint32 legendaryCloak = 0;
+            bool cloakChanged = false;
+            std::string cloakError;
+            if (!EnsureWorldBossLegendaryCloak(bot, legendaryCloak,
+                cloakChanged, cloakError))
+            {
+                TC_LOG_ERROR("server",
+                    "WorldBoss PvE cloak preparation failed name=%s guid=%u error=%s",
+                    bot->GetName().c_str(), staged.first,
+                    cloakError.c_str());
+                BeginWorldBossStageCleanup(
+                    "a staged bot could not receive its role-appropriate legendary cloak");
+                return;
+            }
+            uint32 glyphCount = 0;
+            for (uint8 slot = 0; slot < MAX_GLYPH_SLOT_INDEX; ++slot)
+                if (bot->GetGlyph(bot->GetActiveSpec(), slot))
+                    ++glyphCount;
+            TC_LOG_INFO("server",
+                "WorldBoss PvE build prepared name=%s guid=%u specialization=%u talents=%u glyphs=%u T16-set=%u armor-changed=%u selected-pvp-items=%u selected-avg-ilvl=%u legendary-cloak=%u cloak-changed=%u",
+                bot->GetName().c_str(), staged.first,
+                uint32(bot->GetSpecialization()), bot->GetUsedTalentCount(),
+                glyphCount, pveItemSet, armorChanged,
+                staged.second.PvpItems, staged.second.AverageItemLevel,
+                legendaryCloak,
+                cloakChanged ? 1u : 0u);
             bots.push_back(bot);
         }
 
-        if (bots.size() != 9)
+        uint32 expectedBots = WorldBossStageRaidSize > 0 ? WorldBossStageRaidSize - 1 : 0;
+        if (bots.size() != expectedBots)
         {
-            BeginWorldBossStageCleanup("Call 10 did not own exactly nine bots");
+            BeginWorldBossStageCleanup("Call did not own the expected bot count");
             return;
         }
-
-        for (Player* bot : bots)
-            PrepareWorldBossBotForSummon(bot);
 
         Group* group = new Group();
         if (!group->Create(requester))
@@ -4562,9 +5098,11 @@ void UpdateWorldBossStagedRaid(uint32 diff)
         for (size_t index = 0; index < bots.size(); ++index)
         {
             Player* bot = bots[index];
-            uint32 ringIndex = index < 5 ? uint32(index) : uint32(index - 5);
-            uint32 ringCount = index < 5 ? 5 : 4;
-            float distance = index < 5 ? 6.0f : 10.0f;
+            uint32 ring = uint32(index / 8);
+            uint32 ringIndex = uint32(index % 8);
+            uint32 ringCount = std::min<uint32>(8,
+                uint32(bots.size()) - ring * 8);
+            float distance = 6.0f + float(ring * 4);
             float angle = requester->GetOrientation() +
                 float(2.0 * M_PI * ringIndex / ringCount);
             float x = WorldBossStageX;
@@ -4579,20 +5117,21 @@ void UpdateWorldBossStagedRaid(uint32 diff)
                 return;
             }
             TC_LOG_INFO("server",
-                "WorldBoss Call 10 summon requested name=%s guid=%u map=%u position=%.3f/%.3f/%.3f",
-                bot->GetName().c_str(), bot->GetGUID().GetCounter(),
+                "WorldBoss Call %u summon requested name=%s guid=%u map=%u position=%.3f/%.3f/%.3f",
+                WorldBossStageRaidSize, bot->GetName().c_str(), bot->GetGUID().GetCounter(),
                 WorldBossStageMap, x, y, z);
         }
 
         WorldBossStageState = WorldBossStagedState::WaitForTeleport;
         WorldBossStageElapsed = 0;
         TC_LOG_INFO("server",
-            "WorldBoss Call 10 staged raid created requester=%u group=%u bots=%u; square-tank=%u moon-healer=%u; summon-to-requester requested; no equipment changed",
-            WorldBossStageRequester, WorldBossStageGroup,
+            "WorldBoss Call %u staged raid created requester=%u group=%u bots=%u; square-tank=%u moon-healer=%u; summon-to-requester requested; PvE builds and role cloaks prepared",
+            WorldBossStageRaidSize, WorldBossStageRequester, WorldBossStageGroup,
             uint32(WorldBossStagedBots.size()), mainTank.GetCounter(),
             primaryHealer.GetCounter());
-        ChatHandler(requester->GetSession()).SendSysMessage(
-            "World-boss raid formed. Reviving and summoning all nine bots around you...");
+        ChatHandler(requester->GetSession()).PSendSysMessage(
+            "World-boss raid formed. Reviving and summoning all %u bots around you...",
+            uint32(WorldBossStagedBots.size()));
         return;
     }
 
@@ -4611,6 +5150,7 @@ void UpdateWorldBossStagedRaid(uint32 diff)
             return;
         }
 
+        uint32 arrivedBots = 0;
         for (auto const& staged : WorldBossStagedBots)
         {
             ObjectGuid guid = ObjectGuid::Create<HighGuid::Player>(staged.first);
@@ -4621,28 +5161,204 @@ void UpdateWorldBossStagedRaid(uint32 diff)
                 return;
             }
             if (bot->IsBeingTeleported() || !bot->IsInWorld())
-                return;
+                continue;
             if (bot->GetMapId() != WorldBossStageMap ||
                 bot->GetDistance2d(WorldBossStageX, WorldBossStageY) > 25.0f)
             {
-                BeginWorldBossStageCleanup("a summoned bot arrived outside the caller formation");
-                return;
+                continue;
             }
             PrepareWorldBossBotForSummon(bot);
+            ++arrivedBots;
+        }
+
+        if (arrivedBots != WorldBossStagedBots.size())
+        {
+            if (WorldBossStageElapsed % 10000 == 0)
+                ChatHandler(requester->GetSession()).PSendSysMessage(
+                    "World-boss summon progress: arrived alive near you=%u/%u.",
+                    arrivedBots, uint32(WorldBossStagedBots.size()));
+            return;
         }
 
         WorldBossStageState = WorldBossStagedState::Grouped;
         WorldBossStageElapsed = 0;
+        WorldBossStageBuffedBots.clear();
+        WorldBossStageEncounterStarted = false;
+        WorldBossStageWipePending = false;
+        WorldBossStageBossDefeatedTimer = 0;
         TC_LOG_INFO("server",
-            "WorldBoss Call 10 staged raid ready requester=%u group=%u bots=%u map=%u center=%.3f/%.3f/%.3f; all bots alive and nearby",
-            WorldBossStageRequester, WorldBossStageGroup,
+            "WorldBoss Call %u staged raid ready requester=%u group=%u bots=%u map=%u center=%.3f/%.3f/%.3f; all bots alive and nearby",
+            WorldBossStageRaidSize, WorldBossStageRequester, WorldBossStageGroup,
             uint32(WorldBossStagedBots.size()), WorldBossStageMap,
             WorldBossStageX, WorldBossStageY, WorldBossStageZ);
         ChatHandler(requester->GetSession()).PSendSysMessage(
             "World-boss staged raid %u is ready with %u living bots around you. "
             "Square marks the main tank; Moon marks the primary healer. "
-            "No equipment was changed. Use Dismiss staged raid when finished.",
+            "PvE talents, glyphs and role-appropriate legendary cloaks are ready. "
+            "Use Dismiss staged raid when finished.",
             WorldBossStageGroup, uint32(WorldBossStagedBots.size()));
+        return;
+    }
+
+    if (WorldBossStageState == WorldBossStagedState::Grouped)
+    {
+        if (!requester)
+        {
+            BeginWorldBossStageCleanup("requester disconnected after raid assembly");
+            return;
+        }
+
+        Group* group = WorldBossStageGroup ?
+            sGroupMgr->GetGroupByGUID(WorldBossStageGroup) : nullptr;
+        if (!group || requester->GetGroup() != group)
+        {
+            BeginWorldBossStageCleanup("staged raid group no longer exists");
+            return;
+        }
+
+        uint32 aliveMembers = requester->IsAlive() ? 1 : 0;
+        for (auto const& staged : WorldBossStagedBots)
+        {
+            Player* bot = sRandomPlayerbotMgr->GetPlayerBot(
+                ObjectGuid::Create<HighGuid::Player>(staged.first));
+            if (!bot || bot->GetGroup() != group)
+            {
+                BeginWorldBossStageCleanup("a staged raid member went offline or left the raid");
+                return;
+            }
+
+            // Rebirth/Raise Ally and any other real combat-resurrection spell
+            // creates a normal resurrection request. A client player accepts
+            // it through CMSG_RESURRECT_RESPONSE, but a headless playerbot has
+            // no client to send that packet. Accept only an already-created
+            // core request, and only for a dead bot owned by this staged raid;
+            // this neither invents a resurrection nor bypasses spell cooldowns.
+            if (!bot->IsAlive() && bot->IsRessurectRequested())
+            {
+                bot->ResurrectUsingRequestData();
+                TC_LOG_INFO("server",
+                    "WorldBoss combat resurrection accepted raid=%u boss=%u name=%s guid=%u",
+                    WorldBossStageGroup, WorldBossStageBossEntry,
+                    bot->GetName().c_str(), staged.first);
+            }
+
+            if (bot->IsAlive())
+                ++aliveMembers;
+
+            // Use the real class actions already shared with Arena/BG
+            // preparation. Their own aura checks prevent recasting the same
+            // raid buff, while a second paladin can still contribute the other
+            // blessing. Classes without a preparation action are marked done
+            // immediately instead of being retried forever.
+            if (bot->IsAlive() && !bot->IsInCombat() &&
+                !WorldBossStageBuffedBots.count(staged.first))
+            {
+                std::vector<char const*> actions =
+                    GetSoloArenaPreparationBuffActions(bot);
+                bool complete = actions.empty();
+                if (PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot))
+                {
+                    if (!botAI->IsRealPlayer())
+                    {
+                        botAI->SetMaster(requester);
+                        botAI->ChangeStrategy("+follow", BOT_STATE_NON_COMBAT);
+                        botAI->ChangeStrategy("+avoid aoe", BOT_STATE_COMBAT);
+                        for (char const* action : actions)
+                            if (botAI->DoSpecificAction(action, Event(), true))
+                            {
+                                complete = true;
+                                TC_LOG_INFO("server",
+                                    "WorldBoss preparation buff cast raid=%u boss=%u name=%s guid=%u action=%s",
+                                    WorldBossStageGroup, WorldBossStageBossEntry,
+                                    bot->GetName().c_str(), staged.first, action);
+                                break;
+                            }
+                    }
+                }
+                if (complete)
+                    WorldBossStageBuffedBots.insert(staged.first);
+            }
+        }
+
+        // FindNearestCreature's final argument is an exact alive-state filter,
+        // not an "include dead" switch.  Looking up only `false` made a live
+        // world boss invisible to the coordinator, so encounter start and wipe
+        // recovery could never be armed. Resolve the living spawn first and
+        // fall back to its corpse only for the post-kill cleanup path.
+        Creature* boss = requester->FindNearestCreature(
+            WorldBossStageBossEntry, 500.0f, true);
+        if (!boss)
+            boss = requester->FindNearestCreature(
+                WorldBossStageBossEntry, 500.0f, false);
+        if (boss && boss->IsAlive() && boss->IsInCombat())
+        {
+            WorldBossStageEncounterStarted = true;
+            WorldBossStageWipePending = false;
+            WorldBossStageBossDefeatedTimer = 0;
+        }
+        else if (WorldBossStageEncounterStarted && boss && !boss->IsAlive())
+        {
+            WorldBossStageBossDefeatedTimer += 1000;
+            if (WorldBossStageBossDefeatedTimer >= 10000)
+            {
+                ChatHandler(requester->GetSession()).SendSysMessage(
+                    "World boss defeated. The staged raid will now be dismissed safely.");
+                BeginWorldBossStageCleanup("world boss defeated");
+                return;
+            }
+        }
+        else if (boss && boss->IsAlive())
+        {
+            // A released player can be moved to a graveyard farther than the
+            // local 500-yard lookup while the rest of the raid is still
+            // fighting. Never interpret an absent boss as a defeated boss:
+            // doing so used to dismiss the raid before corpse runback could
+            // finish. Only a positively observed dead creature starts the
+            // automatic post-kill cleanup timer.
+            WorldBossStageBossDefeatedTimer = 0;
+        }
+
+        if (WorldBossStageEncounterStarted && aliveMembers == 0)
+            WorldBossStageWipePending = true;
+
+        // Never grant an in-combat resurrection. Dead bots continue through
+        // the module's normal release-spirit/corpse logic. After a complete
+        // wipe, once the real requester has revived and the boss has reset,
+        // rebuild the formation for a clean second pull.
+        if (WorldBossStageWipePending && requester->IsAlive() && boss &&
+            boss->IsAlive() && !boss->IsInCombat())
+        {
+            size_t index = 0;
+            for (auto const& staged : WorldBossStagedBots)
+            {
+                Player* bot = sRandomPlayerbotMgr->GetPlayerBot(
+                    ObjectGuid::Create<HighGuid::Player>(staged.first));
+                if (!bot)
+                    continue;
+                PrepareWorldBossBotForSummon(bot);
+                float angle = requester->GetOrientation() +
+                    float(2.0 * M_PI * index /
+                        std::max<size_t>(1, WorldBossStagedBots.size()));
+                float x = requester->GetPositionX();
+                float y = requester->GetPositionY();
+                float z = requester->GetPositionZ();
+                requester->GetNearPoint(bot, x, y, z, bot->GetObjectSize(),
+                    8.0f, angle);
+                bot->TeleportTo(requester->GetMapId(), x, y, z,
+                    requester->GetOrientation());
+                ++index;
+            }
+            WorldBossStageBuffedBots.clear();
+            WorldBossStageEncounterStarted = false;
+            WorldBossStageWipePending = false;
+            WorldBossStageBossDefeatedTimer = 0;
+            ChatHandler(requester->GetSession()).SendSysMessage(
+                "World-boss wipe detected. Bots were revived and regrouped for a fresh pull; preparation buffs are being renewed.");
+            TC_LOG_INFO("server",
+                "WorldBoss full-wipe recovery requester=%u group=%u boss=%u bots=%u",
+                WorldBossStageRequester, WorldBossStageGroup,
+                WorldBossStageBossEntry, uint32(WorldBossStagedBots.size()));
+        }
         return;
     }
 
@@ -4654,16 +5370,46 @@ void UpdateWorldBossStagedRaid(uint32 diff)
         Group* group = sGroupMgr->GetGroupByGUID(WorldBossStageGroup);
         if (group)
         {
-            if (group->GetLeaderGUID().GetCounter() != WorldBossStageRequester ||
-                group->GetMembersCount() != WorldBossStagedBots.size() + 1)
+            bool containsUnknownMember = false;
+            for (Group::MemberSlot const& member : group->GetMemberSlots())
             {
-                TC_LOG_ERROR("server",
-                    "WorldBoss cleanup paused: group %u membership changed outside coordinator control",
-                    WorldBossStageGroup);
+                uint32 guidLow = member.guid.GetCounter();
+                if (guidLow != WorldBossStageRequester &&
+                    WorldBossStagedBots.find(guidLow) == WorldBossStagedBots.end())
+                {
+                    containsUnknownMember = true;
+                    break;
+                }
+            }
+
+            if (!containsUnknownMember &&
+                group->GetLeaderGUID().GetCounter() == WorldBossStageRequester)
+            {
+                group->Disband();
                 return;
             }
-            group->Disband();
-            return;
+
+            // The coordinator never disbands a group containing an unrelated
+            // player.  It only removes the bots that this staged call owns.
+            // Reacquire the group after every removal because the core may
+            // destroy it when too few members remain.
+            std::vector<ObjectGuid> ownedMembers;
+            for (auto const& staged : WorldBossStagedBots)
+            {
+                ObjectGuid guid = ObjectGuid::Create<HighGuid::Player>(staged.first);
+                if (group->IsMember(guid))
+                    ownedMembers.push_back(guid);
+            }
+            for (ObjectGuid const& guid : ownedMembers)
+            {
+                group = sGroupMgr->GetGroupByGUID(WorldBossStageGroup);
+                if (!group)
+                    break;
+                group->RemoveMember(guid, GROUP_REMOVEMETHOD_LEAVE);
+            }
+            TC_LOG_INFO("server",
+                "WorldBoss cleanup detached %u owned staged bots from changed group %u; unrelated members were preserved",
+                uint32(ownedMembers.size()), WorldBossStageGroup);
         }
         WorldBossStageGroup = 0;
     }
@@ -4736,7 +5482,9 @@ void UpdateWorldBossStagedRaid(uint32 diff)
     WorldBossStageRequester = 0;
     WorldBossStageCaller = 0;
     WorldBossStageBoss = 0;
+    WorldBossStageBossEntry = 0;
     WorldBossStageGroup = 0;
+    WorldBossStageRaidSize = 0;
     WorldBossStageElapsed = 0;
     WorldBossStageUpdateTimer = 0;
     WorldBossStageMap = 0;
@@ -4744,6 +5492,10 @@ void UpdateWorldBossStagedRaid(uint32 diff)
     WorldBossStageY = 0.0f;
     WorldBossStageZ = 0.0f;
     WorldBossStageCleanupReason.clear();
+    WorldBossStageBuffedBots.clear();
+    WorldBossStageEncounterStarted = false;
+    WorldBossStageWipePending = false;
+    WorldBossStageBossDefeatedTimer = 0;
 }
 
 namespace

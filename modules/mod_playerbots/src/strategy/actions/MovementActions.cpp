@@ -38,6 +38,7 @@
 #include "ServerFacade.h"
 #include "SharedDefines.h"
 #include "SpellAuraEffects.h"
+#include "Spell.h"
 #include "SpellInfo.h"
 
 #include "TargetedMovementGenerator.h"
@@ -1372,14 +1373,29 @@ BossMechanicsAction::Reaction BossMechanicsAction::GetReaction() const
         }
     }
 
+    // Sha of Anger (entries 60491/56439), local boss_sha_of_anger.cpp:
+    // 119622 is the six-second warning immediately before Dominate Mind
+    // (119626). Separating the warned target avoids stacking controlled
+    // players on healers and melee while the raid switches to free them.
+    if (bot->HasAura(119622) && bot->GetGroup() &&
+        (bot->FindNearestCreature(60491, 250.0f, true) ||
+         bot->FindNearestCreature(56439, 250.0f, true)))
+        return Reaction::SpreadShaDominateWarning;
+
     // Nalak (entry 69099), local boss_nalak.cpp:
     // 136339 applies Lightning Tether and the local spell script increases
     // damage with target distance, using 20 yards as the near/far boundary.
-    if (bot->HasAura(136339))
+    if (Creature* nalak = bot->FindNearestCreature(69099, 200.0f, true))
     {
-        if (Creature* nalak = bot->FindNearestCreature(69099, 200.0f, true))
-            if (bot->GetExactDist2d(nalak) > 18.0f)
-                return Reaction::ApproachNalak;
+        // Arc Nova (136338) is Nalak's close-range burst. Move outside the
+        // local spell's effective melee cluster while its cast is visible.
+        if (Spell* spell = nalak->GetCurrentSpell(CURRENT_GENERIC_SPELL))
+            if (spell->GetSpellInfo() && spell->GetSpellInfo()->Id == 136338 &&
+                bot->GetExactDist2d(nalak) < 42.0f)
+                return Reaction::FleeNalakArcNova;
+
+        if (bot->HasAura(136339) && bot->GetExactDist2d(nalak) > 18.0f)
+            return Reaction::ApproachNalak;
     }
 
     // The same local script applies Storm Cloud (136340) to ranged/non-tank
@@ -1395,12 +1411,68 @@ BossMechanicsAction::Reaction BossMechanicsAction::GetReaction() const
         bot->FindNearestCreature(69161, 200.0f, true))
         return Reaction::SpreadOondastaBeam;
 
+    // Frill Blast (137505) is explicitly a channel in boss_oondasta.cpp.
+    // Oondasta keeps the cast orientation, so players step behind him rather
+    // than trying to outrange or remain in the frontal cone.
+    if (Creature* oondasta = bot->FindNearestCreature(69161, 200.0f, true))
+        if (Spell* spell = oondasta->GetCurrentSpell(CURRENT_CHANNELED_SPELL))
+            if (spell->GetSpellInfo() && spell->GetSpellInfo()->Id == 137505)
+                return Reaction::AvoidOondastaFrillBlast;
+
     // Ordos (entry 72057), local boss_ordos.cpp: Burning Soul (144689,
     // effect aura 144690) is a selected-player mechanic. Keep either spell ID
     // because the caster and target aura differ in this 5.4.8 implementation.
     if ((bot->HasAura(144689) || bot->HasAura(144690)) && bot->GetGroup() &&
         bot->FindNearestCreature(72057, 200.0f, true))
         return Reaction::SpreadOrdosBurningSoul;
+
+    // Magma Crush (144688) divides its damage by the number of players hit.
+    // During the cast, everyone except a Burning Soul carrier stacks on the
+    // current tank.  Burning Soul is checked first above and therefore keeps
+    // its higher-priority spread response.
+    if (Creature* ordos = bot->FindNearestCreature(72057, 200.0f, true))
+    {
+        if (Spell* spell = ordos->GetCurrentSpell(CURRENT_GENERIC_SPELL))
+            if (spell->GetSpellInfo() && spell->GetSpellInfo()->Id == 144688 &&
+                ordos->GetVictim() && ordos->GetVictim()->GetTypeId() == TYPEID_PLAYER &&
+                bot->GetExactDist2d(ordos->GetVictim()) > 7.0f)
+                return Reaction::StackOrdosMagmaCrush;
+    }
+
+    // Chi-Ji, local boss_chi_ji.cpp: Beacon of Hope (entry 71978) is the
+    // intended recovery location. Injured players move into it; Crane Rush
+    // (144470/144495) is handled by leaving the boss rather than standing in
+    // its repeated damage path.
+    if (bot->FindNearestCreature(71952, 200.0f, true))
+    {
+        if ((bot->HasAura(144470) || bot->HasAura(144495)))
+            return Reaction::FleeChiJiCraneRush;
+        if (bot->GetHealthPct() < 70.0f &&
+            bot->FindNearestCreature(71978, 100.0f, true))
+            return Reaction::MoveChiJiBeacon;
+    }
+
+    // Xuen's Crackling Lightning is a chain spell in boss_xuen.cpp. A marked
+    // target must create room from the raid while its effect aura is active.
+    if ((bot->HasAura(144633) || bot->HasAura(144635)) && bot->GetGroup() &&
+        bot->FindNearestCreature(71953, 200.0f, true))
+        return Reaction::SpreadXuenLightning;
+
+    // Niuzao's charge aura (144608/144609) drives the boss across the arena.
+    // Moving away from him is a conservative pathing-safe response; Massive
+    // Quake and other persistent floor effects remain covered by avoid aoe.
+    if (Creature* niuzao = bot->FindNearestCreature(71954, 200.0f, true))
+        if (niuzao->HasAura(144608) || bot->HasAura(144609))
+            return Reaction::FleeNiuzaoCharge;
+
+    // Yu'lon's Jadefire Breath (144530) is a frontal attack in the local
+    // 5.4.8 boss script. Non-tanks move behind her while the cast is visible;
+    // the active tank keeps the boss facing away from the raid.
+    if (Creature* yulon = bot->FindNearestCreature(71955, 200.0f, true))
+        if (!PlayerBotSpec::IsTank(bot, true) || yulon->GetVictim() != bot)
+            if (Spell* spell = yulon->GetCurrentSpell(CURRENT_GENERIC_SPELL))
+                if (spell->GetSpellInfo() && spell->GetSpellInfo()->Id == 144530)
+                    return Reaction::AvoidYuLonJadefireBreath;
 
     return Reaction::None;
 }
@@ -1417,6 +1489,10 @@ bool BossMechanicsAction::Execute(Event /*event*/)
         case Reaction::ApproachNalak:
             if (Creature* nalak = bot->FindNearestCreature(69099, 200.0f, true))
                 return MoveTo(nalak, 15.0f, MovementPriority::MOVEMENT_FORCED);
+            break;
+        case Reaction::FleeNalakArcNova:
+            if (Creature* nalak = bot->FindNearestCreature(69099, 200.0f, true))
+                return MoveAway(nalak, 45.0f);
             break;
         case Reaction::FocusGalleonWarmonger:
             if (Creature* warmonger = bot->FindNearestCreature(62351, 100.0f, true))
@@ -1442,12 +1518,59 @@ bool BossMechanicsAction::Execute(Event /*event*/)
                 return true;
             }
             break;
+        case Reaction::SpreadShaDominateWarning:
+            return MoveFromGroup(18.0f);
         case Reaction::SpreadStormCloud:
             return MoveFromGroup(30.0f);
         case Reaction::SpreadOondastaBeam:
             return MoveFromGroup(22.0f);
+        case Reaction::AvoidOondastaFrillBlast:
+            if (Creature* oondasta = bot->FindNearestCreature(69161, 200.0f, true))
+            {
+                float x = oondasta->GetPositionX();
+                float y = oondasta->GetPositionY();
+                float z = oondasta->GetPositionZ();
+                oondasta->GetNearPoint(bot, x, y, z, bot->GetObjectSize(),
+                    10.0f, Position::NormalizeOrientation(
+                        oondasta->GetOrientation() + float(M_PI)));
+                return MoveTo(bot->GetMapId(), x, y, z, false, false, false,
+                    true, MovementPriority::MOVEMENT_FORCED);
+            }
+            break;
+        case Reaction::StackOrdosMagmaCrush:
+            if (Creature* ordos = bot->FindNearestCreature(72057, 200.0f, true))
+                if (Unit* tank = ordos->GetVictim())
+                    return MoveTo(tank, 4.0f, MovementPriority::MOVEMENT_FORCED);
+            break;
         case Reaction::SpreadOrdosBurningSoul:
             return MoveFromGroup(20.0f);
+        case Reaction::MoveChiJiBeacon:
+            if (Creature* beacon = bot->FindNearestCreature(71978, 100.0f, true))
+                return MoveTo(beacon, 3.0f, MovementPriority::MOVEMENT_FORCED);
+            break;
+        case Reaction::FleeChiJiCraneRush:
+            if (Creature* chiJi = bot->FindNearestCreature(71952, 200.0f, true))
+                return MoveAway(chiJi, 30.0f);
+            break;
+        case Reaction::SpreadXuenLightning:
+            return MoveFromGroup(14.0f);
+        case Reaction::FleeNiuzaoCharge:
+            if (Creature* niuzao = bot->FindNearestCreature(71954, 200.0f, true))
+                return MoveAway(niuzao, 35.0f);
+            break;
+        case Reaction::AvoidYuLonJadefireBreath:
+            if (Creature* yulon = bot->FindNearestCreature(71955, 200.0f, true))
+            {
+                float x = yulon->GetPositionX();
+                float y = yulon->GetPositionY();
+                float z = yulon->GetPositionZ();
+                yulon->GetNearPoint(bot, x, y, z, bot->GetObjectSize(),
+                    10.0f, Position::NormalizeOrientation(
+                        yulon->GetOrientation() + float(M_PI)));
+                return MoveTo(bot->GetMapId(), x, y, z, false, false, false,
+                    true, MovementPriority::MOVEMENT_FORCED);
+            }
+            break;
         case Reaction::None:
             break;
     }

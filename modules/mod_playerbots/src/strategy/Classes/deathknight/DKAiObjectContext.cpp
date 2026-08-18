@@ -90,6 +90,7 @@ public:
         creators["death and decay"] = &DeathKnightAiObjectContextInternal::death_and_decay;
         creators["unholy presence"] = &DeathKnightAiObjectContextInternal::unholy_presence;
         creators["raise dead"] = &DeathKnightAiObjectContextInternal::raise_dead;
+        creators["raise ally"] = &DeathKnightAiObjectContextInternal::raise_ally;
         creators["army of the dead"] = &DeathKnightAiObjectContextInternal::army_of_the_dead;
         creators["summon gargoyle"] = &DeathKnightAiObjectContextInternal::summon_gargoyle;
         creators["anti magic shell"] = &DeathKnightAiObjectContextInternal::anti_magic_shell;
@@ -146,6 +147,7 @@ private:
     static Action* death_and_decay(PlayerbotAI* botAI) { return new CastDeathAndDecayAction(botAI); }
     static Action* unholy_presence(PlayerbotAI* botAI) { return new CastUnholyPresenceAction(botAI); }
     static Action* raise_dead(PlayerbotAI* botAI) { return new CastRaiseDeadAction(botAI); }
+    static Action* raise_ally(PlayerbotAI* botAI) { return new CastRaiseAllyAction(botAI); }
     static Action* army_of_the_dead(PlayerbotAI* botAI) { return new CastArmyOfTheDeadAction(botAI); }
     static Action* summon_gargoyle(PlayerbotAI* botAI) { return new CastSummonGargoyleAction(botAI); }
     static Action* anti_magic_shell(PlayerbotAI* botAI) { return new CastAntiMagicShellAction(botAI); }

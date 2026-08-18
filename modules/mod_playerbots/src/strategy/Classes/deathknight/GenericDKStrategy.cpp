@@ -171,6 +171,12 @@ void GenericDKStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
     // NextAction::array(0, new NextAction("anti magic zone", ACTION_EMERGENCY + 1), nullptr)));
     triggers.push_back(
         new TriggerNode("no pet", NextAction::array(0, new NextAction("raise dead", ACTION_NORMAL + 5), nullptr)));
+    // Raise Ally is the Death Knight's real MoP combat resurrection. The
+    // shared target value rejects players who already have a resurrection
+    // request, while normal spell/cooldown checks prevent duplicate or free
+    // revives.
+    triggers.push_back(new TriggerNode("combat party member dead",
+        NextAction::array(0, new NextAction("raise ally", ACTION_HIGH + 9), nullptr)));
     triggers.push_back(
         new TriggerNode("mind freeze", NextAction::array(0, new NextAction("mind freeze", ACTION_HIGH + 1), nullptr)));
     triggers.push_back(

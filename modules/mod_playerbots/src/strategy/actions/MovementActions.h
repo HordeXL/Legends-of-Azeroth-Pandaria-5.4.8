@@ -162,9 +162,18 @@ private:
         None,
         ApproachNalak,
         FocusGalleonWarmonger,
+        SpreadShaDominateWarning,
+        FleeNalakArcNova,
         SpreadStormCloud,
         SpreadOondastaBeam,
-        SpreadOrdosBurningSoul
+        AvoidOondastaFrillBlast,
+        StackOrdosMagmaCrush,
+        SpreadOrdosBurningSoul,
+        MoveChiJiBeacon,
+        FleeChiJiCraneRush,
+        SpreadXuenLightning,
+        FleeNiuzaoCharge,
+        AvoidYuLonJadefireBreath
     };
 
     Reaction GetReaction() const;
