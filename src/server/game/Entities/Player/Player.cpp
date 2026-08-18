@@ -4383,6 +4383,11 @@ bool Player::ResetTalents(bool noCost, bool resetTalents, bool resetSpecializati
     _SaveSpells(trans);
     CharacterDatabase.CommitTransaction(trans);
 
+    // A talent or specialization reset can leave spells from the old build on
+    // the active action bar. Remove only invalid buttons from this spec; the
+    // inactive dual-spec action bar must remain untouched.
+    RemoveInvalidSpellActionButtons();
+
     if (!noCost)
     {
         ModifyMoney(-(int64)cost);
@@ -4425,6 +4430,8 @@ bool Player::RemoveTalent(uint32 talentId)
     _SaveTalents(trans);
     _SaveSpells(trans);
     CharacterDatabase.CommitTransaction(trans);
+
+    RemoveInvalidSpellActionButtons();
 
     SendTalentsInfoData();
     return true;
@@ -6722,6 +6729,39 @@ void Player::RemoveActionButton(uint8 button)
         buttonItr->second.uState = ACTIONBUTTON_DELETED;    // saved, will deleted at next save
 
     TC_LOG_DEBUG("entities.player", "Action Button '%u' Removed from Player '%u'", button, GetGUID().GetCounter());
+}
+
+uint32 Player::RemoveInvalidSpellActionButtons(bool notifyClient)
+{
+    std::vector<uint8> invalidButtons;
+
+    for (ActionButtonList::const_iterator itr = m_actionButtons.begin(); itr != m_actionButtons.end(); ++itr)
+    {
+        ActionButton const& actionButton = itr->second;
+        if (actionButton.uState == ACTIONBUTTON_DELETED || actionButton.GetType() != ACTION_BUTTON_SPELL)
+            continue;
+
+        uint32 spellId = actionButton.GetAction();
+        if (!sSpellMgr->GetSpellInfo(spellId) || !HasSpell(spellId))
+            invalidButtons.push_back(itr->first);
+    }
+
+    if (invalidButtons.empty())
+        return 0;
+
+    for (uint8 button : invalidButtons)
+        RemoveActionButton(button);
+
+    CharacterDatabaseTransaction trans = CharacterDatabase.BeginTransaction();
+    _SaveActions(trans);
+    CharacterDatabase.CommitTransaction(trans);
+
+    if (notifyClient && IsInWorld() && GetSession() && !GetSession()->PlayerLoading())
+        SendActionButtons(1);
+
+    TC_LOG_INFO("entities.player", "Removed %u invalid spell action button(s) for player %s (GUID: %u), spec %u",
+        uint32(invalidButtons.size()), GetName().c_str(), GetGUID().GetCounter(), GetActiveSpec());
+    return uint32(invalidButtons.size());
 }
 
 ActionButton const* Player::GetActionButton(uint8 button)
