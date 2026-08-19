@@ -162,6 +162,7 @@ private:
         None,
         ApproachNalak,
         FocusGalleonWarmonger,
+        PositionGalleonOffTank,
         SpreadShaDominateWarning,
         FleeNalakArcNova,
         SpreadStormCloud,

@@ -123,6 +123,22 @@ class boss_galion : public CreatureScript
                 events.ScheduleEvent(EVENT_INIT_COMBAT, 1s + 500ms);
             }
 
+            void JustSummoned(Creature* summon) override
+            {
+                // Galleon is an outdoor world boss. BossAI's default
+                // JustSummoned implementation calls DoZoneInCombat, which is
+                // valid only for dungeon/instance maps and emitted one error
+                // for every Warmonger wave. Track every summon normally, but
+                // put combat-capable outdoor adds onto a real hostile target
+                // without invoking the instance-only helper.
+                summons.Summon(summon);
+                if (!me->IsInCombat() || summon->GetEntry() != NPC_SALYIN_WARMONGER)
+                    return;
+
+                if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 200.0f, true))
+                    summon->AI()->AttackStart(target);
+            }
+
             void UpdateAI(uint32 diff) override
             {
                 vEvents.Update(diff);

@@ -1358,14 +1358,21 @@ BossMechanicsAction::Reaction BossMechanicsAction::GetReaction() const
     {
         if (Creature* galleon = bot->FindNearestCreature(62346, 200.0f, true))
         {
-            bool isMainTank = PlayerBotSpec::IsTank(bot, true) &&
-                galleon->GetVictim() == bot;
+            bool isMainTank = PlayerBotSpec::IsMainTank(bot);
             if (!isMainTank)
             {
                 if (Creature* warmonger = bot->FindNearestCreature(62351, 100.0f, true))
                 {
+                    if (PlayerBotSpec::IsAssistTank(bot) &&
+                        warmonger->GetVictim() == bot &&
+                        bot->GetExactDist2d(galleon) < 20.0f)
+                        return Reaction::PositionGalleonOffTank;
+
                     Unit* currentTarget = context->GetValue<Unit*>("current target")->Get();
-                    if (currentTarget != warmonger && bot->IsValidAttackTarget(warmonger) &&
+                    if ((currentTarget != warmonger ||
+                         (PlayerBotSpec::IsAssistTank(bot) &&
+                          warmonger->GetVictim() != bot)) &&
+                        bot->IsValidAttackTarget(warmonger) &&
                         bot->IsWithinLOSInMap(warmonger))
                         return Reaction::FocusGalleonWarmonger;
                 }
@@ -1514,8 +1521,44 @@ bool BossMechanicsAction::Execute(Event /*event*/)
                     PlayerBotSpec::IsMelee(bot);
                 if (bot->GetVictim() != warmonger)
                     bot->Attack(warmonger, melee);
+
+                // The off-tank must establish ownership before dragging the
+                // add pack away from Galleon. The five tank classes use
+                // different action names in this module.
+                if (PlayerBotSpec::IsAssistTank(bot) && warmonger->GetVictim() != bot)
+                {
+                    char const* tauntAction = nullptr;
+                    switch (bot->GetClass())
+                    {
+                        case CLASS_WARRIOR:      tauntAction = "taunt"; break;
+                        case CLASS_PALADIN:
+                        case CLASS_DRUID:
+                        case CLASS_DEATH_KNIGHT: tauntAction = "taunt spell"; break;
+                        case CLASS_MONK:         tauntAction = "provoke"; break;
+                        default: break;
+                    }
+                    if (tauntAction)
+                        botAI->DoSpecificAction(tauntAction, Event(), true);
+                }
                 botAI->ChangeEngine(BOT_STATE_COMBAT);
                 return true;
+            }
+            break;
+        case Reaction::PositionGalleonOffTank:
+            if (Creature* galleon = bot->FindNearestCreature(62346, 200.0f, true))
+            {
+                // Hold the add pack on Galleon's left flank. This keeps it
+                // away from the main tank and out of the raid stack behind
+                // the boss, while remaining close enough for add DPS/heals.
+                float angle = Position::NormalizeOrientation(
+                    galleon->GetOrientation() + float(M_PI_2));
+                float x = galleon->GetPositionX();
+                float y = galleon->GetPositionY();
+                float z = galleon->GetPositionZ();
+                galleon->GetNearPoint(bot, x, y, z, bot->GetObjectSize(),
+                    24.0f, angle);
+                return MoveTo(bot->GetMapId(), x, y, z, false, false, false,
+                    true, MovementPriority::MOVEMENT_FORCED);
             }
             break;
         case Reaction::SpreadShaDominateWarning:

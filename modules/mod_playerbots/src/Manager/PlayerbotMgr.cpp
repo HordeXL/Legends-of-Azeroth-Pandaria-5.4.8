@@ -309,7 +309,30 @@ void PlayerbotHolder::LogoutPlayerBot(ObjectGuid guid)
         }
 
         TC_LOG_INFO("playerbots", "Bot %s logging out", bot->GetName().c_str());
+
+        // Inventory mutations (temporary PvP equipment, permanent world-boss
+        // PvE equipment, etc.) put an Item in both the character persistence
+        // queue and the owner's Map update set. SaveToDB clears the former, but
+        // an instant playerbot logout can delete the owner before the Map gets
+        // its next update. Item::~Item then has no owner through which it can
+        // remove the stale Map entry and logs one "owner not found" error for
+        // every changed slot. Remember GUIDs rather than pointers because the
+        // save is allowed to delete ITEM_REMOVED objects.
+        std::vector<ObjectGuid> pendingItemMapUpdates;
+        for (Item* item : bot->GetItemUpdateQueue())
+            if (item && item->GetState() != ITEM_REMOVED)
+                pendingItemMapUpdates.push_back(item->GetGUID());
+
         bot->SaveToDB(false);
+
+        // The database state is now durable. Remove only items that still
+        // belong to this player from the Map update set while the owner and its
+        // Map are both valid. ClearUpdateMask(true) does not alter item state or
+        // inventory placement; it only retires the already-persisted client
+        // update marker.
+        for (ObjectGuid const& itemGuid : pendingItemMapUpdates)
+            if (Item* item = bot->GetItemByGuid(itemGuid))
+                item->ClearUpdateMask(true);
 
         WorldSession* botWorldSessionPtr = bot->GetSession();
         WorldSession* masterWorldSessionPtr = nullptr;

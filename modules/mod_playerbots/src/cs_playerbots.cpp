@@ -202,6 +202,7 @@ uint32 WorldBossStageBossDefeatedTimer = 0;
 
 char const* WorldBossStagedStateName();
 void BeginWorldBossStageCleanup(char const* reason);
+bool RequestWorldBossRebuff(Player* requester, std::string& error);
 
 WorldBossPreviewRole GetWorldBossPreviewRole(Specializations specialization)
 {
@@ -2485,6 +2486,16 @@ public:
             }
             return true;
         }
+        if (args && !strcmp(args, "rebuff"))
+        {
+            std::string error;
+            if (!RequestWorldBossRebuff(requester, error))
+                handler->PSendSysMessage("World-boss rebuff refused: %s.", error.c_str());
+            else
+                handler->SendSysMessage(
+                    "World-boss raid rebuff requested. Living out-of-combat bots will renew missing raid buffs; revived bots are retried automatically.");
+            return true;
+        }
 
         uint32 raidSize = 0;
         if (args && !strcmp(args, "preview 10"))
@@ -2496,7 +2507,7 @@ public:
             handler->SendSysMessage(
                 "Usage: select a supported Pandaria world boss, then use "
                 ".worldbossbots preview 10|25; active-stage controls: "
-                ".worldbossbots status or .worldbossbots dismiss");
+                ".worldbossbots status, .worldbossbots rebuff, or .worldbossbots dismiss");
             return true;
         }
 
@@ -4378,7 +4389,8 @@ enum WorldBossCallerActions : uint32
     WORLD_BOSS_CALLER_LOCKED_25 = GOSSIP_ACTION_INFO_DEF + 5,
     WORLD_BOSS_CALLER_STAGE_10 = GOSSIP_ACTION_INFO_DEF + 6,
     WORLD_BOSS_CALLER_DISMISS = GOSSIP_ACTION_INFO_DEF + 7,
-    WORLD_BOSS_CALLER_STAGE_25 = GOSSIP_ACTION_INFO_DEF + 8
+    WORLD_BOSS_CALLER_STAGE_25 = GOSSIP_ACTION_INFO_DEF + 8,
+    WORLD_BOSS_CALLER_REBUFF = GOSSIP_ACTION_INFO_DEF + 9
 };
 
 enum WorldBossCallerRaidMask : uint8
@@ -4433,6 +4445,32 @@ char const* WorldBossStagedStateName()
         case WorldBossStagedState::Cleanup:     return "cleanup";
     }
     return "unknown";
+}
+
+bool RequestWorldBossRebuff(Player* requester, std::string& error)
+{
+    if (!requester)
+    {
+        error = "no requesting player";
+        return false;
+    }
+    if (WorldBossStageState != WorldBossStagedState::Grouped)
+    {
+        error = "no assembled staged raid is active";
+        return false;
+    }
+    if (requester->GetGUID().GetCounter() != WorldBossStageRequester)
+    {
+        error = "only the player who started this staged raid may request it";
+        return false;
+    }
+
+    WorldBossStageBuffedBots.clear();
+    TC_LOG_INFO("server",
+        "WorldBoss rebuff requested requester=%u group=%u boss=%u bots=%u",
+        WorldBossStageRequester, WorldBossStageGroup, WorldBossStageBossEntry,
+        uint32(WorldBossStagedBots.size()));
+    return true;
 }
 
 bool StartWorldBossStage(Player* requester, Creature* caller, Creature* boss,
@@ -4674,6 +4712,8 @@ void ShowWorldBossCallerMenu(Player* player, Creature* caller)
 
     AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Encounter status",
         GOSSIP_SENDER_MAIN, WORLD_BOSS_CALLER_STATUS);
+    AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Rebuff living staged raid",
+        GOSSIP_SENDER_MAIN, WORLD_BOSS_CALLER_REBUFF);
 
     if (config.RaidSizeMask & WORLD_BOSS_CALLER_RAID_10)
         AddGossipItemFor(player, GOSSIP_ICON_CHAT,
@@ -4769,6 +4809,18 @@ struct npc_world_boss_bot_caller : public ScriptedAI
                 handler.SendSysMessage(
                     "Staged raid cleanup started. Reopen Encounter status in a few seconds.");
             }
+            ShowWorldBossCallerMenu(player, me);
+            return true;
+        }
+
+        if (action == WORLD_BOSS_CALLER_REBUFF)
+        {
+            std::string error;
+            if (!RequestWorldBossRebuff(player, error))
+                handler.PSendSysMessage("Rebuff refused: %s.", error.c_str());
+            else
+                handler.SendSysMessage(
+                    "Rebuff requested. Living out-of-combat bots will renew missing raid buffs.");
             ShowWorldBossCallerMenu(player, me);
             return true;
         }
@@ -5085,7 +5137,10 @@ void UpdateWorldBossStagedRaid(uint32 diff)
 
         // Standard raid marker indices: Moon=4 and Square=5.
         if (!mainTank.IsEmpty())
+        {
+            group->SetGroupMemberFlag(mainTank, true, MEMBER_FLAG_MAINTANK);
             group->SetTargetIcon(5, requester->GetGUID(), mainTank, 0);
+        }
         if (!primaryHealer.IsEmpty())
             group->SetTargetIcon(4, requester->GetGUID(), primaryHealer, 0);
 
@@ -5226,6 +5281,13 @@ void UpdateWorldBossStagedRaid(uint32 diff)
                 BeginWorldBossStageCleanup("a staged raid member went offline or left the raid");
                 return;
             }
+
+            // A death strips ordinary raid buffs. Forget this bot's completed
+            // preparation state immediately so the normal aura-aware class
+            // actions can renew missing buffs after a combat resurrection or
+            // corpse run. This does not cast while dead or in combat.
+            if (!bot->IsAlive())
+                WorldBossStageBuffedBots.erase(staged.first);
 
             // Rebirth/Raise Ally and any other real combat-resurrection spell
             // creates a normal resurrection request. A client player accepts
