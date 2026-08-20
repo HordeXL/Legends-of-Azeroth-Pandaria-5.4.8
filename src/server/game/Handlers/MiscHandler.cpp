@@ -2735,6 +2735,15 @@ void WorldSession::HandleSelectFactionOpcode(WorldPacket& recvPacket)
     _player->SetRace(newRace);
     _player->setFactionForRace(newRace);
 
+    // 5.4.8.18414 expects this result before it refreshes its cached race and
+    // fires NEUTRAL_FACTION_SELECT_RESULT. The client parser reads the new
+    // race as uint32 followed by one success bit.
+    WorldPacket factionResult(SMSG_NEUTRAL_PLAYER_FACTION_SELECT_RESULT, 5);
+    factionResult << uint32(newRace);
+    factionResult.WriteBit(true);
+    factionResult.FlushBits();
+    SendPacket(&factionResult);
+
     // A far teleport removes the player from the current map before its
     // queued field update is broadcast. Send the changed race and faction
     // fields to the player immediately so UnitFactionGroup("player") stops
@@ -2744,14 +2753,6 @@ void WorldSession::HandleSelectFactionOpcode(WorldPacket& recvPacket)
     _player->BuildValuesUpdateBlockForPlayer(&updateData, _player);
     updateData.BuildPacket(&updatePacket);
     SendPacket(&updatePacket);
-
-    // Build 18414's stock UI normally reruns UpdateMicroButtons when it
-    // receives NEUTRAL_FACTION_SELECT_RESULT. That result opcode is not
-    // identified in this core, but PLAYER_TALENT_UPDATE follows the same
-    // stock UI refresh path. Resending the unchanged talent state after the
-    // race update therefore refreshes PvP, Guild Finder, and LFD without
-    // inventing an opcode or modifying any talent data.
-    _player->SendTalentsInfoData();
 
     _player->SaveToDB();
 
