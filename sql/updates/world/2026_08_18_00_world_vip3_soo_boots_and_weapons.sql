@@ -172,7 +172,7 @@ CALL `vip3_clone_soo_boots`(1187,104497,16)$$
 CALL `vip3_clone_soo_boots`(1188,104482,2)$$
 CALL `vip3_clone_soo_boots`(1189,104604,2)$$
 CALL `vip3_clone_soo_boots`(1190,104529,2)$$
--- Monk: windwalker, mistweaver, brewmaster.
+-- Monk ItemSet order: brewmaster, mistweaver, windwalker.
 CALL `vip3_clone_soo_boots`(1191,104586,512)$$
 CALL `vip3_clone_soo_boots`(1192,104580,512)$$
 CALL `vip3_clone_soo_boots`(1193,104488,512)$$

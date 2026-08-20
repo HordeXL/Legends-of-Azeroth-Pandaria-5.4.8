@@ -1418,6 +1418,40 @@ BossMechanicsAction::Reaction BossMechanicsAction::GetReaction() const
         bot->FindNearestCreature(69161, 200.0f, true))
         return Reaction::SpreadOondastaBeam;
 
+    // Alpha Male (138391/138390) deliberately makes Oondasta immune to
+    // taunts and gives tank specializations extra threat.  The secondary
+    // tank therefore has to keep attacking from the current tank's side so
+    // it remains second on threat and can inherit the boss cleanly if the
+    // marked tank dies.  Do not fabricate a taunt or a stack swap that the
+    // local encounter script does not contain.
+    if (Creature* oondasta = bot->FindNearestCreature(69161, 200.0f, true))
+    {
+        if (PlayerBotSpec::IsAssistTank(bot) && bot->GetGroup())
+        {
+            Player* mainTank = nullptr;
+            for (GroupReference* ref = bot->GetGroup()->GetFirstMember(); ref;
+                ref = ref->next())
+            {
+                Player* member = ref->GetSource();
+                if (member && member->IsAlive() &&
+                    PlayerBotSpec::IsMainTank(member))
+                {
+                    mainTank = member;
+                    break;
+                }
+            }
+
+            if (mainTank && oondasta->GetVictim() == mainTank)
+            {
+                Unit* currentTarget =
+                    context->GetValue<Unit*>("current target")->Get();
+                if (currentTarget != oondasta || bot->GetVictim() != oondasta ||
+                    bot->GetExactDist2d(mainTank) > 8.0f)
+                    return Reaction::MaintainOondastaOffTank;
+            }
+        }
+    }
+
     // Frill Blast (137505) is explicitly a channel in boss_oondasta.cpp.
     // Oondasta keeps the cast orientation, so players step behind him rather
     // than trying to outrange or remain in the frontal cone.
@@ -1567,6 +1601,44 @@ bool BossMechanicsAction::Execute(Event /*event*/)
             return MoveFromGroup(30.0f);
         case Reaction::SpreadOondastaBeam:
             return MoveFromGroup(22.0f);
+        case Reaction::MaintainOondastaOffTank:
+            if (Creature* oondasta = bot->FindNearestCreature(69161, 200.0f, true))
+            {
+                Player* mainTank = nullptr;
+                if (Group* group = bot->GetGroup())
+                {
+                    for (GroupReference* ref = group->GetFirstMember(); ref;
+                        ref = ref->next())
+                    {
+                        Player* member = ref->GetSource();
+                        if (member && member->IsAlive() &&
+                            PlayerBotSpec::IsMainTank(member))
+                        {
+                            mainTank = member;
+                            break;
+                        }
+                    }
+                }
+
+                if (!mainTank || oondasta->GetVictim() != mainTank ||
+                    !bot->IsValidAttackTarget(oondasta))
+                    break;
+
+                context->GetValue<Unit*>("current target")->Set(oondasta);
+                context->GetValue<ObjectGuid>("pull target")->Set(
+                    oondasta->GetGUID());
+                bot->SetSelection(oondasta->GetGUID());
+                bot->SetTarget(oondasta->GetGUID());
+                if (bot->GetVictim() != oondasta)
+                    bot->Attack(oondasta, true);
+                botAI->ChangeEngine(BOT_STATE_COMBAT);
+
+                if (bot->GetExactDist2d(mainTank) > 8.0f)
+                    return MoveTo(mainTank, 5.0f,
+                        MovementPriority::MOVEMENT_FORCED);
+                return true;
+            }
+            break;
         case Reaction::AvoidOondastaFrillBlast:
             if (Creature* oondasta = bot->FindNearestCreature(69161, 200.0f, true))
             {

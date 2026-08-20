@@ -167,6 +167,7 @@ private:
         FleeNalakArcNova,
         SpreadStormCloud,
         SpreadOondastaBeam,
+        MaintainOondastaOffTank,
         AvoidOondastaFrillBlast,
         StackOrdosMagmaCrush,
         SpreadOrdosBurningSoul,

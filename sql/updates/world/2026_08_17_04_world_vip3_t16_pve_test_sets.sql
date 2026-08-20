@@ -142,7 +142,7 @@ CALL `vip3_clone_t16_set`(1187, 16, 99366,99358,99357,99367,99365)$$
 CALL `vip3_clone_t16_set`(1188, 2, 99370,99364,99368,99371,99369)$$
 CALL `vip3_clone_t16_set`(1189, 2, 99376,99378,99374,99377,99375)$$
 CALL `vip3_clone_t16_set`(1190, 2, 99379,99373,99387,99372,99380)$$
--- Monk: windwalker, mistweaver, brewmaster.
+-- Monk ItemSet order: brewmaster, mistweaver, windwalker.
 CALL `vip3_clone_t16_set`(1191, 512, 99384,99386,99382,99385,99383)$$
 CALL `vip3_clone_t16_set`(1192, 512, 99389,99381,99391,99390,99388)$$
 CALL `vip3_clone_t16_set`(1193, 512, 99393,99395,99396,99394,99392)$$
