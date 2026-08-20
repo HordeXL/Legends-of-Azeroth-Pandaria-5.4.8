@@ -347,9 +347,11 @@ WorldBossPveLoadoutPlan const* GetWorldBossPveLoadoutPlan(
         { SPEC_MAGE_ARCANE, 1194, {{ 99398, 99401, 99400, 99399, 99397 }} },
         { SPEC_MAGE_FIRE, 1194, {{ 99398, 99401, 99400, 99399, 99397 }} },
         { SPEC_MAGE_FROST, 1194, {{ 99398, 99401, 99400, 99399, 99397 }} },
-        { SPEC_MONK_WINDWALKER, 1191, {{ 99384, 99386, 99382, 99385, 99383 }} },
+        // ItemSet.dbc 1191 carries the Brewmaster bonuses (145049/145055),
+        // while 1193 carries the Windwalker bonuses (145004/145022).
+        { SPEC_MONK_WINDWALKER, 1193, {{ 99393, 99395, 99396, 99394, 99392 }} },
         { SPEC_MONK_MISTWEAVER, 1192, {{ 99389, 99381, 99391, 99390, 99388 }} },
-        { SPEC_MONK_BREWMASTER, 1193, {{ 99393, 99395, 99396, 99394, 99392 }} },
+        { SPEC_MONK_BREWMASTER, 1191, {{ 99384, 99386, 99382, 99385, 99383 }} },
         { SPEC_PALADIN_PROTECTION, 1188, {{ 99370, 99364, 99368, 99371, 99369 }} },
         { SPEC_PALADIN_HOLY, 1189, {{ 99376, 99378, 99374, 99377, 99375 }} },
         { SPEC_PALADIN_RETRIBUTION, 1190, {{ 99379, 99373, 99387, 99372, 99380 }} },
@@ -592,6 +594,17 @@ bool EnsureWorldBossLegendaryCloak(Player* bot, uint32& cloakEntry,
     if (!SaveSoloArenaInventory(bot, "world-boss legendary cloak", error))
         return false;
 
+    // SaveInventoryAndGoldToDB retires the character inventory queue, but
+    // both sides of SwapItem can still be present in the owner's Map update
+    // set. A staged bot may be logged out immediately after cleanup, before
+    // that Map tick runs. Retire only the two already-persisted item updates
+    // while the bot and its Map are still available.
+    if (Item* equippedCloak = bot->GetItemByPos(
+        INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_BACK))
+        equippedCloak->ClearUpdateMask(true);
+    if (Item* preservedCloak = bot->GetItemByPos(cloakPosition))
+        preservedCloak->ClearUpdateMask(true);
+
     changed = true;
     return true;
 }
@@ -620,6 +633,7 @@ bool EnsureWorldBossPveArmor(Player* bot, uint32& itemSet,
         return false;
     }
     itemSet = plan->ItemSet;
+    std::vector<std::pair<uint8, uint16>> changedPositions;
 
     auto fail = [&](std::string const& reason) -> bool
     {
@@ -697,12 +711,26 @@ bool EnsureWorldBossPveArmor(Player* bot, uint32& itemSet,
                     bot->DestroyItem(failed->GetBagSlot(), failed->GetSlot(), true);
             return fail("core refused the T16 armor equipment swap");
         }
+        changedPositions.emplace_back(equipmentSlot, replacementPosition);
         ++changedSlots;
     }
 
     if (changedSlots && !SaveSoloArenaInventory(bot,
         "world-boss T16 PvE armor", error))
         return false;
+
+    // As with the legendary cloak swap above, the durable DB save completes
+    // before a staged bot can be logged out. Clear the two Map-update markers
+    // created by every successful swap so Item::~Item never has to look up an
+    // owner which has already left ObjectAccessor.
+    for (auto const& changed : changedPositions)
+    {
+        if (Item* equippedItem = bot->GetItemByPos(
+            INVENTORY_SLOT_BAG_0, changed.first))
+            equippedItem->ClearUpdateMask(true);
+        if (Item* preservedItem = bot->GetItemByPos(changed.second))
+            preservedItem->ClearUpdateMask(true);
+    }
     return true;
 }
 
@@ -5352,6 +5380,81 @@ void UpdateWorldBossStagedRaid(uint32 diff)
         if (!boss)
             boss = requester->FindNearestCreature(
                 WorldBossStageBossEntry, 500.0f, false);
+
+        // A raid marker is persistent even when its player dies.  Without
+        // moving MEMBER_FLAG_MAINTANK, PlayerBotSpec::IsMainTank keeps
+        // returning the dead tank and every living tank remains an assist
+        // tank forever.  Promote an alive tank, preferring the boss's current
+        // tank, so generic tank AI and the source-backed encounter reactions
+        // have one unambiguous owner.  This is especially important for
+        // taunt-immune Oondasta, where Alpha Male makes the second threat tank
+        // the intended failover instead of permitting an artificial taunt.
+        ObjectGuid markedMainTank;
+        for (Group::MemberSlot const& member : group->GetMemberSlots())
+        {
+            if (member.flags & MEMBER_FLAG_MAINTANK)
+            {
+                markedMainTank = member.guid;
+                break;
+            }
+        }
+
+        Player* markedTank = nullptr;
+        if (!markedMainTank.IsEmpty())
+        {
+            if (requester->GetGUID() == markedMainTank)
+                markedTank = requester;
+            else
+                markedTank = sRandomPlayerbotMgr->GetPlayerBot(markedMainTank);
+        }
+
+        if (!markedTank || markedTank->GetGroup() != group ||
+            !markedTank->IsAlive())
+        {
+            Player* replacement = nullptr;
+            if (boss && boss->IsAlive())
+            {
+                if (Player* victim = boss->GetVictim() ?
+                    boss->GetVictim()->ToPlayer() : nullptr)
+                {
+                    if (victim->GetGroup() == group && victim->IsAlive() &&
+                        PlayerBotSpec::IsTank(victim, true))
+                        replacement = victim;
+                }
+            }
+
+            if (!replacement)
+            {
+                for (GroupReference* ref = group->GetFirstMember(); ref;
+                    ref = ref->next())
+                {
+                    Player* member = ref->GetSource();
+                    if (member && member->IsAlive() &&
+                        PlayerBotSpec::IsTank(member, true))
+                    {
+                        replacement = member;
+                        break;
+                    }
+                }
+            }
+
+            if (replacement && replacement->GetGUID() != markedMainTank)
+            {
+                group->SetGroupMemberFlag(replacement->GetGUID(), true,
+                    MEMBER_FLAG_MAINTANK);
+                group->SetTargetIcon(5, requester->GetGUID(),
+                    replacement->GetGUID(), 0);
+                TC_LOG_INFO("server",
+                    "WorldBoss main-tank failover raid=%u boss=%u old=%u new=%s/%u",
+                    WorldBossStageGroup, WorldBossStageBossEntry,
+                    markedMainTank.GetCounter(), replacement->GetName().c_str(),
+                    replacement->GetGUID().GetCounter());
+                ChatHandler(requester->GetSession()).PSendSysMessage(
+                    "World-boss main tank changed to %s after the marked tank became unavailable.",
+                    replacement->GetName().c_str());
+            }
+        }
+
         if (boss && boss->IsAlive() && boss->IsInCombat())
         {
             WorldBossStageEncounterStarted = true;
@@ -5409,6 +5512,36 @@ void UpdateWorldBossStagedRaid(uint32 diff)
                 bot->TeleportTo(requester->GetMapId(), x, y, z,
                     requester->GetOrientation());
                 ++index;
+            }
+
+            // A clean pull starts with the requester's tank role again when
+            // applicable; otherwise use the first revived staged tank.  This
+            // also replaces a failover marker left on the previous pull.
+            Player* resetMainTank = nullptr;
+            if (GetWorldBossPreviewRole(requester->GetSpecialization()) ==
+                WorldBossPreviewRole::Tank)
+                resetMainTank = requester;
+            if (!resetMainTank)
+            {
+                for (auto const& staged : WorldBossStagedBots)
+                {
+                    if (staged.second.Role != WorldBossPreviewRole::Tank)
+                        continue;
+                    Player* bot = sRandomPlayerbotMgr->GetPlayerBot(
+                        ObjectGuid::Create<HighGuid::Player>(staged.first));
+                    if (bot && bot->IsAlive() && bot->GetGroup() == group)
+                    {
+                        resetMainTank = bot;
+                        break;
+                    }
+                }
+            }
+            if (resetMainTank)
+            {
+                group->SetGroupMemberFlag(resetMainTank->GetGUID(), true,
+                    MEMBER_FLAG_MAINTANK);
+                group->SetTargetIcon(5, requester->GetGUID(),
+                    resetMainTank->GetGUID(), 0);
             }
             WorldBossStageBuffedBots.clear();
             WorldBossStageEncounterStarted = false;

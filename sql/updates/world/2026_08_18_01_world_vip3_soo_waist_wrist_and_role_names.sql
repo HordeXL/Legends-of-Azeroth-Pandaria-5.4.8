@@ -174,12 +174,12 @@ CALL `vip3_clone_soo_nonset_piece`(1189,7,104415,9,2,'Heal')$$
 CALL `vip3_clone_soo_nonset_piece`(1190,6,104591,6,2,'DPS')$$
 CALL `vip3_clone_soo_nonset_piece`(1190,7,104568,9,2,'DPS')$$
 -- Monk: windwalker, mistweaver, brewmaster.
-CALL `vip3_clone_soo_nonset_piece`(1191,6,104532,6,512,'DPS')$$
-CALL `vip3_clone_soo_nonset_piece`(1191,7,104509,9,512,'DPS')$$
+CALL `vip3_clone_soo_nonset_piece`(1191,6,104532,6,512,'Tank')$$
+CALL `vip3_clone_soo_nonset_piece`(1191,7,104509,9,512,'Tank')$$
 CALL `vip3_clone_soo_nonset_piece`(1192,6,104504,6,512,'Heal')$$
 CALL `vip3_clone_soo_nonset_piece`(1192,7,104429,9,512,'Heal')$$
-CALL `vip3_clone_soo_nonset_piece`(1193,6,104655,6,512,'Tank')$$
-CALL `vip3_clone_soo_nonset_piece`(1193,7,104581,9,512,'Tank')$$
+CALL `vip3_clone_soo_nonset_piece`(1193,6,104655,6,512,'DPS')$$
+CALL `vip3_clone_soo_nonset_piece`(1193,7,104581,9,512,'DPS')$$
 -- Mage and hunter.
 CALL `vip3_clone_soo_nonset_piece`(1194,6,104573,6,128,'DPS')$$
 CALL `vip3_clone_soo_nonset_piece`(1194,7,104446,9,128,'DPS')$$
@@ -214,9 +214,9 @@ CALL `vip3_set_block_role_name`(1187,'Heal')$$
 CALL `vip3_set_block_role_name`(1188,'Tank')$$
 CALL `vip3_set_block_role_name`(1189,'Heal')$$
 CALL `vip3_set_block_role_name`(1190,'DPS')$$
-CALL `vip3_set_block_role_name`(1191,'DPS')$$
+CALL `vip3_set_block_role_name`(1191,'Tank')$$
 CALL `vip3_set_block_role_name`(1192,'Heal')$$
-CALL `vip3_set_block_role_name`(1193,'Tank')$$
+CALL `vip3_set_block_role_name`(1193,'DPS')$$
 CALL `vip3_set_block_role_name`(1194,'DPS')$$
 CALL `vip3_set_block_role_name`(1195,'DPS')$$
 CALL `vip3_set_block_role_name`(1196,'DPS')$$

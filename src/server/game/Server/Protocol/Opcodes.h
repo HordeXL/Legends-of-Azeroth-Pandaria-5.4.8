@@ -921,6 +921,7 @@ enum OpcodeServer : uint16
     SMSG_MOVE_UPDATE_WALK_SPEED                                  = 0x0047,
     SMSG_MOVE_WATER_WALK                                         = 0x1F9A,
     SMSG_NAME_QUERY_RESPONSE                                     = 0x169B,
+    SMSG_NEUTRAL_PLAYER_FACTION_SELECT_RESULT                    = 0x040F,
     SMSG_REALM_NAME_QUERY_RESPONSE                               = 0x063E,
     SMSG_NEW_TAXI_PATH                                           = 0x141B,
     SMSG_NEW_WORLD                                               = 0x1C3B,

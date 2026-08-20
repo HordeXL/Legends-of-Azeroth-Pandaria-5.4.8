@@ -142,7 +142,18 @@ void GameObject::RemoveFromOwner()
     // for deletion. Do not abort cleanup here; clear the stale owner link so
     // the GO can finish despawning without leaving GAMEOBJECT_FIELD_CREATED_BY
     // pointing at a non-existing unit.
-    if (World::IsStopped())
+    // Challenger Soong/Wuli cast 46905 to create the temporary collision GO
+    // 188215. Their creature can legitimately unload before the spell GO's
+    // deferred delete is processed. The stale link is still cleared below;
+    // keep this one source-backed lifecycle case out of the error log without
+    // hiding other unexpected orphaned gameobjects.
+    bool expectedCollisionCleanup = GetEntry() == 188215 && m_spellId == 46905 &&
+        ownerGUID.IsCreature();
+
+    if (expectedCollisionCleanup)
+        TC_LOG_DEBUG("misc", "Removed temporary collision GameObject (GUID: %u Entry: %u SpellId: %u) after its creature owner (GUID: %u) unloaded",
+            GetGUID().GetCounter(), GetGOInfo()->entry, m_spellId, ownerGUID.GetCounter());
+    else if (World::IsStopped())
         TC_LOG_DEBUG("misc", "Removed GameObject (GUID: %u Entry: %u SpellId: %u LinkedGO: %u) that just lost any reference to the owner (GUID: %u Type: '%s') GO list during shutdown",
             GetGUID().GetCounter(), GetGOInfo()->entry, m_spellId, GetGOInfo()->GetLinkedGameObjectEntry(), ownerGUID.GetCounter(), ownerType);
     else
