@@ -60,14 +60,15 @@ class AreaTrigger_at_mandori : public AreaTriggerScript
             player->RemoveAurasDueToSpell(59074);
 
             // The removed pre-quest phase contains the permanent closed gates.
-            // A normal visibility refresh does not discard them immediately on
-            // this client build, leaving their collision over the personal scene
-            // gates. Explicitly destroy only those two DB spawns for this player;
-            // the world objects remain available to every other player.
+            // Refresh these exact objects through Player's visibility bookkeeping.
+            // A raw DestroyForPlayer packet leaves their GUIDs in m_clientGUIDs, so
+            // the client can retain stale collision over the personal scene gates.
+            // UpdateVisibilityOf also forgets an out-of-phase GUID and therefore
+            // keeps the DB gates available to other players without a world change.
             if (GameObject* mandoriGate = player->GetMap()->GetGameObjectBySpawnId(540359))
-                mandoriGate->DestroyForPlayer(player);
+                player->UpdateVisibilityOf(mandoriGate);
             if (GameObject* peiwuGate = player->GetMap()->GetGameObjectBySpawnId(540026))
-                peiwuGate->DestroyForPlayer(player);
+                player->UpdateVisibilityOf(peiwuGate);
 
             return true;
         }
