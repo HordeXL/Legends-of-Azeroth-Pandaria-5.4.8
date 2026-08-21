@@ -4480,9 +4480,9 @@ CONFIG_PET_NO_SPEC = 100
 # ISLE OF THUNDER
 #
 
-IsleofThunder.Stage = 1
-IsleofThunder.Progression.Horde = 0
-IsleofThunder.Progression.Alliance = 0
+IsleofThunder.Stage = 5
+IsleofThunder.Progression.Horde = 100
+IsleofThunder.Progression.Alliance = 100
 
 #
 # OTHER
