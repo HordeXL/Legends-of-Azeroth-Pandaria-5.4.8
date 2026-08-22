@@ -30,7 +30,7 @@ Event Trigger::Check()
 
 Value<Unit*>* Trigger::GetTargetValue() { return context->GetValue<Unit*>(GetTargetName()); }
 
-Unit* Trigger::GetTarget() { return GetTargetValue()->Get(); }
+Unit* Trigger::GetTarget() { Value<Unit*>* targetValue = GetTargetValue(); return targetValue ? targetValue->Get() : nullptr; }
 
 bool Trigger::needCheck()
 {

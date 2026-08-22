@@ -94,7 +94,7 @@ void NextAction::destroy(NextAction** actions)
 
 Value<Unit*>* Action::GetTargetValue() { return context->GetValue<Unit*>(GetTargetName()); }
 
-Unit* Action::GetTarget() { return GetTargetValue()->Get(); }
+Unit* Action::GetTarget() { Value<Unit*>* targetValue = GetTargetValue(); return targetValue ? targetValue->Get() : nullptr; }
 
 ActionBasket::ActionBasket(ActionNode* action, float relevance, bool skipPrerequisites, Event event)
     : action(action), relevance(relevance), skipPrerequisites(skipPrerequisites), event(event), created(getMSTime())
