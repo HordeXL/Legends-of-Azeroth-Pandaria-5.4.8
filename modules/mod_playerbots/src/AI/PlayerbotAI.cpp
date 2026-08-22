@@ -24,10 +24,13 @@
 #include <string>
 
 #include "AiFactory.h"
+#include "Channel.h"
 #include "ChannelMgr.h"
 #include "CreatureAIImpl.h"
+#include "DBCStores.h"
 #include "Engine.h"
 #include "ExternalEventHelper.h"
+#include "Guild.h"
 #include "GuildMgr.h"
 #include "Helper.h"
 #include "LastMovementValue.h"
@@ -1211,7 +1214,7 @@ void PlayerbotAI::HandleBotOutgoingPacket(WorldPacket const& packet)
 
             ItemTemplate const* itemProto = itemId ? sObjectMgr->GetItemTemplate(itemId) : nullptr;
             if (chance)
-                TryTalk(category, chance, nullptr, itemProto);
+                TryBroadcast(category, chance, nullptr, itemProto);
         }
         break;
     }
@@ -1685,6 +1688,126 @@ bool PlayerbotAI::TryTalk(std::string const name, uint32 chance, Unit* target, I
     return Talk(name, target, item);
 }
 
+bool PlayerbotAI::Broadcast(std::string const name, Unit* target, ItemTemplate const* item)
+{
+    if (!sPlayerbotAIConfig->randomBotTalk || !sPlayerbotAIConfig->enableBroadcasts)
+        return false;
+    if (!bot || !bot->IsInWorld() || bot->IsDuringRemoveFromWorld())
+        return false;
+    if (bot->IsInCombat() && _currentState != BOT_STATE_COMBAT)
+        return false;
+
+    LocaleConstant locale = DEFAULT_LOCALE;
+    if (Player* m = GetMaster())
+        locale = m->GetSession()->GetSessionDbcLocale();
+    else
+        locale = bot->GetSession()->GetSessionDbcLocale();
+
+    uint32 sayType = 0;
+    std::string text = sPlayerbotTextMgr->GetText(name, locale, &sayType);
+    if (text.empty())
+        text = sPlayerbotTextMgr->GetSpeech(name, target ? target->GetName() : "");
+    if (text.empty())
+        return false;
+
+    text = sPlayerbotTextMgr->Format(std::move(text), bot, target, item);
+
+    // 1) Guild chat (most reliable - no channel membership needed)
+    if (Guild* guild = bot->GetGuild())
+    {
+        if (urand(0, 29999) < sPlayerbotAIConfig->broadcastToGuildGlobalChance)
+        {
+            guild->BroadcastToGuild(bot->GetSession(), false, text);
+            return true;
+        }
+    }
+
+    // 2) Chat channels, gated by their per-channel global chances.
+    //    Channel names are built from the DBC pattern so they match the real
+    //    localized channels other players can see. Standard ChatChannels.dbc
+    //    ids: 1=General, 2=Trade, 22=LocalDefense, 25=GuildRecruitment,
+    //    26=LookingForGroup.
+    ChannelMgr* cMgr = ChannelMgr::forTeam(bot->GetTeamId());
+    if (cMgr)
+    {
+        auto channelName = [&](uint32 channelId, std::string const& sub) -> std::string
+        {
+            for (uint32 i = 0; i < sChatChannelsStore.GetNumRows(); ++i)
+            {
+                ChatChannelsEntry const* ch = sChatChannelsStore.LookupEntry(i);
+                if (!ch || ch->ChannelID != channelId || !ch->pattern[locale])
+                    continue;
+                char buf[120];
+                snprintf(buf, 120, ch->pattern[locale], sub.c_str());
+                return std::string(buf);
+            }
+            return "";
+        };
+
+        AreaTableEntry const* zone = sAreaTableStore.LookupEntry(bot->GetZoneId());
+        std::string zoneName = zone && zone->area_name[0] ? zone->area_name[0] : "";
+        std::string cityName = "";
+        if (AreaTableEntry const* city = sAreaTableStore.LookupEntry(3459))
+            cityName = city->area_name[0] ? city->area_name[0] : "";
+
+        struct ChannelCandidate
+        {
+            uint32 id;
+            std::string name;
+            uint32 chance;
+        };
+
+        std::vector<ChannelCandidate> candidates;
+        if (!zoneName.empty())
+        {
+            candidates.push_back({ 1, channelName(1, zoneName), sPlayerbotAIConfig->broadcastToGeneralGlobalChance });
+            candidates.push_back({ 22, channelName(22, zoneName), sPlayerbotAIConfig->broadcastToLocalDefenseGlobalChance });
+        }
+        if (!cityName.empty())
+        {
+            candidates.push_back({ 2, channelName(2, cityName), sPlayerbotAIConfig->broadcastToTradeGlobalChance });
+            candidates.push_back({ 25, channelName(25, cityName), sPlayerbotAIConfig->broadcastToGuildRecruitmentGlobalChance });
+        }
+        candidates.push_back({ 26, channelName(26, ""), sPlayerbotAIConfig->broadcastToLFGGlobalChance });
+        candidates.push_back({ 0, "World", sPlayerbotAIConfig->broadcastToWorldGlobalChance });
+
+        for (auto const& candidate : candidates)
+        {
+            if (!candidate.chance || candidate.name.empty())
+                continue;
+            if (urand(0, 29999) >= candidate.chance)
+                continue;
+
+            Channel* channel = cMgr->GetChannel(candidate.name, bot, false);
+            if (!channel)
+                channel = cMgr->GetJoinChannel(candidate.name, candidate.id);
+            if (!channel)
+                continue;
+
+            // JoinChannel is a no-op for players that are already members.
+            channel->JoinChannel(bot, "");
+            channel->Say(bot->GetGUID(), text, LANG_UNIVERSAL);
+            return true;
+        }
+    }
+
+    // 3) Fall back to a local say/yell.
+    if (sayType == 1)
+        return Yell(text);
+
+    return Say(text);
+}
+
+bool PlayerbotAI::TryBroadcast(std::string const name, uint32 chance, Unit* target, ItemTemplate const* item)
+{
+    if (chance == 0)
+        return false;
+    if (chance < 30000 && urand(0, 29999) >= chance)
+        return false;
+
+    return Broadcast(name, target, item);
+}
+
 void PlayerbotAI::UpdateRandomSpeech(uint32 /*elapsed*/)
 {
     if (!sPlayerbotAIConfig->randomBotTalk)
@@ -1721,17 +1844,31 @@ void PlayerbotAI::UpdateRandomSpeech(uint32 /*elapsed*/)
     else
     {
         // ambient chatter for masterless random bots (or when explicitly enabled).
-        // Low frequency: ~10% per check so a bot speaks at most every ~20s.
-        if ((!HasRealPlayerMaster() || sPlayerbotAIConfig->randomBotSayWithoutMaster) &&
-            sPlayerbotAIConfig->enableBroadcasts &&
-            urand(0, 29999) < sPlayerbotAIConfig->broadcastChanceSuggestSomething / 10)
+        // Low frequency so a bot speaks at most every ~20s.
+        if (!HasRealPlayerMaster() || sPlayerbotAIConfig->randomBotSayWithoutMaster)
         {
-            static std::vector<std::string> const chatterCategories = {
-                "suggest_something", "suggest_quest", "suggest_trade",
-                "broadcast_levelup_generic", "loot"
-            };
-            std::string const& category = chatterCategories[urand(0, uint32(chatterCategories.size() - 1))];
-            Talk(category);
+            if (!sPlayerbotAIConfig->enableBroadcasts)
+                return;
+
+            // dungeon suggestion (broadcast to channels)
+            if (sPlayerbotAIConfig->randomBotSuggestDungeons &&
+                sPlayerbotAIConfig->broadcastChanceSuggestInstance &&
+                urand(0, 29999) < sPlayerbotAIConfig->broadcastChanceSuggestInstance)
+            {
+                Broadcast("suggest_instance");
+                return;
+            }
+
+            // general ambient chatter
+            if (urand(0, 29999) < sPlayerbotAIConfig->broadcastChanceSuggestSomething / 10)
+            {
+                static std::vector<std::string> const chatterCategories = {
+                    "suggest_something", "suggest_quest", "suggest_trade",
+                    "broadcast_levelup_generic", "loot"
+                };
+                std::string const& category = chatterCategories[urand(0, uint32(chatterCategories.size() - 1))];
+                Talk(category);
+            }
         }
     }
 }

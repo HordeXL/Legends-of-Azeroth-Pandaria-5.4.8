@@ -331,13 +331,10 @@ public:
         if (!sPlayerbotAIConfig->enableBroadcasts || !sPlayerbotAIConfig->randomBotTalk)
             return;
 
-        // Thunderfury / toxic-link spam replies from nearby bots.
         bool thunderfury = msg.find("Thunderfury") != std::string::npos;
         bool itemLink = msg.find("|Hitem:") != std::string::npos;
 
-        if (!thunderfury && !itemLink)
-            return;
-
+        // Build the list of nearby bots (owned by the player + random bots).
         std::vector<Player*> bots;
         if (PlayerbotMgr* playerbotMgr = GET_PLAYERBOT_MGR(player))
         {
@@ -362,6 +359,39 @@ public:
                 botAI->TryTalk("thunderfury_spam", sPlayerbotAIConfig->thunderfuryRepliesChance * 300);
             if (itemLink)
                 botAI->TryTalk("suggest_toxic_links", sPlayerbotAIConfig->toxicLinksRepliesChance * 300);
+        }
+
+        // General chat reply: when the player chats in the world, one random
+        // nearby bot (that is not the speaker's own bot) occasionally replies
+        // with a "reply" text (reply_type entries in ai_playerbot_texts).
+        if (!thunderfury && !itemLink &&
+            (type == CHAT_MSG_SAY || type == CHAT_MSG_YELL || type == CHAT_MSG_EMOTE))
+        {
+            std::vector<Player*> candidates;
+            for (Player* bot : bots)
+            {
+                if (!bot || !bot->IsInWorld())
+                    continue;
+                if (bot->GetMapId() != player->GetMapId() || bot->GetExactDist(player) > sPlayerbotAIConfig->sightDistance)
+                    continue;
+
+                PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot);
+                if (!botAI || botAI->GetMaster() == player)
+                    continue;
+
+                candidates.push_back(bot);
+            }
+
+            if (!candidates.empty())
+            {
+                Player* bot = candidates[urand(0, uint32(candidates.size() - 1))];
+                if (PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot))
+                {
+                    // ~3% per chat message so bots do not answer everything
+                    if (urand(0, 29999) < sPlayerbotAIConfig->broadcastChanceSuggestSomething / 100)
+                        botAI->Talk("reply");
+                }
+            }
         }
     }
 
@@ -417,7 +447,7 @@ public:
                 break;
         }
 
-        GET_PLAYERBOT_AI(killer)->TryTalk(category, chance, killed);
+        GET_PLAYERBOT_AI(killer)->TryBroadcast(category, chance, killed);
     }
 
     void OnLevelChanged(Player* player, uint8 /*oldLevel*/) override
@@ -428,11 +458,11 @@ public:
 
         uint8 level = player->GetLevel();
         if (level == sWorld->getIntConfig(CONFIG_MAX_PLAYER_LEVEL))
-            botAI->TryTalk("broadcast_levelup_max_level", sPlayerbotAIConfig->broadcastChanceLevelupMaxLevel);
+            botAI->TryBroadcast("broadcast_levelup_max_level", sPlayerbotAIConfig->broadcastChanceLevelupMaxLevel);
         else if (level % 10 == 0)
-            botAI->TryTalk("broadcast_levelup_10x", sPlayerbotAIConfig->broadcastChanceLevelupTenX);
+            botAI->TryBroadcast("broadcast_levelup_10x", sPlayerbotAIConfig->broadcastChanceLevelupTenX);
         else
-            botAI->TryTalk("broadcast_levelup_generic", sPlayerbotAIConfig->broadcastChanceLevelupGeneric);
+            botAI->TryBroadcast("broadcast_levelup_generic", sPlayerbotAIConfig->broadcastChanceLevelupGeneric);
     }
 
     void OnQuestAdded(Player* player, const Quest* quest) override
@@ -443,6 +473,16 @@ public:
     void OnQuestRewarded(Player* player, const Quest* quest) override
     {
         BroadcastQuestEvent(player, "broadcast_quest_turned_in", sPlayerbotAIConfig->broadcastChanceQuestTurnedIn);
+    }
+
+    void OnQuestCompleted(Player* player, const Quest* quest) override
+    {
+        BroadcastQuestEvent(player, "broadcast_quest_update_complete", sPlayerbotAIConfig->broadcastChanceQuestUpdateComplete);
+    }
+
+    void OnQuestFailed(Player* player, const Quest* quest) override
+    {
+        BroadcastQuestEvent(player, "broadcast_quest_update_failed_timer", sPlayerbotAIConfig->broadcastChanceQuestUpdateFailedTimer);
     }
 
     void OnAfterUpdate(Player* player, uint32 diff) override
@@ -465,7 +505,7 @@ private:
             return;
 
         if (PlayerbotAI* botAI = GET_PLAYERBOT_AI(player))
-            botAI->TryTalk(category, chance);
+            botAI->TryBroadcast(category, chance);
     }
 };
 void AddSC_mod_playerbots()

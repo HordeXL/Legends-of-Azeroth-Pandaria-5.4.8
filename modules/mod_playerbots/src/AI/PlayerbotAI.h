@@ -228,6 +228,13 @@ public:
     // when the roll succeeds.
     bool TryTalk(std::string const name, uint32 chance, Unit* target = nullptr, ItemTemplate const* item = nullptr);
 
+    // Broadcast speech: like Talk but tries to send the text to a chat channel
+    // or the guild first (gated by the BroadcastTo*GlobalChance config), falling
+    // back to a local /say when no channel target is available.
+    bool Broadcast(std::string const name, Unit* target = nullptr, ItemTemplate const* item = nullptr);
+    // Rolls the chance (0-30000) and broadcasts when the roll succeeds.
+    bool TryBroadcast(std::string const name, uint32 chance, Unit* target = nullptr, ItemTemplate const* item = nullptr);
+
     // Periodic random speech checks (taunt/aoe/random chatter). Called from UpdateAI.
     void UpdateRandomSpeech(uint32 elapsed);
 private:

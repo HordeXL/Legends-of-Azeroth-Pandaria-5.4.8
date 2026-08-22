@@ -172,6 +172,15 @@ std::string PlayerbotTextMgr::Format(std::string text, Player* bot, Unit* target
             ReplaceAll(text, "%my_class", cls->name[0]);
 
         ReplaceAll(text, "%my_level", std::to_string(bot->GetLevel()));
+
+        // %instance_name - the bot's current map/instance name (dungeon suggestions)
+        if (text.find("%instance_name") != std::string::npos)
+        {
+            std::string instName;
+            if (MapEntry const* mapEntry = sMapStore.LookupEntry(bot->GetMapId()))
+                instName = mapEntry->name[0] ? mapEntry->name[0] : "";
+            ReplaceAll(text, "%instance_name", instName.empty() ? "instance" : instName);
+        }
     }
 
     if (target)
