@@ -48,11 +48,12 @@ class Creature;
 class Engine;
 class ExternalEventHelper;
 class GameObject;
+class Item;
+struct ItemTemplate;
 class ObjectGuid;
 class Player;
 class Position;
 class Unit;
-class Item;
 class WorldObject;
 struct CreatureData;
 
@@ -217,6 +218,18 @@ public:
     bool SayToRaid(const std::string& msg);
     bool SayToParty(const std::string& msg);
     bool TellError(std::string const text);
+    bool HandleCommand(uint32 type, std::string const text, Player* owner = nullptr);
+
+    // Random speech system: speaks a random text of the given category (say/yell).
+    // Returns false when speech is disabled, the category is empty, or the bot
+    // cannot speak right now.
+    bool Talk(std::string const name, Unit* target = nullptr, ItemTemplate const* item = nullptr);
+    // Rolls the chance (0-30000, matching the broadcast config scale) and speaks
+    // when the roll succeeds.
+    bool TryTalk(std::string const name, uint32 chance, Unit* target = nullptr, ItemTemplate const* item = nullptr);
+
+    // Periodic random speech checks (taunt/aoe/random chatter). Called from UpdateAI.
+    void UpdateRandomSpeech(uint32 elapsed);
 private:
     bool _isBotInitializing;
 
@@ -238,11 +251,12 @@ protected:
     std::queue<uint32> _pendingTimeSyncCounters;
     //CompositeChatFilter chatFilter;
     //PlayerbotSecurity security;
-    //std::map<std::string, time_t> whispers;
+    std::map<std::string, time_t> whispers;
     //std::pair<ChatMsg, time_t> currentChat;
     //static std::set<std::string> unsecuredCommands;
     bool _allowActive[MAX_ACTIVITY_TYPE];
     time_t _allowActiveCheckTimer[MAX_ACTIVITY_TYPE];
+    time_t _speechCheckTimer = 0;
     //bool inCombat = false;
     //BotCheatMask cheatMask = BotCheatMask::none;
     //Position jumpDestination = Position();

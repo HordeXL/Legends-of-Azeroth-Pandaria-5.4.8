@@ -100,6 +100,38 @@ public:
     std::vector<uint32> pvpProhibitedZoneIds;
     std::vector<uint32> pvpProhibitedAreaIds;
 
+    // CHAT / SPEECH / BROADCAST SETTINGS
+    bool randomBotTalk, randomBotEmote, randomBotSuggestDungeons;
+    bool enableGreet;
+    bool guildFeedback;
+    uint32 toxicLinksRepliesChance, thunderfuryRepliesChance, guildRepliesRate;
+    bool randomBotSayWithoutMaster;
+    bool enableBroadcasts;
+    // channel broadcast global chances (0-30000)
+    uint32 broadcastToGuildGlobalChance, broadcastToWorldGlobalChance, broadcastToGeneralGlobalChance,
+        broadcastToTradeGlobalChance, broadcastToLFGGlobalChance, broadcastToLocalDefenseGlobalChance,
+        broadcastToWorldDefenseGlobalChance, broadcastToGuildRecruitmentGlobalChance;
+    // item loot broadcast chances
+    uint32 broadcastChanceLootingItemPoor, broadcastChanceLootingItemNormal, broadcastChanceLootingItemUncommon,
+        broadcastChanceLootingItemRare, broadcastChanceLootingItemEpic, broadcastChanceLootingItemLegendary,
+        broadcastChanceLootingItemArtifact;
+    // quest broadcast chances
+    uint32 broadcastChanceQuestAccepted, broadcastChanceQuestUpdateObjectiveCompleted,
+        broadcastChanceQuestUpdateObjectiveProgress, broadcastChanceQuestUpdateFailedTimer,
+        broadcastChanceQuestUpdateComplete, broadcastChanceQuestTurnedIn;
+    // kill broadcast chances
+    uint32 broadcastChanceKillNormal, broadcastChanceKillElite, broadcastChanceKillRareelite,
+        broadcastChanceKillWorldboss, broadcastChanceKillRare, broadcastChanceKillUnknown,
+        broadcastChanceKillPet, broadcastChanceKillPlayer;
+    // levelup broadcast chances
+    uint32 broadcastChanceLevelupGeneric, broadcastChanceLevelupTenX, broadcastChanceLevelupMaxLevel;
+    // suggestion broadcast chances
+    uint32 broadcastChanceSuggestInstance, broadcastChanceSuggestQuest, broadcastChanceSuggestGrindMaterials,
+        broadcastChanceSuggestGrindReputation, broadcastChanceSuggestSell, broadcastChanceSuggestSomething,
+        broadcastChanceSuggestSomethingToxic, broadcastChanceSuggestToxicLinks, broadcastChanceSuggestThunderfury;
+    uint32 broadcastChanceGuildManagement;
+    std::string toxicLinksPrefix;
+
     std::mutex m_logMtx;
     std::vector<std::string> allowedLogFiles;
     std::unordered_map<std::string, std::pair<FILE*, bool>> logFiles;

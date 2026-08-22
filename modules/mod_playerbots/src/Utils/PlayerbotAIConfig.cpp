@@ -236,6 +236,67 @@ bool PlayerbotAIConfig::Initialize()
     combatStrategies = sConfigMgr->GetStringDefault("AiPlayerbot.CombatStrategies", "+custom::say");
     nonCombatStrategies = sConfigMgr->GetStringDefault("AiPlayerbot.NonCombatStrategies", "+custom::say,+return");
 
+    // CHAT / SPEECH / BROADCAST SETTINGS
+    randomBotTalk = sConfigMgr->GetBoolDefault("AiPlayerbot.RandomBotTalk", true);
+    randomBotEmote = sConfigMgr->GetBoolDefault("AiPlayerbot.RandomBotEmote", false);
+    randomBotSuggestDungeons = sConfigMgr->GetBoolDefault("AiPlayerbot.RandomBotSuggestDungeons", true);
+    enableGreet = sConfigMgr->GetBoolDefault("AiPlayerbot.EnableGreet", false);
+    toxicLinksRepliesChance = sConfigMgr->GetIntDefault("AiPlayerbot.ToxicLinksRepliesChance", 30);
+    thunderfuryRepliesChance = sConfigMgr->GetIntDefault("AiPlayerbot.ThunderfuryRepliesChance", 40);
+    guildRepliesRate = sConfigMgr->GetIntDefault("AiPlayerbot.GuildRepliesRate", 100);
+    guildFeedback = sConfigMgr->GetBoolDefault("AIPlayerbot.GuildFeedback", true);
+    randomBotSayWithoutMaster = sConfigMgr->GetBoolDefault("AiPlayerbot.RandomBotSayWithoutMaster", false);
+    enableBroadcasts = sConfigMgr->GetBoolDefault("AiPlayerbot.EnableBroadcasts", true);
+
+    broadcastToGuildGlobalChance = sConfigMgr->GetIntDefault("AiPlayerbot.BroadcastToGuildGlobalChance", 30000);
+    broadcastToWorldGlobalChance = sConfigMgr->GetIntDefault("AiPlayerbot.BroadcastToWorldGlobalChance", 30000);
+    broadcastToGeneralGlobalChance = sConfigMgr->GetIntDefault("AiPlayerbot.BroadcastToGeneralGlobalChance", 30000);
+    broadcastToTradeGlobalChance = sConfigMgr->GetIntDefault("AiPlayerbot.BroadcastToTradeGlobalChance", 30000);
+    broadcastToLFGGlobalChance = sConfigMgr->GetIntDefault("AiPlayerbot.BroadcastToLFGGlobalChance", 30000);
+    broadcastToLocalDefenseGlobalChance = sConfigMgr->GetIntDefault("AiPlayerbot.BroadcastToLocalDefenseGlobalChance", 30000);
+    broadcastToWorldDefenseGlobalChance = sConfigMgr->GetIntDefault("AiPlayerbot.BroadcastToWorldDefenseGlobalChance", 30000);
+    broadcastToGuildRecruitmentGlobalChance = sConfigMgr->GetIntDefault("AiPlayerbot.BroadcastToGuildRecruitmentGlobalChance", 30000);
+
+    broadcastChanceLootingItemPoor = sConfigMgr->GetIntDefault("AiPlayerbot.BroadcastChanceLootingItemPoor", 30);
+    broadcastChanceLootingItemNormal = sConfigMgr->GetIntDefault("AiPlayerbot.BroadcastChanceLootingItemNormal", 150);
+    broadcastChanceLootingItemUncommon = sConfigMgr->GetIntDefault("AiPlayerbot.BroadcastChanceLootingItemUncommon", 10000);
+    broadcastChanceLootingItemRare = sConfigMgr->GetIntDefault("AiPlayerbot.BroadcastChanceLootingItemRare", 20000);
+    broadcastChanceLootingItemEpic = sConfigMgr->GetIntDefault("AiPlayerbot.BroadcastChanceLootingItemEpic", 30000);
+    broadcastChanceLootingItemLegendary = sConfigMgr->GetIntDefault("AiPlayerbot.BroadcastChanceLootingItemLegendary", 30000);
+    broadcastChanceLootingItemArtifact = sConfigMgr->GetIntDefault("AiPlayerbot.BroadcastChanceLootingItemArtifact", 30000);
+
+    broadcastChanceQuestAccepted = sConfigMgr->GetIntDefault("AiPlayerbot.BroadcastChanceQuestAccepted", 6000);
+    broadcastChanceQuestUpdateObjectiveCompleted = sConfigMgr->GetIntDefault("AiPlayerbot.BroadcastChanceQuestUpdateObjectiveCompleted", 300);
+    broadcastChanceQuestUpdateObjectiveProgress = sConfigMgr->GetIntDefault("AiPlayerbot.BroadcastChanceQuestUpdateObjectiveProgress", 300);
+    broadcastChanceQuestUpdateFailedTimer = sConfigMgr->GetIntDefault("AiPlayerbot.BroadcastChanceQuestUpdateFailedTimer", 300);
+    broadcastChanceQuestUpdateComplete = sConfigMgr->GetIntDefault("AiPlayerbot.BroadcastChanceQuestUpdateComplete", 1000);
+    broadcastChanceQuestTurnedIn = sConfigMgr->GetIntDefault("AiPlayerbot.BroadcastChanceQuestTurnedIn", 10000);
+
+    broadcastChanceKillNormal = sConfigMgr->GetIntDefault("AiPlayerbot.BroadcastChanceKillNormal", 30);
+    broadcastChanceKillElite = sConfigMgr->GetIntDefault("AiPlayerbot.BroadcastChanceKillElite", 300);
+    broadcastChanceKillRareelite = sConfigMgr->GetIntDefault("AiPlayerbot.BroadcastChanceKillRareelite", 3000);
+    broadcastChanceKillWorldboss = sConfigMgr->GetIntDefault("AiPlayerbot.BroadcastChanceKillWorldboss", 20000);
+    broadcastChanceKillRare = sConfigMgr->GetIntDefault("AiPlayerbot.BroadcastChanceKillRare", 10000);
+    broadcastChanceKillUnknown = sConfigMgr->GetIntDefault("AiPlayerbot.BroadcastChanceKillUnknown", 100);
+    broadcastChanceKillPet = sConfigMgr->GetIntDefault("AiPlayerbot.BroadcastChanceKillPet", 10);
+    broadcastChanceKillPlayer = sConfigMgr->GetIntDefault("AiPlayerbot.BroadcastChanceKillPlayer", 30);
+
+    broadcastChanceLevelupGeneric = sConfigMgr->GetIntDefault("AiPlayerbot.BroadcastChanceLevelupGeneric", 20000);
+    broadcastChanceLevelupTenX = sConfigMgr->GetIntDefault("AiPlayerbot.BroadcastChanceLevelupTenX", 30000);
+    broadcastChanceLevelupMaxLevel = sConfigMgr->GetIntDefault("AiPlayerbot.BroadcastChanceLevelupMaxLevel", 30000);
+
+    broadcastChanceSuggestInstance = sConfigMgr->GetIntDefault("AiPlayerbot.BroadcastChanceSuggestInstance", 5000);
+    broadcastChanceSuggestQuest = sConfigMgr->GetIntDefault("AiPlayerbot.BroadcastChanceSuggestQuest", 10000);
+    broadcastChanceSuggestGrindMaterials = sConfigMgr->GetIntDefault("AiPlayerbot.BroadcastChanceSuggestGrindMaterials", 5000);
+    broadcastChanceSuggestGrindReputation = sConfigMgr->GetIntDefault("AiPlayerbot.BroadcastChanceSuggestGrindReputation", 5000);
+    broadcastChanceSuggestSell = sConfigMgr->GetIntDefault("AiPlayerbot.BroadcastChanceSuggestSell", 300);
+    broadcastChanceSuggestSomething = sConfigMgr->GetIntDefault("AiPlayerbot.BroadcastChanceSuggestSomething", 30000);
+    broadcastChanceSuggestSomethingToxic = sConfigMgr->GetIntDefault("AiPlayerbot.BroadcastChanceSuggestSomethingToxic", 0);
+    broadcastChanceSuggestToxicLinks = sConfigMgr->GetIntDefault("AiPlayerbot.BroadcastChanceSuggestToxicLinks", 0);
+    broadcastChanceSuggestThunderfury = sConfigMgr->GetIntDefault("AiPlayerbot.BroadcastChanceSuggestThunderfury", 1);
+    broadcastChanceGuildManagement = sConfigMgr->GetIntDefault("AiPlayerbot.BroadcastChanceGuildManagement", 30000);
+    toxicLinksPrefix = sConfigMgr->GetStringDefault("AiPlayerbot.ToxicLinksPrefix", "gnomes");
+
 
     RandomPlayerbotFactory::CreateRandomBots();
     if (World::IsStopped())

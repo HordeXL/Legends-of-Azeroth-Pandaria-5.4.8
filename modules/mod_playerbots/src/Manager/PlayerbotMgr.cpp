@@ -1,4 +1,4 @@
-﻿/*
+/*
 * This file is part of the Legends of Azeroth Pandaria Project. See THANKS file for Copyright information
 *
 * This program is free software; you can redistribute it and/or modify it
@@ -1051,8 +1051,8 @@ void PlayerbotMgr::HandleCommand(uint32 type, std::string const text)
     {
         Player* const bot = it->second;
         PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot);
-        //if (botAI)
-            //botAI->HandleCommand(type, text, master);
+        if (botAI)
+            botAI->HandleCommand(type, text, master);
     }
 
     for (PlayerBotMap::const_iterator it = sRandomPlayerbotMgr->GetPlayerBotsBegin();
@@ -1060,8 +1060,8 @@ void PlayerbotMgr::HandleCommand(uint32 type, std::string const text)
     {
         Player* const bot = it->second;
         PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot);
-        //if (botAI && botAI->GetMaster() == master)
-            //botAI->HandleCommand(type, text, master);
+        if (botAI && botAI->GetMaster() == master)
+            botAI->HandleCommand(type, text, master);
     }
 }
 
@@ -1226,7 +1226,8 @@ void PlayerbotMgr::CheckTellErrors(uint32 elapsed)
 
         out << "|cfff00000: " << text;
 
-        //ChatHandler(master->GetSession()).PSendSysMessage(out.str().c_str());
+        if (master)
+            ChatHandler(master->GetSession()).PSendSysMessage(out.str().c_str());
     }
 
     errors.clear();

@@ -11,11 +11,14 @@
 #include "Config.h"
 #include "Creature.h"
 #include "cs_playerbots.h"
+#include "GameObject.h"
 #include "GossipDef.h"
+#include "Item.h"
 #include "Log.h"
 #include "Map.h"
 #include "Opcodes.h"
 #include "Player.h"
+#include "QuestDef.h"
 #include "RatedPvp.h"
 #include "ScriptMgr.h"
 #include "World.h"
@@ -24,6 +27,7 @@
 
 #include "Playerbots.h"
 #include "PlayerbotAIConfig.h"
+#include "PlayerbotTextMgr.h"
 #include "RandomPlayerbotMgr.h"
 #include "RandomItemManager.h"
 #include "RandomPlayerbotBracketMgr.h"
@@ -92,6 +96,8 @@ public:
 
             TC_LOG_INFO("playerbots", ">> Loaded playerbots config in %u ms", GetMSTimeDiffToNow(oldMSTime));
             TC_LOG_INFO("playerbots", " ");
+
+            sPlayerbotTextMgr->Load();
 
             sRandomPlayerbotMgr->Reserve(sPlayerbotAIConfig->maxRandomBots);
             sRandomItemMgr->Init();
@@ -312,6 +318,133 @@ public:
         }
     }
 
+    void OnChat(Player* player, uint32 type, uint32 lang, std::string& msg) override
+    {
+        if (!player || player->GetSession()->IsBot())
+            return;
+
+        // Route the player's chat to their controlled bots as a command.
+        // This is how the master talks to bots ("follow", "attack", "dps", ...).
+        if (PlayerbotMgr* playerbotMgr = GET_PLAYERBOT_MGR(player))
+            playerbotMgr->HandleCommand(type, msg);
+
+        if (!sPlayerbotAIConfig->enableBroadcasts || !sPlayerbotAIConfig->randomBotTalk)
+            return;
+
+        // Thunderfury / toxic-link spam replies from nearby bots.
+        bool thunderfury = msg.find("Thunderfury") != std::string::npos;
+        bool itemLink = msg.find("|Hitem:") != std::string::npos;
+
+        if (!thunderfury && !itemLink)
+            return;
+
+        std::vector<Player*> bots;
+        if (PlayerbotMgr* playerbotMgr = GET_PLAYERBOT_MGR(player))
+        {
+            for (PlayerBotMap::const_iterator it = playerbotMgr->GetPlayerBotsBegin(); it != playerbotMgr->GetPlayerBotsEnd(); ++it)
+                bots.push_back(it->second);
+        }
+        for (PlayerBotMap::const_iterator it = sRandomPlayerbotMgr->GetPlayerBotsBegin(); it != sRandomPlayerbotMgr->GetPlayerBotsEnd(); ++it)
+            bots.push_back(it->second);
+
+        for (Player* bot : bots)
+        {
+            if (!bot || !bot->IsInWorld())
+                continue;
+            if (bot->GetMapId() != player->GetMapId() || bot->GetExactDist(player) > sPlayerbotAIConfig->sightDistance)
+                continue;
+
+            PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot);
+            if (!botAI)
+                continue;
+
+            if (thunderfury)
+                botAI->TryTalk("thunderfury_spam", sPlayerbotAIConfig->thunderfuryRepliesChance * 300);
+            if (itemLink)
+                botAI->TryTalk("suggest_toxic_links", sPlayerbotAIConfig->toxicLinksRepliesChance * 300);
+        }
+    }
+
+    void OnChat(Player* player, uint32 type, uint32 lang, std::string& msg, Player* receiver) override
+    {
+        if (!player || player->GetSession()->IsBot() || !receiver)
+            return;
+
+        // Whisper command directed at one of the player's bots. Route it
+        // straight to that specific bot.
+        if (PlayerbotAI* botAI = GET_PLAYERBOT_AI(receiver))
+        {
+            bool handled = botAI->HandleCommand(type, msg, player);
+
+            // When the whisper was not a bot command, the bot may reply with a
+            // random "reply" text (reply_type entries in ai_playerbot_texts).
+            if (!handled && sPlayerbotAIConfig->randomBotTalk && sPlayerbotAIConfig->enableBroadcasts)
+                botAI->TryTalk("reply", sPlayerbotAIConfig->broadcastChanceSuggestSomething / 10);
+        }
+    }
+
+    void OnCreatureKill(Player* killer, Creature* killed) override
+    {
+        if (!killer || !killed || !GET_PLAYERBOT_AI(killer))
+            return;
+        if (!sPlayerbotAIConfig->enableBroadcasts || !sPlayerbotAIConfig->randomBotTalk)
+            return;
+
+        uint32 chance = 0;
+        std::string category;
+        switch (killed->GetCreatureTemplate()->rank)
+        {
+            case CREATURE_ELITE_ELITE:
+                chance = sPlayerbotAIConfig->broadcastChanceKillElite;
+                category = "broadcast_killed_elite";
+                break;
+            case CREATURE_ELITE_RAREELITE:
+                chance = sPlayerbotAIConfig->broadcastChanceKillRareelite;
+                category = "broadcast_killed_rareelite";
+                break;
+            case CREATURE_ELITE_WORLDBOSS:
+                chance = sPlayerbotAIConfig->broadcastChanceKillWorldboss;
+                category = "broadcast_killed_worldboss";
+                break;
+            case CREATURE_ELITE_RARE:
+                chance = sPlayerbotAIConfig->broadcastChanceKillRare;
+                category = "broadcast_killed_rare";
+                break;
+            case CREATURE_ELITE_NORMAL:
+            default:
+                chance = sPlayerbotAIConfig->broadcastChanceKillNormal;
+                category = "broadcast_killed_normal";
+                break;
+        }
+
+        GET_PLAYERBOT_AI(killer)->TryTalk(category, chance, killed);
+    }
+
+    void OnLevelChanged(Player* player, uint8 /*oldLevel*/) override
+    {
+        PlayerbotAI* botAI = GET_PLAYERBOT_AI(player);
+        if (!botAI || !sPlayerbotAIConfig->enableBroadcasts || !sPlayerbotAIConfig->randomBotTalk)
+            return;
+
+        uint8 level = player->GetLevel();
+        if (level == sWorld->getIntConfig(CONFIG_MAX_PLAYER_LEVEL))
+            botAI->TryTalk("broadcast_levelup_max_level", sPlayerbotAIConfig->broadcastChanceLevelupMaxLevel);
+        else if (level % 10 == 0)
+            botAI->TryTalk("broadcast_levelup_10x", sPlayerbotAIConfig->broadcastChanceLevelupTenX);
+        else
+            botAI->TryTalk("broadcast_levelup_generic", sPlayerbotAIConfig->broadcastChanceLevelupGeneric);
+    }
+
+    void OnQuestAdded(Player* player, const Quest* quest) override
+    {
+        BroadcastQuestEvent(player, "broadcast_quest_accepted_generic", sPlayerbotAIConfig->broadcastChanceQuestAccepted);
+    }
+
+    void OnQuestRewarded(Player* player, const Quest* quest) override
+    {
+        BroadcastQuestEvent(player, "broadcast_quest_turned_in", sPlayerbotAIConfig->broadcastChanceQuestTurnedIn);
+    }
+
     void OnAfterUpdate(Player* player, uint32 diff) override
     {
         if (PlayerbotAI* botAI = GET_PLAYERBOT_AI(player))
@@ -323,6 +456,16 @@ public:
         {
             playerbotMgr->UpdateAI(diff);
         }
+    }
+
+private:
+    static void BroadcastQuestEvent(Player* player, std::string const category, uint32 chance)
+    {
+        if (!player || !sPlayerbotAIConfig->enableBroadcasts || !sPlayerbotAIConfig->randomBotTalk)
+            return;
+
+        if (PlayerbotAI* botAI = GET_PLAYERBOT_AI(player))
+            botAI->TryTalk(category, chance);
     }
 };
 void AddSC_mod_playerbots()

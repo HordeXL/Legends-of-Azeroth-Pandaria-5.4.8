@@ -1,4 +1,4 @@
-﻿/*
+/*
 * This file is part of the Legends of Azeroth Pandaria Project. See THANKS file for Copyright information
 *
 * This program is free software; you can redistribute it and/or modify it
@@ -17,6 +17,7 @@
 
 #include "PlayerbotAI.h"
 
+#include <algorithm>
 #include <cmath>
 #include <mutex>
 #include <sstream>
@@ -36,12 +37,14 @@
 #include "MotionMaster.h"
 #include "MoveSpline.h"
 #include "MoveSplineInit.h"
+#include "ObjectMgr.h"
 #include "Player.h"
 #include "PositionValue.h"
 #include "PointMovementGenerator.h"
 #include "Playerbots.h"
 #include "PlayerbotAIConfig.h"
 #include "PlayerbotSpec.h"
+#include "PlayerbotTextMgr.h"
 #include "PerformanceMonitor.h"
 #include "RandomPlayerbotMgr.h"
 #include "ServerFacade.h"
@@ -367,6 +370,8 @@ void PlayerbotAI::UpdateAIInternal([[maybe_unused]] uint32 elapsed, bool minimal
     botOutgoingPacketHandlers.Handle(helper);
     masterIncomingPacketHandlers.Handle(helper);
     masterOutgoingPacketHandlers.Handle(helper);
+
+    UpdateRandomSpeech(elapsed);
 
     DoNextAction(minimal);
 
@@ -1126,6 +1131,90 @@ void PlayerbotAI::HandleBotOutgoingPacket(WorldPacket const& packet)
         _pendingTimeSyncCounters.push(counter);
         break;
     }
+    case SMSG_ITEM_PUSH_RESULT:  // bot looted/received an item -> loot broadcast
+    {
+        if (!sPlayerbotAIConfig->enableBroadcasts)
+            break;
+
+        WorldPacket p = packet;
+        ObjectGuid itemGuid, playerGuid;
+        bool displayInChat = false, received = false, bonusLoot = false, created = false;
+
+        itemGuid[2] = p.ReadBit();
+        playerGuid[4] = p.ReadBit();
+        itemGuid[5] = p.ReadBit();
+        displayInChat = p.ReadBit();
+        playerGuid[1] = p.ReadBit();
+        received = p.ReadBit();   // 0 = looted, 1 = npc
+        itemGuid[4] = p.ReadBit();
+        playerGuid[6] = p.ReadBit();
+        playerGuid[5] = p.ReadBit();
+        playerGuid[7] = p.ReadBit();
+        playerGuid[0] = p.ReadBit();
+        itemGuid[0] = p.ReadBit();
+        itemGuid[7] = p.ReadBit();
+        playerGuid[2] = p.ReadBit();
+        itemGuid[6] = p.ReadBit();
+        bonusLoot = p.ReadBit();
+        playerGuid[3] = p.ReadBit();
+        itemGuid[1] = p.ReadBit();
+        created = p.ReadBit();    // 0 = received, 1 = created
+        itemGuid[3] = p.ReadBit();
+        p.FlushBits();
+
+        p.ReadByteSeq(playerGuid[1]);
+        p.ReadByteSeq(itemGuid[1]);
+        uint32 battlePetSpecies = 0;
+        p >> battlePetSpecies;
+        p.ReadByteSeq(itemGuid[0]);
+        p.ReadByteSeq(playerGuid[5]);
+        p.ReadByteSeq(playerGuid[2]);
+        uint32 suffixFactor = 0;
+        p >> suffixFactor;
+        p.ReadByteSeq(itemGuid[7]);
+        uint32 quality = 0;
+        p >> quality;
+        uint32 itemId = 0;
+        p >> itemId;
+        int32 randomPropertyId = 0;
+        p >> randomPropertyId;
+        p.ReadByteSeq(itemGuid[6]);
+        uint32 breed = 0;
+        p >> breed;
+        uint32 inventoryCount = 0;
+        p >> inventoryCount;
+        p.ReadByteSeq(itemGuid[2]);
+        p.ReadByteSeq(playerGuid[0]);
+        uint32 count = 0;
+        p >> count;
+        p.ReadByteSeq(playerGuid[7]);
+        p.ReadByteSeq(itemGuid[5]);
+        p.ReadByteSeq(playerGuid[4]);
+        uint32 itemSlot = 0;
+        p >> itemSlot;
+
+        // Only react to items that were looted from the world (not NPC/quest/craft).
+        if (!received && !created)
+        {
+            uint32 chance = 0;
+            std::string category;
+            switch (quality)
+            {
+                case 0: chance = sPlayerbotAIConfig->broadcastChanceLootingItemPoor; category = "broadcast_looting_item_poor"; break;
+                case 1: chance = sPlayerbotAIConfig->broadcastChanceLootingItemNormal; category = "broadcast_looting_item_normal"; break;
+                case 2: chance = sPlayerbotAIConfig->broadcastChanceLootingItemUncommon; category = "broadcast_looting_item_uncommon"; break;
+                case 3: chance = sPlayerbotAIConfig->broadcastChanceLootingItemRare; category = "broadcast_looting_item_rare"; break;
+                case 4: chance = sPlayerbotAIConfig->broadcastChanceLootingItemEpic; category = "broadcast_looting_item_epic"; break;
+                case 5: chance = sPlayerbotAIConfig->broadcastChanceLootingItemLegendary; category = "broadcast_looting_item_legendary"; break;
+                default: chance = sPlayerbotAIConfig->broadcastChanceLootingItemArtifact; category = "broadcast_looting_item_artifact"; break;
+            }
+
+            ItemTemplate const* itemProto = itemId ? sObjectMgr->GetItemTemplate(itemId) : nullptr;
+            if (chance)
+                TryTalk(category, chance, nullptr, itemProto);
+        }
+        break;
+    }
     default:
         botOutgoingPacketHandlers.AddPacket(packet);
         return;
@@ -1488,34 +1577,165 @@ bool PlayerbotAI::TellMasterNoFacing(std::string const text)
     if (master)
         masterBotAI = GET_PLAYERBOT_AI(master);
 
-    /*if ((!master || (masterBotAI && !masterBotAI->IsRealPlayer())) &&
-        (sPlayerbotAIConfig->randomBotSayWithoutMaster || HasStrategy("debug", BOT_STATE_NON_COMBAT)))
+    // If there is no real player master, the bot announces its message in /say
+    // instead of whispering it (e.g. random bots speaking in the world).
+    if (!master || (masterBotAI && !masterBotAI->IsRealPlayer()))
     {
         bot->Say(text, (bot->GetTeamId() == TEAM_ALLIANCE ? LANG_COMMON : LANG_ORCISH));
         return true;
     }
 
-    if (!IsTellAllowed(securityLevel))
+    if (!master->GetSession())
         return false;
 
+    // Avoid spamming the master with the exact same message too often.
     time_t lastSaid = whispers[text];
 
-    if (!lastSaid || (time(nullptr) - lastSaid) >= sPlayerbotAIConfig->repeatDelay / 1000)
-    {
-        whispers[text] = time(nullptr);
+    if (lastSaid && (time(nullptr) - lastSaid) < sPlayerbotAIConfig->repeatDelay / 1000)
+        return true;
 
-        ChatMsg type = CHAT_MSG_WHISPER;
-        if (currentChat.second - time(nullptr) >= 1)
-            type = currentChat.first;
+    whispers[text] = time(nullptr);
 
-        WorldPacket data;
-        ChatHandler::BuildChatPacket(data, type == CHAT_MSG_ADDON ? CHAT_MSG_PARTY : type,
-            type == CHAT_MSG_ADDON ? LANG_ADDON : LANG_UNIVERSAL, bot, nullptr, text.c_str());
-        master->SendDirectMessage(&data);
-    }*/
+    WorldPacket data;
+    ChatHandler::BuildChatPacket(data, CHAT_MSG_WHISPER, LANG_UNIVERSAL, bot, master, text.c_str());
+    master->GetSession()->SendPacket(&data);
 
     return true;
 }
+
+bool PlayerbotAI::HandleCommand(uint32 /*type*/, std::string const text, Player* owner)
+{
+    if (!owner)
+        owner = GetMaster();
+    if (!owner)
+        return false;
+
+    std::string msg = text;
+    // Trim surrounding whitespace
+    size_t first = msg.find_first_not_of(" \t");
+    if (first == std::string::npos)
+        return false;
+    msg = msg.substr(first);
+    size_t last = msg.find_last_not_of(" \t");
+    if (last != std::string::npos)
+        msg = msg.substr(0, last + 1);
+
+    if (msg.empty())
+        return false;
+
+    // Trivial social chatter is not treated as a command.
+    if (msg == "hi" || msg == "hello" || msg == "hey" || msg == "yo")
+        return false;
+
+    // Strategy toggle commands ("follow", "stay", ...). If the message names a
+    // known strategy, toggle it on the appropriate engine so the master can
+    // command the bot by typing the strategy name.
+    if (msg == "follow" || msg == "stay" || msg == "runaway" || msg == "guard" ||
+        msg == "ranged" || msg == "close" || msg == "save mana" || msg == "group" ||
+        msg == "dead" || msg == "formation" || msg == "move from group" ||
+        msg == "flee from adds" || msg == "dps assist" || msg == "tank assist")
+    {
+        // Toggle the strategy. "+name" enables it; if already enabled it is
+        // toggled off, matching the classic playerbots behaviour.
+        ChangeStrategy("+" + msg, BOT_STATE_NON_COMBAT);
+        return true;
+    }
+
+    ExternalEventHelper helper(_aiObjectContext);
+    return helper.ParseChatCommand(msg, owner);
+}
+
+bool PlayerbotAI::Talk(std::string const name, Unit* target, ItemTemplate const* item)
+{
+    if (!sPlayerbotAIConfig->randomBotTalk)
+        return false;
+    if (!bot || !bot->IsInWorld() || bot->IsDuringRemoveFromWorld())
+        return false;
+    if (bot->IsInCombat() && _currentState != BOT_STATE_COMBAT)
+        return false;
+
+    LocaleConstant locale = DEFAULT_LOCALE;
+    if (Player* m = GetMaster())
+        locale = m->GetSession()->GetSessionDbcLocale();
+    else
+        locale = bot->GetSession()->GetSessionDbcLocale();
+
+    uint32 sayType = 0;
+    std::string text = sPlayerbotTextMgr->GetText(name, locale, &sayType);
+    if (text.empty())
+        text = sPlayerbotTextMgr->GetSpeech(name, target ? target->GetName() : "");
+    if (text.empty())
+        return false;
+
+    text = sPlayerbotTextMgr->Format(std::move(text), bot, target, item);
+
+    if (sayType == 1)
+        return Yell(text);
+
+    return Say(text);
+}
+
+bool PlayerbotAI::TryTalk(std::string const name, uint32 chance, Unit* target, ItemTemplate const* item)
+{
+    if (chance == 0)
+        return false;
+    if (chance < 30000 && urand(0, 29999) >= chance)
+        return false;
+
+    return Talk(name, target, item);
+}
+
+void PlayerbotAI::UpdateRandomSpeech(uint32 /*elapsed*/)
+{
+    if (!sPlayerbotAIConfig->randomBotTalk)
+        return;
+
+    time_t now = time(nullptr);
+    if (now < _speechCheckTimer)
+        return;
+
+    // anti-spam: at most one ambient speech check per RepeatDelay interval
+    _speechCheckTimer = now + std::max<uint32>(sPlayerbotAIConfig->repeatDelay / 1000, 1);
+
+    if (bot->IsInCombat())
+    {
+        // taunt speech while the bot has aggro (the victim is attacking the bot)
+        if (Unit* victim = bot->GetVictim())
+        {
+            if (victim->GetVictim() == bot)
+            {
+                uint32 tauntChance = sPlayerbotTextMgr->GetSpeechProbability("taunt");
+                if (tauntChance && urand(1, 100) <= tauntChance)
+                    Talk("taunt", victim);
+            }
+        }
+
+        // aoe speech when the bot is surrounded by multiple attackers
+        if (bot->getAttackers().size() >= 2)
+        {
+            uint32 aoeChance = sPlayerbotTextMgr->GetSpeechProbability("aoe");
+            if (aoeChance && urand(1, 100) <= aoeChance)
+                Talk("aoe", bot->GetVictim());
+        }
+    }
+    else
+    {
+        // ambient chatter for masterless random bots (or when explicitly enabled).
+        // Low frequency: ~10% per check so a bot speaks at most every ~20s.
+        if ((!HasRealPlayerMaster() || sPlayerbotAIConfig->randomBotSayWithoutMaster) &&
+            sPlayerbotAIConfig->enableBroadcasts &&
+            urand(0, 29999) < sPlayerbotAIConfig->broadcastChanceSuggestSomething / 10)
+        {
+            static std::vector<std::string> const chatterCategories = {
+                "suggest_something", "suggest_quest", "suggest_trade",
+                "broadcast_levelup_generic", "loot"
+            };
+            std::string const& category = chatterCategories[urand(0, uint32(chatterCategories.size() - 1))];
+            Talk(category);
+        }
+    }
+}
+
 bool PlayerbotAI::TellError(std::string const text)
 {
     Player* master = GetMaster();
