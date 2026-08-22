@@ -1673,10 +1673,10 @@ AiPlayerbot.BroadcastToGuildGlobalChance = 15000
 AiPlayerbot.BroadcastToWorldGlobalChance = 15000
 AiPlayerbot.BroadcastToGeneralGlobalChance = 15000
 AiPlayerbot.BroadcastToTradeGlobalChance = 15000
-AiPlayerbot.BroadcastToLFGGlobalChance = 15000
-AiPlayerbot.BroadcastToLocalDefenseGlobalChance = 15000
-AiPlayerbot.BroadcastToWorldDefenseGlobalChance = 15000
-AiPlayerbot.BroadcastToGuildRecruitmentGlobalChance = 15000
+AiPlayerbot.BroadcastToLFGGlobalChance = 0
+AiPlayerbot.BroadcastToLocalDefenseGlobalChance = 0
+AiPlayerbot.BroadcastToWorldDefenseGlobalChance = 0
+AiPlayerbot.BroadcastToGuildRecruitmentGlobalChance = 0
 #
 # individual settings
 # setting one of these to 0 will disable the particular broadcast
