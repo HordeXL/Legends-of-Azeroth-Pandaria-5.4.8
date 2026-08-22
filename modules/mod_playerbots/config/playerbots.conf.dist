@@ -1669,14 +1669,14 @@ AiPlayerbot.EnableBroadcasts = 1
 #
 # setting channel broadcast chance to 0, will re-route most broadcasts to other available channels
 # setting all channel broadcasts to 0 will disable most broadcasts
-AiPlayerbot.BroadcastToGuildGlobalChance = 30000
-AiPlayerbot.BroadcastToWorldGlobalChance = 30000
-AiPlayerbot.BroadcastToGeneralGlobalChance = 30000
-AiPlayerbot.BroadcastToTradeGlobalChance = 30000
-AiPlayerbot.BroadcastToLFGGlobalChance = 30000
-AiPlayerbot.BroadcastToLocalDefenseGlobalChance = 30000
-AiPlayerbot.BroadcastToWorldDefenseGlobalChance = 30000
-AiPlayerbot.BroadcastToGuildRecruitmentGlobalChance = 30000
+AiPlayerbot.BroadcastToGuildGlobalChance = 15000
+AiPlayerbot.BroadcastToWorldGlobalChance = 15000
+AiPlayerbot.BroadcastToGeneralGlobalChance = 15000
+AiPlayerbot.BroadcastToTradeGlobalChance = 15000
+AiPlayerbot.BroadcastToLFGGlobalChance = 15000
+AiPlayerbot.BroadcastToLocalDefenseGlobalChance = 15000
+AiPlayerbot.BroadcastToWorldDefenseGlobalChance = 15000
+AiPlayerbot.BroadcastToGuildRecruitmentGlobalChance = 15000
 #
 # individual settings
 # setting one of these to 0 will disable the particular broadcast

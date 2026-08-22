@@ -248,14 +248,14 @@ bool PlayerbotAIConfig::Initialize()
     randomBotSayWithoutMaster = sConfigMgr->GetBoolDefault("AiPlayerbot.RandomBotSayWithoutMaster", false);
     enableBroadcasts = sConfigMgr->GetBoolDefault("AiPlayerbot.EnableBroadcasts", true);
 
-    broadcastToGuildGlobalChance = sConfigMgr->GetIntDefault("AiPlayerbot.BroadcastToGuildGlobalChance", 30000);
-    broadcastToWorldGlobalChance = sConfigMgr->GetIntDefault("AiPlayerbot.BroadcastToWorldGlobalChance", 30000);
-    broadcastToGeneralGlobalChance = sConfigMgr->GetIntDefault("AiPlayerbot.BroadcastToGeneralGlobalChance", 30000);
-    broadcastToTradeGlobalChance = sConfigMgr->GetIntDefault("AiPlayerbot.BroadcastToTradeGlobalChance", 30000);
-    broadcastToLFGGlobalChance = sConfigMgr->GetIntDefault("AiPlayerbot.BroadcastToLFGGlobalChance", 30000);
-    broadcastToLocalDefenseGlobalChance = sConfigMgr->GetIntDefault("AiPlayerbot.BroadcastToLocalDefenseGlobalChance", 30000);
-    broadcastToWorldDefenseGlobalChance = sConfigMgr->GetIntDefault("AiPlayerbot.BroadcastToWorldDefenseGlobalChance", 30000);
-    broadcastToGuildRecruitmentGlobalChance = sConfigMgr->GetIntDefault("AiPlayerbot.BroadcastToGuildRecruitmentGlobalChance", 30000);
+    broadcastToGuildGlobalChance = sConfigMgr->GetIntDefault("AiPlayerbot.BroadcastToGuildGlobalChance", 15000);
+    broadcastToWorldGlobalChance = sConfigMgr->GetIntDefault("AiPlayerbot.BroadcastToWorldGlobalChance", 15000);
+    broadcastToGeneralGlobalChance = sConfigMgr->GetIntDefault("AiPlayerbot.BroadcastToGeneralGlobalChance", 15000);
+    broadcastToTradeGlobalChance = sConfigMgr->GetIntDefault("AiPlayerbot.BroadcastToTradeGlobalChance", 15000);
+    broadcastToLFGGlobalChance = sConfigMgr->GetIntDefault("AiPlayerbot.BroadcastToLFGGlobalChance", 15000);
+    broadcastToLocalDefenseGlobalChance = sConfigMgr->GetIntDefault("AiPlayerbot.BroadcastToLocalDefenseGlobalChance", 15000);
+    broadcastToWorldDefenseGlobalChance = sConfigMgr->GetIntDefault("AiPlayerbot.BroadcastToWorldDefenseGlobalChance", 15000);
+    broadcastToGuildRecruitmentGlobalChance = sConfigMgr->GetIntDefault("AiPlayerbot.BroadcastToGuildRecruitmentGlobalChance", 15000);
 
     broadcastChanceLootingItemPoor = sConfigMgr->GetIntDefault("AiPlayerbot.BroadcastChanceLootingItemPoor", 30);
     broadcastChanceLootingItemNormal = sConfigMgr->GetIntDefault("AiPlayerbot.BroadcastChanceLootingItemNormal", 150);
