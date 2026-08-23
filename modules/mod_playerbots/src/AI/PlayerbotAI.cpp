@@ -1818,8 +1818,8 @@ void PlayerbotAI::UpdateRandomSpeech(uint32 /*elapsed*/)
     if (now < _speechCheckTimer)
         return;
 
-    // anti-spam: at most one ambient speech check per RepeatDelay interval
-    _speechCheckTimer = now + std::max<uint32>(sPlayerbotAIConfig->repeatDelay / 1000, 1);
+    // anti-spam: at most one ambient speech check every 10 seconds
+    _speechCheckTimer = now + 10;
 
     if (bot->IsInCombat())
     {
