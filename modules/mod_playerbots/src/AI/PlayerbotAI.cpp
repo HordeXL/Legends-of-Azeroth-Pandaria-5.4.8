@@ -18,6 +18,7 @@
 #include "PlayerbotAI.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <mutex>
 #include <sstream>
@@ -1843,6 +1844,18 @@ void PlayerbotAI::UpdateRandomSpeech(uint32 /*elapsed*/)
     }
     else
     {
+        // random emotes when enabled (AiPlayerbot.RandomBotEmote)
+        if (sPlayerbotAIConfig->randomBotEmote && urand(1, 100) <= 10)
+        {
+            static std::array<Emote, 10> const emotes = {
+                EMOTE_ONESHOT_WAVE, EMOTE_ONESHOT_BOW, EMOTE_ONESHOT_APPLAUD, EMOTE_ONESHOT_CHEER,
+                EMOTE_ONESHOT_KNEEL, EMOTE_ONESHOT_CRY, EMOTE_ONESHOT_ROAR, EMOTE_ONESHOT_SALUTE,
+                EMOTE_ONESHOT_DANCE, EMOTE_ONESHOT_LAUGH
+            };
+            bot->HandleEmoteCommand(emotes[urand(0, uint32(emotes.size() - 1))]);
+            return;
+        }
+
         // ambient chatter for masterless random bots (or when explicitly enabled).
         // Low frequency so a bot speaks at most every ~20s.
         if (!HasRealPlayerMaster() || sPlayerbotAIConfig->randomBotSayWithoutMaster)

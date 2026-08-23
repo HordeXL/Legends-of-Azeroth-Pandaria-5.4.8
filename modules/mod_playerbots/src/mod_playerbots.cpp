@@ -13,6 +13,7 @@
 #include "cs_playerbots.h"
 #include "GameObject.h"
 #include "GossipDef.h"
+#include "Guild.h"
 #include "Item.h"
 #include "Log.h"
 #include "Map.h"
@@ -508,6 +509,64 @@ private:
             botAI->TryBroadcast(category, chance);
     }
 };
+
+// Guild event feedback: when a guild event happens (promote/demote), a random
+// online bot member announces it in the guild chat. Gated by
+// AiPlayerbot.GuildFeedback and AiPlayerbot.GuildRepliesRate.
+class PlayerbotsGuildScript : public GuildScript
+{
+public:
+    PlayerbotsGuildScript() : GuildScript("PlayerbotsGuildScript") {}
+
+    void OnEvent(Guild* guild, uint8 eventType, uint32 /*playerGuid1*/, uint32 /*playerGuid2*/, uint8 /*newRank*/) override
+    {
+        if (!guild || !sPlayerbotAIConfig->guildFeedback || !sPlayerbotAIConfig->enableBroadcasts ||
+            !sPlayerbotAIConfig->randomBotTalk)
+            return;
+
+        std::string category;
+        switch (eventType)
+        {
+            case GUILD_EVENT_LOG_PROMOTE_PLAYER:
+                category = "broadcast_guild_promotion";
+                break;
+            case GUILD_EVENT_LOG_DEMOTE_PLAYER:
+                category = "broadcast_guild_demotion";
+                break;
+            default:
+                return;  // no text category for the other event types
+        }
+
+        // GuildRepliesRate is a 0-100 percent gate.
+        if (urand(1, 100) > sPlayerbotAIConfig->guildRepliesRate)
+            return;
+
+        // Pick a random online bot member to announce the event in the guild.
+        std::vector<Player*> bots;
+        auto collectBots = [&](Player* member)
+        {
+            if (GET_PLAYERBOT_AI(member))
+                bots.push_back(member);
+        };
+        guild->BroadcastWorker(collectBots);
+
+        if (bots.empty())
+            return;
+
+        Player* bot = bots[urand(0, uint32(bots.size() - 1))];
+        PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot);
+        if (!botAI)
+            return;
+
+        uint32 sayType = 0;
+        std::string text = sPlayerbotTextMgr->GetText(category, bot->GetSession()->GetSessionDbcLocale(), &sayType);
+        if (text.empty())
+            return;
+
+        text = sPlayerbotTextMgr->Format(std::move(text), bot);
+        guild->BroadcastToGuild(bot->GetSession(), false, text);
+    }
+};
 void AddSC_mod_playerbots()
 {
     new mod_playerbots();
@@ -516,6 +575,7 @@ void AddSC_mod_playerbots()
     new PlayerbotsWorldScript();
     new PlayerbotsScript();
     new PlayerbotsPlayerScript();
+    new PlayerbotsGuildScript();
 
     AddSC_playerbots_commandscript();
     AddSC_playerbots_combat_assistant();
