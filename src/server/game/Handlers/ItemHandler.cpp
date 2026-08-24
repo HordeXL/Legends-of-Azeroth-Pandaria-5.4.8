@@ -32,6 +32,30 @@
 #include "ServiceMgr.h"
 #include <vector>
 
+namespace
+{
+    // The reforge window reads the item's dynamic modifier snapshot as soon as
+    // SMSG_REFORGE_RESULT arrives. Push the changed item first so Restore does
+    // not leave the old reforge entry visible until a bag move or relog.
+    void SendReforgeItemUpdate(Player* player, Item* item)
+    {
+        if (!player || !item || !player->GetSession())
+            return;
+
+        UpdateData valuesUpdate(player->GetMapId());
+        item->BuildValuesUpdateBlockForPlayer(&valuesUpdate, player);
+        if (valuesUpdate.HasData())
+        {
+            WorldPacket packet;
+            valuesUpdate.BuildPacket(&packet);
+            player->GetSession()->SendPacket(&packet);
+        }
+
+        item->SendUpdateToPlayer(player);
+        item->ClearUpdateMask(true);
+    }
+}
+
 void WorldSession::HandleSplitItemOpcode(WorldPacket& recvData)
 {
     //TC_LOG_DEBUG("network", "WORLD: CMSG_SPLIT_ITEM");
@@ -2031,7 +2055,13 @@ void WorldSession::HandleReforgeItemOpcode(WorldPacket& recvData)
         if (item->IsEquipped() && !item->IsBroken())
             player->ApplyReforgeEnchantment(item, false);
 
-        item->RemoveDynamicModifier(ITEM_MODIFIER_INDEX_REFORGE, player);
+        // Keep an explicitly set zero long enough for the dynamic update
+        // serializer to send it; removing the field omits it from the packet
+        // and the client retains its previous reforge snapshot.
+        item->SetDynamicUInt32Value(ITEM_DYNAMIC_MODIFIERS, ITEM_MODIFIER_INDEX_REFORGE, 0);
+        item->RemoveFlag(ITEM_FIELD_MODIFIERS_MASK, 1 << ITEM_MODIFIER_INDEX_REFORGE);
+        item->SetState(ITEM_CHANGED, player);
+        SendReforgeItemUpdate(player, item);
         SendReforgeResult(true);
         return;
     }
@@ -2068,6 +2098,7 @@ void WorldSession::HandleReforgeItemOpcode(WorldPacket& recvData)
 
     item->SetDynamicModifier(ITEM_MODIFIER_INDEX_REFORGE, reforgeEntry, player);
 
+    SendReforgeItemUpdate(player, item);
     SendReforgeResult(true);
 
     if (item->IsEquipped() && !item->IsBroken())
