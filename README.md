@@ -4,6 +4,105 @@ World of Warcraft Mists of Pandaria emulator core for client build `5.4.8.18414`
 
 This project is based on SkyFire/TrinityCore-style server architecture and builds the usual `authserver`, `worldserver`, database tools, and map extraction tools.
 
+The repository is an actively developed MoP test server rather than an untouched
+upstream core. It contains source-backed core/database repairs, custom playerbot
+automation, solo test systems and administrator tooling. Features marked
+**experimental** below have passed build and clean-start checks, but still require
+more in-game encounter testing before they should be treated as production-ready.
+
+## Project Features and Current Status
+
+Status recorded for the current local project configuration on 2026-08-24:
+
+| Component | Included | Current local status | Notes |
+| --- | --- | --- | --- |
+| MoP 5.4.8 core | Yes | Enabled | Client build `18414`; `authserver`, `worldserver`, scripts and extraction tools. |
+| Playerbots | Yes | Enabled | `AiPlayerbot.Enabled = 1`; automatic random-bot login remains disabled. |
+| Solo Arena bot fill | Yes | Enabled, experimental | Arena Battlemaster choices for 2v2, 3v3 and 5v5; role/faction-aware bot selection, temporary PvP loadouts, preparation buffs, rewards, exit/health recovery and cleanup. |
+| Battleground bot fill and objectives | Yes | Enabled, experimental | Fills a real player's queue, builds both factions, applies temporary PvP loadouts and includes CTF, node, orb, cart, vehicle, resurrection, escort, mount and basic path/LoS handling. |
+| LFG bot fill | Yes | Enabled, experimental | Stages missing tank/healer/damage roles for a real player and uses the normal 5.4.8 LFG validation and proposal flow. Dungeon-specific mechanics still require gameplay coverage. |
+| World-boss raid bots | Yes | Available, experimental | Neutral Boss Bot Caller NPCs support 10/25-player preview/call, PvE role selection and gear, legendary cloaks, raid marks, summon, buffs/rebuff, wipe recovery, status and dismiss/cleanup. Encounter-specific AI is still being tuned. |
+| Combat Assistant 5.4.8 | Yes | Server side enabled | One physical click/key press casts the server-recommended ability. All playable classes/specs are supported; the client addon must also be installed. |
+| VIP hybrid/test vendors | Yes | SQL package included | VIP1-3 test equipment plus optional gems, enchants, riding, mounts and profession helpers. VIP3 includes class/spec-labelled Siege of Orgrimmar T16 PvE sets, appearances, weapons and genuine five-piece bonuses. |
+| AuctionHouseBot | Yes | **Disabled** | Seller and buyer are both disabled in the active `worldserver.conf`; normal player auctions are unaffected. |
+| Warden client checks | Yes | **Disabled** | The Warden subsystem and check data are present, but `Warden.Enabled = 0` in the active configuration. |
+
+### Major Custom Systems
+
+- **Playerbot Arena automation:** a real player can use an Arena Battlemaster's
+  custom solo 2v2/3v3/5v5 choices. The server selects the required teammate and
+  opponents, loads only the managed bots, creates the teams, queues the match and
+  restores managed bot state afterward. The connected real player's equipment is
+  never replaced by the temporary bot loadout.
+- **Playerbot Battleground automation:** specific and random BG queues can be
+  populated only in response to a real player's queue. Objective routing exists
+  for the playable local 5.4.8 BG templates, including Warsong Gulch, Twin Peaks,
+  Arathi Basin, Battle for Gilneas, Eye of the Storm, Temple of Kotmogu, Deepwind
+  Gorge, Silvershard Mines, Alterac Valley, Isle of Conquest and Strand of the
+  Ancients. Score and rewards still go through normal battleground handlers.
+- **Playerbot LFG automation:** missing dungeon roles are selected by faction,
+  level, specialization and eligibility. Bot entry, proposal acceptance, group
+  ownership and preparation buffs use the core's normal LFG paths.
+- **Pandaria world-boss raid staging:** visible neutral Boss Bot Callers are placed
+  at supported outdoor bosses. They can assemble 10- or 25-player PvE raids around
+  the requester, revive bots, apply role-appropriate builds/equipment, mark the
+  main tank and primary healer, rebuff after deaths and safely dismiss the staged
+  raid when the boss dies or the player cancels it.
+- **Combat Assistant addon:** the tracked addon in
+  [`contrib/combat_assistant_548`](contrib/combat_assistant_548) displays one
+  recommended spell button and can bind it to key `2`. The server evaluates the
+  active class/spec, talents, resources, cooldowns, crowd control, interrupts,
+  dispels, emergency healing, defensives and supported ally protection. It never
+  auto-casts and does not bypass GCD, range, facing, immunity or line of sight.
+- **VIP PvE test equipment:** the package in
+  [`vip_hybrid_solo_set_sql`](vip_hybrid_solo_set_sql) provides free test vendors
+  and class/spec-aware VIP3 T16 equipment for solo and encounter testing. The
+  package keeps its generated SQL and source generator together so it can be
+  reproduced on another database.
+
+### Core, Quest and Database Work
+
+The project also contains many bounded, source-backed fixes rather than blanket
+deletions made only to silence logs. Notable completed work includes:
+
+- Pandaren Alliance/Horde faction choice now refreshes the 5.4.8 client without a
+  relog; it was verified with the 32-bit client for Alliance and the 64-bit client
+  for Horde.
+- The Death Knight `Eye of Acherus` quest vehicle can complete its scripted flight
+  and then be flown/controlled by the player.
+- Wandering Isle quest chains, dialogue, credits, transports, balloon flight,
+  phasing and duplicate-spawn problems have received targeted repairs.
+- Spell scripts, conditions, SmartAI, creature text, LFG destinations, item random
+  suffix data, vendors, pools and gameobject/creature spawns have been audited
+  against compatible local SkyFire/Trinity database sources with backups before
+  destructive changes.
+- Reforge restore/update handling and Void Storage slot/persistence safety include
+  compatible fixes selectively ported from a reviewed SkyFire 5.4.8 update range.
+- The 2026-08-24 fresh-start audit completed with an empty `DBErrors.log` and no
+  startup error/warning/invalid/missing/crash diagnostics in `Server.log`.
+- The extraction helper also copies client `cameras` data used by cinematic camera
+  paths in addition to `dbc`, `maps`, `vmaps` and `mmaps`.
+
+Detailed implementation history, exact backups, deferred work and verification
+results are recorded in
+[`doc/startup-log-fix-plan-2026-07-09.md`](doc/startup-log-fix-plan-2026-07-09.md).
+SkyFire migration/source comparison notes are in
+[`doc/SKYFIRE_548_MIGRATION_CHECKLIST.md`](doc/SKYFIRE_548_MIGRATION_CHECKLIST.md).
+
+### Known Limits
+
+- Playerbots and the Arena/BG/LFG/world-boss automation are development/test
+  features. Individual class AI and encounter mechanics still need wider in-game
+  verification.
+- Generic world-boss tank swapping is not guessed without verified encounter data.
+  Galleon has separate add-tank handling; other boss-specific positioning and
+  handoff logic remains encounter-dependent.
+- Quest `29792`, `Bidden to Greatness`, is completable and awards both gate credits,
+  but a known gate visual/collision presentation issue is deliberately deferred
+  until a verified build-18414 per-player gameobject solution is available.
+- Some old database warnings remain deliberately unchanged where no exact compatible
+  source exists. Data is not removed merely to make a warning disappear.
+
 ## Requirements
 
 ### Windows
@@ -13,15 +112,19 @@ This project is based on SkyFire/TrinityCore-style server architecture and build
 - Windows SDK 10.0.22621 or newer
 - CMake 3.27 or newer
 - Boost 1.85 x64 for MSVC 14.3/14.4
-- MySQL 5.7 or MySQL 8.x
+- Wampserver 3.4.2 with MySQL 5.7.44 (verified project database runtime)
 - OpenSSL 1.1.1 or OpenSSL 3.x
 
 Tested local Windows layout:
 
 ```txt
-Boost:   C:/local/boost_1_85_0
-MySQL:   C:/wamp64/bin/mysql/mysql5.7.44
-OpenSSL: C:/Program Files/OpenSSL-Win64
+Wampserver: 3.4.2 64-bit
+Apache:     2.4.67
+PHP:        7.4.33
+MySQL:      5.7.44 (active project DBMS)
+MariaDB:    11.4.9 (installed with Wampserver, not the active project DBMS)
+Boost:      C:/local/boost_1_85_0
+OpenSSL:    C:/Program Files/OpenSSL-Win64
 ```
 
 ### Linux
@@ -29,7 +132,8 @@ OpenSSL: C:/Program Files/OpenSSL-Win64
 - GCC 13+ or Clang 12+
 - CMake 3.27+
 - Boost 1.81+
-- MySQL 5.7/8.x or MariaDB-compatible server
+- MySQL 5.7-compatible server; other database engines/major versions are not part
+  of the currently verified project runtime
 - OpenSSL 1.1.1 or 3.x
 
 ## Configure and Build on Windows
@@ -136,6 +240,11 @@ PlayerbotsDatabase.WorkerThreads = 1
 PlayerbotsDatabase.SynchThreads = 1
 ```
 
+The verified local runtime uses `acore_playerbots`. A database named
+`mop_playerbots` may exist on a development machine as an older/imported comparison
+database, but it is not used unless `PlayerbotsDatabaseInfo` is explicitly changed
+to point to it.
+
 ## Configuration Files
 
 Copy or keep the generated config files next to the executables:
@@ -159,6 +268,33 @@ Warden.Enabled = 0
 
 `Console.Enable = 0` is useful when running `worldserver.exe` in the background. If you launch it manually in a visible terminal and want console commands, set it to `1`.
 
+### AuctionHouseBot and Warden
+
+Both systems are compiled into the project, but both are intentionally disabled in
+the current active local configuration:
+
+```ini
+AuctionHouseBot.Seller.Enabled = 0
+AuctionHouseBot.Buyer.Enabled = 0
+AuctionHouseBot.Buyer.Alliance.Enabled = 0
+AuctionHouseBot.Buyer.Horde.Enabled = 0
+AuctionHouseBot.Buyer.Neutral.Enabled = 0
+
+Warden.Enabled = 0
+```
+
+AuctionHouseBot can seed auctions and buy player auctions when configured, but no
+AuctionHouseBot seller/buyer activity is currently requested. This does not disable
+the normal Auction House used by players.
+
+Warden is the core's client integrity/check subsystem. Its check definitions may
+still be loaded during WorldServer startup even while `Warden.Enabled = 0`; that
+startup message alone does not mean checks or enforcement are active. Review its
+failure action, hold-off, response delay and ban settings before enabling it on a
+public realm. The distributed `worldserver.conf.dist` currently has a different
+Warden default, so preserve `Warden.Enabled = 0` in the active `worldserver.conf`
+when copying or regenerating configuration files if Warden should remain disabled.
+
 For a local server, set the realm address in the `auth.realmlist` table:
 
 ```sql
@@ -180,6 +316,7 @@ dbc
 maps
 vmaps
 mmaps
+cameras
 ```
 
 Build the project with `TOOLS=ON`, then copy or use:
@@ -236,7 +373,9 @@ SET portal "127.0.0.1"
 
 ## Playerbots
 
-Playerbots are included, but still experimental. They may cause crashes or gameplay issues depending on database state and config.
+Playerbots are included and enabled in the current local test setup, but remain
+experimental. They may still expose class-, map- or encounter-specific gameplay
+issues depending on database state and configuration.
 
 Required file:
 
@@ -248,8 +387,36 @@ Basic enable/disable options:
 
 ```ini
 AiPlayerbot.Enabled = 1
-AiPlayerbot.RandomBotAutologin = 1
+AiPlayerbot.RandomBotAutologin = 0
 ```
+
+Automatic random-bot login is not required by the custom queue systems. Arena, BG,
+LFG and world-boss staging load only the exact bots selected for the real player's
+request and clean them up afterward.
+
+The active local test configuration currently enables the request-driven queue
+features and Combat Assistant:
+
+```ini
+AiPlayerbot.AutoQueue.Enabled = 1
+AiPlayerbot.AutoQueue.DryRun = 1
+AiPlayerbot.AutoQueue.LFG = 1
+AiPlayerbot.AutoQueue.LFG.Automatic = 1
+AiPlayerbot.AutoQueue.Battleground = 1
+AiPlayerbot.AutoQueue.Battleground.Automatic = 1
+AiPlayerbot.AutoQueue.Arena = 1
+AiPlayerbot.AutoQueue.Arena.Automatic = 1
+AiPlayerbot.AutoQueue.Arena.AutomaticBattlemasterSolo = 1
+AiPlayerbot.CombatAssistant.Enabled = 1
+```
+
+`DryRun = 1` keeps the older generic observer protected. The newer explicitly
+enabled request-driven Arena/BG/LFG paths have their own gates and are not disabled
+by that observer setting. Distributed `.dist` configurations retain safer defaults;
+do not assume a newly copied config matches the local test configuration.
+
+Implementation and test details are documented in
+[`contrib/playerbot_auto_queue_548/README.md`](contrib/playerbot_auto_queue_548/README.md).
 
 For debugging, disable them:
 
