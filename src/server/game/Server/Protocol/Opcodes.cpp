@@ -1117,7 +1117,9 @@ void OpcodeTable::Initialize()
     DEFINE_SERVER_OPCODE_HANDLER(SMSG_RANDOM_ROLL, STATUS_NEVER); // 5.4.8 18414
     DEFINE_SERVER_OPCODE_HANDLER(SMSG_RANDOMIZE_CHAR_NAME, STATUS_NEVER); // 5.4.8 18414
     DEFINE_SERVER_OPCODE_HANDLER(SMSG_READ_ITEM_RESULT_OK, STATUS_NEVER); // 5.4.8 18414
-    DEFINE_SERVER_OPCODE_HANDLER(SMSG_READ_ITEM_RESULT_FAILED, STATUS_NEVER); // 5.4.8 18414 skyfire version
+    // SMSG_READ_ITEM_RESULT_FAILED has no verified 5.4.8/18414 value.  The
+    // previously circulated 0x0E8B value belongs to SMSG_CANCEL_COMBAT, so a
+    // failed read is reported with SendEquipError instead of a null opcode.
     DEFINE_SERVER_OPCODE_HANDLER(SMSG_REALM_SPLIT, STATUS_NEVER); // 5.4.8 18414
     DEFINE_SERVER_OPCODE_HANDLER(SMSG_RECEIVED_MAIL, STATUS_NEVER); // 5.4.8 18414
     DEFINE_SERVER_OPCODE_HANDLER(SMSG_REFER_A_FRIEND_EXPIRED, STATUS_UNHANDLED);
@@ -1288,8 +1290,13 @@ void OpcodeTable::Initialize()
 
 #undef DEFINE_SERVER_OPCODE_HANDLER
 
+// These legacy MSG_* names describe packets received from the 5.4.8 client in
+// this table.  Registering them in the server opcode namespace as well is not
+// only unnecessary, it also collides with valid SMSG opcodes that share the
+// same numeric value in the opposite direction (for example SMSG_SPELL_GO and
+// MSG_MOVE_START_BACKWARD are both 0x09D8).  Client and server opcode spaces
+// are independent, so keep the receive handlers in the client table only.
 #define DEFINE_MSG_OPCODE_HANDLER(opcode, status, processing, handler) \
-    ValidateAndSetServerOpcode(OpcodeServer(opcode), #opcode, status); \
     ValidateAndSetClientOpcode<decltype(handler), handler>(OpcodeClient(opcode), #opcode, status, processing)
 
     DEFINE_MSG_OPCODE_HANDLER(MSG_MOVE_FALL_LAND, STATUS_LOGGEDIN, PROCESS_THREADSAFE, &WorldSession::HandleMovementOpcodes); // 5.4.8 18414

@@ -387,22 +387,19 @@ void WorldSession::HandleReadItem(WorldPacket& recvData)
 
     if (pItem && pItem->GetTemplate()->PageText)
     {
-        WorldPacket data;
-
         InventoryResult msg = _player->CanUseItem(pItem);
         if (msg == EQUIP_ERR_OK)
         {
-            data.Initialize(SMSG_READ_ITEM_RESULT_OK, 8);
+            WorldPacket data(SMSG_READ_ITEM_RESULT_OK, 8);
             TC_LOG_INFO("network", "STORAGE: Item page sent");
+            data << pItem->GetGUID();
+            SendPacket(&data);
         }
         else
         {
-            data.Initialize(SMSG_READ_ITEM_RESULT_FAILED, 8);
             TC_LOG_INFO("network", "STORAGE: Unable to read item");
             _player->SendEquipError(msg, pItem, NULL);
         }
-        data << pItem->GetGUID();
-        SendPacket(&data);
     }
     else
         _player->SendEquipError(EQUIP_ERR_ITEM_NOT_FOUND, NULL, NULL);

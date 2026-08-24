@@ -1,0 +1,51 @@
+-- Exact preservation of the orphaned Defias Prisoner timed action list before
+-- the 2026-08-21 startup-log cleanup. Evidence only; do not load during normal
+-- updates.
+
+INSERT INTO `smart_scripts`
+(`entryorguid`, `source_type`, `id`, `link`, `event_type`,
+ `event_phase_mask`, `event_chance`, `event_flags`, `event_param1`,
+ `event_param2`, `event_param3`, `event_param4`, `event_param5`,
+ `action_type`, `action_param1`, `action_param2`, `action_param3`,
+ `action_param4`, `action_param5`, `action_param6`, `target_type`,
+ `target_param1`, `target_param2`, `target_param3`, `target_param4`,
+ `target_x`, `target_y`, `target_z`, `target_o`, `comment`) VALUES
+(170600,9,0, 0,0,0,100,0,0,0,0,0,0, 12,37063,8,0,0,0,0, 1,0,0,0,0,-1,-2,0,0,'Defias Prisoner - Script9 - Summon Creature'),
+(170600,9,1, 0,0,0,100,0,0,0,0,0,0, 45,1,0,0,0,0,0,     12,1,0,0,0,0,0,0,0,'Defias Prisoner - Script9 - Set Data'),
+(170600,9,2, 0,0,0,100,0,0,0,0,0,0, 12,37063,8,0,0,0,0, 1,0,0,0,0,-1,-0.75,0,0,'Defias Prisoner - Script9 - Summon Creature'),
+(170600,9,3, 0,0,0,100,0,0,0,0,0,0, 45,2,0,0,0,0,0,     12,1,0,0,0,0,0,0,0,'Defias Prisoner - Script9 - Set Data'),
+(170600,9,4, 0,0,0,100,0,0,0,0,0,0, 12,37063,8,0,0,0,0, 1,0,0,0,0,-1.5,1,0,0,'Defias Prisoner - Script9 - Summon Creature'),
+(170600,9,5, 0,0,0,100,0,0,0,0,0,0, 45,3,0,0,0,0,0,     12,1,0,0,0,0,0,0,0,'Defias Prisoner - Script9 - Set Data'),
+(170600,9,6, 0,0,0,100,0,0,0,0,0,0, 12,37063,8,0,0,0,0, 1,0,0,0,0,-1.5,1.5,0,0,'Defias Prisoner - Script9 - Summon Creature'),
+(170600,9,7, 0,0,0,100,0,0,0,0,0,0, 45,4,0,0,0,0,0,     12,1,0,0,0,0,0,0,0,'Defias Prisoner - Script9 - Set Data'),
+(170600,9,8, 0,0,0,100,0,0,0,0,0,0, 48,1,0,0,0,0,0,     1,0,0,0,0,0,0,0,0,'Defias Prisoner - Script9 - Set Active'),
+(170600,9,9, 0,0,0,100,0,0,0,0,0,0,124,0,1,0,0,0,0,     1,0,0,0,0,0,0,0,0,'Defias Prisoner - Script9 - Load Equipment'),
+(170600,9,10,0,0,0,100,0,0,0,0,0,0, 53,0,1706,0,0,0,0,  1,0,0,0,0,0,0,0,0,'Defias Prisoner - Script9 - Start WP')
+ON DUPLICATE KEY UPDATE
+  `link` = VALUES(`link`),
+  `event_type` = VALUES(`event_type`),
+  `event_phase_mask` = VALUES(`event_phase_mask`),
+  `event_chance` = VALUES(`event_chance`),
+  `event_flags` = VALUES(`event_flags`),
+  `event_param1` = VALUES(`event_param1`),
+  `event_param2` = VALUES(`event_param2`),
+  `event_param3` = VALUES(`event_param3`),
+  `event_param4` = VALUES(`event_param4`),
+  `event_param5` = VALUES(`event_param5`),
+  `action_type` = VALUES(`action_type`),
+  `action_param1` = VALUES(`action_param1`),
+  `action_param2` = VALUES(`action_param2`),
+  `action_param3` = VALUES(`action_param3`),
+  `action_param4` = VALUES(`action_param4`),
+  `action_param5` = VALUES(`action_param5`),
+  `action_param6` = VALUES(`action_param6`),
+  `target_type` = VALUES(`target_type`),
+  `target_param1` = VALUES(`target_param1`),
+  `target_param2` = VALUES(`target_param2`),
+  `target_param3` = VALUES(`target_param3`),
+  `target_param4` = VALUES(`target_param4`),
+  `target_x` = VALUES(`target_x`),
+  `target_y` = VALUES(`target_y`),
+  `target_z` = VALUES(`target_z`),
+  `target_o` = VALUES(`target_o`),
+  `comment` = VALUES(`comment`);

@@ -92,7 +92,7 @@ Updates.Redundancy = 1
 #    RealmID
 #        Description: ID of the Realm using this config.
 #        Important:   RealmID must match the realmlist inside the auth database.
-#        Default:     1
+#        Default for this level-90 test realm: 90
 
 RealmID = 1
 
@@ -1824,7 +1824,7 @@ GM.InWhoList.Level = 3
 #        Description: GM character starting level.
 #        Default:     1
 
-GM.StartLevel = 1
+GM.StartLevel = 90
 
 #
 #    GM.AllowInvite

@@ -469,6 +469,29 @@ void PoolMgr::LoadFromDB()
         } while (result->NextRow());
     }
 
+    // A quest pool may itself be grouped in a mother pool (for example the
+    // Klaxxi daily quest rotation).  Such mother pools are quest-only as well:
+    // treating them as object pools produces a false "empty pool" error and
+    // attempts to initialize them through the object pooling system.
+    std::vector<std::pair<uint32, uint32>> poolParents;
+    if (QueryResult result = WorldDatabase.Query("SELECT pool_id, mother_pool FROM pool_pool"))
+    {
+        do
+        {
+            Field* fields = result->Fetch();
+            poolParents.emplace_back(fields[0].GetUInt32(), fields[1].GetUInt32());
+        } while (result->NextRow());
+    }
+
+    bool addedQuestParent;
+    do
+    {
+        addedQuestParent = false;
+        for (auto const& [childPoolId, motherPoolId] : poolParents)
+            if (questPoolIds.find(childPoolId) != questPoolIds.end())
+                addedQuestParent |= questPoolIds.insert(motherPoolId).second;
+    } while (addedQuestParent);
+
     // Pool templates
     {
         uint32 oldMSTime = getMSTime();
