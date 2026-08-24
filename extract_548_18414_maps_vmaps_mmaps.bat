@@ -82,6 +82,13 @@ xcopy /E /I /Y "vmaps" "%SERVER_DIR%\vmaps"
 xcopy /E /I /Y "mmaps" "%SERVER_DIR%\mmaps"
 xcopy /E /I /Y "dbc" "%SERVER_DIR%\dbc"
 
+rem mapextractor also creates the client cinematic M2 camera paths.  The
+rem WorldServer loads these from DataDir\cameras; without this copy every
+rem cinematic waypoint set is reported as missing at startup.
+if exist "cameras" (
+  xcopy /E /I /Y "cameras" "%SERVER_DIR%\cameras"
+)
+
 if exist "db2" (
   xcopy /E /I /Y "db2" "%SERVER_DIR%\db2"
   xcopy /E /I /Y "db2\*.db2" "%SERVER_DIR%\dbc"

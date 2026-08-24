@@ -848,6 +848,7 @@ void ObjectMgr::LoadCreatureSparringTemplate()
         }
 
         _creatureSparringTemplateStore[entry] = healthPct;
+        ++count;
     } while (result->NextRow());
 
     TC_LOG_INFO("server.loading", ">> Loaded %u creature sparring templates in %u ms", count, GetMSTimeDiffToNow(oldMSTime));
@@ -10820,6 +10821,8 @@ void ObjectMgr::LoadSceneTemplates()
         sceneTemplate.ScenePackageId = fields[2].GetUInt32();
         sceneTemplate.ScriptId = sObjectMgr->GetScriptId(fields[3].GetString());
 
+        ++count;
+
     } while (templates->NextRow());
 
     TC_LOG_INFO("server.loading", ">> Loaded %u scene templates in %u ms.", count, GetMSTimeDiffToNow(oldMSTime));
@@ -10851,12 +10854,12 @@ void ObjectMgr::LoadQuestObjectiveVisualEffects()
             continue;
         }
 
-        Quest const* quest = GetQuestTemplate(objective->ID);
-        if (!quest)
+        auto questItr = _questTemplates.find(objective->QuestID);
+        if (questItr == _questTemplates.end())
             continue;
 
         bool match = false;
-        for (auto questObjective : quest->Objectives)
+        for (QuestObjective& questObjective : questItr->second->Objectives)
         {
             if (questObjective.ID == objectiveId)
             {
@@ -10868,7 +10871,7 @@ void ObjectMgr::LoadQuestObjectiveVisualEffects()
 
         if (!match)
         {
-            TC_LOG_ERROR("sql.sql", "Visual effect %u has non existant Quest Objective %u for Quest %u! Skipping.", visualEffect, objectiveId, quest->GetQuestId());
+            TC_LOG_ERROR("sql.sql", "Visual effect %u has non existant Quest Objective %u for Quest %u! Skipping.", visualEffect, objectiveId, objective->QuestID);
             continue;
         }
 

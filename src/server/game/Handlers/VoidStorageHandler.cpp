@@ -541,7 +541,7 @@ void WorldSession::HandleVoidSwapItem(WorldPacket& recvData)
     }
 
     uint8 oldSlot;
-    if (!player->GetVoidStorageItem(itemId, oldSlot))
+    if (newSlot >= VOID_STORAGE_MAX_SLOT || !player->GetVoidStorageItem(itemId, oldSlot))
     {
         TC_LOG_DEBUG("network", "WORLD: HandleVoidSwapItem - Player (GUID: %u, name: %s) requested swapping an invalid item (slot: %u, itemid: " UI64FMTD ").", player->GetGUID().GetCounter(), player->GetName().c_str(), newSlot, uint64(itemId));
         return;
@@ -553,7 +553,7 @@ void WorldSession::HandleVoidSwapItem(WorldPacket& recvData)
     if (usedDestSlot)
         itemIdDest.Set(player->GetVoidStorageItem(newSlot)->ItemId);
 
-    if (!player->SwapVoidStorageItem(oldSlot, newSlot))
+    if (oldSlot != newSlot && !player->SwapVoidStorageItem(oldSlot, newSlot))
     {
         SendVoidStorageTransferResult(VOID_TRANSFER_ERROR_INTERNAL_ERROR_1);
         return;
