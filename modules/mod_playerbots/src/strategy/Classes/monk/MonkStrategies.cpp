@@ -66,6 +66,7 @@ NextAction** MistweaverMonkStrategy::getDefaultActions()
     // idle after its damage partner dies.
     return NextAction::array(0,
         new NextAction("stance of the wise serpent", ACTION_HIGH + 5),
+        new NextAction("attack enemy player", ACTION_DEFAULT + 0.4f),
         new NextAction("tiger palm", ACTION_DEFAULT + 0.3f),
         new NextAction("jab", ACTION_DEFAULT + 0.2f),
         new NextAction("melee", ACTION_DEFAULT), nullptr);

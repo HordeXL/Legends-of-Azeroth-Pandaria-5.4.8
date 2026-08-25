@@ -169,6 +169,7 @@ void ShamanHealerDpsStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
     triggers.push_back(
         new TriggerNode("healer should attack",
                         NextAction::array(0, 
+                            new NextAction("attack enemy player", ACTION_DEFAULT + 0.3f),
                             new NextAction("flame shock", ACTION_DEFAULT + 0.2f),
                             new NextAction("lava burst", ACTION_DEFAULT + 0.1f),
                             new NextAction("lightning bolt", ACTION_DEFAULT), nullptr)));
