@@ -7,6 +7,7 @@
 
 #include "Playerbots.h"
 #include "Totem.h"
+#include "Timer.h"
 
 bool CastTotemAction::isUseful()
 {
@@ -29,6 +30,46 @@ bool CastTotemAction::isUseful()
 bool CastManaSpringTotemAction::isUseful()
 {
     return CastTotemAction::isUseful() && !AI_VALUE2(bool, "has totem", "healing stream totem");
+}
+
+bool CastManaTideTotemAction::isUseful()
+{
+    if (!CastTotemAction::isUseful())
+        return false;
+
+    if (!announcementStartedAt)
+        return true;
+
+    uint32 elapsed = getMSTimeDiff(announcementStartedAt, getMSTime());
+    if (elapsed > 10000)
+    {
+        // The need disappeared, the cast was blocked, or the encounter state
+        // changed. Start a fresh warning instead of casting from stale state.
+        announcementStartedAt = 0;
+        return true;
+    }
+
+    return elapsed >= 5000;
+}
+
+bool CastManaTideTotemAction::Execute(Event event)
+{
+    uint32 now = getMSTime();
+    if (!announcementStartedAt)
+    {
+        botAI->Say("Mana Tide Totem in 5 seconds!");
+        announcementStartedAt = now;
+        return true;
+    }
+
+    if (getMSTimeDiff(announcementStartedAt, now) < 5000)
+        return false;
+
+    bool cast = CastBuffSpellAction::Execute(event);
+    if (cast)
+        announcementStartedAt = 0;
+
+    return cast;
 }
 
 bool CastFlametongueTotemAction::isUseful()

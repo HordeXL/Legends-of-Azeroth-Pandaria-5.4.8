@@ -41,10 +41,14 @@ DemonoWarlockStrategy::DemonoWarlockStrategy(PlayerbotAI* botAI) : GenericWarloc
 NextAction** DemonoWarlockStrategy::getDefaultActions()
 {
     return NextAction::array(0,
-        new NextAction("dark soul: knowledge", ACTION_DEFAULT + 0.5f),
-        new NextAction("void ray", ACTION_DEFAULT + 0.4f),
-        new NextAction("chaos wave", ACTION_HIGH + 0.3f),
-        new NextAction("touch of chaos", ACTION_HIGH),
+        new NextAction("dark soul: knowledge", ACTION_DEFAULT + 0.9f),
+        new NextAction("soul fire", ACTION_DEFAULT + 0.8f),
+        new NextAction("hand of guldan", ACTION_DEFAULT + 0.7f),
+        new NextAction("doom", ACTION_DEFAULT + 0.6f),
+        new NextAction("void ray", ACTION_DEFAULT + 0.5f),
+        new NextAction("chaos wave", ACTION_DEFAULT + 0.4f),
+        new NextAction("touch of chaos", ACTION_DEFAULT + 0.3f),
+        new NextAction("shadow bolt", ACTION_DEFAULT),
         nullptr);
 }
 
@@ -52,7 +56,7 @@ void DemonoWarlockStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 {
     GenericWarlockStrategy::InitTriggers(triggers);
 
-    triggers.push_back(new TriggerNode("corruption", NextAction::array(0, new NextAction("doom", 20.0f), nullptr)));
+    triggers.push_back(new TriggerNode("corruption", NextAction::array(0, new NextAction("corruption", 20.0f), nullptr)));
     triggers.push_back(new TriggerNode("metamorphosis", NextAction::array(0, new NextAction("metamorphosis", ACTION_HIGH), nullptr)));
     triggers.push_back(new TriggerNode("molten core", NextAction::array(0, new NextAction("soul fire", ACTION_INTERRUPT), nullptr)));
 }

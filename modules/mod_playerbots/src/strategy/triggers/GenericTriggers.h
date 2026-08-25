@@ -44,6 +44,15 @@ public:
     bool IsActive() override;
 };
 
+class ManaTideOutOfRangeTrigger : public Trigger
+{
+public:
+    ManaTideOutOfRangeTrigger(PlayerbotAI* botAI)
+        : Trigger(botAI, "mana tide out of range") {}
+
+    bool IsActive() override;
+};
+
 class AlmostFullManaTrigger : public Trigger
 {
 public:

@@ -48,7 +48,7 @@ NextAction** DpsHunterStrategy::getDefaultActions()
         new NextAction("aimed shot", ACTION_DEFAULT + 0.5f),
         new NextAction("silencing shot", ACTION_DEFAULT + 0.4f),
         new NextAction("kill command", ACTION_DEFAULT + 0.3f),
-        // new NextAction("arcane shot", ACTION_DEFAULT + 0.2f),
+        new NextAction("arcane shot", ACTION_DEFAULT + 0.2f),
         new NextAction("steady shot", ACTION_DEFAULT + 0.1f),
         new NextAction("auto shot", ACTION_DEFAULT), nullptr);
 }
@@ -73,7 +73,8 @@ void DpsAoeHunterStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 {
     triggers.push_back(
         new TriggerNode("light aoe", NextAction::array(0, new NextAction("multi-shot", 20.0f), nullptr)));
-    triggers.push_back(new TriggerNode("medium aoe", NextAction::array(0, new NextAction("volley", 21.0f), nullptr)));
+    triggers.push_back(
+        new TriggerNode("medium aoe", NextAction::array(0, new NextAction("multi-shot", 21.0f), nullptr)));
     triggers.push_back(
         new TriggerNode("serpent sting on attacker",
                         NextAction::array(0, new NextAction("serpent sting on attacker", 17.0f), nullptr)));

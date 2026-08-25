@@ -26,8 +26,7 @@ void GenericPriestStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
     // member critical health", NextAction::array(0, new NextAction("remove shadowform", 62.0f), new NextAction("power
     // word: shield on party", 61.0f), new NextAction("flash heal on party", 60.0f), nullptr)));
     triggers.push_back(new TriggerNode("medium threat", NextAction::array(0, new NextAction("fade", 55.0f), nullptr)));
-    // triggers.push_back(new TriggerNode("enemy is close", NextAction::array(0, new NextAction("psychic
-    // scream", 50.0f), nullptr))); triggers.push_back(new TriggerNode("low mana", NextAction::array(0, new
+    // triggers.push_back(new TriggerNode("low mana", NextAction::array(0, new
     // NextAction("inner focus", 42.0f), nullptr))); triggers.push_back(new TriggerNode("medium mana",
     // NextAction::array(0, new NextAction("symbol of hope", ACTION_EMERGENCY), nullptr))); triggers.push_back(new
     // TriggerNode("low mana", NextAction::array(0, new NextAction("consume magic", 10.0f), nullptr)));
@@ -90,9 +89,15 @@ void PriestCcStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 
 void PriestHealerDpsStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 {
+    // A PvP healer should use its available close-range control before
+    // falling back to damage, especially when it is the last survivor.
+    triggers.push_back(new TriggerNode("enemy is close",
+        NextAction::array(0, new NextAction("psychic scream", ACTION_INTERRUPT - 1), nullptr)));
+
     triggers.push_back(
         new TriggerNode("healer should attack",
                         NextAction::array(0,
+                            new NextAction("attack enemy player", ACTION_DEFAULT + 0.6f),
                             new NextAction("shadow word: pain", ACTION_DEFAULT + 0.5f),
                             new NextAction("holy fire", ACTION_DEFAULT + 0.4f),
                             new NextAction("smite", ACTION_DEFAULT + 0.3f),

@@ -50,27 +50,34 @@ void HealShamanStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
                                        NextAction::array(0, new NextAction("earthliving weapon", 22.0f), nullptr)));
     triggers.push_back(new TriggerNode(
         "group heal setting",
-        NextAction::array(0, new NextAction("riptide on party", 27.0f), new NextAction("chain heal on party", 26.0f), NULL)));
+        NextAction::array(0, new NextAction("spirit link totem", ACTION_CRITICAL_HEAL + 7),
+                          new NextAction("healing tide totem", ACTION_CRITICAL_HEAL + 6),
+                          new NextAction("ascendance", ACTION_CRITICAL_HEAL + 5),
+                          new NextAction("riptide on party", ACTION_CRITICAL_HEAL + 4),
+                          new NextAction("chain heal on party", ACTION_CRITICAL_HEAL + 3), NULL)));
 
     triggers.push_back(new TriggerNode(
         "party member critical health",
-        NextAction::array(0, new NextAction("riptide on party", 25.0f), new NextAction("healing wave on party", 24.0f),
-                          new NextAction("lesser healing wave on party", 23.0f), nullptr)));
+        NextAction::array(0, new NextAction("riptide on party", ACTION_CRITICAL_HEAL + 4),
+                          new NextAction("healing surge on party", ACTION_CRITICAL_HEAL + 3),
+                          new NextAction("greater healing wave on party", ACTION_CRITICAL_HEAL + 2), nullptr)));
 
     triggers.push_back(new TriggerNode(
         "party member low health",
-        NextAction::array(0, new NextAction("riptide on party", 19.0f), new NextAction("healing wave on party", 18.0f),
-                          new NextAction("lesser healing wave on party", 17.0f), nullptr)));
+        NextAction::array(0, new NextAction("riptide on party", ACTION_MEDIUM_HEAL + 4),
+                          new NextAction("greater healing wave on party", ACTION_MEDIUM_HEAL + 3),
+                          new NextAction("healing surge on party", ACTION_MEDIUM_HEAL + 2),
+                          new NextAction("healing wave on party", ACTION_MEDIUM_HEAL + 1), nullptr)));
 
     triggers.push_back(new TriggerNode(
         "party member medium health",
-        NextAction::array(0, new NextAction("riptide on party", 16.0f), new NextAction("healing wave on party", 15.0f),
-                          new NextAction("lesser healing wave on party", 14.0f), nullptr)));
+        NextAction::array(0, new NextAction("riptide on party", ACTION_LIGHT_HEAL + 4),
+                          new NextAction("healing wave on party", ACTION_LIGHT_HEAL + 3), nullptr)));
 
     triggers.push_back(
         new TriggerNode("party member almost full health",
                         NextAction::array(0, new NextAction("riptide on party", 12.0f),
-                                          new NextAction("lesser healing wave on party", 11.0f), nullptr)));
+                                          new NextAction("healing wave on party", 11.0f), nullptr)));
 
     triggers.push_back(
         new TriggerNode("party member cleanse spirit poison",
@@ -101,8 +108,9 @@ void HealShamanStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode("enemy too close for spell",
                                        NextAction::array(0, new NextAction("flee", ACTION_MOVE + 9), nullptr)));
 
-    triggers.push_back(
-        new TriggerNode("medium mana", NextAction::array(0, new NextAction("mana tide totem", ACTION_HIGH + 5), NULL)));
+    triggers.push_back(new TriggerNode(
+        "group low mana for mana tide",
+        NextAction::array(0, new NextAction("mana tide totem", ACTION_HIGH + 5), NULL)));
 
     triggers.push_back(
         new TriggerNode("no fire totem", NextAction::array(0, new NextAction("flametongue totem", 7.0f),

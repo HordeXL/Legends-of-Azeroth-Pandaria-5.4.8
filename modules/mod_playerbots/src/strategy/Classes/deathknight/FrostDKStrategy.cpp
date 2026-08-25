@@ -34,7 +34,7 @@ private:
     static ActionNode* icy_touch([[maybe_unused]] PlayerbotAI* botAI)
     {
         return new ActionNode("icy touch",
-                              /*P*/ NextAction::array(0, new NextAction("blood presence"), nullptr),
+                              /*P*/ NextAction::array(0, new NextAction("frost presence"), nullptr),
                               /*A*/ nullptr,
                               /*C*/ nullptr);
     }
@@ -42,7 +42,7 @@ private:
     static ActionNode* obliterate([[maybe_unused]] PlayerbotAI* botAI)
     {
         return new ActionNode("obliterate",
-                              /*P*/ NextAction::array(0, new NextAction("blood presence"), nullptr),
+                              /*P*/ NextAction::array(0, new NextAction("frost presence"), nullptr),
                               /*A*/ nullptr,
                               /*C*/ nullptr);
     }
@@ -50,7 +50,7 @@ private:
     static ActionNode* rune_strike([[maybe_unused]] PlayerbotAI* botAI)
     {
         return new ActionNode("rune strike",
-                              /*P*/ NextAction::array(0, new NextAction("blood presence"), nullptr),
+                              /*P*/ NextAction::array(0, new NextAction("frost presence"), nullptr),
                               /*A*/ NextAction::array(0, new NextAction("melee"), nullptr),
                               /*C*/ nullptr);
     }
@@ -58,7 +58,7 @@ private:
     static ActionNode* frost_strike([[maybe_unused]] PlayerbotAI* botAI)
     {
         return new ActionNode("frost strike",
-                              /*P*/ NextAction::array(0, new NextAction("blood presence"), nullptr),
+                              /*P*/ NextAction::array(0, new NextAction("frost presence"), nullptr),
                               /*A*/ nullptr,
                               /*C*/ nullptr);
     }
@@ -66,7 +66,7 @@ private:
     static ActionNode* howling_blast([[maybe_unused]] PlayerbotAI* botAI)
     {
         return new ActionNode("howling blast",
-                              /*P*/ NextAction::array(0, new NextAction("blood presence"), nullptr),
+                              /*P*/ NextAction::array(0, new NextAction("frost presence"), nullptr),
                               /*A*/ nullptr,
                               /*C*/ nullptr);
     }
@@ -87,7 +87,8 @@ FrostDKStrategy::FrostDKStrategy(PlayerbotAI* botAI) : GenericDKStrategy(botAI)
 NextAction** FrostDKStrategy::getDefaultActions()
 {
     return NextAction::array(
-        0, new NextAction("obliterate", ACTION_DEFAULT + 0.7f),
+        0, new NextAction("frost presence", ACTION_DEFAULT + 0.9f),
+        new NextAction("obliterate", ACTION_DEFAULT + 0.7f),
         new NextAction("frost strike", ACTION_DEFAULT + 0.4f),
         new NextAction("empower rune weapon", ACTION_DEFAULT + 0.3f),
         new NextAction("horn of winter", ACTION_DEFAULT + 0.1f), new NextAction("melee", ACTION_DEFAULT), NULL);

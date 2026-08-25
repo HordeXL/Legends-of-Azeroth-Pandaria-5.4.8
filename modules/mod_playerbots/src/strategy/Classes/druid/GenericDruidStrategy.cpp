@@ -155,9 +155,17 @@ void DruidCcStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 
 void DruidHealerDpsStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 {
+    // In PvP this roots a melee attacker while the restoration druid keeps
+    // healing. The action is already guarded by the existing kite trigger,
+    // learned-spell checks, range, line of sight and diminishing returns.
+    triggers.push_back(new TriggerNode("entangling roots kite",
+        NextAction::array(0,
+            new NextAction("entangling roots", ACTION_INTERRUPT - 1), nullptr)));
+
     triggers.push_back(
         new TriggerNode("healer should attack",
                         NextAction::array(0,
+                            new NextAction("attack enemy player", ACTION_DEFAULT + 0.4f),
                             new NextAction("cancel tree form", ACTION_DEFAULT + 0.3f),
                             new NextAction("moonfire", ACTION_DEFAULT + 0.2f),
                             new NextAction("wrath", ACTION_DEFAULT + 0.1f),

@@ -43,6 +43,9 @@ HEAL_PARTY_ACTION(CastSurgingMistOnPartyAction, "surging mist", 35.0f, HealingMa
 HEAL_PARTY_ACTION(CastEnvelopingMistOnPartyAction, "enveloping mist", 35.0f, HealingManaEfficiency::MEDIUM);
 HEAL_PARTY_ACTION(CastRenewingMistOnPartyAction, "renewing mist", 15.0f, HealingManaEfficiency::VERY_HIGH);
 HEAL_PARTY_ACTION(CastLifeCocoonOnPartyAction, "life cocoon", 45.0f, HealingManaEfficiency::HIGH);
+SPELL_ACTION(CastUpliftAction, "uplift");
+SPELL_ACTION(CastRevivalAction, "revival");
+BUFF_ACTION(CastThunderFocusTeaAction, "thunder focus tea");
 BUFF_ACTION(CastManaTeaAction, "mana tea");
 
 // Utility shared by all Monk specializations (magic dispel only succeeds for

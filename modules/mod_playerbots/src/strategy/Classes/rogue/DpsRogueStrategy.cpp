@@ -81,6 +81,7 @@ DpsRogueStrategy::DpsRogueStrategy(PlayerbotAI* botAI) : MeleeCombatStrategy(bot
 NextAction** DpsRogueStrategy::getDefaultActions()
 {
     return NextAction::array(0, new NextAction("killing spree", ACTION_DEFAULT + 0.1f),
+                             new NextAction("sinister strike", ACTION_DEFAULT + 0.05f),
                              new NextAction("melee", ACTION_DEFAULT), nullptr);
 }
 

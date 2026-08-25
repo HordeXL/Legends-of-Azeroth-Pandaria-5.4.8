@@ -2216,16 +2216,6 @@ void ActivateSoloArenaAutomaticCombat(Battleground* arena,
         if (!botAI || botAI->IsRealPlayer())
             continue;
 
-        // Healers already follow their party and must remain free to select the
-        // lowest-health ally. The activation is for damage bots that otherwise
-        // can wait at the opened gate until an enemy walks into aggro range.
-        if (PlayerBotSpec::IsHeal(participant, true))
-        {
-            SoloArenaAutomaticCombatActivatedBots.insert(
-                participant->GetGUID().GetCounter());
-            continue;
-        }
-
         bool requesterSide = std::find(SoloArenaAutomaticRequesterTeam.begin(),
             SoloArenaAutomaticRequesterTeam.end(),
             participant->GetGUID().GetCounter()) != SoloArenaAutomaticRequesterTeam.end();
@@ -2238,15 +2228,22 @@ void ActivateSoloArenaAutomaticCombat(Battleground* arena,
         botAI->GetAiObjectContext()->GetValue<Unit*>("current target")->Set(opponent);
         participant->SetSelection(opponent->GetGUID());
         botAI->ChangeEngine(BOT_STATE_COMBAT);
+        // A hostile current target does not prevent party-heal actions from
+        // selecting their own lowest-health ally.  Healers need this target as
+        // much as damage bots do: their interrupt/CC triggers inspect it and
+        // their gated healer-DPS strategy uses it when nobody currently needs
+        // healing.  Previously every healer was deliberately skipped here,
+        // leaving the last surviving healer with no victim and therefore idle.
         bool attackStarted = participant->Attack(
             opponent, PlayerBotSpec::IsMelee(participant));
         botAI->DoSpecificAction("pet attack", Event(), true);
         SoloArenaAutomaticCombatActivatedBots.insert(
             participant->GetGUID().GetCounter());
         TC_LOG_INFO("server",
-            "SoloArena post-gate combat activated instance=%u bot=%s guid=%u class=%u target=%s target-guid=%u direct-attack=%u",
+            "SoloArena post-gate combat activated instance=%u bot=%s guid=%u class=%u healer=%u target=%s target-guid=%u direct-attack=%u",
             arena->GetInstanceID(), participant->GetName().c_str(),
             participant->GetGUID().GetCounter(), uint32(participant->GetClass()),
+            PlayerBotSpec::IsHeal(participant, true) ? 1u : 0u,
             opponent->GetName().c_str(), opponent->GetGUID().GetCounter(),
             uint32(attackStarted));
     }

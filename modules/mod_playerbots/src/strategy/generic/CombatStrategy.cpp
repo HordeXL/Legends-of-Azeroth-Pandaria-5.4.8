@@ -16,6 +16,9 @@ void CombatStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode("combat stuck", NextAction::array(0, new NextAction("reset", 1.0f), nullptr)));
     triggers.push_back(new TriggerNode("not facing target", NextAction::array(0, new NextAction("set facing", ACTION_MOVE + 7), nullptr)));
     triggers.push_back(new TriggerNode("pet attack", NextAction::array(0, new NextAction("pet attack", 40.0f), nullptr)));
+    triggers.push_back(new TriggerNode(
+        "mana tide out of range",
+        NextAction::array(0, new NextAction("move to mana tide", ACTION_HIGH + 1), nullptr)));
 }
 
 AvoidAoeStrategy::AvoidAoeStrategy(PlayerbotAI* botAI) : Strategy(botAI) {}

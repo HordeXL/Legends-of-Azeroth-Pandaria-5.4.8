@@ -39,7 +39,10 @@ NextAction** ArmsWarriorStrategy::getDefaultActions()
         new NextAction("demoralizing banner", ACTION_DEFAULT + 0.8f),
         new NextAction("recklessness", ACTION_DEFAULT + 0.7f),
         new NextAction("bloodbath", ACTION_DEFAULT + 0.6f),
-        new NextAction("execute", ACTION_DEFAULT + 0.2f),
+        new NextAction("execute", ACTION_DEFAULT + 0.5f),
+        new NextAction("mortal strike", ACTION_DEFAULT + 0.4f),
+        new NextAction("overpower", ACTION_DEFAULT + 0.3f),
+        new NextAction("slam", ACTION_DEFAULT + 0.2f),
         new NextAction("melee", ACTION_DEFAULT + 0.1f),
         nullptr);
 }

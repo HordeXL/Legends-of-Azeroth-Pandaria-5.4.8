@@ -74,9 +74,14 @@ class ShamanATriggerFactoryInternal : public NamedObjectContext<Trigger>
 public:
     ShamanATriggerFactoryInternal()
     {
+        creators["group low mana for mana tide"] = &ShamanATriggerFactoryInternal::group_low_mana_for_mana_tide;
     }
 
 private:
+    static Trigger* group_low_mana_for_mana_tide(PlayerbotAI* botAI)
+    {
+        return new GroupLowManaForManaTideTrigger(botAI);
+    }
 };
 
 class ShamanAiObjectContextInternal : public NamedObjectContext<Action>
@@ -108,6 +113,11 @@ public:
         creators["lesser healing wave"] = &ShamanAiObjectContextInternal::lesser_healing_wave;
         creators["healing wave on party"] = &ShamanAiObjectContextInternal::healing_wave_on_party;
         creators["lesser healing wave on party"] = &ShamanAiObjectContextInternal::lesser_healing_wave_on_party;
+        creators["healing surge on party"] = &ShamanAiObjectContextInternal::healing_surge_on_party;
+        creators["greater healing wave on party"] = &ShamanAiObjectContextInternal::greater_healing_wave_on_party;
+        creators["ascendance"] = &ShamanAiObjectContextInternal::ascendance;
+        creators["healing tide totem"] = &ShamanAiObjectContextInternal::healing_tide_totem;
+        creators["spirit link totem"] = &ShamanAiObjectContextInternal::spirit_link_totem;
         creators["earth shield"] = &ShamanAiObjectContextInternal::earth_shield;
         creators["earth shield on party"] = &ShamanAiObjectContextInternal::earth_shield_on_party;
         creators["chain heal on party"] = &ShamanAiObjectContextInternal::chain_heal;
@@ -202,6 +212,14 @@ private:
     {
         return new CastLesserHealingWaveOnPartyAction(botAI);
     }
+    static Action* healing_surge_on_party(PlayerbotAI* botAI) { return new CastHealingSurgeOnPartyAction(botAI); }
+    static Action* greater_healing_wave_on_party(PlayerbotAI* botAI)
+    {
+        return new CastGreaterHealingWaveOnPartyAction(botAI);
+    }
+    static Action* ascendance(PlayerbotAI* botAI) { return new CastAscendanceAction(botAI); }
+    static Action* healing_tide_totem(PlayerbotAI* botAI) { return new CastHealingTideTotemAction(botAI); }
+    static Action* spirit_link_totem(PlayerbotAI* botAI) { return new CastSpiritLinkTotemAction(botAI); }
     static Action* earth_shield(PlayerbotAI* botAI) { return new CastEarthShieldAction(botAI); }
     static Action* earth_shield_on_party(PlayerbotAI* botAI) { return new CastEarthShieldOnPartyAction(botAI); }
     static Action* chain_heal(PlayerbotAI* botAI) { return new CastChainHealAction(botAI); }
