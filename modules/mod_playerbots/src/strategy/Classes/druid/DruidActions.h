@@ -69,6 +69,33 @@ public:
     }
 };
 
+class CastLifebloomOnPartyAction : public HealPartyMemberAction
+{
+public:
+    CastLifebloomOnPartyAction(PlayerbotAI* botAI)
+        : HealPartyMemberAction(botAI, "lifebloom", 15.0f, HealingManaEfficiency::VERY_HIGH)
+    {
+    }
+};
+
+class CastCenarionWardOnPartyAction : public HealPartyMemberAction
+{
+public:
+    CastCenarionWardOnPartyAction(PlayerbotAI* botAI)
+        : HealPartyMemberAction(botAI, "cenarion ward", 30.0f, HealingManaEfficiency::HIGH)
+    {
+    }
+};
+
+class CastIronbarkOnPartyAction : public HealPartyMemberAction
+{
+public:
+    CastIronbarkOnPartyAction(PlayerbotAI* botAI)
+        : HealPartyMemberAction(botAI, "ironbark", 45.0f, HealingManaEfficiency::HIGH)
+    {
+    }
+};
+
 class CastReviveAction : public ResurrectPartyMemberAction
 {
 public:
@@ -159,10 +186,16 @@ public:
     CastMoonfireAction(PlayerbotAI* botAI) : CastDebuffSpellAction(botAI, "moonfire", true) {}
 };
 
-class CastInsectSwarmAction : public CastDebuffSpellAction
+class CastSunfireAction : public CastDebuffSpellAction
 {
 public:
-    CastInsectSwarmAction(PlayerbotAI* botAI) : CastDebuffSpellAction(botAI, "insect swarm", true) {}
+    CastSunfireAction(PlayerbotAI* botAI) : CastDebuffSpellAction(botAI, "sunfire", true) {}
+};
+
+class CastStarsurgeAction : public CastSpellAction
+{
+public:
+    CastStarsurgeAction(PlayerbotAI* botAI) : CastSpellAction(botAI, "starsurge") {}
 };
 
 class CastStarfireAction : public CastSpellAction
@@ -293,10 +326,10 @@ public:
     CastDruidRemoveCurseOnPartyAction(PlayerbotAI* ai) : CurePartyMemberAction(ai, "remove curse", DISPEL_CURSE) {}
 };
 
-class CastInsectSwarmOnAttackerAction : public CastDebuffSpellOnAttackerAction
+class CastSunfireOnAttackerAction : public CastDebuffSpellOnAttackerAction
 {
 public:
-    CastInsectSwarmOnAttackerAction(PlayerbotAI* ai) : CastDebuffSpellOnAttackerAction(ai, "insect swarm") {}
+    CastSunfireOnAttackerAction(PlayerbotAI* ai) : CastDebuffSpellOnAttackerAction(ai, "sunfire") {}
 };
 
 class CastMoonfireOnAttackerAction : public CastDebuffSpellOnAttackerAction

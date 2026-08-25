@@ -35,21 +35,21 @@ private:
     static ActionNode* death_strike([[maybe_unused]] PlayerbotAI* botAI)
     {
         return new ActionNode("death strike",
-                              /*P*/ NextAction::array(0, new NextAction("blood presence"), nullptr),
+                              /*P*/ NextAction::array(0, new NextAction("unholy presence"), nullptr),
                               /*A*/ nullptr,
                               /*C*/ nullptr);
     }
     static ActionNode* ghoul_frenzy([[maybe_unused]] PlayerbotAI* botAI)
     {
         return new ActionNode("ghoul frenzy",
-                              /*P*/ NextAction::array(0, new NextAction("blood presence"), nullptr),
+                              /*P*/ NextAction::array(0, new NextAction("unholy presence"), nullptr),
                               /*A*/ nullptr,
                               /*C*/ nullptr);
     }
     static ActionNode* corpse_explosion([[maybe_unused]] PlayerbotAI* botAI)
     {
         return new ActionNode("corpse explosion",
-                              /*P*/ NextAction::array(0, new NextAction("blood presence"), nullptr),
+                              /*P*/ NextAction::array(0, new NextAction("unholy presence"), nullptr),
                               /*A*/ nullptr,
                               /*C*/ nullptr);
     }
@@ -57,14 +57,14 @@ private:
     static ActionNode* scourge_strike([[maybe_unused]] PlayerbotAI* botAI)
     {
         return new ActionNode("scourge strike",
-                              /*P*/ NextAction::array(0, new NextAction("blood presence"), nullptr),
+                              /*P*/ NextAction::array(0, new NextAction("unholy presence"), nullptr),
                               /*A*/ nullptr,
                               /*C*/ nullptr);
     }
     static ActionNode* icy_touch([[maybe_unused]] PlayerbotAI* botAI)
     {
         return new ActionNode("icy touch",
-                              /*P*/ NextAction::array(0, new NextAction("blood presence"), nullptr),
+                              /*P*/ NextAction::array(0, new NextAction("unholy presence"), nullptr),
                               /*A*/ nullptr,
                               /*C*/ nullptr);
     }
@@ -78,11 +78,13 @@ UnholyDKStrategy::UnholyDKStrategy(PlayerbotAI* botAI) : GenericDKStrategy(botAI
 NextAction** UnholyDKStrategy::getDefaultActions()
 {
     return NextAction::array(
-        0, new NextAction("death and decay", ACTION_HIGH + 5),
-        new NextAction("summon gargoyle", ACTION_DEFAULT + 0.4f),
+        0, new NextAction("unholy presence", ACTION_DEFAULT + 0.9f),
+        new NextAction("death and decay", ACTION_HIGH + 5),
+        new NextAction("summon gargoyle", ACTION_DEFAULT + 0.6f),
+        new NextAction("scourge strike", ACTION_DEFAULT + 0.5f),
         // new NextAction("empower rune weapon", ACTION_DEFAULT + 0.3f),
+        new NextAction("death coil", ACTION_DEFAULT + 0.4f),
         new NextAction("horn of winter", ACTION_DEFAULT + 0.2f),
-        new NextAction("death coil", ACTION_DEFAULT + 0.1f),
         new NextAction("melee", ACTION_DEFAULT), nullptr);
 }
 

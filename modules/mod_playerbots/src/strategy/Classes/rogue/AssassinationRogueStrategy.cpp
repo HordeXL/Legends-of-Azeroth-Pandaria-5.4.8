@@ -36,7 +36,8 @@ AssassinationRogueStrategy::AssassinationRogueStrategy(PlayerbotAI* ai) : MeleeC
 
 NextAction** AssassinationRogueStrategy::getDefaultActions()
 {
-    return NextAction::array(0, new NextAction("melee", ACTION_DEFAULT), NULL);
+    return NextAction::array(0, new NextAction("mutilate", ACTION_DEFAULT + 0.2f),
+                             new NextAction("melee", ACTION_DEFAULT), NULL);
 }
 
 void AssassinationRogueStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
@@ -49,9 +50,6 @@ void AssassinationRogueStrategy::InitTriggers(std::vector<TriggerNode*>& trigger
 
     triggers.push_back(new TriggerNode("high energy available",
                                        NextAction::array(0, new NextAction("mutilate", ACTION_NORMAL + 3), NULL)));
-
-    triggers.push_back(new TriggerNode(
-        "hunger for blood", NextAction::array(0, new NextAction("hunger for blood", ACTION_HIGH + 6), NULL)));
 
     triggers.push_back(new TriggerNode("slice and dice",
                                        NextAction::array(0, new NextAction("slice and dice", ACTION_HIGH + 5), NULL)));

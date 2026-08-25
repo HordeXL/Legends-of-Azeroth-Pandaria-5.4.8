@@ -125,6 +125,9 @@ public:
         creators["enveloping mist on party"] = &MonkActionContextInternal::enveloping_mist_party;
         creators["renewing mist on party"] = &MonkActionContextInternal::renewing_mist_party;
         creators["life cocoon on party"] = &MonkActionContextInternal::life_cocoon_party;
+        creators["uplift"] = &MonkActionContextInternal::uplift;
+        creators["revival"] = &MonkActionContextInternal::revival;
+        creators["thunder focus tea"] = &MonkActionContextInternal::thunder_focus_tea;
         creators["mana tea"] = &MonkActionContextInternal::mana_tea;
         creators["detox"] = &MonkActionContextInternal::detox;
         creators["detox poison on party"] = &MonkActionContextInternal::detox_poison_party;
@@ -163,6 +166,9 @@ private:
     static Action* enveloping_mist_party(PlayerbotAI* ai) { return new CastEnvelopingMistOnPartyAction(ai); }
     static Action* renewing_mist_party(PlayerbotAI* ai) { return new CastRenewingMistOnPartyAction(ai); }
     static Action* life_cocoon_party(PlayerbotAI* ai) { return new CastLifeCocoonOnPartyAction(ai); }
+    static Action* uplift(PlayerbotAI* ai) { return new CastUpliftAction(ai); }
+    static Action* revival(PlayerbotAI* ai) { return new CastRevivalAction(ai); }
+    static Action* thunder_focus_tea(PlayerbotAI* ai) { return new CastThunderFocusTeaAction(ai); }
     static Action* mana_tea(PlayerbotAI* ai) { return new CastManaTeaAction(ai); }
     static Action* detox(PlayerbotAI* ai) { return new CastDetoxAction(ai); }
     static Action* detox_poison_party(PlayerbotAI* ai) { return new CastDetoxPoisonOnPartyAction(ai); }

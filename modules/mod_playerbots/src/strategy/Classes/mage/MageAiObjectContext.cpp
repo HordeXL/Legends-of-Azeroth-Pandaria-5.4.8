@@ -98,12 +98,12 @@ public:
         creators["heating up"] = &MageTriggerFactoryInternal::heating_up;
         creators["pyroblast!"] = &MageTriggerFactoryInternal::pyroblast;
 
-        // -- forst
+        // -- frost
         creators["icy veins"] = &MageTriggerFactoryInternal::icy_veins;
         creators["fingers of frost single"] = &MageTriggerFactoryInternal::fingers_of_frost_single;
         creators["fingers of frost double"] = &MageTriggerFactoryInternal::fingers_of_frost_double;
         creators["brain freeze"] = &MageTriggerFactoryInternal::brain_freeze;
-        creators["forst bomb"] = &MageTriggerFactoryInternal::frost_bomb;
+        creators["frost bomb"] = &MageTriggerFactoryInternal::frost_bomb;
 
         // -- arcane
         creators["arcane blast"] = &MageTriggerFactoryInternal::arcane_blast;
@@ -198,7 +198,7 @@ public:
         creators["frozen orb"] = &MageAiObjectContextInternal::frozen_orb;
         creators["cold snap"] = &MageAiObjectContextInternal::cold_snap;
         creators["ice barrier"] = &MageAiObjectContextInternal::ice_barrier;
-        creators["forst bomb"] = &MageAiObjectContextInternal::frost_bomb;
+        creators["frost bomb"] = &MageAiObjectContextInternal::frost_bomb;
 
         // -- arcane
         creators["arcane power"] = &MageAiObjectContextInternal::arcane_power;

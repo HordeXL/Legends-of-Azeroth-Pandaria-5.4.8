@@ -42,6 +42,13 @@ public:
     }
 };
 
+// 5.4.8 Restoration heals. Lesser Healing Wave was removed long before MoP;
+// keeping it in the priority list silently discarded an emergency-heal slot.
+HEAL_PARTY_ACTION(CastHealingSurgeOnPartyAction, "healing surge", 30.0f, HealingManaEfficiency::LOW);
+HEAL_PARTY_ACTION(CastGreaterHealingWaveOnPartyAction, "greater healing wave", 45.0f,
+                  HealingManaEfficiency::MEDIUM);
+BUFF_ACTION(CastAscendanceAction, "ascendance");
+
 class CastChainHealAction : public HealPartyMemberAction
 {
 public:
@@ -176,15 +183,33 @@ public:
 class CastManaTideTotemAction : public CastTotemAction
 {
 public:
-    CastManaTideTotemAction(PlayerbotAI* botAI) : CastTotemAction(botAI, "mana tide totem") {}
+    CastManaTideTotemAction(PlayerbotAI* botAI)
+        : CastTotemAction(botAI, "mana tide totem"), announcementStartedAt(0) {}
 
+    bool Execute(Event event) override;
+    bool isUseful() override;
     std::string const GetTargetName() override { return "self target"; }
+
+private:
+    uint32 announcementStartedAt;
 };
 
 class CastHealingStreamTotemAction : public CastTotemAction
 {
 public:
     CastHealingStreamTotemAction(PlayerbotAI* botAI) : CastTotemAction(botAI, "healing stream totem") {}
+};
+
+class CastHealingTideTotemAction : public CastTotemAction
+{
+public:
+    CastHealingTideTotemAction(PlayerbotAI* botAI) : CastTotemAction(botAI, "healing tide totem") {}
+};
+
+class CastSpiritLinkTotemAction : public CastTotemAction
+{
+public:
+    CastSpiritLinkTotemAction(PlayerbotAI* botAI) : CastTotemAction(botAI, "spirit link totem") {}
 };
 
 class CastCleansingTotemAction : public CastTotemAction

@@ -62,6 +62,12 @@ public:
     bool isUseful() override;
 };
 
+// Mists of Pandaria holy-power spenders.  The inherited playerbot strategy
+// still only exposed the pre-MoP paladin actions, which left Retribution bots
+// auto-attacking while these core rotation spells were never considered.
+MELEE_ACTION(CastTemplarsVerdictAction, "templar's verdict");
+BUFF_ACTION(CastInquisitionAction, "inquisition");
+
 class CastSealSpellAction : public CastBuffSpellAction
 {
 public:
@@ -147,6 +153,12 @@ public:
     {
     }
 };
+
+HEAL_PARTY_ACTION(CastDivineLightOnPartyAction, "divine light", 40.0f, HealingManaEfficiency::MEDIUM);
+HEAL_PARTY_ACTION(CastWordOfGloryOnPartyAction, "word of glory", 30.0f, HealingManaEfficiency::VERY_HIGH);
+HEAL_PARTY_ACTION(CastEternalFlameOnPartyAction, "eternal flame", 30.0f, HealingManaEfficiency::VERY_HIGH);
+HEAL_PARTY_ACTION(CastHolyRadianceOnPartyAction, "holy radiance", 25.0f, HealingManaEfficiency::LOW);
+AOE_HEAL_ACTION(CastLightOfDawnAction, "light of dawn", 25.0f, HealingManaEfficiency::VERY_HIGH);
 
 class CastLayOnHandsAction : public CastHealingSpellAction
 {

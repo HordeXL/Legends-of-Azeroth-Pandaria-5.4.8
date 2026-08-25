@@ -37,9 +37,9 @@ NextAction** FuryWarriorStrategy::getDefaultActions()
         new NextAction("recklessness", ACTION_DEFAULT + 0.7f),
         new NextAction("bloodbath", ACTION_DEFAULT + 0.6f),
         new NextAction("bloodthirst", ACTION_DEFAULT + 0.5f),
-        new NextAction("whirlwind", ACTION_DEFAULT + 0.4f),
-        new NextAction("sunder armor", ACTION_DEFAULT + 0.3f),
-        new NextAction("execute", ACTION_DEFAULT + 0.2f),
+        new NextAction("raging blow", ACTION_DEFAULT + 0.4f),
+        new NextAction("execute", ACTION_DEFAULT + 0.3f),
+        new NextAction("wild strike", ACTION_DEFAULT + 0.2f),
         new NextAction("melee", ACTION_DEFAULT), NULL);
 }
 

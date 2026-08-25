@@ -27,7 +27,7 @@ HealPaladinStrategy::HealPaladinStrategy(PlayerbotAI* botAI) : GenericPaladinStr
 
 NextAction** HealPaladinStrategy::getDefaultActions()
 {
-    return NextAction::array(0, new NextAction("judgement of light", ACTION_DEFAULT), nullptr);
+    return NextAction::array(0, new NextAction("judgement", ACTION_DEFAULT), nullptr);
 }
 
 void HealPaladinStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
@@ -35,25 +35,31 @@ void HealPaladinStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
     GenericPaladinStrategy::InitTriggers(triggers);
 
     triggers.push_back(new TriggerNode("seal", NextAction::array(0, new NextAction("seal of insight", ACTION_HIGH), nullptr)));
-    triggers.push_back(new TriggerNode("medium mana", NextAction::array(0, new NextAction("divine illumination", ACTION_HIGH + 2), nullptr)));
-    triggers.push_back(new TriggerNode("low mana", NextAction::array(0, new NextAction("divine favor", ACTION_HIGH + 1), nullptr)));
+    triggers.push_back(new TriggerNode("medium mana", NextAction::array(0, new NextAction("divine plea", ACTION_HIGH + 2), nullptr)));
+    triggers.push_back(new TriggerNode("low mana", NextAction::array(0, new NextAction("divine plea", ACTION_HIGH + 3), nullptr)));
     triggers.push_back(new TriggerNode("party member to heal out of spell range", NextAction::array(0, new NextAction("reach party member to heal", ACTION_EMERGENCY + 3), nullptr)));
 
     triggers.push_back(
         new TriggerNode("medium group heal setting", NextAction::array(0, 
-            new NextAction("divine sacrifice", ACTION_CRITICAL_HEAL + 5),
-            new NextAction("avenging wrath", ACTION_HIGH + 4), 
+            new NextAction("light of dawn", ACTION_CRITICAL_HEAL + 7),
+            new NextAction("holy radiance on party", ACTION_CRITICAL_HEAL + 6),
+            new NextAction("avenging wrath", ACTION_HIGH + 4),
             nullptr)));
 
     triggers.push_back(
         new TriggerNode("party member critical health", NextAction::array(0,
             new NextAction("holy shock on party", ACTION_CRITICAL_HEAL + 6),
-            new NextAction("divine sacrifice", ACTION_CRITICAL_HEAL + 5),
-            new NextAction("holy light on party", ACTION_CRITICAL_HEAL + 4), nullptr)));
+            new NextAction("eternal flame on party", ACTION_CRITICAL_HEAL + 5),
+            new NextAction("word of glory on party", ACTION_CRITICAL_HEAL + 4),
+            new NextAction("divine light on party", ACTION_CRITICAL_HEAL + 3),
+            new NextAction("flash of light on party", ACTION_CRITICAL_HEAL + 2), nullptr)));
 
     triggers.push_back(
         new TriggerNode("party member low health",
-                        NextAction::array(0, new NextAction("holy light on party", ACTION_MEDIUM_HEAL + 5), nullptr)));
+                        NextAction::array(0, new NextAction("holy shock on party", ACTION_MEDIUM_HEAL + 6),
+                                          new NextAction("eternal flame on party", ACTION_MEDIUM_HEAL + 5),
+                                          new NextAction("word of glory on party", ACTION_MEDIUM_HEAL + 4),
+                                          new NextAction("divine light on party", ACTION_MEDIUM_HEAL + 3), nullptr)));
 
     triggers.push_back(
         new TriggerNode("party member medium health",

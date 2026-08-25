@@ -11,4 +11,13 @@
 
 class PlayerbotAI;
 
+class GroupLowManaForManaTideTrigger : public Trigger
+{
+public:
+    GroupLowManaForManaTideTrigger(PlayerbotAI* botAI)
+        : Trigger(botAI, "group low mana for mana tide") {}
+
+    bool IsActive() override;
+};
+
 #endif

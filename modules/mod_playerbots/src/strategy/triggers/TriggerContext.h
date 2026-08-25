@@ -43,6 +43,7 @@ public:
         creators["high mana"] = &TriggerContext::HighMana;
         creators["almost full mana"] = &TriggerContext::AlmostFullMana;
         creators["enough mana"] = &TriggerContext::EnoughMana;
+        creators["mana tide out of range"] = &TriggerContext::mana_tide_out_of_range;
 
         creators["light rage available"] = &TriggerContext::LightRageAvailable;
         creators["medium rage available"] = &TriggerContext::MediumRageAvailable;
@@ -131,6 +132,7 @@ private:
     static Trigger* HighMana(PlayerbotAI* botAI) { return new HighManaTrigger(botAI); }
     static Trigger* AlmostFullMana(PlayerbotAI* botAI) { return new AlmostFullManaTrigger(botAI); }
     static Trigger* EnoughMana(PlayerbotAI* botAI) { return new EnoughManaTrigger(botAI); }
+    static Trigger* mana_tide_out_of_range(PlayerbotAI* botAI) { return new ManaTideOutOfRangeTrigger(botAI); }
 
     static Trigger* TankAssist(PlayerbotAI* botAI) { return new TankAssistTrigger(botAI); }
     static Trigger* LoseAggro(PlayerbotAI* botAI) { return new LoseAggroTrigger(botAI); }

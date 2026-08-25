@@ -22,6 +22,7 @@
 #include "GridNotifiersImpl.h"
 #include "LastMovementValue.h"
 #include "Map.h"
+#include "ManaTideCoordination.h"
 #include "MotionMaster.h"
 #include "MoveSplineInitArgs.h"
 #include "MovementGenerator.h"
@@ -1260,6 +1261,29 @@ bool MoveFromGroupAction::Execute(Event event)
     if (!distance)
         distance = 20.0f; // flee distance from config is too small for this
     return MoveFromGroup(distance);
+}
+
+bool MoveToManaTideAction::isUseful()
+{
+    if (!ManaTideCoordination::IsManaBeneficiary(bot) ||
+        bot->GetPowerPct(POWER_MANA) >= sPlayerbotAIConfig->mediumMana ||
+        bot->IsNonMeleeSpellCasted(true))
+    {
+        return false;
+    }
+
+    Creature* totem = ManaTideCoordination::FindActiveGroupTotem(bot);
+    return totem && bot->GetDistance(totem) > 32.0f;
+}
+
+bool MoveToManaTideAction::Execute([[maybe_unused]] Event event)
+{
+    Creature* totem = ManaTideCoordination::FindActiveGroupTotem(bot);
+    if (!totem || bot->GetDistance(totem) <= ManaTideCoordination::MoveInsideRadius)
+        return false;
+
+    return MoveTo(totem, ManaTideCoordination::MoveInsideRadius,
+                  MovementPriority::MOVEMENT_COMBAT);
 }
 
 bool AvoidAoeAction::FindNearestHazard(Position& position, float& radius) const

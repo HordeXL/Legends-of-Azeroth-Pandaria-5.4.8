@@ -129,6 +129,16 @@ public:
     bool Execute(Event event) override;
 };
 
+class MoveToManaTideAction : public MovementAction
+{
+public:
+    explicit MoveToManaTideAction(PlayerbotAI* botAI)
+        : MovementAction(botAI, "move to mana tide") {}
+
+    bool Execute(Event event) override;
+    bool isUseful() override;
+};
+
 // Leaves hostile persistent spell areas (dynamic objects and area triggers).
 // The generic "avoid aoe" strategy has existed in this module for years, but
 // it did not have a matching ActionContext action and therefore never moved.

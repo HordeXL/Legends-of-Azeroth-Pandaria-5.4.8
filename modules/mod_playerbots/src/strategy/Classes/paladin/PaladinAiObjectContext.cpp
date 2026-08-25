@@ -113,6 +113,8 @@ public:
         creators["blessing of kings"] = &PaladinAiObjectContextInternal::blessing_of_kings;
 
         creators["divine storm"] = &PaladinAiObjectContextInternal::divine_storm;
+        creators["templar's verdict"] = &PaladinAiObjectContextInternal::templars_verdict;
+        creators["inquisition"] = &PaladinAiObjectContextInternal::inquisition;
         creators["redemption"] = &PaladinAiObjectContextInternal::redemption;
         creators["crusader strike"] = &PaladinAiObjectContextInternal::crusader_strike;
         creators["crusader aura"] = &PaladinAiObjectContextInternal::crusader_aura;
@@ -141,6 +143,11 @@ public:
         creators["divine protection on party"] = &PaladinAiObjectContextInternal::divine_protection_on_party;
         creators["hammer of justice"] = &PaladinAiObjectContextInternal::hammer_of_justice;
         creators["flash of light on party"] = &PaladinAiObjectContextInternal::flash_of_light_on_party;
+        creators["divine light on party"] = &PaladinAiObjectContextInternal::divine_light_on_party;
+        creators["word of glory on party"] = &PaladinAiObjectContextInternal::word_of_glory_on_party;
+        creators["eternal flame on party"] = &PaladinAiObjectContextInternal::eternal_flame_on_party;
+        creators["holy radiance on party"] = &PaladinAiObjectContextInternal::holy_radiance_on_party;
+        creators["light of dawn"] = &PaladinAiObjectContextInternal::light_of_dawn;
         creators["holy light"] = &PaladinAiObjectContextInternal::holy_light;
         creators["holy light on party"] = &PaladinAiObjectContextInternal::holy_light_on_party;
         creators["lay on hands"] = &PaladinAiObjectContextInternal::lay_on_hands;
@@ -187,6 +194,8 @@ private:
     static Action* divine_favor(PlayerbotAI* botAI) { return new CastDivineFavorAction(botAI); }
     static Action* righteous_fury(PlayerbotAI* botAI) { return new CastRighteousFuryAction(botAI); }
     static Action* divine_storm(PlayerbotAI* botAI) { return new CastDivineStormAction(botAI); }
+    static Action* templars_verdict(PlayerbotAI* botAI) { return new CastTemplarsVerdictAction(botAI); }
+    static Action* inquisition(PlayerbotAI* botAI) { return new CastInquisitionAction(botAI); }
     static Action* redemption(PlayerbotAI* botAI) { return new CastRedemptionAction(botAI); }
     static Action* crusader_strike(PlayerbotAI* botAI) { return new CastCrusaderStrikeAction(botAI); }
     static Action* crusader_aura(PlayerbotAI* botAI) { return new CastCrusaderAuraAction(botAI); }
@@ -218,6 +227,11 @@ private:
     }
     static Action* hammer_of_justice(PlayerbotAI* botAI) { return new CastHammerOfJusticeAction(botAI); }
     static Action* flash_of_light_on_party(PlayerbotAI* botAI) { return new CastFlashOfLightOnPartyAction(botAI); }
+    static Action* divine_light_on_party(PlayerbotAI* botAI) { return new CastDivineLightOnPartyAction(botAI); }
+    static Action* word_of_glory_on_party(PlayerbotAI* botAI) { return new CastWordOfGloryOnPartyAction(botAI); }
+    static Action* eternal_flame_on_party(PlayerbotAI* botAI) { return new CastEternalFlameOnPartyAction(botAI); }
+    static Action* holy_radiance_on_party(PlayerbotAI* botAI) { return new CastHolyRadianceOnPartyAction(botAI); }
+    static Action* light_of_dawn(PlayerbotAI* botAI) { return new CastLightOfDawnAction(botAI); }
     static Action* holy_light(PlayerbotAI* botAI) { return new CastHolyLightAction(botAI); }
     static Action* holy_light_on_party(PlayerbotAI* botAI) { return new CastHolyLightOnPartyAction(botAI); }
     static Action* lay_on_hands(PlayerbotAI* botAI) { return new CastLayOnHandsAction(botAI); }

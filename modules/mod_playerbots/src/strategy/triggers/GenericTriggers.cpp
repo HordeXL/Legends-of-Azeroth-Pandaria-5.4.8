@@ -12,6 +12,7 @@
 #include "CreatureAI.h"
 #include "GameTime.h"
 #include "LastSpellCastValue.h"
+#include "ManaTideCoordination.h"
 #include "ObjectGuid.h"
 #include "PlayerbotAIConfig.h"
 #include "Playerbots.h"
@@ -80,6 +81,18 @@ bool AlmostFullManaTrigger::IsActive()
 bool EnoughManaTrigger::IsActive()
 {
     return AI_VALUE2(bool, "has mana", "self target") && AI_VALUE2(uint8, "mana", "self target") > sPlayerbotAIConfig->highMana;
+}
+
+bool ManaTideOutOfRangeTrigger::IsActive()
+{
+    if (!ManaTideCoordination::IsManaBeneficiary(bot) ||
+        bot->GetPowerPct(POWER_MANA) >= sPlayerbotAIConfig->mediumMana)
+    {
+        return false;
+    }
+
+    Creature* totem = ManaTideCoordination::FindActiveGroupTotem(bot);
+    return totem && bot->GetDistance(totem) > 32.0f;
 }
 
 bool RageAvailable::IsActive() { return AI_VALUE2(uint8, "rage", "self target") >= amount; }

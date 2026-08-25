@@ -112,7 +112,8 @@ public:
         creators["hibernate on cc"] = &DruidAiObjectContextInternal::hibernate_on_cc;
         creators["wrath"] = &DruidAiObjectContextInternal::wrath;
         creators["starfall"] = &DruidAiObjectContextInternal::starfall;
-        creators["insect swarm"] = &DruidAiObjectContextInternal::insect_swarm;
+        creators["sunfire"] = &DruidAiObjectContextInternal::sunfire;
+        creators["starsurge"] = &DruidAiObjectContextInternal::starsurge;
         creators["moonfire"] = &DruidAiObjectContextInternal::moonfire;
         creators["starfire"] = &DruidAiObjectContextInternal::starfire;
         creators["nature's grasp"] = &DruidAiObjectContextInternal::natures_grasp;
@@ -145,6 +146,9 @@ public:
         creators["rejuvenation on party"] = &DruidAiObjectContextInternal::rejuvenation_on_party;
         creators["rejuvenation on not full"] = &DruidAiObjectContextInternal::rejuvenation_on_not_full;
         creators["healing touch on party"] = &DruidAiObjectContextInternal::healing_touch_on_party;
+        creators["lifebloom on party"] = &DruidAiObjectContextInternal::lifebloom_on_party;
+        creators["cenarion ward on party"] = &DruidAiObjectContextInternal::cenarion_ward_on_party;
+        creators["ironbark on party"] = &DruidAiObjectContextInternal::ironbark_on_party;
         creators["rebirth"] = &DruidAiObjectContextInternal::rebirth;
         creators["revive"] = &DruidAiObjectContextInternal::revive;
         creators["barkskin"] = &DruidAiObjectContextInternal::barkskin;
@@ -164,7 +168,7 @@ public:
         creators["swiftmend on party"] = &DruidAiObjectContextInternal::swiftmend_on_party;
         creators["nourish on party"] = &DruidAiObjectContextInternal::nourish_on_party;
         creators["remove curse on party"] = &DruidAiObjectContextInternal::remove_curse_on_party;
-        creators["insect swarm on attacker"] = &DruidAiObjectContextInternal::insect_swarm_on_attacker;
+        creators["sunfire on attacker"] = &DruidAiObjectContextInternal::sunfire_on_attacker;
         creators["moonfire on attacker"] = &DruidAiObjectContextInternal::moonfire_on_attacker;
         creators["enrage"] = &DruidAiObjectContextInternal::enrage;
         creators["force of nature"] = &DruidAiObjectContextInternal::force_of_nature;
@@ -200,7 +204,8 @@ private:
     static Action* entangling_roots_on_cc(PlayerbotAI* botAI) { return new CastEntanglingRootsCcAction(botAI); }
     static Action* wrath(PlayerbotAI* botAI) { return new CastWrathAction(botAI); }
     static Action* starfall(PlayerbotAI* botAI) { return new CastStarfallAction(botAI); }
-    static Action* insect_swarm(PlayerbotAI* botAI) { return new CastInsectSwarmAction(botAI); }
+    static Action* sunfire(PlayerbotAI* botAI) { return new CastSunfireAction(botAI); }
+    static Action* starsurge(PlayerbotAI* botAI) { return new CastStarsurgeAction(botAI); }
     static Action* moonfire(PlayerbotAI* botAI) { return new CastMoonfireAction(botAI); }
     static Action* starfire(PlayerbotAI* botAI) { return new CastStarfireAction(botAI); }
     static Action* natures_grasp(PlayerbotAI* botAI) { return new CastNaturesGraspAction(botAI); }
@@ -233,6 +238,9 @@ private:
     static Action* rejuvenation_on_party(PlayerbotAI* botAI) { return new CastRejuvenationOnPartyAction(botAI); }
     static Action* rejuvenation_on_not_full(PlayerbotAI* botAI) { return new CastRejuvenationOnNotFullAction(botAI); }
     static Action* healing_touch_on_party(PlayerbotAI* botAI) { return new CastHealingTouchOnPartyAction(botAI); }
+    static Action* lifebloom_on_party(PlayerbotAI* botAI) { return new CastLifebloomOnPartyAction(botAI); }
+    static Action* cenarion_ward_on_party(PlayerbotAI* botAI) { return new CastCenarionWardOnPartyAction(botAI); }
+    static Action* ironbark_on_party(PlayerbotAI* botAI) { return new CastIronbarkOnPartyAction(botAI); }
     static Action* rebirth(PlayerbotAI* botAI) { return new CastRebirthAction(botAI); }
     static Action* revive(PlayerbotAI* botAI) { return new CastReviveAction(botAI); }
     static Action* barkskin(PlayerbotAI* botAI) { return new CastBarkskinAction(botAI); }
@@ -249,7 +257,7 @@ private:
     static Action* swiftmend_on_party(PlayerbotAI* ai) { return new CastPartySwiftmendAction(ai); }
     static Action* nourish_on_party(PlayerbotAI* ai) { return new CastPartyNourishAction(ai); }
     static Action* remove_curse_on_party(PlayerbotAI* ai) { return new CastDruidRemoveCurseOnPartyAction(ai); }
-    static Action* insect_swarm_on_attacker(PlayerbotAI* ai) { return new CastInsectSwarmOnAttackerAction(ai); }
+    static Action* sunfire_on_attacker(PlayerbotAI* ai) { return new CastSunfireOnAttackerAction(ai); }
     static Action* moonfire_on_attacker(PlayerbotAI* ai) { return new CastMoonfireOnAttackerAction(ai); }
     static Action* enrage(PlayerbotAI* ai) { return new CastEnrageAction(ai); }
     static Action* force_of_nature(PlayerbotAI* ai) { return new CastForceOfNatureAction(ai); }

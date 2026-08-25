@@ -69,11 +69,12 @@ void HealDruidStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
         new TriggerNode("party member critical health",
                         NextAction::array(0,
                                           new NextAction("tree form", ACTION_CRITICAL_HEAL + 4.1f),
+                                          new NextAction("ironbark on party", ACTION_CRITICAL_HEAL + 4.05f),
                                           new NextAction("swiftmend on party", ACTION_CRITICAL_HEAL + 4),
                                           new NextAction("regrowth on party", ACTION_CRITICAL_HEAL + 3),
                                           new NextAction("wild growth on party", ACTION_CRITICAL_HEAL + 2),
                                           new NextAction("nourish on party", ACTION_CRITICAL_HEAL + 1),
-                                          // new NextAction("healing touch on party", ACTION_CRITICAL_HEAL + 0),
+                                          new NextAction("healing touch on party", ACTION_CRITICAL_HEAL),
                                           nullptr)));
 
     triggers.push_back(
@@ -98,9 +99,11 @@ void HealDruidStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
     triggers.push_back(
         new TriggerNode("party member low health",
                         NextAction::array(0, new NextAction("tree form", ACTION_MEDIUM_HEAL + 1.5f),
+                                          new NextAction("cenarion ward on party", ACTION_MEDIUM_HEAL + 1.45f),
                                           new NextAction("wild growth on party", ACTION_MEDIUM_HEAL + 1.4f),
                                           new NextAction("regrowth on party", ACTION_MEDIUM_HEAL + 1.3f),
                                           new NextAction("swiftmend on party", ACTION_MEDIUM_HEAL + 1.2),
+                                          new NextAction("lifebloom on party", ACTION_MEDIUM_HEAL + 1.15f),
                                           new NextAction("nourish on party", ACTION_MEDIUM_HEAL + 1.1f),
                                           nullptr)));
 
