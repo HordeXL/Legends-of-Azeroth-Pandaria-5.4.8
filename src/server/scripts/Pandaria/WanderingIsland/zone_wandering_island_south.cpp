@@ -33,6 +33,17 @@ class AreaTrigger_at_mandori : public AreaTriggerScript
            if (player->GetQuestStatus(29792) != QUEST_STATUS_INCOMPLETE)
                return true;
 
+           player->RemoveAurasDueToSpell(59073);
+           player->RemoveAurasDueToSpell(59074);
+
+           // Remove the permanent pre-quest gates from this client even when the
+           // phase transition has already forgotten their GUID server-side. The
+           // personal scene gates use different entries and remain untouched.
+           if (GameObject* mandoriGate = player->GetMap()->GetGameObjectBySpawnId(540359))
+               player->ForceVisibilityRemoval(mandoriGate);
+           if (GameObject* peiwuGate = player->GetMap()->GetGameObjectBySpawnId(540026))
+               player->ForceVisibilityRemoval(peiwuGate);
+
            // The area trigger can fire repeatedly while the player remains on its edge.
            // Do not start a second personal escort group that would race the first one
            // and open/reset the same pair of phased gates out of sequence.
@@ -55,20 +66,6 @@ class AreaTrigger_at_mandori : public AreaTriggerScript
             aysa->AI()->SetGUID(playerGuid);
             ji->AI()->SetGUID(playerGuid);
             jojo->AI()->SetGUID(playerGuid);
-
-            player->RemoveAurasDueToSpell(59073);
-            player->RemoveAurasDueToSpell(59074);
-
-            // The removed pre-quest phase contains the permanent closed gates.
-            // Refresh these exact objects through Player's visibility bookkeeping.
-            // A raw DestroyForPlayer packet leaves their GUIDs in m_clientGUIDs, so
-            // the client can retain stale collision over the personal scene gates.
-            // UpdateVisibilityOf also forgets an out-of-phase GUID and therefore
-            // keeps the DB gates available to other players without a world change.
-            if (GameObject* mandoriGate = player->GetMap()->GetGameObjectBySpawnId(540359))
-                player->UpdateVisibilityOf(mandoriGate);
-            if (GameObject* peiwuGate = player->GetMap()->GetGameObjectBySpawnId(540026))
-                player->UpdateVisibilityOf(peiwuGate);
 
             return true;
         }

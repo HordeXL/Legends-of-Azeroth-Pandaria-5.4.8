@@ -2877,6 +2877,7 @@ public:
     void SendInitialVisiblePackets(Unit* target);
     void UpdateVisibilityForPlayer();
     void UpdateVisibilityOf(WorldObject* target);
+    void ForceVisibilityRemoval(WorldObject* target);
     void UpdateTriggerVisibility();
 
     template<class T>
