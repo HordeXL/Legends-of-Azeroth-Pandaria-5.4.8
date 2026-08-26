@@ -2251,6 +2251,26 @@ bool WorldObject::CanSeeOrDetect(WorldObject const* obj, bool ignoreStealth, boo
     if (!obj->CheckPrivateObjectOwnerVisibility(this))
         return false;
 
+    // Quest-based visibility must be honored by every visibility update path.
+    // Keeping this inside the optional distance check lets non-distance updates
+    // recreate an object which the player is not meant to see until a later
+    // full visibility refresh removes it again.
+    if (Player const* player = ToPlayer())
+    {
+        ObjectVisibilityState::objectType const objectType =
+            obj->GetTypeId() == TYPEID_GAMEOBJECT ? ObjectVisibilityState::objectType::GameObject : ObjectVisibilityState::objectType::Creature;
+
+        // Check visibility rule by entry.
+        if (auto info = sObjectMgr->GetObjectVisibilityStateData(obj->GetEntry()))
+            if (info->type == objectType && player->GetQuestStatus(info->questId) != info->questState)
+                return false;
+
+        // Check visibility rule by exact negative spawn GUID.
+        if (auto info = sObjectMgr->GetObjectVisibilityStateData(-(int32)obj->GetGUID().GetCounter()))
+            if (info->type == objectType && player->GetQuestStatus(info->questId) != info->questState)
+                return false;
+    }
+
     bool corpseVisibility = false;
     if (distanceCheck)
     {
@@ -2274,16 +2294,6 @@ bool WorldObject::CanSeeOrDetect(WorldObject const* obj, bool ignoreStealth, boo
         if (Player const* player = this->ToPlayer())
         {
             viewpoint = player->GetViewpoint();
-
-            // Check Allow visible by entry
-            if (auto info = sObjectMgr->GetObjectVisibilityStateData(obj->GetEntry()))
-                if (info->type == (obj->GetTypeId() == TYPEID_GAMEOBJECT ? ObjectVisibilityState::objectType::GameObject : ObjectVisibilityState::objectType::Creature) && player->GetQuestStatus(info->questId) != info->questState)
-                    return false;
-
-            // Allow visible by guid
-            if (auto info = sObjectMgr->GetObjectVisibilityStateData(-(int32)obj->GetGUID().GetCounter()))
-                if (info->type == (obj->GetTypeId() == TYPEID_GAMEOBJECT ? ObjectVisibilityState::objectType::GameObject : ObjectVisibilityState::objectType::Creature) && player->GetQuestStatus(info->questId) != info->questState)
-                    return false;
         }
 
         if (!viewpoint)
