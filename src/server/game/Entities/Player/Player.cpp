@@ -24963,6 +24963,24 @@ void Player::UpdateVisibilityOf(WorldObject* target)
     }
 }
 
+void Player::ForceVisibilityRemoval(WorldObject* target)
+{
+    if (!target || target == this)
+        return;
+
+    // A phase transition can already have removed the object from the server-side
+    // client GUID set while an older client object (including collision) remains.
+    // Always send the removal packet; only vignette bookkeeping depends on whether
+    // the server still regarded the object as present at the client.
+    if (!target->IsDestroyedObject())
+        target->SendOutOfRangeForPlayer(this);
+    else
+        target->DestroyForPlayer(this);
+
+    if (m_clientGUIDs.erase(target->GetGUID()))
+        m_VignetteMgr.OnWorldObjectDisappear(target);
+}
+
 void Player::UpdateTriggerVisibility()
 {
     if (m_clientGUIDs.empty())
