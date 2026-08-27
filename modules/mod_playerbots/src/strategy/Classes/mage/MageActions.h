@@ -371,4 +371,10 @@ public:
     Unit* GetTarget() override;
 };
 
+class CastTimeWarpAction : public CastBuffSpellAction
+{
+public:
+    CastTimeWarpAction(PlayerbotAI* botAI) : CastBuffSpellAction(botAI, "time warp") {}
+};
+
 #endif

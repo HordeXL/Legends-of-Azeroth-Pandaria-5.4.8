@@ -12,6 +12,15 @@
 class PlayerbotAI;
 class Unit;
 
+class CastAncientHysteriaAction : public Action
+{
+public:
+    CastAncientHysteriaAction(PlayerbotAI* botAI) : Action(botAI, "ancient hysteria") {}
+    bool Execute(Event event) override;
+    bool isPossible() override;
+    bool isUseful() override { return isPossible(); }
+};
+
 // BEGIN_RANGED_SPELL_ACTION(CastHuntersMarkAction, "hunter's mark")
 // END_SPELL_ACTION()
 

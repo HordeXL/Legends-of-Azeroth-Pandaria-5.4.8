@@ -189,4 +189,6 @@ void GenericMageStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode("frost ward", NextAction::array(0, new NextAction("frost ward", ACTION_EMERGENCY), nullptr)));
     triggers.push_back(new TriggerNode("rune of power", NextAction::array(0, new NextAction("rune of power", 50.0f), nullptr)));
     triggers.push_back(new TriggerNode("mirror image", NextAction::array(0, new NextAction("mirror image", 41.0f), nullptr)));
+    triggers.push_back(new TriggerNode("pve time warp burn",
+        NextAction::array(0, new NextAction("time warp", 72.0f), nullptr)));
 }

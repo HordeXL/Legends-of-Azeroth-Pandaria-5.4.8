@@ -104,6 +104,8 @@ void GenericHunterStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
                                        NextAction::array(0, new NextAction("tranquilizing shot", 61.0f), NULL)));
     triggers.push_back(new TriggerNode("tranquilizing shot magic",
                                        NextAction::array(0, new NextAction("tranquilizing shot", 61.0f), NULL)));
+    triggers.push_back(new TriggerNode("pve ancient hysteria burn",
+        NextAction::array(0, new NextAction("ancient hysteria", 72.0f), nullptr)));
 }
 
 NextAction** HunterBoostStrategy::getDefaultActions()

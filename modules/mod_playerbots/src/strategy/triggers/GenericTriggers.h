@@ -171,6 +171,33 @@ public:
     bool IsActive() override;
 };
 
+// Coordinates the mutually exclusive 30% raid-haste effects during the final
+// burn phase of a PvE boss. Lower provider priorities win, while healthPct
+// provides a delayed fallback when the preferred provider is unavailable.
+class PveRaidHasteTrigger : public Trigger
+{
+public:
+    enum ProviderPriority : uint8
+    {
+        PROVIDER_TIME_WARP = 0,
+        PROVIDER_ANCIENT_HYSTERIA = 1,
+        PROVIDER_SHAMAN = 2
+    };
+
+    PveRaidHasteTrigger(PlayerbotAI* botAI, std::string const name, uint32 spellId,
+        float healthPct, ProviderPriority provider, bool petSpell = false)
+        : Trigger(botAI, name), spellId(spellId), healthPct(healthPct),
+          provider(provider), petSpell(petSpell) {}
+
+    bool IsActive() override;
+
+private:
+    uint32 spellId;
+    float healthPct;
+    ProviderPriority provider;
+    bool petSpell;
+};
+
 // TODO: check other targets
 class InterruptSpellTrigger : public SpellTrigger
 {

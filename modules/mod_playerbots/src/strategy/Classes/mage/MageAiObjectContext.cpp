@@ -93,6 +93,7 @@ public:
         creators["frost nova on target"] = &MageTriggerFactoryInternal::frost_nova_on_target;
         creators["counterspell"] = &MageTriggerFactoryInternal::counterspell;
         creators["spellsteal"] = &MageTriggerFactoryInternal::spellsteal;
+        creators["pve time warp burn"] = &MageTriggerFactoryInternal::pve_time_warp_burn;
 
         // -- fire
         creators["heating up"] = &MageTriggerFactoryInternal::heating_up;
@@ -125,6 +126,7 @@ private:
     static Trigger* frost_nova_on_target(PlayerbotAI* botAI) { return new FrostNovaOnTargetTrigger(botAI); }
     static Trigger* counterspell(PlayerbotAI* botAI) { return new CounterspellInterruptSpellTrigger(botAI); }
     static Trigger* spellsteal(PlayerbotAI* botAI) { return new SpellstealTrigger(botAI); }
+    static Trigger* pve_time_warp_burn(PlayerbotAI* botAI) { return new PveTimeWarpBurnTrigger(botAI); }
 
     // -- fire
     static Trigger* heating_up(PlayerbotAI* botAI) { return new HeatingUpTrigger(botAI); }
@@ -177,6 +179,7 @@ public:
         creators["ice block"] = &MageAiObjectContextInternal::ice_block;
         creators["blink"] = &MageAiObjectContextInternal::blink;
         creators["frostjaw"] = &MageAiObjectContextInternal::frostjaw;
+        creators["time warp"] = &MageAiObjectContextInternal::time_warp;
 
         // --
 
@@ -240,6 +243,7 @@ private:
     static Action* cold_snap(PlayerbotAI* botAI) { return new CastColdSnapAction(botAI); }
     static Action* ice_barrier(PlayerbotAI* botAI) { return new CastIceBarrierAction(botAI); }
     static Action* frostjaw(PlayerbotAI* botAI) { return new CastFrostjawAction(botAI); }
+    static Action* time_warp(PlayerbotAI* botAI) { return new CastTimeWarpAction(botAI); }
 
     // -- fire
     static Action* fireball(PlayerbotAI* botAI) { return new CastFireballAction(botAI); }

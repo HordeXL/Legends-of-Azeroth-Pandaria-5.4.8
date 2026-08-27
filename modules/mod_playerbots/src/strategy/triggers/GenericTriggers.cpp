@@ -17,6 +17,7 @@
 #include "PlayerbotAIConfig.h"
 #include "Playerbots.h"
 #include "SharedDefines.h"
+#include "SpellHistory.h"
 #include "TemporarySummon.h"
 #include "ThreatManager.h"
 #include "Timer.h"
@@ -301,6 +302,110 @@ bool SpellCooldownTrigger::IsActive()
         return false;
 
     return bot->HasSpellCooldown(spellId);
+}
+
+namespace
+{
+    constexpr uint32 SPELL_BLOODLUST = 2825;
+    constexpr uint32 SPELL_HEROISM = 32182;
+    constexpr uint32 SPELL_TIME_WARP = 80353;
+    constexpr uint32 SPELL_ANCIENT_HYSTERIA = 90355;
+
+    bool HasRaidHasteLockout(Unit const* unit)
+    {
+        return unit && (unit->HasAura(57723) || // Exhaustion
+            unit->HasAura(57724) ||             // Sated
+            unit->HasAura(80354) ||             // Temporal Displacement
+            unit->HasAura(95809));               // Insanity
+    }
+
+    bool IsAvailableRaidHasteProvider(Player* member, Unit const* boss,
+        PveRaidHasteTrigger::ProviderPriority provider)
+    {
+        if (!member || !member->IsAlive() || !member->IsInCombat() || HasRaidHasteLockout(member))
+            return false;
+
+        PlayerbotAI* memberAI = GET_PLAYERBOT_AI(member);
+        if (!memberAI)
+            return false; // Never wait for a real player to press a cooldown.
+
+        // Do not reserve the cooldown for a bot that is nearby but currently
+        // handling an add or another encounter. That bot's own burn trigger
+        // cannot fire until it has selected this boss.
+        if (memberAI->GetAiObjectContext()->GetValue<Unit*>("current target")->Get() != boss)
+            return false;
+
+        switch (provider)
+        {
+            case PveRaidHasteTrigger::PROVIDER_TIME_WARP:
+                return member->GetClass() == CLASS_MAGE && member->HasSpell(SPELL_TIME_WARP) &&
+                    memberAI->CanCastSpell(SPELL_TIME_WARP, member);
+            case PveRaidHasteTrigger::PROVIDER_ANCIENT_HYSTERIA:
+                if (member->GetClass() == CLASS_HUNTER)
+                    if (Pet* pet = member->GetPet())
+                        return pet->IsAlive() && pet->HasSpell(SPELL_ANCIENT_HYSTERIA) &&
+                            pet->GetSpellHistory()->IsReady(SPELL_ANCIENT_HYSTERIA);
+                return false;
+            case PveRaidHasteTrigger::PROVIDER_SHAMAN:
+                if (member->GetClass() != CLASS_SHAMAN)
+                    return false;
+                if (member->HasSpell(SPELL_HEROISM) && memberAI->CanCastSpell(SPELL_HEROISM, member))
+                    return true;
+                return member->HasSpell(SPELL_BLOODLUST) && memberAI->CanCastSpell(SPELL_BLOODLUST, member);
+        }
+
+        return false;
+    }
+}
+
+bool PveRaidHasteTrigger::IsActive()
+{
+    if (!bot || !bot->IsAlive() || !bot->IsInCombat() || bot->InBattleground() || bot->InArena() ||
+        HasRaidHasteLockout(bot))
+        return false;
+
+    Unit* target = AI_VALUE(Unit*, "current target");
+    Creature* creature = target ? target->ToCreature() : nullptr;
+    if (!creature || !creature->IsAlive() ||
+        (!creature->IsDungeonBoss() && !creature->isWorldBoss()) || creature->GetHealthPct() > healthPct)
+        return false;
+
+    if (petSpell)
+    {
+        Pet* pet = bot->GetPet();
+        if (!pet || !pet->IsAlive() || !pet->HasSpell(spellId) ||
+            !pet->GetSpellHistory()->IsReady(spellId))
+            return false;
+    }
+    else if (!bot->HasSpell(spellId) || !botAI->CanCastSpell(spellId, bot))
+        return false;
+
+    Group* group = bot->GetGroup();
+    if (!group)
+        return true;
+
+    // Prefer Time Warp, then Ancient Hysteria, and leave the Shaman cooldown
+    // as the final fallback. Within one provider type the lowest GUID is the
+    // sole caster, preventing several bots from firing on the same AI update.
+    for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+    {
+        Player* member = ref->GetSource();
+        if (!member || member == bot || member->GetMap() != bot->GetMap() ||
+            bot->GetDistance(member) > 100.0f)
+            continue;
+
+        for (uint8 priority = PROVIDER_TIME_WARP; priority <= provider; ++priority)
+        {
+            ProviderPriority candidate = ProviderPriority(priority);
+            if (!IsAvailableRaidHasteProvider(member, creature, candidate))
+                continue;
+
+            if (candidate < provider || member->GetGUID().GetCounter() < bot->GetGUID().GetCounter())
+                return false;
+        }
+    }
+
+    return true;
 }
 
 RandomTrigger::RandomTrigger(PlayerbotAI* botAI, std::string const name, int32 probability)

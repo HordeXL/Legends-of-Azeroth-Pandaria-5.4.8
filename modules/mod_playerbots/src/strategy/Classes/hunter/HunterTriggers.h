@@ -11,4 +11,12 @@
 
 class PlayerbotAI;
 
+class PveAncientHysteriaBurnTrigger : public PveRaidHasteTrigger
+{
+public:
+    PveAncientHysteriaBurnTrigger(PlayerbotAI* botAI)
+        : PveRaidHasteTrigger(botAI, "pve ancient hysteria burn", 90355, 14.0f,
+            PveRaidHasteTrigger::PROVIDER_ANCIENT_HYSTERIA, true) {}
+};
+
 #endif
