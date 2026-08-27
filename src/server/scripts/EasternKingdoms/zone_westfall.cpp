@@ -42,7 +42,27 @@ class spell_westfall_wake_harvest_golem : public SpellScript
     }
 };
 
+// Quest 26228 - Livin' the Life
+// The credit spell removes the player from Lou's house vehicle. Without this
+// script the event can finish while leaving the player attached to the house.
+class spell_westfall_quest_credit_jangolode_event : public SpellScript
+{
+    PrepareSpellScript(spell_westfall_quest_credit_jangolode_event);
+
+    void HandleScriptEffect(SpellEffIndex /*effIndex*/)
+    {
+        if (Unit* target = GetHitUnit())
+            target->ExitVehicle();
+    }
+
+    void Register() override
+    {
+        OnEffectHitTarget += SpellEffectFn(spell_westfall_quest_credit_jangolode_event::HandleScriptEffect, EFFECT_1, SPELL_EFFECT_SCRIPT_EFFECT);
+    }
+};
+
 void AddSC_westfall()
 {
     new spell_script<spell_westfall_wake_harvest_golem>("spell_westfall_wake_harvest_golem");
+    new spell_script<spell_westfall_quest_credit_jangolode_event>("spell_westfall_quest_credit_jangolode_event");
 }
