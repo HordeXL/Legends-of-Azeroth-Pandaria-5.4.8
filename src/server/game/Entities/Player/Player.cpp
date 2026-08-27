@@ -24963,42 +24963,6 @@ void Player::UpdateVisibilityOf(WorldObject* target)
     }
 }
 
-void Player::ForceVisibilityRemoval(WorldObject* target)
-{
-    if (!target || target == this)
-        return;
-
-    // A phase transition can already have removed the object from the server-side
-    // client GUID set while an older client object (including collision) remains.
-    // Always send the removal packet; only vignette bookkeeping depends on whether
-    // the server still regarded the object as present at the client.
-    if (!target->IsDestroyedObject())
-        target->SendOutOfRangeForPlayer(this);
-    else
-        target->DestroyForPlayer(this);
-
-    if (m_clientGUIDs.erase(target->GetGUID()))
-        m_VignetteMgr.OnWorldObjectDisappear(target);
-}
-
-void Player::ForceVisibilityRemoval(ObjectGuid targetGuid)
-{
-    if (targetGuid.IsEmpty() || targetGuid == GetGUID() || !GetSession())
-        return;
-
-    // Quest phasing can unload a database spawn before its stale client object
-    // (and collision) has been removed. In that state there is no WorldObject*
-    // to use, so explicitly send an out-of-range update for its persistent GUID.
-    UpdateData udata(GetMapId());
-    udata.AddOutOfRangeGUID(targetGuid);
-
-    WorldPacket packet;
-    if (udata.BuildPacket(&packet))
-        GetSession()->SendPacket(&packet);
-
-    m_clientGUIDs.erase(targetGuid);
-}
-
 void Player::UpdateTriggerVisibility()
 {
     if (m_clientGUIDs.empty())
