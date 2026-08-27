@@ -75,12 +75,24 @@ public:
     ShamanATriggerFactoryInternal()
     {
         creators["group low mana for mana tide"] = &ShamanATriggerFactoryInternal::group_low_mana_for_mana_tide;
+        creators["pve heroism burn"] = &ShamanATriggerFactoryInternal::pve_heroism_burn;
+        creators["pve bloodlust burn"] = &ShamanATriggerFactoryInternal::pve_bloodlust_burn;
     }
 
 private:
     static Trigger* group_low_mana_for_mana_tide(PlayerbotAI* botAI)
     {
         return new GroupLowManaForManaTideTrigger(botAI);
+    }
+    static Trigger* pve_heroism_burn(PlayerbotAI* botAI)
+    {
+        return new PveRaidHasteTrigger(botAI, "pve heroism burn", 32182, 12.0f,
+            PveRaidHasteTrigger::PROVIDER_SHAMAN);
+    }
+    static Trigger* pve_bloodlust_burn(PlayerbotAI* botAI)
+    {
+        return new PveRaidHasteTrigger(botAI, "pve bloodlust burn", 2825, 12.0f,
+            PveRaidHasteTrigger::PROVIDER_SHAMAN);
     }
 };
 

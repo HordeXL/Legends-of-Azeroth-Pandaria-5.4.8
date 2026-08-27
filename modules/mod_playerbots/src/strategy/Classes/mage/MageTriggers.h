@@ -165,4 +165,12 @@ public:
     PyroblastTrigger(PlayerbotAI* botAI) : HasAuraTrigger(botAI, "pyroblast!", 1) {}
 };
 
+class PveTimeWarpBurnTrigger : public PveRaidHasteTrigger
+{
+public:
+    PveTimeWarpBurnTrigger(PlayerbotAI* botAI)
+        : PveRaidHasteTrigger(botAI, "pve time warp burn", 80353, 15.0f,
+            PveRaidHasteTrigger::PROVIDER_TIME_WARP) {}
+};
+
 #endif

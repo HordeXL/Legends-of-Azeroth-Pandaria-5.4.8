@@ -24981,6 +24981,24 @@ void Player::ForceVisibilityRemoval(WorldObject* target)
         m_VignetteMgr.OnWorldObjectDisappear(target);
 }
 
+void Player::ForceVisibilityRemoval(ObjectGuid targetGuid)
+{
+    if (targetGuid.IsEmpty() || targetGuid == GetGUID() || !GetSession())
+        return;
+
+    // Quest phasing can unload a database spawn before its stale client object
+    // (and collision) has been removed. In that state there is no WorldObject*
+    // to use, so explicitly send an out-of-range update for its persistent GUID.
+    UpdateData udata(GetMapId());
+    udata.AddOutOfRangeGUID(targetGuid);
+
+    WorldPacket packet;
+    if (udata.BuildPacket(&packet))
+        GetSession()->SendPacket(&packet);
+
+    m_clientGUIDs.erase(targetGuid);
+}
+
 void Player::UpdateTriggerVisibility()
 {
     if (m_clientGUIDs.empty())

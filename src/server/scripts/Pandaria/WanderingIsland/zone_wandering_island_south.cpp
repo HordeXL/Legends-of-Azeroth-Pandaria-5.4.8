@@ -36,13 +36,13 @@ class AreaTrigger_at_mandori : public AreaTriggerScript
            player->RemoveAurasDueToSpell(59073);
            player->RemoveAurasDueToSpell(59074);
 
-           // Remove the permanent pre-quest gates from this client even when the
-           // phase transition has already forgotten their GUID server-side. The
-           // personal scene gates use different entries and remain untouched.
-           if (GameObject* mandoriGate = player->GetMap()->GetGameObjectBySpawnId(540359))
-               player->ForceVisibilityRemoval(mandoriGate);
-           if (GameObject* peiwuGate = player->GetMap()->GetGameObjectBySpawnId(540026))
-               player->ForceVisibilityRemoval(peiwuGate);
+           // Remove the permanent pre-quest gates by their persistent database
+           // GUIDs. Removing the phase auras can unload these spawns before the
+           // client has discarded their models/collision, so a WorldObject lookup
+           // is not reliable here. The personal scene gates use other entries and
+           // GUIDs and remain untouched.
+           player->ForceVisibilityRemoval(ObjectGuid::Create<HighGuid::GameObject>(210965, 540359));
+           player->ForceVisibilityRemoval(ObjectGuid::Create<HighGuid::GameObject>(210964, 540026));
 
            // The area trigger can fire repeatedly while the player remains on its edge.
            // Do not start a second personal escort group that would race the first one

@@ -60,9 +60,14 @@ class HunterTriggerFactoryInternal : public NamedObjectContext<Trigger>
 public:
     HunterTriggerFactoryInternal()
     {
+        creators["pve ancient hysteria burn"] = &HunterTriggerFactoryInternal::pve_ancient_hysteria_burn;
     }
 
 private:
+    static Trigger* pve_ancient_hysteria_burn(PlayerbotAI* botAI)
+    {
+        return new PveAncientHysteriaBurnTrigger(botAI);
+    }
 };
 
 class HunterAiObjectContextInternal : public NamedObjectContext<Action>
@@ -116,6 +121,7 @@ public:
         creators["kill shot"] = &HunterAiObjectContextInternal::kill_shot;
         creators["misdirection on main tank"] = &HunterAiObjectContextInternal::misdirection_on_main_tank;
         creators["silencing shot"] = &HunterAiObjectContextInternal::silencing_shot;
+        creators["ancient hysteria"] = &HunterAiObjectContextInternal::ancient_hysteria;
     }
 
 private:
@@ -164,6 +170,7 @@ private:
     static Action* kill_shot(PlayerbotAI* ai) { return new CastKillShotAction(ai); }
     static Action* misdirection_on_main_tank(PlayerbotAI* ai) { return new CastMisdirectionOnMainTankAction(ai); }
     static Action* silencing_shot(PlayerbotAI* ai) { return new CastSilencingShotAction(ai); }
+    static Action* ancient_hysteria(PlayerbotAI* ai) { return new CastAncientHysteriaAction(ai); }
     
 };
 

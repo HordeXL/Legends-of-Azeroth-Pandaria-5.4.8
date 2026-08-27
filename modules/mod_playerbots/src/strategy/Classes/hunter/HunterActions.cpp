@@ -8,6 +8,25 @@
 #include "Event.h"
 #include "GenericSpellActions.h"
 #include "Playerbots.h"
+#include "SpellHistory.h"
+
+bool CastAncientHysteriaAction::isPossible()
+{
+    Pet* pet = bot->GetPet();
+    return pet && pet->IsAlive() && pet->HasSpell(90355) &&
+        pet->GetSpellHistory()->IsReady(90355);
+}
+
+bool CastAncientHysteriaAction::Execute([[maybe_unused]] Event event)
+{
+    Pet* pet = bot->GetPet();
+    if (!pet || !pet->IsAlive() || !pet->HasSpell(90355) ||
+        !pet->GetSpellHistory()->IsReady(90355))
+        return false;
+
+    pet->CastSpell(pet, 90355, false);
+    return true;
+}
 
 bool CastHuntersMarkAction::isUseful() { return CastDebuffSpellAction::isUseful(); }
 
