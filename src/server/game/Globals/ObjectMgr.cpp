@@ -11102,7 +11102,7 @@ void ObjectMgr::LoadRealmCompletedChallenges()
                                                  "member_3_guid, member_3_spec, member_4_guid, member_4_spec, member_5_guid, member_5_spec FROM group_completed_challenges");
     if (!result)
     {
-        TC_LOG_ERROR("server.loading", ">> Loaded 0 group completed challenges. DB table `group_completed_challenges` is empty.");
+        TC_LOG_INFO("server.loading", ">> Loaded 0 group completed challenges. DB table `group_completed_challenges` is empty.");
         return;
     }
 
@@ -11136,7 +11136,7 @@ void ObjectMgr::LoadRealmCompletedChallenges()
                                      "member_3_guid, member_3_spec, member_4_guid, member_4_spec, member_5_guid, member_5_spec FROM guild_completed_challenges");
     if (!result)
     {
-        TC_LOG_ERROR("server.loading", ">> Loaded 0 guild completed challenges. DB table `guild_completed_challenges` is empty.");
+        TC_LOG_INFO("server.loading", ">> Loaded 0 guild completed challenges. DB table `guild_completed_challenges` is empty.");
         return;
     }
 
@@ -11164,7 +11164,7 @@ void ObjectMgr::LoadRealmCompletedChallenges()
     }
     while (result->NextRow());
 
-    TC_LOG_ERROR("server.loading", ">> Loaded %u realm completed challenges in %u ms", count, GetMSTimeDiffToNow(oldMSTime));
+    TC_LOG_INFO("server.loading", ">> Loaded %u realm completed challenges in %u ms", count, GetMSTimeDiffToNow(oldMSTime));
 }
 
 void ObjectMgr::LoadChallengeRewards()
@@ -11176,7 +11176,7 @@ void ObjectMgr::LoadChallengeRewards()
     QueryResult result = WorldDatabase.Query("SELECT map, none_money, bronze_money, silver_money, gold_money, none_valor, bronze_valor, silver_valor, gold_valor, title, platinum_achievement FROM challenge_mode_rewards");
     if (!result)
     {
-        TC_LOG_ERROR("server.loading", ">> Loaded 0 challenge rewards. DB table `challenge_mode_rewards` is empty.");
+        TC_LOG_INFO("server.loading", ">> Loaded 0 challenge rewards. DB table `challenge_mode_rewards` is empty.");
         return;
     }
 
@@ -11203,7 +11203,7 @@ void ObjectMgr::LoadChallengeRewards()
     }
     while (result->NextRow());
 
-    TC_LOG_ERROR("server.loading", ">> Loaded %u challenge mode rewards in %u ms", count, GetMSTimeDiffToNow(oldMSTime));
+    TC_LOG_INFO("server.loading", ">> Loaded %u challenge mode rewards in %u ms", count, GetMSTimeDiffToNow(oldMSTime));
 }
 
 void ObjectMgr::AddGroupCompletedChallenge(uint32 mapId, RealmCompletedChallenge challengers)
