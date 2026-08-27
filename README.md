@@ -12,7 +12,7 @@ more in-game encounter testing before they should be treated as production-ready
 
 ## Project Features and Current Status
 
-Status recorded for the current local project configuration on 2026-08-24:
+Status recorded for the current local project configuration on 2026-08-27:
 
 | Component | Included | Current local status | Notes |
 | --- | --- | --- | --- |
@@ -72,6 +72,13 @@ deletions made only to silence logs. Notable completed work includes:
   and then be flown/controlled by the player.
 - Wandering Isle quest chains, dialogue, credits, transports, balloon flight,
   phasing and duplicate-spawn problems have received targeted repairs.
+- Wandering Isle quest `29792`, `Bidden to Greatness`, is verified end to end.
+  One closed Mandori and Pei-Wu world gate is visible before the quest. Accepting
+  the quest hides those base spawns and creates exactly one personal gate at each
+  scene; both gates open automatically, cannot be clicked manually, award the
+  required credits and allow the quest to complete normally. The underlying
+  SmartAI no-parameter event fallthrough that caused duplicate summons was fixed
+  in the core.
 - Spell scripts, conditions, SmartAI, creature text, LFG destinations, item random
   suffix data, vendors, pools and gameobject/creature spawns have been audited
   against compatible local SkyFire/Trinity database sources with backups before
@@ -97,9 +104,6 @@ SkyFire migration/source comparison notes are in
 - Generic world-boss tank swapping is not guessed without verified encounter data.
   Galleon has separate add-tank handling; other boss-specific positioning and
   handoff logic remains encounter-dependent.
-- Quest `29792`, `Bidden to Greatness`, is completable and awards both gate credits,
-  but a known gate visual/collision presentation issue is deliberately deferred
-  until a verified build-18414 per-player gameobject solution is available.
 - Some old database warnings remain deliberately unchanged where no exact compatible
   source exists. Data is not removed merely to make a warning disappear.
 
