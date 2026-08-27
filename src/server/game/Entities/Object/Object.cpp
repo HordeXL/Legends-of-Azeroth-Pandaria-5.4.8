@@ -2872,6 +2872,12 @@ GameObject* WorldObject::SummonGameObject(uint32 entry, float x, float y, float 
         go->SetSpawnedByDefault(false);
 
     map->AddToMap(go);
+
+    if (entry == 210965 || entry == 211282 || entry == 211294)
+        TC_LOG_INFO("scripts", "q29792 Mandori gate summoned: sourceType=%u sourceEntry=%u sourceGuid=%u gateEntry=%u gateGuid=%u state=%u lifetime=%u summonType=%u position=(%.3f, %.3f, %.3f, %.3f)",
+            uint32(GetTypeId()), GetEntry(), GetGUID().GetCounter(), entry, go->GetGUID().GetCounter(), uint32(go->GetGoState()), respawnTime,
+            uint32(summonType), x, y, z, ang);
+
     return go;
 }
 
