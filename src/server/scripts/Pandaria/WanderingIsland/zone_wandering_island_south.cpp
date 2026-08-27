@@ -31,7 +31,28 @@ class AreaTrigger_at_mandori : public AreaTriggerScript
                return true;
 
            if (player->GetQuestStatus(29792) != QUEST_STATUS_INCOMPLETE)
+           {
+               _sceneStartTimes.erase(player->GetGUID());
                return true;
+           }
+
+           // Once the first gate credit has been awarded, this scene is already
+           // running and must not be started again by the area trigger.
+           if (player->GetReqKillOrCastCurrentCount(29792, 59946))
+               return true;
+
+           // The client can report the same area-trigger crossing more than once
+           // before the first personal summon becomes searchable. Guard the start
+           // immediately, before creating Aysa and her 60-second gate. Otherwise
+           // two Aysas summon two overlapping 211294 gates, both scripts activate
+           // the nearest copy, and the other closed copy blocks the player until
+           // its one-minute despawn.
+           uint32 const now = getMSTime();
+           auto const sceneStart = _sceneStartTimes.find(player->GetGUID());
+           if (sceneStart != _sceneStartTimes.end() && now - sceneStart->second < 90000)
+               return true;
+
+           _sceneStartTimes[player->GetGUID()] = now;
 
            player->RemoveAurasDueToSpell(59073);
            player->RemoveAurasDueToSpell(59074);
@@ -49,7 +70,10 @@ class AreaTrigger_at_mandori : public AreaTriggerScript
             auto const jojo = player->SummonCreature(59989, 702.78f, 3603.58f, 142.01f, 3.433610f, TEMPSUMMON_MANUAL_DESPAWN, 0); // Jojo
 
             if (!aysa || !ji || !jojo)
+            {
+                _sceneStartTimes.erase(playerGuid);
                 return true;
+            }
 
             aysa->SetExplicitSeerGuid(playerGuid);
             ji->SetExplicitSeerGuid(playerGuid);
@@ -61,6 +85,9 @@ class AreaTrigger_at_mandori : public AreaTriggerScript
 
             return true;
         }
+
+    private:
+        std::unordered_map<ObjectGuid, uint32> _sceneStartTimes;
 };
 
 class npc_mandori_escort : public CreatureScript
