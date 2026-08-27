@@ -18,6 +18,7 @@
 #ifndef __SOCKET_H__
 #define __SOCKET_H__
 
+#include "Errors.h"
 #include "MessageBuffer.h"
 #include "Log.h"
 #include <atomic>
@@ -39,7 +40,7 @@ class Socket : public std::enable_shared_from_this<T>
 {
 public:
     explicit Socket(tcp::socket&& socket) : _socket(std::move(socket)), _remoteAddress(_socket.remote_endpoint().address()),
-        _remotePort(_socket.remote_endpoint().port()), _readBuffer(), _closed(false), _closing(false), _isWritingAsync(false)
+        _remotePort(_socket.remote_endpoint().port()), _readBuffer(), _writeQueueSize(0), _closed(false), _closing(false), _isWritingAsync(false)
     {
         _readBuffer.Resize(READ_BLOCK_SIZE);
     }
@@ -103,6 +104,16 @@ public:
 
     void QueuePacket(MessageBuffer&& buffer)
     {
+        std::size_t const size = buffer.GetActiveSize();
+        if (size > WRITE_QUEUE_HIGH_WATER_MARK || _writeQueueSize > WRITE_QUEUE_HIGH_WATER_MARK - size)
+        {
+            TC_LOG_ERROR("network", "Socket::QueuePacket: %s exceeded the " SZFMTD " byte output queue limit; closing connection",
+                GetRemoteIpAddress().to_string().c_str(), WRITE_QUEUE_HIGH_WATER_MARK);
+            CloseSocket();
+            return;
+        }
+
+        _writeQueueSize += size;
         _writeQueue.push(std::move(buffer));
 
 #ifdef TC_SOCKET_USE_IOCP
@@ -165,6 +176,8 @@ protected:
     }
 
 private:
+    static std::size_t constexpr WRITE_QUEUE_HIGH_WATER_MARK = 8 * 1024 * 1024;
+
     void ReadHandlerInternal(boost::system::error_code error, size_t transferredBytes)
     {
         if (error)
@@ -184,6 +197,8 @@ private:
         if (!error)
         {
             _isWritingAsync = false;
+            ASSERT(_writeQueueSize >= transferedBytes);
+            _writeQueueSize -= transferedBytes;
             _writeQueue.front().ReadCompleted(transferedBytes);
             if (!_writeQueue.front().GetActiveSize())
                 _writeQueue.pop();
@@ -222,6 +237,8 @@ private:
             if (error == boost::asio::error::would_block || error == boost::asio::error::try_again)
                 return AsyncProcessQueue();
 
+            ASSERT(_writeQueueSize >= queuedMessage.GetActiveSize());
+            _writeQueueSize -= queuedMessage.GetActiveSize();
             _writeQueue.pop();
             if (_closing && _writeQueue.empty())
                 CloseSocket();
@@ -229,6 +246,8 @@ private:
         }
         else if (bytesSent == 0)
         {
+            ASSERT(_writeQueueSize >= queuedMessage.GetActiveSize());
+            _writeQueueSize -= queuedMessage.GetActiveSize();
             _writeQueue.pop();
             if (_closing && _writeQueue.empty())
                 CloseSocket();
@@ -236,10 +255,14 @@ private:
         }
         else if (bytesSent < bytesToSend) // now n > 0
         {
+            ASSERT(_writeQueueSize >= bytesSent);
+            _writeQueueSize -= bytesSent;
             queuedMessage.ReadCompleted(bytesSent);
             return AsyncProcessQueue();
         }
 
+        ASSERT(_writeQueueSize >= bytesSent);
+        _writeQueueSize -= bytesSent;
         _writeQueue.pop();
         if (_closing && _writeQueue.empty())
             CloseSocket();
@@ -255,6 +278,7 @@ private:
 
     MessageBuffer _readBuffer;
     std::queue<MessageBuffer> _writeQueue;
+    std::size_t _writeQueueSize;
 
     std::atomic<bool> _closed;
     std::atomic<bool> _closing;

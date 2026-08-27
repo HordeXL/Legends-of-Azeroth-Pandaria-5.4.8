@@ -578,9 +578,20 @@ void SmartScript::ProcessAction(SmartScriptHolder& e, Unit* unit, uint32 var0, u
             {
                 if (IsGameObject(*itr))
                 {
+                    GameObject* gameObject = (*itr)->ToGameObject();
+                    if (gameObject->GetEntry() == 210965 || gameObject->GetEntry() == 211282 || gameObject->GetEntry() == 211294)
+                        TC_LOG_INFO("scripts", "q29792 Mandori gate activation: actionOwnerEntry=%u actionOwnerGuid=%u gateEntry=%u gateGuid=%u stateBefore=%u",
+                            GetBaseObject() ? GetBaseObject()->GetEntry() : 0, GetBaseObject() ? GetBaseObject()->GetGUID().GetCounter() : 0,
+                            gameObject->GetEntry(), gameObject->GetGUID().GetCounter(), uint32(gameObject->GetGoState()));
+
                     // Activate
-                    (*itr)->ToGameObject()->SetLootState(GO_READY);
-                    (*itr)->ToGameObject()->UseDoorOrButton(0, false, unit);
+                    gameObject->SetLootState(GO_READY);
+                    gameObject->UseDoorOrButton(0, false, unit);
+
+                    if (gameObject->GetEntry() == 210965 || gameObject->GetEntry() == 211282 || gameObject->GetEntry() == 211294)
+                        TC_LOG_INFO("scripts", "q29792 Mandori gate activated: gateEntry=%u gateGuid=%u stateAfter=%u",
+                            gameObject->GetEntry(), gameObject->GetGUID().GetCounter(), uint32(gameObject->GetGoState()));
+
                     TC_LOG_DEBUG("scripts.ai", "SmartScript::ProcessAction:: SMART_ACTION_ACTIVATE_GOBJECT. Gameobject %u (entry: %u) activated",
                         (*itr)->GetGUID().GetCounter(), (*itr)->GetEntry());
                 }
@@ -3188,6 +3199,7 @@ void SmartScript::ProcessEvent(SmartScriptHolder& e, Unit* unit, uint32 var0, ui
             }
 
             ProcessAction(e, unit, var0, var1, bvar, spell, gob);       
+            break;
         case SMART_EVENT_FOLLOW_COMPLETED:
         case SMART_EVENT_ON_SPELLCLICK:
         case SMART_EVENT_ON_GO_REPORT_USE:
