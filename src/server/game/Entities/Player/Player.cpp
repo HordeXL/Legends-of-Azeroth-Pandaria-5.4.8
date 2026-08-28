@@ -26714,6 +26714,14 @@ void Player::RewardPersonalLootAndCurrency(Unit* victim, uint32 lootId)
 
     auto process = [&](Player* player)
     {
+        // Headless playerbots are combat support, not persistent loot
+        // participants. Their controlled PvE loadout is prepared separately;
+        // personal loot, currency and legendary quest drops would only fill
+        // their bags/mail and consume lockouts. Real player sessions are not
+        // marked as bots, including the player requesting a staged raid.
+        if (!player || (player->GetSession() && player->GetSession()->IsBot()))
+            return;
+
         // LFR, flex and world bosses. Obviously world bosses couldn't be encountered in LFR and flex. So, whatever.
         bool personal = difficulty == RAID_DIFFICULTY_25MAN_LFR || difficulty == RAID_DIFFICULTY_1025MAN_FLEX || difficulty == REGULAR_DIFFICULTY;
         bool lockout = player->HasLootLockout(LootLockoutType::PersonalLoot, lootId, difficulty);

@@ -7196,6 +7196,13 @@ void Spell::EffectBonusRoll(SpellEffIndex effIndex)
     if (!player)
         return;
 
+    // Headless playerbots are combat support, not persistent loot
+    // participants. Do not let an encounter-wide bonus-roll trigger grant
+    // them loot, consume roll currency or create persistent lockouts. Real
+    // player sessions, including the staged raid requester, are unaffected.
+    if (player->GetSession() && player->GetSession()->IsBot())
+        return;
+
     if (m_CastItem)
     {
         BonusLootTemplate lootTemplate;
