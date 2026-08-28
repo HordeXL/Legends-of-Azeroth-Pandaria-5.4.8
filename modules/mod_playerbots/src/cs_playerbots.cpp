@@ -169,6 +169,7 @@ struct WorldBossStagedCandidate
     float OriginalZ = 0.0f;
     float OriginalO = 0.0f;
     bool ReturnRequested = false;
+    uint32 CleanupReadyAt = 0;
 };
 
 enum class WorldBossStagedState : uint8
@@ -4688,7 +4689,17 @@ void BeginWorldBossStageCleanup(char const* reason)
 {
     WorldBossStageCleanupReason = reason ? reason : "requested cleanup";
     WorldBossStageState = WorldBossStagedState::Cleanup;
+    WorldBossStageElapsed = 0;
     WorldBossStageUpdateTimer = 0;
+    for (auto& staged : WorldBossStagedBots)
+    {
+        ObjectGuid guid = ObjectGuid::Create<HighGuid::Player>(staged.first);
+        if (Player* bot = sRandomPlayerbotMgr->GetPlayerBot(guid))
+        {
+            bot->BeginWorldBossStagingCleanup();
+            staged.second.CleanupReadyAt = 2000;
+        }
+    }
     TC_LOG_INFO("server", "WorldBoss staged raid cleanup requested requester=%u reason=%s",
         WorldBossStageRequester, WorldBossStageCleanupReason.c_str());
 }
@@ -5190,6 +5201,11 @@ void UpdateWorldBossStagedRaid(uint32 diff)
             float z = WorldBossStageZ;
             requester->GetNearPoint(bot, x, y, z, bot->GetObjectSize(),
                 distance, angle);
+            // Nalak's zone normally rejects characters that have not completed
+            // the Isle of Thunder introduction. These temporary raid members
+            // are owned by this coordinator and must remain eligible only for
+            // the lifetime of the staged call.
+            bot->SetWorldBossStagingAccess(true);
             if (!bot->TeleportTo(WorldBossStageMap, x, y, z,
                 requester->GetOrientation()))
             {
@@ -5555,6 +5571,35 @@ void UpdateWorldBossStagedRaid(uint32 diff)
     }
 
     if (WorldBossStageState != WorldBossStagedState::Cleanup)
+        return;
+
+    // Playerbot AI is updated by map workers, while this coordinator is
+    // updated by the world thread. Pause every loaded bot and give any action
+    // that already passed the pause check two seconds to finish before group,
+    // teleport, or logout state is mutated. Bots that finish loading during
+    // cleanup receive their own complete quiescence interval.
+    bool cleanupBotsQuiesced = true;
+    for (auto& staged : WorldBossStagedBots)
+    {
+        ObjectGuid guid = ObjectGuid::Create<HighGuid::Player>(staged.first);
+        if (sRandomPlayerbotMgr->IsBotLoading(guid))
+        {
+            cleanupBotsQuiesced = false;
+            continue;
+        }
+
+        if (Player* bot = sRandomPlayerbotMgr->GetPlayerBot(guid))
+        {
+            if (!bot->IsWorldBossStagingCleanup())
+            {
+                bot->BeginWorldBossStagingCleanup();
+                staged.second.CleanupReadyAt = WorldBossStageElapsed + 2000;
+            }
+            if (WorldBossStageElapsed < staged.second.CleanupReadyAt)
+                cleanupBotsQuiesced = false;
+        }
+    }
+    if (!cleanupBotsQuiesced)
         return;
 
     if (WorldBossStageGroup)
