@@ -155,6 +155,127 @@ enum class WorldBossPreviewRole : uint8
     Damage
 };
 
+enum WorldBossRaidBuff : uint8
+{
+    WORLD_BOSS_BUFF_STATS        = 1 << 0,
+    WORLD_BOSS_BUFF_STAMINA      = 1 << 1,
+    WORLD_BOSS_BUFF_ATTACK_POWER = 1 << 2,
+    WORLD_BOSS_BUFF_ATTACK_SPEED = 1 << 3,
+    WORLD_BOSS_BUFF_SPELL_POWER  = 1 << 4,
+    WORLD_BOSS_BUFF_SPELL_HASTE  = 1 << 5,
+    WORLD_BOSS_BUFF_CRITICAL     = 1 << 6,
+    WORLD_BOSS_BUFF_MASTERY      = 1 << 7
+};
+
+uint8 GetWorldBossRaidBuffMask(Specializations specialization)
+{
+    // Mists of Pandaria 5.4.8 raid-buff equivalence categories shown by the
+    // default raid UI. The mask describes what a specialization can maintain
+    // through its normal PlayerbotAI actions, passives, forms, pets or totems.
+    switch (specialization)
+    {
+        case SPEC_DRUID_BALANCE:
+            return WORLD_BOSS_BUFF_STATS | WORLD_BOSS_BUFF_SPELL_HASTE;
+        case SPEC_DRUID_FERAL:
+        case SPEC_DRUID_GUARDIAN:
+            return WORLD_BOSS_BUFF_STATS | WORLD_BOSS_BUFF_CRITICAL;
+        case SPEC_DRUID_RESTORATION:
+            return WORLD_BOSS_BUFF_STATS;
+
+        case SPEC_PALADIN_HOLY:
+        case SPEC_PALADIN_PROTECTION:
+        case SPEC_PALADIN_RETRIBUTION:
+            return WORLD_BOSS_BUFF_STATS | WORLD_BOSS_BUFF_MASTERY;
+
+        case SPEC_MONK_WINDWALKER:
+            return WORLD_BOSS_BUFF_STATS | WORLD_BOSS_BUFF_CRITICAL;
+        case SPEC_MONK_BREWMASTER:
+        case SPEC_MONK_MISTWEAVER:
+            return WORLD_BOSS_BUFF_STATS;
+
+        case SPEC_PRIEST_SHADOW:
+            return WORLD_BOSS_BUFF_STAMINA | WORLD_BOSS_BUFF_SPELL_HASTE;
+        case SPEC_PRIEST_DISCIPLINE:
+        case SPEC_PRIEST_HOLY:
+            return WORLD_BOSS_BUFF_STAMINA;
+
+        case SPEC_WARRIOR_ARMS:
+        case SPEC_WARRIOR_FURY:
+            return WORLD_BOSS_BUFF_ATTACK_POWER;
+        case SPEC_WARRIOR_PROTECTION:
+            return WORLD_BOSS_BUFF_STAMINA;
+
+        case SPEC_DEATH_KNIGHT_FROST:
+        case SPEC_DEATH_KNIGHT_UNHOLY:
+            return WORLD_BOSS_BUFF_ATTACK_POWER | WORLD_BOSS_BUFF_ATTACK_SPEED;
+        case SPEC_DEATH_KNIGHT_BLOOD:
+            return WORLD_BOSS_BUFF_ATTACK_POWER;
+
+        case SPEC_HUNTER_BEAST_MASTERY:
+            return WORLD_BOSS_BUFF_ATTACK_POWER | WORLD_BOSS_BUFF_ATTACK_SPEED;
+        case SPEC_HUNTER_MARKSMANSHIP:
+        case SPEC_HUNTER_SURVIVAL:
+            return WORLD_BOSS_BUFF_ATTACK_POWER;
+
+        case SPEC_MAGE_ARCANE:
+        case SPEC_MAGE_FIRE:
+        case SPEC_MAGE_FROST:
+            return WORLD_BOSS_BUFF_SPELL_POWER | WORLD_BOSS_BUFF_CRITICAL;
+
+        case SPEC_WARLOCK_AFFLICTION:
+        case SPEC_WARLOCK_DEMONOLOGY:
+        case SPEC_WARLOCK_DESTRUCTION:
+            return WORLD_BOSS_BUFF_STAMINA | WORLD_BOSS_BUFF_SPELL_POWER;
+
+        case SPEC_ROGUE_ASSASSINATION:
+        case SPEC_ROGUE_COMBAT:
+        case SPEC_ROGUE_SUBTLETY:
+            return WORLD_BOSS_BUFF_ATTACK_SPEED;
+
+        case SPEC_SHAMAN_ELEMENTAL:
+            return WORLD_BOSS_BUFF_SPELL_POWER | WORLD_BOSS_BUFF_SPELL_HASTE |
+                WORLD_BOSS_BUFF_MASTERY;
+        case SPEC_SHAMAN_ENHANCEMENT:
+            return WORLD_BOSS_BUFF_ATTACK_SPEED | WORLD_BOSS_BUFF_SPELL_POWER |
+                WORLD_BOSS_BUFF_MASTERY;
+        case SPEC_SHAMAN_RESTORATION:
+            return WORLD_BOSS_BUFF_SPELL_POWER | WORLD_BOSS_BUFF_MASTERY;
+
+        default:
+            return 0;
+    }
+}
+
+uint8 CountWorldBossRaidBuffs(uint8 mask)
+{
+    uint8 count = 0;
+    while (mask)
+    {
+        count += mask & 1;
+        mask >>= 1;
+    }
+    return count;
+}
+
+std::string DescribeWorldBossRaidBuffs(uint8 mask)
+{
+    static char const* const names[] =
+    {
+        "stats", "stamina", "attack-power", "attack-speed", "spell-power",
+        "spell-haste", "critical-strike", "mastery"
+    };
+    std::ostringstream description;
+    for (uint8 index = 0; index < 8; ++index)
+    {
+        if (!(mask & (1 << index)))
+            continue;
+        if (description.tellp() > 0)
+            description << ',';
+        description << names[index];
+    }
+    return description.str();
+}
+
 struct WorldBossStagedCandidate
 {
     uint32 Guid = 0;
@@ -171,6 +292,126 @@ struct WorldBossStagedCandidate
     bool ReturnRequested = false;
     uint32 CleanupReadyAt = 0;
 };
+
+struct WorldBossBuffRolePlan
+{
+    bool Valid = false;
+    uint32 RankCost = 0;
+    std::vector<uint32> CandidateIndices;
+};
+
+struct WorldBossBuffCompositionPlan
+{
+    bool Valid = false;
+    uint32 RankCost = 0;
+    std::array<std::vector<uint32>, 3> CandidateIndices;
+};
+
+bool HasBetterWorldBossRank(uint32 rankCost,
+    std::vector<uint32> const& indices, WorldBossBuffRolePlan const& current)
+{
+    return !current.Valid || rankCost < current.RankCost ||
+        (rankCost == current.RankCost &&
+            std::lexicographical_compare(indices.begin(), indices.end(),
+                current.CandidateIndices.begin(), current.CandidateIndices.end()));
+}
+
+std::array<WorldBossBuffRolePlan, 256> BuildWorldBossBuffRolePlans(
+    std::vector<WorldBossStagedCandidate> const& candidates, uint32 wanted)
+{
+    std::vector<std::array<WorldBossBuffRolePlan, 256>> plans(wanted + 1);
+    plans[0][0].Valid = true;
+
+    for (uint32 candidateIndex = 0; candidateIndex < candidates.size();
+        ++candidateIndex)
+    {
+        uint32 upper = std::min<uint32>(wanted, candidateIndex + 1);
+        for (uint32 selected = upper; selected > 0; --selected)
+        {
+            for (uint32 mask = 0; mask < 256; ++mask)
+            {
+                WorldBossBuffRolePlan const& previous = plans[selected - 1][mask];
+                if (!previous.Valid)
+                    continue;
+
+                uint8 combinedMask = uint8(mask) |
+                    GetWorldBossRaidBuffMask(candidates[candidateIndex].Specialization);
+                uint32 rankCost = previous.RankCost + candidateIndex;
+                std::vector<uint32> indices = previous.CandidateIndices;
+                indices.push_back(candidateIndex);
+                WorldBossBuffRolePlan& target = plans[selected][combinedMask];
+                if (HasBetterWorldBossRank(rankCost, indices, target))
+                {
+                    target.Valid = true;
+                    target.RankCost = rankCost;
+                    target.CandidateIndices.swap(indices);
+                }
+            }
+        }
+    }
+    return plans[wanted];
+}
+
+bool OptimizeWorldBossBuffComposition(
+    std::array<std::vector<WorldBossStagedCandidate>, 3> const& candidates,
+    std::array<uint32, 3> const& wanted, Specializations requesterSpecialization,
+    std::array<std::vector<uint32>, 3>& selected, uint8& coveredMask)
+{
+    std::array<WorldBossBuffCompositionPlan, 256> combined;
+    uint8 requesterMask = GetWorldBossRaidBuffMask(requesterSpecialization);
+    combined[requesterMask].Valid = true;
+
+    for (size_t roleIndex = 0; roleIndex < candidates.size(); ++roleIndex)
+    {
+        std::array<WorldBossBuffRolePlan, 256> rolePlans =
+            BuildWorldBossBuffRolePlans(candidates[roleIndex], wanted[roleIndex]);
+        std::array<WorldBossBuffCompositionPlan, 256> next;
+        for (uint32 existingMask = 0; existingMask < 256; ++existingMask)
+        {
+            if (!combined[existingMask].Valid)
+                continue;
+            for (uint32 roleMask = 0; roleMask < 256; ++roleMask)
+            {
+                if (!rolePlans[roleMask].Valid)
+                    continue;
+                uint8 resultMask = uint8(existingMask | roleMask);
+                uint32 rankCost = combined[existingMask].RankCost +
+                    rolePlans[roleMask].RankCost;
+                WorldBossBuffCompositionPlan& target = next[resultMask];
+                if (target.Valid && target.RankCost <= rankCost)
+                    continue;
+                target = combined[existingMask];
+                target.Valid = true;
+                target.RankCost = rankCost;
+                target.CandidateIndices[roleIndex] =
+                    rolePlans[roleMask].CandidateIndices;
+            }
+        }
+        combined = next;
+    }
+
+    WorldBossBuffCompositionPlan const* best = nullptr;
+    coveredMask = 0;
+    for (uint32 mask = 0; mask < 256; ++mask)
+    {
+        WorldBossBuffCompositionPlan const& plan = combined[mask];
+        if (!plan.Valid)
+            continue;
+        if (!best || CountWorldBossRaidBuffs(uint8(mask)) >
+                CountWorldBossRaidBuffs(coveredMask) ||
+            (CountWorldBossRaidBuffs(uint8(mask)) ==
+                CountWorldBossRaidBuffs(coveredMask) &&
+                plan.RankCost < best->RankCost))
+        {
+            best = &plan;
+            coveredMask = uint8(mask);
+        }
+    }
+    if (!best)
+        return false;
+    selected = best->CandidateIndices;
+    return true;
+}
 
 enum class WorldBossStagedState : uint8
 {
@@ -4641,18 +4882,34 @@ bool StartWorldBossStage(Player* requester, Creature* caller, Creature* boss,
         return false;
     }
 
-    auto stageRole = [](std::vector<WorldBossStagedCandidate> const& roleCandidates,
-        uint32 count)
+    std::array<uint32, 3> selectedCounts =
+        {{ neededTanks, neededHealers, neededDamage }};
+    std::array<std::vector<uint32>, 3> selectedIndices;
+    uint8 coveredBuffs = 0;
+    if (!OptimizeWorldBossBuffComposition(candidates, selectedCounts,
+        requester->GetSpecialization(), selectedIndices, coveredBuffs))
     {
-        for (uint32 index = 0; index < count; ++index)
+        error = "raid-buff composition optimizer could not form the requested role counts";
+        return false;
+    }
+
+    TC_LOG_INFO("server",
+        "WorldBoss Call %u optimized raid-buff coverage=%u/8 categories=%s",
+        raidSize, uint32(CountWorldBossRaidBuffs(coveredBuffs)),
+        DescribeWorldBossRaidBuffs(coveredBuffs).c_str());
+
+    auto stageRole = [](std::vector<WorldBossStagedCandidate> const& roleCandidates,
+        std::vector<uint32> const& indices)
+    {
+        for (uint32 index : indices)
         {
             WorldBossStagedCandidate const& candidate = roleCandidates[index];
             WorldBossStagedBots[candidate.Guid] = candidate;
         }
     };
-    stageRole(candidates[0], neededTanks);
-    stageRole(candidates[1], neededHealers);
-    stageRole(candidates[2], neededDamage);
+    stageRole(candidates[0], selectedIndices[0]);
+    stageRole(candidates[1], selectedIndices[1]);
+    stageRole(candidates[2], selectedIndices[2]);
 
     WorldBossStageRequester = requester->GetGUID().GetCounter();
     WorldBossStageCaller = caller->GetDBTableGUIDLow();
