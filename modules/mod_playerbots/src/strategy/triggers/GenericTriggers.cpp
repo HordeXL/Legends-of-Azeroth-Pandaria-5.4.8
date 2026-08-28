@@ -62,7 +62,9 @@ bool PetAttackTrigger::IsActive()
     {
         return false;
     }
-    if (bot->GetMap()->IsDungeon() && bot->GetGroup() && !target->IsInCombat())
+    // Never let a pet become the puller. This applies outdoors as well as in
+    // dungeons: the owner (or another raid member) must have engaged first.
+    if (!target->IsInCombat() && bot->GetVictim() != target)
     {
         return false;
     }

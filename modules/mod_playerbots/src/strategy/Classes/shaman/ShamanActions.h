@@ -204,12 +204,16 @@ class CastHealingTideTotemAction : public CastTotemAction
 {
 public:
     CastHealingTideTotemAction(PlayerbotAI* botAI) : CastTotemAction(botAI, "healing tide totem") {}
+
+    bool isUseful() override;
 };
 
 class CastSpiritLinkTotemAction : public CastTotemAction
 {
 public:
     CastSpiritLinkTotemAction(PlayerbotAI* botAI) : CastTotemAction(botAI, "spirit link totem") {}
+
+    bool isUseful() override;
 };
 
 class CastCleansingTotemAction : public CastTotemAction

@@ -7,6 +7,8 @@
 #include "AccountMgr.h"
 #include "AiFactory.h"
 #include "ArenaTeam.h"
+#include "Bag.h"
+#include "DatabaseEnv.h"
 #include "DBCStores.h"
 #include "DBCStructure.h"
 #include "GuildMgr.h"
@@ -209,6 +211,29 @@ void BotFactory::InitPet()
         }
     }*/
 
+    // Older BotFactory pet creation saved hunter pets before registering an
+    // active slot. Those rows consequently have slot 255 and are ignored by
+    // Player::LoadPetList; a hunter then whistles Call Pet 1 every five
+    // seconds forever because no usable active pet exists. Recover the newest
+    // such pet for this random bot before generating another one.
+    if (!pet && bot->GetClass() == CLASS_HUNTER)
+    {
+        QueryResult result = CharacterDatabase.PQuery(
+            "SELECT id FROM character_pet WHERE owner = %u AND PetType = %u "
+            "AND slot > %u ORDER BY savetime DESC, id DESC LIMIT 1",
+            bot->GetGUID().GetCounter(), uint32(HUNTER_PET),
+            uint32(PET_SLOT_STABLE_LAST));
+        if (result)
+        {
+            Pet* recoveredPet = new Pet(bot);
+            if (recoveredPet->LoadPetFromDB(
+                    PET_LOAD_BY_ID, result->Fetch()[0].GetUInt32()))
+                pet = recoveredPet;
+            else
+                delete recoveredPet;
+        }
+    }
+
     if (!pet)
     {
         if (bot->GetClass() != CLASS_HUNTER)
@@ -268,10 +293,34 @@ void BotFactory::InitPet()
             bot->SetMinion(pet, true);
  
             pet->InitTalentForLevel();
- 
+
+            // Register the active slot before saving. Pet::SavePetToDB derives
+            // character_pet.slot from this in-memory list.
+            bot->AddNewPet(newPetSlot, pet);
+            bot->SetCurrentPetId(pet->GetCharmInfo()->GetPetNumber());
             pet->SavePetToDB();
             bot->PetSpellInitialize();
             break;
+        }
+    }
+
+    // A current pet may itself have been loaded from a legacy slot-255 row.
+    // Attach it to the first available active slot and rewrite that same row;
+    // no pet or player inventory is discarded.
+    if (pet && bot->GetClass() == CLASS_HUNTER &&
+        bot->GetSlotByPetId(pet->GetCharmInfo()->GetPetNumber()) < 0)
+    {
+        int8 newPetSlot = bot->GetSlotForNewPet();
+        if (newPetSlot >= 0)
+        {
+            bot->AddNewPet(newPetSlot, pet);
+            bot->SetCurrentPetId(pet->GetCharmInfo()->GetPetNumber());
+            pet->SavePetToDB();
+            bot->PetSpellInitialize();
+            TC_LOG_INFO("playerbots",
+                "Repaired active hunter pet slot for bot %s guid=%u pet=%u slot=%d",
+                bot->GetName().c_str(), bot->GetGUID().GetCounter(),
+                pet->GetCharmInfo()->GetPetNumber(), int32(newPetSlot));
         }
     }
  
@@ -280,6 +329,15 @@ void BotFactory::InitPet()
         pet->InitStatsForLevel(bot->GetLevel());
         pet->SetLevel(bot->GetLevel());
         pet->SetHealth(pet->GetMaxHealth());
+
+        // MoP hunter pets use Ferocity/Tenacity/Cunning specializations rather
+        // than the removed pet talent tree. Random hunters use PvE Ferocity.
+        // Every controlled Playerbot pet (hunter, warlock, mage, etc.) stays
+        // passive so only the owner's explicit AI command starts an attack.
+        if (bot->GetClass() == CLASS_HUNTER &&
+            pet->getPetType() == HUNTER_PET)
+            pet->SetSpecialization(SPEC_PET_FEROCITY);
+        pet->SetReactState(REACT_PASSIVE);
     }
     else
     {
@@ -299,11 +357,31 @@ void BotFactory::InitPet()
             continue;
  
         if (spellInfo->IsPassive())
-        {
             continue;
+
+        // Growl and equivalent threat/taunt abilities are useful for solo
+        // tanking, but a raid pet must never pull aggro from the marked tank.
+        bool threatSpell = false;
+        for (SpellEffectInfo const& effect : spellInfo->Effects)
+        {
+            if (effect.Effect == SPELL_EFFECT_ATTACK_ME ||
+                effect.Effect == SPELL_EFFECT_THREAT ||
+                effect.Effect == SPELL_EFFECT_THREAT_ALL ||
+                effect.ApplyAuraName == SPELL_AURA_MOD_TAUNT ||
+                effect.ApplyAuraName == SPELL_AURA_MOD_THREAT ||
+                effect.ApplyAuraName == SPELL_AURA_MOD_TOTAL_THREAT)
+            {
+                threatSpell = true;
+                break;
+            }
         }
-        pet->ToggleAutocast(spellInfo, true);
+        pet->ToggleAutocast(spellInfo, !threatSpell);
     }
+
+    // Persist Ferocity (where applicable), passive reaction and the corrected
+    // autocast state so any permanent controlled pet cannot restore an old
+    // tanking setup on its next login.
+    pet->SavePetToDB();
 }
 namespace
 {
@@ -691,8 +769,61 @@ bool BotFactory::CanEquipItem(ItemTemplate const* proto)
     return true;
 }
 
+void BotFactory::InitBags()
+{
+    // A normal, unrestricted 28-slot MoP bag. Bags are prepared before armor
+    // so Caller/spec initialization always has room to preserve replaced gear.
+    static uint32 constexpr PlayerbotBagEntry = 82446; // Royal Satchel
+
+    ItemTemplate const* desiredBag = sObjectMgr->GetItemTemplate(PlayerbotBagEntry);
+    if (!desiredBag || desiredBag->InventoryType != INVTYPE_BAG)
+    {
+        TC_LOG_ERROR("playerbots", "Cannot initialize playerbot bags: item %u is not a valid bag",
+            PlayerbotBagEntry);
+        return;
+    }
+
+    for (uint8 slot = INVENTORY_SLOT_BAG_START; slot < INVENTORY_SLOT_BAG_END; ++slot)
+    {
+        Bag* currentBag = bot->GetBagByPos(slot);
+        if (currentBag)
+        {
+            // Never remove a bag containing items. Keep an equal or larger
+            // empty bag as well; only a safely empty smaller bag is upgraded.
+            if (!currentBag->IsEmpty() || currentBag->GetBagSize() >= desiredBag->ContainerSlots)
+                continue;
+        }
+        else if (bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot))
+        {
+            // An invalid non-bag object in a bag slot must not be destroyed by
+            // automated maintenance.
+            continue;
+        }
+
+        uint16 destination = 0;
+        bool const replacing = currentBag != nullptr;
+        if (bot->CanEquipNewItem(slot, destination, PlayerbotBagEntry, replacing) != EQUIP_ERR_OK)
+            continue;
+
+        if (currentBag)
+        {
+            uint16 const currentPosition = uint16(INVENTORY_SLOT_BAG_0) << 8 | slot;
+            if (bot->CanUnequipItem(currentPosition, false) != EQUIP_ERR_OK)
+                continue;
+
+            bot->DestroyItem(INVENTORY_SLOT_BAG_0, slot, true);
+        }
+
+        if (!bot->EquipNewItem(destination, PlayerbotBagEntry, true))
+            TC_LOG_ERROR("playerbots", "Failed to equip bag %u for bot %s in slot %u",
+                PlayerbotBagEntry, bot->GetName().c_str(), uint32(slot));
+    }
+}
+
 void BotFactory::InitEquipment(bool incremental, bool second_chance)
 {
+    InitBags();
+
     std::unordered_map<uint8, std::vector<uint32>> items;
     uint32 blevel = bot->GetLevel();
     int32 delta = std::min(blevel, 10u);
