@@ -5190,6 +5190,11 @@ void UpdateWorldBossStagedRaid(uint32 diff)
             float z = WorldBossStageZ;
             requester->GetNearPoint(bot, x, y, z, bot->GetObjectSize(),
                 distance, angle);
+            // Nalak's zone normally rejects characters that have not completed
+            // the Isle of Thunder introduction. These temporary raid members
+            // are owned by this coordinator and must remain eligible only for
+            // the lifetime of the staged call.
+            bot->SetWorldBossStagingAccess(true);
             if (!bot->TeleportTo(WorldBossStageMap, x, y, z,
                 requester->GetOrientation()))
             {
@@ -5655,6 +5660,7 @@ void UpdateWorldBossStagedRaid(uint32 diff)
                 ++itr;
                 continue;
             }
+            bot->SetWorldBossStagingAccess(false);
             PrepareSoloArenaBotForLogout(bot, "world-boss-stage-cleanup");
             sRandomPlayerbotMgr->LogoutPlayerBot(guid);
         }

@@ -1332,7 +1332,8 @@ void Player::Update(uint32 p_time)
         TeleportTo(m_homebindMapId, m_homebindX, m_homebindY, m_homebindZ, GetOrientation());
 
     // teleport out if player is not eligible for isle of thunder
-    if (GetZoneId() == 6507 && GetQuestStatus(32680) == QUEST_STATUS_NONE && GetQuestStatus(32681) == QUEST_STATUS_NONE && GetSession()->GetSecurity() < SEC_GAMEMASTER)
+    if (GetZoneId() == 6507 && GetQuestStatus(32680) == QUEST_STATUS_NONE && GetQuestStatus(32681) == QUEST_STATUS_NONE &&
+        GetSession()->GetSecurity() < SEC_GAMEMASTER && !HasWorldBossStagingAccess())
     {
         if (GetTeam() == HORDE)
             TeleportTo(870, 1678.752f, 931.605f, 471.426f, 3.295924f);

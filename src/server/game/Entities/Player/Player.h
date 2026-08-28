@@ -3148,6 +3148,11 @@ public:
 
     bool HasForcedMovement() const { return hasForcedMovement_; }
 
+    // Temporary access granted only while the world-boss caller coordinator
+    // owns and stages this player. It must never be persisted.
+    bool HasWorldBossStagingAccess() const { return m_worldBossStagingAccess; }
+    void SetWorldBossStagingAccess(bool enabled) { m_worldBossStagingAccess = enabled; }
+
     bool CanFly() const { return m_movementInfo.HasMovementFlag(MOVEMENTFLAG_CAN_FLY);}
     bool CanEnterWater() const override { return true; }
 
@@ -3707,6 +3712,7 @@ protected:
     uint32 m_currentEnchanterEntry;
 
     bool hasForcedMovement_;
+    bool m_worldBossStagingAccess = false;
 
     SceneMgr m_sceneMgr;
     std::map<int8, PetData> m_petList;
