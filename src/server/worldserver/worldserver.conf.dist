@@ -1283,10 +1283,11 @@ DungeonFinder.OptionsMask = 1
 #
 #    LFGSolo.Enabled
 #        Description: Looking for Group Solo Option to queue solo thru LFG\RFD
-#        Default:     1  - (Enabled)
-#                     0  - (Disabled)
+#        Default:     0  - (Disabled; required for normal role-based LFG and
+#                          request-driven playerbot filling)
+#                     1  - (Enabled; allows immediate one-player LFG entry)
 
-LFGSolo.Enabled = 1
+LFGSolo.Enabled = 0
 #
 #   DBC.EnforceItemAttributes
 #        Description: Disallow overriding item attributes stored in DBC files with values from the

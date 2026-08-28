@@ -446,12 +446,18 @@ AiPlayerbot.AutoQueue.Arena = 1
 AiPlayerbot.AutoQueue.Arena.Automatic = 1
 AiPlayerbot.AutoQueue.Arena.AutomaticBattlemasterSolo = 1
 AiPlayerbot.CombatAssistant.Enabled = 1
+LFGSolo.Enabled = 0
 ```
 
 `DryRun = 1` keeps the older generic observer protected. The newer explicitly
 enabled request-driven Arena/BG/LFG paths have their own gates and are not disabled
 by that observer setting. Distributed `.dist` configurations retain safer defaults;
 do not assume a newly copied config matches the local test configuration.
+
+The legacy `LFGSolo` shortcut must remain disabled while playerbot LFG filling is
+enabled. When `LFGSolo.Enabled = 1`, every dungeon queue is reduced to one damage
+slot, the real player receives an immediate solo proposal, and there are no missing
+tank/healer/damage slots for the bot automation to fill.
 
 Implementation and test details are documented in
 [`contrib/playerbot_auto_queue_548/README.md`](contrib/playerbot_auto_queue_548/README.md).
