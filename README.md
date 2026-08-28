@@ -406,6 +406,15 @@ specialization, Caller or loadout preparation begins. A pre-existing bag that
 contains any item is never removed; an empty smaller bag may be upgraded. Gear
 initialization repeats this capacity check before replacing equipment.
 
+Hunter random bots also recover older pets that were accidentally persisted in
+invalid slot `255`; the pet is moved into a valid active slot instead of making
+the bot repeat `Call Pet 1` indefinitely. Raid preparation casts Arcane
+Brilliance on the party rather than only checking the mage's own persistent
+aura. Shaman raid cooldown totems are coordinated across nearby headless bots:
+only one Mana Tide is active at once, and Spirit Link/Healing Tide are staggered
+instead of being spent together. Personal damage totems and stackable healing
+totems remain independent.
+
 The active local test configuration currently enables the request-driven queue
 features and Combat Assistant:
 

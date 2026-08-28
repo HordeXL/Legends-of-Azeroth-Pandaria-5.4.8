@@ -2312,7 +2312,7 @@ std::vector<char const*> GetSoloArenaPreparationBuffActions(Player* bot)
     {
         case CLASS_PRIEST:       return { "power word: fortitude on party" };
         case CLASS_DRUID:        return { "mark of the wild on party" };
-        case CLASS_MAGE:         return { "arcane brilliance" };
+        case CLASS_MAGE:         return { "arcane brilliance on party" };
         case CLASS_PALADIN:      return { "blessing of kings", "blessing of might" };
         case CLASS_WARRIOR:      return { "battle shout" };
         case CLASS_DEATH_KNIGHT: return { "horn of winter" };

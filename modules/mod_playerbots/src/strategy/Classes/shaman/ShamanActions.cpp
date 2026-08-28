@@ -5,9 +5,108 @@
 
 #include "ShamanActions.h"
 
+#include <algorithm>
+#include <initializer_list>
+
+#include "Group.h"
 #include "Playerbots.h"
+#include "SpellHistory.h"
 #include "Totem.h"
 #include "Timer.h"
+
+namespace
+{
+constexpr float CoordinatedTotemRadius = 80.0f;
+
+std::vector<uint32> ResolveTotemSpells(PlayerbotAI* botAI,
+    std::initializer_list<char const*> names)
+{
+    std::vector<uint32> spells;
+    for (char const* name : names)
+    {
+        uint32 spellId = botAI->GetAiObjectContext()->GetValue<uint32>(
+            "spell id", name)->Get();
+        if (spellId)
+            spells.push_back(spellId);
+    }
+    return spells;
+}
+
+bool HasActiveCoordinatedTotem(Player* bot,
+    std::vector<uint32> const& spellIds)
+{
+    Group* group = bot ? bot->GetGroup() : nullptr;
+    if (!group || !bot->GetMap())
+        return false;
+
+    for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+    {
+        Player* member = ref->GetSource();
+        if (!member || member->GetMap() != bot->GetMap())
+            continue;
+
+        for (uint8 slot : {SUMMON_SLOT_TOTEM_FIRE, SUMMON_SLOT_TOTEM_EARTH,
+                           SUMMON_SLOT_TOTEM_WATER, SUMMON_SLOT_TOTEM_AIR,
+                           SUMMON_SLOT_TOTEM_EXTRA})
+        {
+            if (!member->m_SummonSlot[slot])
+                continue;
+
+            Creature* totem = member->GetMap()->GetCreature(
+                member->m_SummonSlot[slot]);
+            if (!totem || !totem->IsAlive() ||
+                bot->GetDistance(totem) > CoordinatedTotemRadius)
+                continue;
+
+            uint32 createdBySpell = totem->GetUInt32Value(
+                UNIT_FIELD_CREATED_BY_SPELL);
+            if (std::find(spellIds.begin(), spellIds.end(), createdBySpell) !=
+                spellIds.end())
+                return true;
+        }
+    }
+    return false;
+}
+
+bool IsCoordinatedTotemCaster(Player* bot, uint32 spellId)
+{
+    Group* group = bot ? bot->GetGroup() : nullptr;
+    if (!group)
+        return true;
+
+    Player* selected = nullptr;
+    for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+    {
+        Player* member = ref->GetSource();
+        PlayerbotAI* memberAI = member ? GET_PLAYERBOT_AI(member) : nullptr;
+        if (!member || !memberAI || memberAI->IsRealPlayer() ||
+            member->GetClass() != CLASS_SHAMAN || !member->IsAlive() ||
+            member->GetMap() != bot->GetMap() ||
+            bot->GetDistance(member) > CoordinatedTotemRadius ||
+            !member->HasSpell(spellId) ||
+            !member->GetSpellHistory()->IsReady(spellId))
+            continue;
+
+        if (!selected || member->GetGUID() < selected->GetGUID())
+            selected = member;
+    }
+    return !selected || selected == bot;
+}
+
+bool IsCoordinatedTotemUseful(Player* bot, PlayerbotAI* botAI,
+    char const* ownSpell, std::initializer_list<char const*> sharedActiveSpells)
+{
+    uint32 ownSpellId = botAI->GetAiObjectContext()->GetValue<uint32>(
+        "spell id", ownSpell)->Get();
+    if (!ownSpellId)
+        return false;
+
+    std::vector<uint32> activeSpellIds = ResolveTotemSpells(
+        botAI, sharedActiveSpells);
+    return !HasActiveCoordinatedTotem(bot, activeSpellIds) &&
+        IsCoordinatedTotemCaster(bot, ownSpellId);
+}
+}
 
 bool CastTotemAction::isUseful()
 {
@@ -34,7 +133,9 @@ bool CastManaSpringTotemAction::isUseful()
 
 bool CastManaTideTotemAction::isUseful()
 {
-    if (!CastTotemAction::isUseful())
+    if (!CastTotemAction::isUseful() ||
+        !IsCoordinatedTotemUseful(bot, botAI, "mana tide totem",
+            {"mana tide totem"}))
         return false;
 
     if (!announcementStartedAt)
@@ -70,6 +171,20 @@ bool CastManaTideTotemAction::Execute(Event event)
         announcementStartedAt = 0;
 
     return cast;
+}
+
+bool CastHealingTideTotemAction::isUseful()
+{
+    return CastTotemAction::isUseful() &&
+        IsCoordinatedTotemUseful(bot, botAI, "healing tide totem",
+            {"healing tide totem", "spirit link totem"});
+}
+
+bool CastSpiritLinkTotemAction::isUseful()
+{
+    return CastTotemAction::isUseful() &&
+        IsCoordinatedTotemUseful(bot, botAI, "spirit link totem",
+            {"healing tide totem", "spirit link totem"});
 }
 
 bool CastFlametongueTotemAction::isUseful()

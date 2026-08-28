@@ -159,6 +159,7 @@ public:
         creators["mage armor"] = &MageAiObjectContextInternal::mage_armor;
         creators["frost armor"] = &MageAiObjectContextInternal::frost_armor;
         creators["arcane brilliance"] = &MageAiObjectContextInternal::arcane_brilliance;
+        creators["arcane brilliance on party"] = &MageAiObjectContextInternal::arcane_brilliance_on_party;
         creators["rune of power"] = &MageAiObjectContextInternal::rune_of_power;
 
         creators["frostfire bolt"] = &MageAiObjectContextInternal::frostfirebolt;
@@ -216,6 +217,7 @@ private:
     static Action* mage_armor(PlayerbotAI* botAI) { return new CastMageArmorAction(botAI); }
     static Action* frost_armor(PlayerbotAI* botAI) { return new CastFrostArmorAction(botAI); }
     static Action* arcane_brilliance(PlayerbotAI* botAI) { return new CastArcaneBrillanceAction(botAI); }
+    static Action* arcane_brilliance_on_party(PlayerbotAI* botAI) { return new CastArcaneBrillianceOnPartyAction(botAI); }
     static Action* rune_of_power(PlayerbotAI* botAI) { return new CastRuneOfPowerAction(botAI); }
     
     static Action* frostfirebolt(PlayerbotAI* botAI) { return new CastFrostfireBoltAction(botAI); }

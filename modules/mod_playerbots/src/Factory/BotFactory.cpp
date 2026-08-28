@@ -8,6 +8,7 @@
 #include "AiFactory.h"
 #include "ArenaTeam.h"
 #include "Bag.h"
+#include "DatabaseEnv.h"
 #include "DBCStores.h"
 #include "DBCStructure.h"
 #include "GuildMgr.h"
@@ -210,6 +211,29 @@ void BotFactory::InitPet()
         }
     }*/
 
+    // Older BotFactory pet creation saved hunter pets before registering an
+    // active slot. Those rows consequently have slot 255 and are ignored by
+    // Player::LoadPetList; a hunter then whistles Call Pet 1 every five
+    // seconds forever because no usable active pet exists. Recover the newest
+    // such pet for this random bot before generating another one.
+    if (!pet && bot->GetClass() == CLASS_HUNTER)
+    {
+        QueryResult result = CharacterDatabase.PQuery(
+            "SELECT id FROM character_pet WHERE owner = %u AND PetType = %u "
+            "AND slot > %u ORDER BY savetime DESC, id DESC LIMIT 1",
+            bot->GetGUID().GetCounter(), uint32(HUNTER_PET),
+            uint32(PET_SLOT_STABLE_LAST));
+        if (result)
+        {
+            Pet* recoveredPet = new Pet(bot);
+            if (recoveredPet->LoadPetFromDB(
+                    PET_LOAD_BY_ID, result->Fetch()[0].GetUInt32()))
+                pet = recoveredPet;
+            else
+                delete recoveredPet;
+        }
+    }
+
     if (!pet)
     {
         if (bot->GetClass() != CLASS_HUNTER)
@@ -269,10 +293,34 @@ void BotFactory::InitPet()
             bot->SetMinion(pet, true);
  
             pet->InitTalentForLevel();
- 
+
+            // Register the active slot before saving. Pet::SavePetToDB derives
+            // character_pet.slot from this in-memory list.
+            bot->AddNewPet(newPetSlot, pet);
+            bot->SetCurrentPetId(pet->GetCharmInfo()->GetPetNumber());
             pet->SavePetToDB();
             bot->PetSpellInitialize();
             break;
+        }
+    }
+
+    // A current pet may itself have been loaded from a legacy slot-255 row.
+    // Attach it to the first available active slot and rewrite that same row;
+    // no pet or player inventory is discarded.
+    if (pet && bot->GetClass() == CLASS_HUNTER &&
+        bot->GetSlotByPetId(pet->GetCharmInfo()->GetPetNumber()) < 0)
+    {
+        int8 newPetSlot = bot->GetSlotForNewPet();
+        if (newPetSlot >= 0)
+        {
+            bot->AddNewPet(newPetSlot, pet);
+            bot->SetCurrentPetId(pet->GetCharmInfo()->GetPetNumber());
+            pet->SavePetToDB();
+            bot->PetSpellInitialize();
+            TC_LOG_INFO("playerbots",
+                "Repaired active hunter pet slot for bot %s guid=%u pet=%u slot=%d",
+                bot->GetName().c_str(), bot->GetGUID().GetCounter(),
+                pet->GetCharmInfo()->GetPetNumber(), int32(newPetSlot));
         }
     }
  
