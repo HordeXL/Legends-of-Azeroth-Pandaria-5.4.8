@@ -47,7 +47,10 @@ Status recorded for the current local project configuration on 2026-08-27:
   at supported outdoor bosses. They can assemble 10- or 25-player PvE raids around
   the requester, revive bots, apply role-appropriate builds/equipment, mark the
   main tank and primary healer, rebuff after deaths and safely dismiss the staged
-  raid when the boss dies or the player cancels it.
+  raid when the boss dies or the player cancels it. Headless playerbots are
+  excluded from personal/bonus world-boss rewards regardless of whether they were
+  called through this NPC or summoned normally; loot, money bags, currencies,
+  legendary quest drops and loot lockouts remain reserved for real players.
 - **Combat Assistant addon:** the tracked addon in
   [`contrib/combat_assistant_548`](contrib/combat_assistant_548) displays one
   recommended spell button and can bind it to key `2`. The server evaluates the
