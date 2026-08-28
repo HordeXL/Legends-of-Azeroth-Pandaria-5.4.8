@@ -2135,6 +2135,11 @@ void RandomPlayerbotMgr::OnBotLoginInternal(Player* const bot)
     auto maxAllowed = sRandomPlayerbotMgr->GetMaxAllowedBotCount();
     TC_LOG_INFO("playerbots", "%u/%u Bot %s logged in - Active spec tab: %u Spec: %u", playerBots.size(), maxAllowed, bot->GetName().c_str(), (uint32)bot->GetActiveSpec(), (uint32)bot->GetSpecialization());
 
+    // Inventory capacity must exist before Caller, arena or specialization
+    // preparation can preserve replaced equipment in the bot's bags.
+    BotFactory factory(bot, bot->GetLevel());
+    factory.InitBags();
+
     // If this player has been created recently and is not assign horde / alliance as pandaren
     if (bot->GetRace() == RACE_PANDAREN_NEUTRAL)
     {

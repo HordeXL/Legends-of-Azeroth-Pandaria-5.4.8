@@ -7,6 +7,7 @@
 #include "AccountMgr.h"
 #include "AiFactory.h"
 #include "ArenaTeam.h"
+#include "Bag.h"
 #include "DBCStores.h"
 #include "DBCStructure.h"
 #include "GuildMgr.h"
@@ -691,8 +692,61 @@ bool BotFactory::CanEquipItem(ItemTemplate const* proto)
     return true;
 }
 
+void BotFactory::InitBags()
+{
+    // A normal, unrestricted 28-slot MoP bag. Bags are prepared before armor
+    // so Caller/spec initialization always has room to preserve replaced gear.
+    static uint32 constexpr PlayerbotBagEntry = 82446; // Royal Satchel
+
+    ItemTemplate const* desiredBag = sObjectMgr->GetItemTemplate(PlayerbotBagEntry);
+    if (!desiredBag || desiredBag->InventoryType != INVTYPE_BAG)
+    {
+        TC_LOG_ERROR("playerbots", "Cannot initialize playerbot bags: item %u is not a valid bag",
+            PlayerbotBagEntry);
+        return;
+    }
+
+    for (uint8 slot = INVENTORY_SLOT_BAG_START; slot < INVENTORY_SLOT_BAG_END; ++slot)
+    {
+        Bag* currentBag = bot->GetBagByPos(slot);
+        if (currentBag)
+        {
+            // Never remove a bag containing items. Keep an equal or larger
+            // empty bag as well; only a safely empty smaller bag is upgraded.
+            if (!currentBag->IsEmpty() || currentBag->GetBagSize() >= desiredBag->ContainerSlots)
+                continue;
+        }
+        else if (bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot))
+        {
+            // An invalid non-bag object in a bag slot must not be destroyed by
+            // automated maintenance.
+            continue;
+        }
+
+        uint16 destination = 0;
+        bool const replacing = currentBag != nullptr;
+        if (bot->CanEquipNewItem(slot, destination, PlayerbotBagEntry, replacing) != EQUIP_ERR_OK)
+            continue;
+
+        if (currentBag)
+        {
+            uint16 const currentPosition = uint16(INVENTORY_SLOT_BAG_0) << 8 | slot;
+            if (bot->CanUnequipItem(currentPosition, false) != EQUIP_ERR_OK)
+                continue;
+
+            bot->DestroyItem(INVENTORY_SLOT_BAG_0, slot, true);
+        }
+
+        if (!bot->EquipNewItem(destination, PlayerbotBagEntry, true))
+            TC_LOG_ERROR("playerbots", "Failed to equip bag %u for bot %s in slot %u",
+                PlayerbotBagEntry, bot->GetName().c_str(), uint32(slot));
+    }
+}
+
 void BotFactory::InitEquipment(bool incremental, bool second_chance)
 {
+    InitBags();
+
     std::unordered_map<uint8, std::vector<uint32>> items;
     uint32 blevel = bot->GetLevel();
     int32 delta = std::min(blevel, 10u);

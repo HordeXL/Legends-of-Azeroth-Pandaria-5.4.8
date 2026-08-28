@@ -401,6 +401,11 @@ Automatic random-bot login is not required by the custom queue systems. Arena, B
 LFG and world-boss staging load only the exact bots selected for the real player's
 request and clean them up afterward.
 
+Every random-bot login equips four `Royal Satchel` bags (28 slots each) before
+specialization, Caller or loadout preparation begins. A pre-existing bag that
+contains any item is never removed; an empty smaller bag may be upgraded. Gear
+initialization repeats this capacity check before replacing equipment.
+
 The active local test configuration currently enables the request-driven queue
 features and Combat Assistant:
 

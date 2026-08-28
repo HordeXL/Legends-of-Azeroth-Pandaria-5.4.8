@@ -15,6 +15,7 @@ public:
     void Randomize(bool incremental);
     void ClearEverything();
 
+    void InitBags();
     void InitEquipment(bool incremental, bool second_chance = false);
     void InitPet();
     void InitTalentsTree(bool reset);
