@@ -329,6 +329,15 @@ void BotFactory::InitPet()
         pet->InitStatsForLevel(bot->GetLevel());
         pet->SetLevel(bot->GetLevel());
         pet->SetHealth(pet->GetMaxHealth());
+
+        // MoP hunter pets use Ferocity/Tenacity/Cunning specializations rather
+        // than the removed pet talent tree. Random hunters use PvE Ferocity.
+        // Every controlled Playerbot pet (hunter, warlock, mage, etc.) stays
+        // passive so only the owner's explicit AI command starts an attack.
+        if (bot->GetClass() == CLASS_HUNTER &&
+            pet->getPetType() == HUNTER_PET)
+            pet->SetSpecialization(SPEC_PET_FEROCITY);
+        pet->SetReactState(REACT_PASSIVE);
     }
     else
     {
@@ -348,11 +357,31 @@ void BotFactory::InitPet()
             continue;
  
         if (spellInfo->IsPassive())
-        {
             continue;
+
+        // Growl and equivalent threat/taunt abilities are useful for solo
+        // tanking, but a raid pet must never pull aggro from the marked tank.
+        bool threatSpell = false;
+        for (SpellEffectInfo const& effect : spellInfo->Effects)
+        {
+            if (effect.Effect == SPELL_EFFECT_ATTACK_ME ||
+                effect.Effect == SPELL_EFFECT_THREAT ||
+                effect.Effect == SPELL_EFFECT_THREAT_ALL ||
+                effect.ApplyAuraName == SPELL_AURA_MOD_TAUNT ||
+                effect.ApplyAuraName == SPELL_AURA_MOD_THREAT ||
+                effect.ApplyAuraName == SPELL_AURA_MOD_TOTAL_THREAT)
+            {
+                threatSpell = true;
+                break;
+            }
         }
-        pet->ToggleAutocast(spellInfo, true);
+        pet->ToggleAutocast(spellInfo, !threatSpell);
     }
+
+    // Persist Ferocity (where applicable), passive reaction and the corrected
+    // autocast state so any permanent controlled pet cannot restore an old
+    // tanking setup on its next login.
+    pet->SavePetToDB();
 }
 namespace
 {

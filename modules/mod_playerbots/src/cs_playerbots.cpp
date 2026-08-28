@@ -280,6 +280,7 @@ struct WorldBossStagedCandidate
 {
     uint32 Guid = 0;
     std::string Name;
+    uint8 Class = 0;
     WorldBossPreviewRole Role = WorldBossPreviewRole::None;
     Specializations Specialization = SPEC_NONE;
     uint32 PvpItems = 0;
@@ -293,123 +294,98 @@ struct WorldBossStagedCandidate
     uint32 CleanupReadyAt = 0;
 };
 
-struct WorldBossBuffRolePlan
+uint16 GetWorldBossClassBit(uint8 playerClass)
 {
-    bool Valid = false;
-    uint32 RankCost = 0;
-    std::vector<uint32> CandidateIndices;
-};
-
-struct WorldBossBuffCompositionPlan
-{
-    bool Valid = false;
-    uint32 RankCost = 0;
-    std::array<std::vector<uint32>, 3> CandidateIndices;
-};
-
-bool HasBetterWorldBossRank(uint32 rankCost,
-    std::vector<uint32> const& indices, WorldBossBuffRolePlan const& current)
-{
-    return !current.Valid || rankCost < current.RankCost ||
-        (rankCost == current.RankCost &&
-            std::lexicographical_compare(indices.begin(), indices.end(),
-                current.CandidateIndices.begin(), current.CandidateIndices.end()));
+    return playerClass < 16 ? uint16(1u << playerClass) : 0;
 }
 
-std::array<WorldBossBuffRolePlan, 256> BuildWorldBossBuffRolePlans(
-    std::vector<WorldBossStagedCandidate> const& candidates, uint32 wanted)
+uint8 CountWorldBossClasses(uint16 mask)
 {
-    std::vector<std::array<WorldBossBuffRolePlan, 256>> plans(wanted + 1);
-    plans[0][0].Valid = true;
-
-    for (uint32 candidateIndex = 0; candidateIndex < candidates.size();
-        ++candidateIndex)
+    uint8 count = 0;
+    while (mask)
     {
-        uint32 upper = std::min<uint32>(wanted, candidateIndex + 1);
-        for (uint32 selected = upper; selected > 0; --selected)
-        {
-            for (uint32 mask = 0; mask < 256; ++mask)
-            {
-                WorldBossBuffRolePlan const& previous = plans[selected - 1][mask];
-                if (!previous.Valid)
-                    continue;
-
-                uint8 combinedMask = uint8(mask) |
-                    GetWorldBossRaidBuffMask(candidates[candidateIndex].Specialization);
-                uint32 rankCost = previous.RankCost + candidateIndex;
-                std::vector<uint32> indices = previous.CandidateIndices;
-                indices.push_back(candidateIndex);
-                WorldBossBuffRolePlan& target = plans[selected][combinedMask];
-                if (HasBetterWorldBossRank(rankCost, indices, target))
-                {
-                    target.Valid = true;
-                    target.RankCost = rankCost;
-                    target.CandidateIndices.swap(indices);
-                }
-            }
-        }
+        count += mask & 1;
+        mask >>= 1;
     }
-    return plans[wanted];
+    return count;
 }
 
-bool OptimizeWorldBossBuffComposition(
-    std::array<std::vector<WorldBossStagedCandidate>, 3> const& candidates,
-    std::array<uint32, 3> const& wanted, Specializations requesterSpecialization,
-    std::array<std::vector<uint32>, 3>& selected, uint8& coveredMask)
+bool SelectWorldBossDiverseRole(
+    std::vector<WorldBossStagedCandidate> const& candidates, uint32 wanted,
+    uint8 requesterClass, bool requesterHasRole, uint8& coveredBuffs,
+    std::vector<uint32>& selected, uint16& selectedClasses)
 {
-    std::array<WorldBossBuffCompositionPlan, 256> combined;
-    uint8 requesterMask = GetWorldBossRaidBuffMask(requesterSpecialization);
-    combined[requesterMask].Valid = true;
-
-    for (size_t roleIndex = 0; roleIndex < candidates.size(); ++roleIndex)
-    {
-        std::array<WorldBossBuffRolePlan, 256> rolePlans =
-            BuildWorldBossBuffRolePlans(candidates[roleIndex], wanted[roleIndex]);
-        std::array<WorldBossBuffCompositionPlan, 256> next;
-        for (uint32 existingMask = 0; existingMask < 256; ++existingMask)
-        {
-            if (!combined[existingMask].Valid)
-                continue;
-            for (uint32 roleMask = 0; roleMask < 256; ++roleMask)
-            {
-                if (!rolePlans[roleMask].Valid)
-                    continue;
-                uint8 resultMask = uint8(existingMask | roleMask);
-                uint32 rankCost = combined[existingMask].RankCost +
-                    rolePlans[roleMask].RankCost;
-                WorldBossBuffCompositionPlan& target = next[resultMask];
-                if (target.Valid && target.RankCost <= rankCost)
-                    continue;
-                target = combined[existingMask];
-                target.Valid = true;
-                target.RankCost = rankCost;
-                target.CandidateIndices[roleIndex] =
-                    rolePlans[roleMask].CandidateIndices;
-            }
-        }
-        combined = next;
-    }
-
-    WorldBossBuffCompositionPlan const* best = nullptr;
-    coveredMask = 0;
-    for (uint32 mask = 0; mask < 256; ++mask)
-    {
-        WorldBossBuffCompositionPlan const& plan = combined[mask];
-        if (!plan.Valid)
-            continue;
-        if (!best || CountWorldBossRaidBuffs(uint8(mask)) >
-                CountWorldBossRaidBuffs(coveredMask) ||
-            (CountWorldBossRaidBuffs(uint8(mask)) ==
-                CountWorldBossRaidBuffs(coveredMask) &&
-                plan.RankCost < best->RankCost))
-        {
-            best = &plan;
-            coveredMask = uint8(mask);
-        }
-    }
-    if (!best)
+    selected.clear();
+    if (wanted > candidates.size())
         return false;
-    selected = best->CandidateIndices;
+
+    std::set<uint32> selectedSet;
+    uint16 usedClasses = requesterHasRole ?
+        GetWorldBossClassBit(requesterClass) : 0;
+
+    auto select = [&](uint32 index)
+    {
+        selected.push_back(index);
+        selectedSet.insert(index);
+        usedClasses |= GetWorldBossClassBit(candidates[index].Class);
+        coveredBuffs |= GetWorldBossRaidBuffMask(
+            candidates[index].Specialization);
+    };
+
+    // Candidates have already been ordered by PvE suitability. Take the best
+    // representative of every available class before permitting a duplicate.
+    // In a 25-player raid this yields all five healer classes and every DPS
+    // class (counting the requester when they fill that role).
+    for (uint32 index = 0; index < candidates.size() &&
+        selected.size() < wanted; ++index)
+    {
+        uint16 classBit = GetWorldBossClassBit(candidates[index].Class);
+        if (!classBit || usedClasses & classBit)
+            continue;
+        select(index);
+    }
+
+    // Fill the remaining role slots. Preserve complete raid-buff coverage
+    // first, then prefer fewer PvP pieces and the highest item level. Exact
+    // gear ties are randomized so repeated Calls need not use the same bots.
+    while (selected.size() < wanted)
+    {
+        uint8 bestNewBuffs = 0;
+        uint32 bestPvpItems = std::numeric_limits<uint32>::max();
+        uint32 bestItemLevel = 0;
+        std::vector<uint32> tied;
+        for (uint32 index = 0; index < candidates.size(); ++index)
+        {
+            if (selectedSet.count(index))
+                continue;
+
+            uint8 newBuffs = CountWorldBossRaidBuffs(uint8(
+                GetWorldBossRaidBuffMask(candidates[index].Specialization) &
+                ~coveredBuffs));
+            if (tied.empty() || newBuffs > bestNewBuffs ||
+                (newBuffs == bestNewBuffs &&
+                    candidates[index].PvpItems < bestPvpItems) ||
+                (newBuffs == bestNewBuffs &&
+                    candidates[index].PvpItems == bestPvpItems &&
+                    candidates[index].AverageItemLevel > bestItemLevel))
+            {
+                bestNewBuffs = newBuffs;
+                bestPvpItems = candidates[index].PvpItems;
+                bestItemLevel = candidates[index].AverageItemLevel;
+                tied.clear();
+                tied.push_back(index);
+            }
+            else if (newBuffs == bestNewBuffs &&
+                candidates[index].PvpItems == bestPvpItems &&
+                candidates[index].AverageItemLevel == bestItemLevel)
+                tied.push_back(index);
+        }
+
+        if (tied.empty())
+            return false;
+        select(tied[urand(0, uint32(tied.size() - 1))]);
+    }
+    selectedClasses = usedClasses;
     return true;
 }
 
@@ -2854,15 +2830,8 @@ public:
 
             SoloArenaPreviewCandidate gear;
             ReadSoloArenaGear(fields[7].GetString(), gear);
-            // This is an audit threshold, not an equipment mutation. The
-            // future coordinator must supply PvE gear separately and must
-            // journal/restore it before it may form a raid.
             if (gear.EquippedItems < 15 || gear.AverageItemLevel < 450)
-            {
                 ++rejectedGear;
-                continue;
-            }
-
             uint32* count = nullptr;
             size_t sampleIndex = 0;
             if (role == WorldBossPreviewRole::Tank)
@@ -2912,7 +2881,7 @@ public:
             requiredHealers, availableHealers, joinedSamples(samples[1]).c_str(),
             requiredDamage, availableDamage, joinedSamples(samples[2]).c_str());
         handler->PSendSysMessage(
-            "Audit filters: wrong/neutral faction=%u, unknown spec=%u, below 15 equipped or item-level 450=%u. No bot was logged in, grouped, equipped, or moved.",
+            "Audit filters: wrong/neutral faction=%u, unknown spec=%u. Undergeared candidates retained=%u because Call supplies T16 armor and a role cloak. No bot was logged in, grouped, equipped, or moved.",
             rejectedFaction, rejectedSpec, rejectedGear);
         return true;
     }
@@ -4792,7 +4761,7 @@ bool StartWorldBossStage(Player* requester, Creature* caller, Creature* boss,
     uint32 minAccount = sPlayerbotAIConfig->randomBotAccounts.front();
     uint32 maxAccount = sPlayerbotAIConfig->randomBotAccounts.back();
     QueryResult result = CharacterDatabase.PQuery(
-        "SELECT guid,name,race,talentTree,activespec,equipmentCache,"
+        "SELECT guid,name,race,class,talentTree,activespec,equipmentCache,"
         "map,position_x,position_y,position_z,orientation "
         "FROM characters WHERE account >= %u AND account <= %u AND level = %u AND online = 0 "
         "AND guid NOT IN (SELECT memberGuid FROM group_member) ORDER BY guid",
@@ -4819,10 +4788,10 @@ bool StartWorldBossStage(Player* requester, Creature* caller, Creature* boss,
             continue;
 
         uint32 specs[MAX_TALENT_SPECS] = { 0, 0 };
-        std::istringstream talentTrees(fields[3].GetString());
+        std::istringstream talentTrees(fields[4].GetString());
         for (uint8 spec = 0; spec < MAX_TALENT_SPECS; ++spec)
             talentTrees >> specs[spec];
-        uint8 activeSpec = fields[4].GetUInt8();
+        uint8 activeSpec = fields[5].GetUInt8();
         if (activeSpec >= MAX_TALENT_SPECS)
             activeSpec = 0;
         Specializations specialization = Specializations(specs[activeSpec]);
@@ -4832,31 +4801,31 @@ bool StartWorldBossStage(Player* requester, Creature* caller, Creature* boss,
             continue;
 
         SoloArenaPreviewCandidate gear;
-        ReadSoloArenaGear(fields[5].GetString(), gear);
-        if (gear.EquippedItems < 15 || gear.AverageItemLevel < 450)
-            continue;
+        ReadSoloArenaGear(fields[6].GetString(), gear);
 
         size_t roleIndex = role == WorldBossPreviewRole::Tank ? 0 :
             (role == WorldBossPreviewRole::Healer ? 1 : 2);
         WorldBossStagedCandidate candidate;
         candidate.Guid = guidLow;
         candidate.Name = fields[1].GetString();
+        candidate.Class = fields[3].GetUInt8();
         candidate.Role = role;
         candidate.Specialization = specialization;
         candidate.PvpItems = gear.PvpItems;
         candidate.AverageItemLevel = gear.AverageItemLevel;
-        candidate.OriginalMap = fields[6].GetUInt32();
-        candidate.OriginalX = fields[7].GetFloat();
-        candidate.OriginalY = fields[8].GetFloat();
-        candidate.OriginalZ = fields[9].GetFloat();
-        candidate.OriginalO = fields[10].GetFloat();
+        candidate.OriginalMap = fields[7].GetUInt32();
+        candidate.OriginalX = fields[8].GetFloat();
+        candidate.OriginalY = fields[9].GetFloat();
+        candidate.OriginalZ = fields[10].GetFloat();
+        candidate.OriginalO = fields[11].GetFloat();
         candidates[roleIndex].push_back(candidate);
     }
     while (result->NextRow());
 
-    // Prefer raid-oriented characters without rewriting their inventory. A
-    // lower number of equipped PvP pieces wins; within that, use the higher
-    // average item level. The GUID tie-breaker keeps selection deterministic.
+    // Prefer raid-oriented starting gear. A lower number of equipped PvP
+    // pieces wins; within that, use the higher average item level. No minimum
+    // rejects a class: every selected bot receives T16 armor and a role cloak
+    // after login. The GUID tie-breaker keeps the base order deterministic.
     auto pveOrder = [](WorldBossStagedCandidate const& left,
         WorldBossStagedCandidate const& right)
     {
@@ -4882,20 +4851,35 @@ bool StartWorldBossStage(Player* requester, Creature* caller, Creature* boss,
         return false;
     }
 
+    WorldBossPreviewRole requesterRole = GetWorldBossPreviewRole(
+        requester->GetSpecialization());
+    std::array<std::vector<uint32>, 3> selectedIndices;
+    std::array<uint16, 3> selectedClasses = {{ 0, 0, 0 }};
+    uint8 coveredBuffs = GetWorldBossRaidBuffMask(
+        requester->GetSpecialization());
     std::array<uint32, 3> selectedCounts =
         {{ neededTanks, neededHealers, neededDamage }};
-    std::array<std::vector<uint32>, 3> selectedIndices;
-    uint8 coveredBuffs = 0;
-    if (!OptimizeWorldBossBuffComposition(candidates, selectedCounts,
-        requester->GetSpecialization(), selectedIndices, coveredBuffs))
+    for (size_t roleIndex = 0; roleIndex < candidates.size(); ++roleIndex)
     {
-        error = "raid-buff composition optimizer could not form the requested role counts";
-        return false;
+        WorldBossPreviewRole role = roleIndex == 0 ?
+            WorldBossPreviewRole::Tank : (roleIndex == 1 ?
+                WorldBossPreviewRole::Healer : WorldBossPreviewRole::Damage);
+        if (!SelectWorldBossDiverseRole(candidates[roleIndex],
+            selectedCounts[roleIndex], requester->GetClass(),
+            requesterRole == role, coveredBuffs, selectedIndices[roleIndex],
+            selectedClasses[roleIndex]))
+        {
+            error = "class-diverse raid composition could not form the requested role counts";
+            return false;
+        }
     }
 
     TC_LOG_INFO("server",
-        "WorldBoss Call %u optimized raid-buff coverage=%u/8 categories=%s",
-        raidSize, uint32(CountWorldBossRaidBuffs(coveredBuffs)),
+        "WorldBoss Call %u class-diverse composition classes=tank:%u healer:%u damage:%u raid-buff coverage=%u/8 categories=%s",
+        raidSize, uint32(CountWorldBossClasses(selectedClasses[0])),
+        uint32(CountWorldBossClasses(selectedClasses[1])),
+        uint32(CountWorldBossClasses(selectedClasses[2])),
+        uint32(CountWorldBossRaidBuffs(coveredBuffs)),
         DescribeWorldBossRaidBuffs(coveredBuffs).c_str());
 
     auto stageRole = [](std::vector<WorldBossStagedCandidate> const& roleCandidates,
@@ -5324,6 +5308,26 @@ void UpdateWorldBossStagedRaid(uint32 diff)
             BotFactory factory(bot, bot->GetLevel());
             factory.InitTalentsTree(false);
             factory.InitGlyphs();
+            factory.InitPet();
+            bool expectsPersistentPet = bot->GetClass() == CLASS_HUNTER ||
+                bot->GetClass() == CLASS_WARLOCK ||
+                bot->GetSpecialization() == SPEC_MAGE_FROST;
+            if (Guardian* guardian = bot->GetGuardianPet())
+            {
+                Pet* controlledPet = guardian->ToPet();
+                TC_LOG_INFO("server",
+                    "WorldBoss PvE pet prepared owner=%s guid=%u class=%u pet-entry=%u pet-number=%u pet-spec=%u reaction=%u",
+                    bot->GetName().c_str(), staged.first,
+                    uint32(bot->GetClass()), guardian->GetEntry(),
+                    controlledPet ? controlledPet->GetCharmInfo()->GetPetNumber() : 0,
+                    controlledPet ? uint32(controlledPet->GetSpecializationId()) : 0,
+                    uint32(guardian->GetReactState()));
+            }
+            else if (expectsPersistentPet)
+                TC_LOG_WARN("server",
+                    "WorldBoss PvE pet missing after preparation owner=%s guid=%u class=%u specialization=%u",
+                    bot->GetName().c_str(), staged.first,
+                    uint32(bot->GetClass()), uint32(bot->GetSpecialization()));
             uint32 pveItemSet = 0;
             uint32 armorChanged = 0;
             std::string armorError;

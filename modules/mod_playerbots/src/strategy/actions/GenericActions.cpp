@@ -7,6 +7,28 @@
 
 #include "CreatureAI.h"
 #include "Playerbots.h"
+#include "SpellAuraDefines.h"
+
+namespace
+{
+bool IsPlayerbotPetThreatSpell(SpellInfo const* spellInfo)
+{
+    if (!spellInfo)
+        return false;
+
+    for (SpellEffectInfo const& effect : spellInfo->Effects)
+    {
+        if (effect.Effect == SPELL_EFFECT_ATTACK_ME ||
+            effect.Effect == SPELL_EFFECT_THREAT ||
+            effect.Effect == SPELL_EFFECT_THREAT_ALL ||
+            effect.ApplyAuraName == SPELL_AURA_MOD_TAUNT ||
+            effect.ApplyAuraName == SPELL_AURA_MOD_THREAT ||
+            effect.ApplyAuraName == SPELL_AURA_MOD_TOTAL_THREAT)
+            return true;
+    }
+    return false;
+}
+}
 
 bool MeleeAction::isUseful()
 {
@@ -24,6 +46,7 @@ bool TogglePetSpellAutoCastAction::Execute(Event event)
     {
         return false;
     }
+    pet->SetReactState(REACT_PASSIVE);
     // hack on high level spell after low level initialization
     std::vector<unsigned int> shouldRemove;
     for (unsigned int& m_autospell : pet->m_autospells)
@@ -58,6 +81,11 @@ bool TogglePetSpellAutoCastAction::Execute(Event event)
         {
             shouldApply = false;
         }
+        // This maintenance action used to re-enable Growl/Suffering and undo
+        // the PvE preparation performed by BotFactory. Keep taunt and direct
+        // threat effects disabled for every Playerbot-controlled pet class.
+        if (IsPlayerbotPetThreatSpell(spellInfo))
+            shouldApply = false;
         bool isAutoCast = false;
         for (unsigned int& m_autospell : pet->m_autospells)
         {
@@ -91,6 +119,11 @@ bool PetAttackAction::Execute(Event event)
     }
 
     if (!bot->IsValidAttackTarget(target))
+    {
+        return false;
+    }
+
+    if (!target->IsInCombat() && bot->GetVictim() != target)
     {
         return false;
     }

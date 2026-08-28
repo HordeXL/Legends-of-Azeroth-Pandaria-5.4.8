@@ -415,6 +415,23 @@ only one Mana Tide is active at once, and Spirit Link/Healing Tide are staggered
 instead of being spent together. Personal damage totems and stackable healing
 totems remain independent.
 
+World-boss composition maximizes class diversity inside each role before
+filling duplicate-class slots. A 25-player Alliance pool therefore uses one
+Paladin, Priest, Shaman, Monk and Druid healer when all five are free, and takes
+one representative of every available DPS class before adding further damage
+bots. Low starting item level no longer excludes a valid class; selected bots
+receive their specialization's five-piece item-level 566 T16 set and the
+appropriate legendary cloak. Remaining slots prioritize missing raid buffs,
+then lower PvP-piece count and higher starting item level, with random choice
+between exact gear ties.
+
+Random-bot hunter pets use the PvE Ferocity specialization. Every permanent
+Playerbot pet—including Hunter, Warlock and Mage pets—uses passive reaction.
+Taunt and direct threat-generating pet spells are disabled both during pet
+initialization and later autocast maintenance, and a pet attack command is
+refused until its target has already entered combat (or the owner is directly
+attacking that target), preventing the pet from pulling for the raid.
+
 The active local test configuration currently enables the request-driven queue
 features and Combat Assistant:
 
