@@ -48,6 +48,7 @@ class Item;
 class LoginQueryHolder;
 class Object;
 class Player;
+class GameClient;
 class Quest;
 class SpellCastTargets;
 class Unit;
@@ -317,6 +318,7 @@ class TC_GAME_API WorldSession
         AccountTypes GetSecurity() const { return _security; }
         uint32 GetAccountId() const { return _accountId; }
         Player* GetPlayer() const { return _player; }
+        GameClient* GetGameClient() const { return _gameClient; }
         std::string const& GetPlayerName() const;
         std::string GetPlayerInfo() const;
 
@@ -1261,6 +1263,7 @@ class TC_GAME_API WorldSession
 
         uint32 m_GUIDLow;                                   // set loggined or recently logout player (while m_playerRecentlyLogout set)
         Player* _player;
+        GameClient* _gameClient;
         std::shared_ptr<WorldSocket> m_Socket;
         std::string m_Address;
 
