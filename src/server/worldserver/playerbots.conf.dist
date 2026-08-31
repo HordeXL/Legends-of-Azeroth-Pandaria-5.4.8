@@ -783,9 +783,9 @@ AiPlayerbot.AutoQueue.Battleground = 0
 AiPlayerbot.AutoQueue.Arena = 0
 
 # Observer interval in seconds. Values below 1 are clamped to 1 second.
-AiPlayerbot.AutoQueue.CheckInterval = 5
+AiPlayerbot.AutoQueue.CheckInterval = 1
 
-# Reserved for later functional patches. Patch 0001 only reports this setting.
+# Maximum LFG fillers reserved during one observer pass.
 AiPlayerbot.AutoQueue.MaxBotsPerCycle = 4
 
 # Dry-run solo 2v2 candidate screening. These settings are read by the

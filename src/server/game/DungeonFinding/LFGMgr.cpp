@@ -1572,8 +1572,25 @@ bool LFGMgr::AddProposal(LfgProposal& proposal)
         if (GetActiveState(itr.GetGUID()) == LFG_STATE_PROPOSAL)
             return false;
 
+    // Headless participants cannot send CMSG_LFG_PROPOSAL_RESULT. Mark them
+    // accepted before storing/sending the proposal so the real player's
+    // answer can complete the ready check immediately.
+    uint32 autoAccepted = 0;
+    for (auto& playerPair : proposal.players)
+    {
+        if (ProposalAutoAcceptPlayers.count(playerPair.first))
+        {
+            playerPair.second.accept = LFG_ANSWER_AGREE;
+            ++autoAccepted;
+        }
+    }
+
     proposal.id = ++m_lfgProposalId;
     ProposalsStore[m_lfgProposalId] = proposal;
+
+    if (autoAccepted)
+        TC_LOG_INFO("server", "LFG proposal %u pre-accepted %u server-controlled participants",
+            proposal.id, autoAccepted);
 
     // Announce proposal to queuers
     for (auto&& it : proposal.players)
@@ -1625,6 +1642,17 @@ bool LFGMgr::AnswerProposalForPlayer(ObjectGuid guid, bool accept)
 
     UpdateProposal(proposalId, guid, accept);
     return true;
+}
+
+void LFGMgr::SetProposalAutoAccept(ObjectGuid guid, bool enabled)
+{
+    if (!guid)
+        return;
+
+    if (enabled)
+        ProposalAutoAcceptPlayers.insert(guid);
+    else
+        ProposalAutoAcceptPlayers.erase(guid);
 }
 
 void LFGMgr::UpdateProposal(uint32 proposalId, ObjectGuid guid, bool accept)

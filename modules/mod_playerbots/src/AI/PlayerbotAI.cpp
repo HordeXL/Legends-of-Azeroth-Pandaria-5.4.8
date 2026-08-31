@@ -157,6 +157,11 @@ PlayerbotAI::PlayerbotAI(Player* bot)
 
 PlayerbotAI::~PlayerbotAI()
 {
+    // Logout can be initiated by a world-thread queue/group coordinator while
+    // the map worker is still finishing an AI action. Do not destroy cached
+    // Action/Value objects until every action entry point has returned.
+    std::lock_guard<std::recursive_mutex> strategyLock(_strategyMutex);
+
     for (uint8 i = 0; i < BOT_STATE_MAX; i++)
     {
         if (_engines[i])
@@ -165,6 +170,44 @@ PlayerbotAI::~PlayerbotAI()
 
     if (_aiObjectContext)
         delete _aiObjectContext;
+}
+
+void PlayerbotAI::SetLfgAutoQueueControl(bool reserved,
+    uint32 requesterGuid, bool initializeInDungeon)
+{
+    _lfgAutoQueueRequesterGuid.store(requesterGuid);
+    if (initializeInDungeon)
+        _lfgAutoQueueInitializePending.store(true);
+    else if (!requesterGuid)
+        _lfgAutoQueueInitializePending.store(false);
+    // Publish the reservation flag last. In particular, a map update which
+    // observes reservation release must also observe the pending in-dungeon
+    // initialization request posted above.
+    _lfgAutoQueueReserved.store(reserved);
+}
+
+bool PlayerbotAI::IsLfgAutoQueueReserved() const
+{
+    return _lfgAutoQueueReserved.load();
+}
+
+bool PlayerbotAI::CanLfgAutoQueueEngage(Unit const* target) const
+{
+    uint32 requesterGuid = _lfgAutoQueueRequesterGuid.load();
+    if (!requesterGuid)
+        return true;
+
+    Player* requester = ObjectAccessor::FindConnectedPlayer(
+        ObjectGuid::Create<HighGuid::Player>(requesterGuid));
+    if (!requester || !requester->IsInWorld())
+        return false;
+
+    if (requester->IsInCombat() || requester->GetVictim() ||
+        requester->HasUnitState(UNIT_STATE_MELEE_ATTACKING) ||
+        !requester->getAttackers().empty())
+        return true;
+
+    return target && target->GetVictim() == requester;
 }
 
 uint32 PlayerbotAI::GetReactDelay()
@@ -246,6 +289,36 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
         bot->IsDuringRemoveFromWorld())
         return;
 
+    // Playerbot-controlled pets must never acquire targets on their own. This
+    // covers regular pets (hunter/warlock), permanent guardians (DK ghoul,
+    // water elemental) and any other class guardian exposed through the same
+    // owner slot. The combat strategy explicitly commands the pet only after
+    // HasEngagedTarget confirms that its owner has started the attack.
+    if (Guardian* pet = bot->GetGuardianPet())
+    {
+        pet->SetReactState(REACT_PASSIVE);
+        if (Unit* petTarget = pet->GetVictim())
+        {
+            if (!HasEngagedTarget(petTarget))
+            {
+                pet->AttackStop();
+                pet->SetTarget(ObjectGuid::Empty);
+                if (CharmInfo* charmInfo = pet->GetCharmInfo())
+                {
+                    charmInfo->SetIsCommandAttack(false);
+                    charmInfo->SetIsAtStay(false);
+                    charmInfo->SetIsFollowing(false);
+                    charmInfo->SetIsCommandFollow(true);
+                    charmInfo->SetIsReturning(true);
+                    charmInfo->SetCommandState(COMMAND_FOLLOW);
+                }
+                pet->GetMotionMaster()->Clear();
+                pet->GetMotionMaster()->MoveFollow(
+                    bot, PET_FOLLOW_DIST, pet->GetFollowAngle());
+            }
+        }
+    }
+
     // Playerbot sessions are not driven through WorldSession's normal socket
     // receive queue. Process synthetic time-sync replies here, after the login
     // callback and the outgoing SendPacket stack have completely returned.
@@ -255,6 +328,112 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
         response << _pendingTimeSyncCounters.front() << uint32(getMSTime());
         _pendingTimeSyncCounters.pop();
         bot->GetSession()->HandleTimeSyncResp(response);
+    }
+
+    // Instance navmeshes occasionally place a following bot on geometry
+    // below a narrow ramp/platform (notably the Hollowed Out Tree in Siege of
+    // Niuzao Temple). Recover only the unambiguous "directly below the real
+    // player and separated by collision" case, after it persists for a full
+    // second. The narrow 2D/vertical limits avoid skipping legitimate paths
+    // between different dungeon floors.
+    Player* followRecoveryMaster = GetMaster();
+    bool canRecoverFollow = followRecoveryMaster &&
+        !GET_PLAYERBOT_AI(followRecoveryMaster) &&
+        followRecoveryMaster->IsInWorld() &&
+        followRecoveryMaster->GetMap() == bot->GetMap() &&
+        bot->GetMap() && bot->GetMap()->Instanceable() &&
+        !bot->IsBeingTeleported() &&
+        !followRecoveryMaster->IsBeingTeleported() &&
+        !bot->GetVehicle() && !followRecoveryMaster->GetVehicle() &&
+        !bot->GetTransport() && !followRecoveryMaster->GetTransport();
+    bool invalidFollowPosition = canRecoverFollow &&
+        followRecoveryMaster->GetPositionZ() - bot->GetPositionZ() > 5.0f &&
+        bot->GetExactDist2d(followRecoveryMaster) < 12.0f &&
+        !bot->IsWithinLOSInMap(followRecoveryMaster);
+
+    if (invalidFollowPosition)
+    {
+        uint32 now = getMSTime();
+        if (!_invalidFollowPositionSince)
+            _invalidFollowPositionSince = now;
+        else if (getMSTimeDiff(_invalidFollowPositionSince, now) >= 1000)
+        {
+            float oldZ = bot->GetPositionZ();
+            float x, y, z;
+            followRecoveryMaster->GetClosePoint(x, y, z,
+                bot->GetObjectSize(), 1.5f,
+                static_cast<float>(M_PI));
+            z += 0.5f;
+            bot->GetMotionMaster()->Clear();
+            bot->NearTeleportTo(x, y, z,
+                followRecoveryMaster->GetOrientation());
+
+            if (Pet* pet = bot->GetPet())
+            {
+                float petX, petY, petZ;
+                bot->GetClosePoint(petX, petY, petZ,
+                    pet->GetObjectSize(), PET_FOLLOW_DIST,
+                    pet->GetFollowAngle());
+                petZ += 0.5f;
+                pet->GetMotionMaster()->Clear();
+                pet->NearTeleportTo(petX, petY, petZ,
+                    bot->GetOrientation());
+            }
+
+            TC_LOG_WARN("server",
+                "Playerbot recovered from invalid instance follow position bot=%s guid=%u map=%u old-z=%.2f master=%s master-z=%.2f",
+                bot->GetName().c_str(), bot->GetGUID().GetCounter(),
+                bot->GetMapId(), oldZ,
+                followRecoveryMaster->GetName().c_str(),
+                followRecoveryMaster->GetPositionZ());
+            _invalidFollowPositionSince = 0;
+        }
+    }
+    else
+        _invalidFollowPositionSince = 0;
+
+    // Strategy containers belong to this map update thread. The LFG
+    // coordinator only posts an atomic request so actions cannot be destroyed
+    // while Engine::DoNextAction is using them.
+    if (_lfgAutoQueueInitializePending.exchange(false))
+    {
+        uint32 requesterGuid = _lfgAutoQueueRequesterGuid.load();
+        Player* requester = requesterGuid ?
+            ObjectAccessor::FindConnectedPlayer(
+                ObjectGuid::Create<HighGuid::Player>(requesterGuid)) : nullptr;
+        Group* botGroup = bot->GetGroup(GroupSlot::Instance);
+        if (!botGroup)
+            botGroup = bot->GetGroup();
+        Group* requesterGroup = requester ?
+            requester->GetGroup(GroupSlot::Instance) : nullptr;
+        if (requester && !requesterGroup)
+            requesterGroup = requester->GetGroup();
+
+        if (requester && botGroup && requesterGroup == botGroup)
+        {
+            SetMaster(requester);
+            Reset(false);
+            ResetStrategies();
+            ChangeStrategy("+follow,-stay,-lfg,-bg", BOT_STATE_NON_COMBAT);
+        }
+        else if (requesterGuid)
+        {
+            // Teleport/group visibility may lag by one map tick.
+            _lfgAutoQueueInitializePending.store(true);
+        }
+    }
+
+    // A bot logged in only to fill an LFG request must not wander, grind or
+    // acquire an open-world target while the queue/proposal is being built.
+    // Its equipment/session maintenance remains available to the manager.
+    if (IsLfgAutoQueueReserved())
+    {
+        if (bot->IsInCombat())
+            bot->CombatStopWithPets(true);
+        bot->AttackStop();
+        bot->SetTarget(ObjectGuid::Empty);
+        SetNextCheckDelay(100);
+        return;
     }
 
     AllowActivity();
@@ -385,6 +564,11 @@ void PlayerbotAI::UpdateAIInternal([[maybe_unused]] uint32 elapsed, bool minimal
 
 bool PlayerbotAI::DoSpecificAction(std::string const name, Event event, bool silent, std::string const qualifier)
 {
+    // Preparation buffs and a few administrative commands call this entry
+    // point from the world thread. It shares cached Action objects and the AI
+    // context with DoNextAction, so both paths must use the same lifetime lock.
+    std::lock_guard<std::recursive_mutex> strategyLock(_strategyMutex);
+
     std::ostringstream out;
 
     for (uint8 i = 0; i < BOT_STATE_MAX; i++)
@@ -716,6 +900,8 @@ bool PlayerbotAI::AllowActivity(ActivityType activityType, bool checkNow)
 
 void PlayerbotAI::Reset(bool full)
 {
+    std::lock_guard<std::recursive_mutex> strategyLock(_strategyMutex);
+
     if (bot->HasUnitState(UNIT_STATE_IN_FLIGHT))
         return;
 
@@ -775,6 +961,8 @@ void PlayerbotAI::Reset(bool full)
 
 void PlayerbotAI::ResetStrategies()
 {
+    std::lock_guard<std::recursive_mutex> strategyLock(_strategyMutex);
+
     for (uint8 i = 0; i < BOT_STATE_MAX; i++)
         _engines[i]->removeAllStrategies();
 
@@ -822,6 +1010,8 @@ void PlayerbotAI::ChangeEngine(BotState type)
 }
 void PlayerbotAI::ChangeStrategy(std::string const names, BotState type)
 {
+    std::lock_guard<std::recursive_mutex> strategyLock(_strategyMutex);
+
     Engine* e = _engines[type];
     if (!e)
         return;
@@ -831,6 +1021,8 @@ void PlayerbotAI::ChangeStrategy(std::string const names, BotState type)
 
 void PlayerbotAI::ClearStrategies(BotState type)
 {
+    std::lock_guard<std::recursive_mutex> strategyLock(_strategyMutex);
+
     Engine* e = _engines[type];
     if (!e)
         return;
@@ -840,6 +1032,8 @@ void PlayerbotAI::ClearStrategies(BotState type)
 
 std::vector<std::string> PlayerbotAI::GetStrategies(BotState type)
 {
+    std::lock_guard<std::recursive_mutex> strategyLock(_strategyMutex);
+
     Engine* e = _engines[type];
     if (!e)
         return std::vector<std::string>();
@@ -849,6 +1043,8 @@ std::vector<std::string> PlayerbotAI::GetStrategies(BotState type)
 
 void PlayerbotAI::DoNextAction(bool min)
 {
+    std::lock_guard<std::recursive_mutex> strategyLock(_strategyMutex);
+
     if (!bot->IsInWorld() || bot->IsBeingTeleported() || (GetMaster() && GetMaster()->IsBeingTeleported()))
     {
         SetNextCheckDelay(sPlayerbotAIConfig->globalCoolDown);
@@ -1357,6 +1553,8 @@ bool PlayerbotAI::IsOpposing(uint8 race1, uint8 race2)
 }
 bool PlayerbotAI::HasStrategy(std::string const name, BotState type)
 {
+    std::lock_guard<std::recursive_mutex> strategyLock(_strategyMutex);
+
     if (_engines[type])
         return _engines[type]->HasStrategy(name);
     return false;
@@ -1364,6 +1562,8 @@ bool PlayerbotAI::HasStrategy(std::string const name, BotState type)
 
 bool PlayerbotAI::ContainsStrategy(StrategyType type)
 {
+    std::lock_guard<std::recursive_mutex> strategyLock(_strategyMutex);
+
     for (uint8 i = 0; i < BOT_STATE_MAX; i++)
     {
         if (_engines[i]->HasStrategyType(type))
@@ -2604,6 +2804,14 @@ bool PlayerbotAI::CastSpell(uint32 spellId, Unit* target, Item* itemTarget)
     if (!target)
         target = bot;
 
+    // Apply the same real-player pull ownership to direct class spell
+    // actions. Many rotations cast through this function without first
+    // calling AttackAction, so guarding only the melee/target-selection path
+    // would still allow an autonomous ranged pull.
+    if (target != bot && bot->IsValidAttackTarget(target) &&
+        !CanLfgAutoQueueEngage(target))
+        return false;
+
     Pet* pet = bot->GetPet();
     SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
     if (pet && pet->HasSpell(spellId))
@@ -3392,4 +3600,42 @@ bool PlayerbotAI::HasAggro(Unit* unit)
         return true;
     }
     return false;
+}
+
+bool PlayerbotAI::HasEngagedTarget(Unit* target) const
+{
+    if (!bot || !target || !bot->IsValidAttackTarget(target))
+        return false;
+
+    // Do not let a pet continue on an old target after its owner switches or
+    // clears targets. Threat from an earlier hit alone is not a current order.
+    Unit* ownerTarget = _aiObjectContext ?
+        _aiObjectContext->GetValue<Unit*>("current target")->Get() : nullptr;
+    if (ownerTarget != target)
+        return false;
+
+    // Melee and explicit auto-attacks establish a victim immediately.
+    if (bot->GetVictim() == target)
+        return true;
+
+    // Ranged and caster owners may not have a melee victim yet. Recognize a
+    // harmful cast aimed at this exact unit so their pet can assist as the
+    // owner's attack begins, rather than after an arbitrary party member pulls.
+    for (uint8 type = CURRENT_MELEE_SPELL; type < CURRENT_MAX_SPELL; ++type)
+    {
+        Spell* spell = bot->GetCurrentSpell(CurrentSpellTypes(type));
+        if (!spell || spell->m_targets.GetUnitTargetGUID() != target->GetGUID())
+            continue;
+
+        SpellInfo const* spellInfo = spell->GetSpellInfo();
+        if (spellInfo && spellInfo->DmgClass != SPELL_DAMAGE_CLASS_NONE &&
+            !bot->IsFriendlyTo(target))
+            return true;
+    }
+
+    // Instant attacks may already have finished by the next AI update. A
+    // positive threat entry proves that this owner actually engaged the PvE
+    // target; target combat caused solely by another group member does not.
+    return target->CanHaveThreatList() &&
+        target->GetThreatManager().getThreat(bot) > 0.0f;
 }

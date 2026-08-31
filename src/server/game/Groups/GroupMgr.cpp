@@ -30,8 +30,17 @@ GroupMgr::GroupMgr()
 
 GroupMgr::~GroupMgr()
 {
+    Unload();
+}
+
+void GroupMgr::Unload()
+{
     for (GroupContainer::iterator itr = GroupStore.begin(); itr != GroupStore.end(); ++itr)
         delete itr->second;
+
+    GroupStore.clear();
+    GroupDbStore.clear();
+    GroupByPlayerStore.clear();
 }
 
 uint32 GroupMgr::GenerateNewGroupDbStoreId()

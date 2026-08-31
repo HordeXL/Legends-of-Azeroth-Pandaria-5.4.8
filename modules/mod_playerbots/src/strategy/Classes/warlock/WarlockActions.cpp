@@ -8,6 +8,15 @@
 #include "Event.h"
 #include "Playerbots.h"
 
+namespace
+{
+bool IsPvPControlTarget(Player* bot, Unit* target)
+{
+    return bot && target && (bot->InBattleground() || bot->InArena()) &&
+        target->GetCharmerOrOwnerPlayerOrPlayerItself();
+}
+}
+
 bool CastDrainSoulAction::isUseful() { /*return AI_VALUE2(uint32, "item count", "soul shard") < 10;*/ return std::rand() % 5 < 2; }
 
 Value<Unit*>* CastBanishAction::GetTargetValue() { return context->GetValue<Unit*>("cc target", "banish"); }
@@ -18,9 +27,35 @@ Value<Unit*>* CastFearOnCcAction::GetTargetValue() { return context->GetValue<Un
 
 bool CastFearOnCcAction::Execute(Event event) { return botAI->CastSpell("fear", GetTarget()); }
 
-bool CastFearOnCcAction::isPossible() { return true; }
+bool CastFearOnCcAction::isPossible()
+{
+    return IsPvPControlTarget(bot, GetTarget()) &&
+        CastBuffSpellAction::isPossible();
+}
 
-bool CastFearOnCcAction::isUseful() { return true; }
+bool CastFearOnCcAction::isUseful()
+{
+    return IsPvPControlTarget(bot, GetTarget()) &&
+        CastBuffSpellAction::isUseful();
+}
+
+bool CastFearAction::isUseful()
+{
+    return IsPvPControlTarget(bot, GetTarget()) &&
+        CastDebuffSpellAction::isUseful();
+}
+
+bool CastMortalCoilAction::isUseful()
+{
+    return IsPvPControlTarget(bot, GetTarget()) &&
+        CastSpellAction::isUseful();
+}
+
+bool CastBloodHorrorAction::isUseful()
+{
+    return IsPvPControlTarget(bot, GetTarget()) &&
+        CastSpellAction::isUseful();
+}
 
 bool CastLifeTapAction::isUseful() { return AI_VALUE2(uint8, "health", "self target") > sPlayerbotAIConfig->lowHealth; }
 

@@ -179,7 +179,7 @@ bool PlayerbotAIConfig::Initialize()
     if (!autoQueueBattlegroundMaxBotsPerCycle)
         autoQueueBattlegroundMaxBotsPerCycle = 1;
     autoQueueArena = sConfigMgr->GetBoolDefault("AiPlayerbot.AutoQueue.Arena", false);
-    autoQueueCheckInterval = sConfigMgr->GetIntDefault("AiPlayerbot.AutoQueue.CheckInterval", 5) * IN_MILLISECONDS;
+    autoQueueCheckInterval = sConfigMgr->GetIntDefault("AiPlayerbot.AutoQueue.CheckInterval", 1) * IN_MILLISECONDS;
     if (!autoQueueCheckInterval)
         autoQueueCheckInterval = IN_MILLISECONDS;
     autoQueueMaxBotsPerCycle = sConfigMgr->GetIntDefault("AiPlayerbot.AutoQueue.MaxBotsPerCycle", 4);

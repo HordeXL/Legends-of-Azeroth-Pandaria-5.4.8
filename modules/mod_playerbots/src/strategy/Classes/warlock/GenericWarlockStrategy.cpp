@@ -52,7 +52,10 @@ private:
     ACTION_NODE(curse_of_enfeeblement, "curse of enfeeblement");
     ACTION_NODE(shadow_bolt, "shadow bolt");
     ACTION_NODE_A(banish, "banish", "fear");
-    ACTION_NODE_A(fear, "fear", "howl of terror");
+    // Fear-type effects scatter PvE packs and can pull additional groups.
+    // The action itself remains available for player-controlled PvP targets,
+    // but never fall back to an unrestricted area fear.
+    ACTION_NODE(fear, "fear");
     ACTION_NODE(howl_of_terror, "howl of terror");
     ACTION_NODE(drain_life, "drain life");
     ACTION_NODE(life_tap, "life tap");

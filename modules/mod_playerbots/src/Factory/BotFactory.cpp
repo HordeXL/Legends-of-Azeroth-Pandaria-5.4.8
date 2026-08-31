@@ -1,8 +1,10 @@
 #include "BotFactory.h"
 
+#include <algorithm>
 #include <random>
 #include <set>
 #include <utility>
+#include <vector>
  
 #include "AccountMgr.h"
 #include "AiFactory.h"
@@ -167,6 +169,7 @@ void BotFactory::Randomize(bool incremental)
     InitTalentsTree(false);
     InitGlyphs();
     InitPet();
+    InitEquipmentForSpec();
  
     bot->SetMoney(urand(level * 100000, level * 5 * 100000));
     bot->SetHealth(bot->GetMaxHealth());
@@ -822,11 +825,85 @@ void BotFactory::InitBags()
 
 void BotFactory::InitEquipment(bool incremental, bool second_chance)
 {
+    InitEquipmentInternal(incremental, second_chance, false, false);
+}
+
+void BotFactory::InitMissingEquipment()
+{
+    InitEquipmentInternal(true, false, true, false);
+}
+
+void BotFactory::InitEquipmentForSpec()
+{
+    // The first pass repairs the main hand. A protection build which arrived
+    // with a two-hander cannot equip its shield until that swap has happened,
+    // so a second cheap pass completes dependent offhand combinations.
+    InitEquipmentInternal(true, false, true, true);
+    InitEquipmentInternal(true, false, true, true);
+}
+
+uint32 BotFactory::GetWeaponReferenceItemLevel() const
+{
+    // Weapons dominate damage output, so compare them with the character's
+    // actual core armor instead of accepting any level-appropriate weapon.
+    // Jewelry and cloaks are intentionally excluded because their item level
+    // can vary widely without representing the bot's combat tier.
+    static uint8 const armorSlots[] =
+    {
+        EQUIPMENT_SLOT_HEAD, EQUIPMENT_SLOT_SHOULDERS,
+        EQUIPMENT_SLOT_CHEST, EQUIPMENT_SLOT_WAIST,
+        EQUIPMENT_SLOT_LEGS, EQUIPMENT_SLOT_FEET,
+        EQUIPMENT_SLOT_WRISTS, EQUIPMENT_SLOT_HANDS
+    };
+
+    std::vector<uint32> levels;
+    for (uint8 slot : armorSlots)
+        if (Item* item = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot))
+            if (ItemTemplate const* itemTemplate = item->GetTemplate())
+                if (itemTemplate->ItemLevel)
+                    levels.push_back(itemTemplate->ItemLevel);
+
+    if (levels.empty())
+        return bot->GetLevel() >= 90 ? 450 : 0;
+
+    std::sort(levels.begin(), levels.end());
+    uint32 reference = levels[levels.size() / 2];
+    if (levels.size() % 2 == 0)
+        reference = (reference + levels[levels.size() / 2 - 1]) / 2;
+
+    return std::max(reference, bot->GetLevel() >= 90 ? 450u : 0u);
+}
+
+bool BotFactory::MoveEquippedItemToBag(uint8 slot)
+{
+    Item* item = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
+    if (!item)
+        return true;
+
+    uint16 position = uint16(INVENTORY_SLOT_BAG_0) << 8 | slot;
+    ItemPosCountVec destination;
+    if (bot->CanUnequipItem(position, false) != EQUIP_ERR_OK ||
+        bot->CanStoreItem(NULL_BAG, NULL_SLOT, destination, item, false) !=
+            EQUIP_ERR_OK)
+        return false;
+
+    bot->RemoveItem(INVENTORY_SLOT_BAG_0, slot, true);
+    bot->StoreItem(destination, item, true);
+    return true;
+}
+
+void BotFactory::InitEquipmentInternal(bool incremental, bool second_chance,
+                                       bool missingOnly, bool specCompatible)
+{
     InitBags();
 
     std::unordered_map<uint8, std::vector<uint32>> items;
     uint32 blevel = bot->GetLevel();
     int32 delta = std::min(blevel, 10u);
+    uint32 const weaponReferenceItemLevel = specCompatible ?
+        GetWeaponReferenceItemLevel() : 0;
+    uint32 const weaponMinimumItemLevel = weaponReferenceItemLevel > 35 ?
+        weaponReferenceItemLevel - 35 : weaponReferenceItemLevel;
 
     for (int32 slot = (int32)EQUIPMENT_SLOT_TABARD; slot >= (int32)EQUIPMENT_SLOT_START; slot--)
     {
@@ -846,6 +923,40 @@ void BotFactory::InitEquipment(bool incremental, bool second_chance)
             continue;
 
         Item* oldItem = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
+        // LFG preparation must repair an incomplete character without
+        // replacing equipment the bot already owns. The older InitEquipment
+        // paths retain their historical full-randomization behaviour.
+        if (missingOnly && oldItem)
+        {
+            bool const validForSpec = !specCompatible ||
+                sRandomItemMgr->IsItemValidForEquipmentSlot(
+                    bot, EquipmentSlots(slot), oldItem->GetTemplate());
+            bool const weaponSlot = slot == EQUIPMENT_SLOT_MAINHAND ||
+                slot == EQUIPMENT_SLOT_OFFHAND;
+            bool const underleveledWeapon = specCompatible && weaponSlot &&
+                validForSpec && oldItem->GetTemplate()->ItemLevel <
+                    weaponMinimumItemLevel;
+
+            if (validForSpec && !underleveledWeapon)
+                continue;
+
+            if (underleveledWeapon)
+                TC_LOG_INFO("playerbots",
+                    "Upgrading underleveled weapon %u (ilvl %u, floor %u) for bot %s slot %u",
+                    oldItem->GetEntry(), oldItem->GetTemplate()->ItemLevel,
+                    weaponMinimumItemLevel, bot->GetName().c_str(),
+                    uint32(slot));
+        }
+
+        if (specCompatible && slot == EQUIPMENT_SLOT_OFFHAND &&
+            !sRandomItemMgr->SupportsOffhandForSpec(bot))
+        {
+            if (oldItem && !MoveEquippedItemToBag(slot))
+                TC_LOG_ERROR("playerbots",
+                    "Cannot preserve unsupported offhand item %u for bot %s",
+                    oldItem->GetEntry(), bot->GetName().c_str());
+            continue;
+        }
         if (oldItem && second_chance)
         {
             bot->DestroyItem(INVENTORY_SLOT_BAG_0, slot, true);
@@ -886,6 +997,8 @@ void BotFactory::InitEquipment(bool incremental, bool second_chance)
         }
 
         uint32 bestItemForSlot = 0;
+        uint32 bestItemLevelDistance = UINT32_MAX;
+        uint32 bestItemLevel = 0;
         for (int index = 0; index < ids.size(); index++)
         {
             ItemTemplate const* proto = sObjectMgr->GetItemTemplate(ids[index]);
@@ -893,9 +1006,34 @@ void BotFactory::InitEquipment(bool incremental, bool second_chance)
             // delay heavy check to here
             if (!CanEquipItem(proto))
                 continue;
+            if (specCompatible &&
+                !sRandomItemMgr->IsItemValidForEquipmentSlot(bot,
+                    EquipmentSlots(slot), proto))
+                continue;
             uint16 dest;
             if (!CanEquipUnseenItem(slot, dest, proto->ItemId))
                 continue;
+
+            bool const weaponSlot = slot == EQUIPMENT_SLOT_MAINHAND ||
+                slot == EQUIPMENT_SLOT_OFFHAND;
+            if (specCompatible && weaponSlot &&
+                proto->ItemLevel < weaponMinimumItemLevel)
+                continue;
+
+            if (specCompatible && weaponSlot && weaponReferenceItemLevel)
+            {
+                uint32 const distance = proto->ItemLevel > weaponReferenceItemLevel ?
+                    proto->ItemLevel - weaponReferenceItemLevel :
+                    weaponReferenceItemLevel - proto->ItemLevel;
+                if (bestItemForSlot &&
+                    (distance > bestItemLevelDistance ||
+                     (distance == bestItemLevelDistance &&
+                      proto->ItemLevel <= bestItemLevel)))
+                    continue;
+
+                bestItemLevelDistance = distance;
+                bestItemLevel = proto->ItemLevel;
+            }
             bestItemForSlot = proto->ItemId;
         }
 
@@ -910,13 +1048,25 @@ void BotFactory::InitEquipment(bool incremental, bool second_chance)
         }
 
         oldItem = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
-        // fail to store in bag
-        if (oldItem)
+        if (oldItem && specCompatible)
+        {
+            if (!MoveEquippedItemToBag(slot))
+            {
+                TC_LOG_ERROR("playerbots",
+                    "Cannot preserve incompatible item %u for bot %s slot %u",
+                    oldItem->GetEntry(), bot->GetName().c_str(), uint32(slot));
+                continue;
+            }
+        }
+        else if (oldItem)
         {
             bot->DestroyItem(INVENTORY_SLOT_BAG_0, slot, true);
-            //continue;
         }
         Item* newItem = bot->EquipNewItem(dest, bestItemForSlot, true);
+        if (!newItem)
+            TC_LOG_ERROR("playerbots",
+                "Cannot equip generated item %u for bot %s slot %u",
+                bestItemForSlot, bot->GetName().c_str(), uint32(slot));
         bot->AutoUnequipOffhandIfNeed();
     }
 
@@ -975,4 +1125,85 @@ void BotFactory::InitEquipment(bool incremental, bool second_chance)
             bot->AutoUnequipOffhandIfNeed();
         }
     }
+}
+
+bool BotFactory::HasRequiredEquipmentForSpec(std::string* reason) const
+{
+    auto fail = [&](char const* issue) -> bool
+    {
+        if (reason)
+            *reason = issue;
+        return false;
+    };
+
+    for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
+    {
+        if (slot == EQUIPMENT_SLOT_BODY || slot == EQUIPMENT_SLOT_RANGED ||
+            slot == EQUIPMENT_SLOT_TABARD)
+            continue;
+        if (level < 50 && (slot == EQUIPMENT_SLOT_TRINKET1 ||
+            slot == EQUIPMENT_SLOT_TRINKET2))
+            continue;
+        if (level < 30 && slot == EQUIPMENT_SLOT_NECK)
+            continue;
+        if (level < 25 && slot == EQUIPMENT_SLOT_HEAD)
+            continue;
+        if (level < 20 && (slot == EQUIPMENT_SLOT_FINGER1 ||
+            slot == EQUIPMENT_SLOT_FINGER2))
+            continue;
+        if (slot == EQUIPMENT_SLOT_OFFHAND &&
+            !sRandomItemMgr->NeedsOffhandForSpec(bot))
+            continue;
+
+        Item* item = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
+        if (!item)
+            return fail(slot == EQUIPMENT_SLOT_MAINHAND ?
+                "missing-main-hand" :
+                (slot == EQUIPMENT_SLOT_OFFHAND ?
+                    "missing-required-off-hand" : "missing-equipment-slot"));
+        if (!sRandomItemMgr->IsItemValidForEquipmentSlot(bot,
+                EquipmentSlots(slot), item->GetTemplate()))
+            return fail(slot == EQUIPMENT_SLOT_MAINHAND ?
+                "invalid-main-hand-for-specialization" :
+                (slot == EQUIPMENT_SLOT_OFFHAND ?
+                    "invalid-off-hand-for-specialization" :
+                    "invalid-equipment-for-specialization"));
+    }
+
+    if (reason)
+        reason->clear();
+    return true;
+}
+
+bool BotFactory::HasRequiredWeaponSetForSpec(std::string* reason) const
+{
+    auto fail = [&](char const* issue) -> bool
+    {
+        if (reason)
+            *reason = issue;
+        return false;
+    };
+
+    Item* mainHand = bot->GetItemByPos(INVENTORY_SLOT_BAG_0,
+        EQUIPMENT_SLOT_MAINHAND);
+    if (!mainHand)
+        return fail("missing-main-hand");
+    if (!sRandomItemMgr->IsItemValidForEquipmentSlot(bot,
+            EQUIPMENT_SLOT_MAINHAND, mainHand->GetTemplate()))
+        return fail("invalid-main-hand-for-specialization");
+
+    if (sRandomItemMgr->NeedsOffhandForSpec(bot))
+    {
+        Item* offHand = bot->GetItemByPos(INVENTORY_SLOT_BAG_0,
+            EQUIPMENT_SLOT_OFFHAND);
+        if (!offHand)
+            return fail("missing-required-off-hand");
+        if (!sRandomItemMgr->IsItemValidForEquipmentSlot(bot,
+                EQUIPMENT_SLOT_OFFHAND, offHand->GetTemplate()))
+            return fail("invalid-off-hand-for-specialization");
+    }
+
+    if (reason)
+        reason->clear();
+    return true;
 }

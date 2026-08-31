@@ -123,7 +123,9 @@ bool PetAttackAction::Execute(Event event)
         return false;
     }
 
-    if (!target->IsInCombat() && bot->GetVictim() != target)
+    // Recheck at execution time: the trigger and action can run on different
+    // updates, and the pet must not inherit a target selected by somebody else.
+    if (!botAI->HasEngagedTarget(target))
     {
         return false;
     }

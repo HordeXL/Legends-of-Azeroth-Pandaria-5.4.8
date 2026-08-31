@@ -1,6 +1,8 @@
 #ifndef _PLAYERBOT_BOTFACTORY_H
 #define _PLAYERBOT_BOTFACTORY_H
 
+#include <string>
+
 #include "Player.h"
 #include "PlayerbotAI.h"
 
@@ -17,10 +19,18 @@ public:
 
     void InitBags();
     void InitEquipment(bool incremental, bool second_chance = false);
+    void InitMissingEquipment();
+    void InitEquipmentForSpec();
+    bool HasRequiredEquipmentForSpec(std::string* reason = nullptr) const;
+    bool HasRequiredWeaponSetForSpec(std::string* reason = nullptr) const;
     void InitPet();
     void InitTalentsTree(bool reset);
     void InitGlyphs();
 private:
+    void InitEquipmentInternal(bool incremental, bool second_chance,
+                               bool missingOnly, bool specCompatible);
+    bool MoveEquippedItemToBag(uint8 slot);
+    uint32 GetWeaponReferenceItemLevel() const;
     void Prepare();
     void CancelAuras();
 

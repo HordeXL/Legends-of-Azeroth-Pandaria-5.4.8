@@ -419,6 +419,10 @@ class LFGMgr
         /// Answers the pending proposal containing this player. Server-driven
         /// playerbots do not emit the client proposal response packet.
         bool AnswerProposalForPlayer(ObjectGuid guid, bool accept);
+        /// Marks a headless participant whose future LFG proposals must start
+        /// accepted. This avoids depending on an AI polling cycle after the
+        /// ready check has already been created.
+        void SetProposalAutoAccept(ObjectGuid guid, bool enabled);
         /// Updates proposal to join dungeon with player answer
         void UpdateProposal(uint32 proposalId, ObjectGuid guid, bool accept);
         /// Updates the role check with player answer
@@ -512,6 +516,7 @@ class LFGMgr
         // Rolecheck - Proposal - Vote Kicks
         LfgRoleCheckContainer RoleChecksStore;             ///< Current Role checks
         LfgProposalContainer ProposalsStore;               ///< Current Proposals
+        GuidSet ProposalAutoAcceptPlayers;                  ///< Headless proposal participants
         LfgPlayerBootContainer BootsStore;                 ///< Current player kicks
         LfgPlayerDataContainer PlayersStore;               ///< Player data
         LfgGroupDataContainer GroupsStore;                 ///< Group data
