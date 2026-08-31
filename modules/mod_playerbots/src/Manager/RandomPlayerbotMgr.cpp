@@ -66,6 +66,7 @@ namespace
         lfg::LfgDungeonSet Dungeons;
         uint32 RandomDungeon = 0;
         std::set<uint32> BucketPlayers;
+        std::set<uint8> DamageClasses;
         uint32 NeededTanks = 0;
         uint32 NeededHealers = 0;
         uint32 NeededDamage = 0;
@@ -79,12 +80,14 @@ namespace
         uint32 RandomDungeon = 0;
         lfg::LfgRoles Role = lfg::PLAYER_ROLE_NONE;
         uint8 SpecializationTab = 0;
+        uint8 Class = 0;
     };
 
     struct LfgAutoQueueManagedBot
     {
         uint32 RequesterGuid = 0;
         lfg::LfgRoles Role = lfg::PLAYER_ROLE_NONE;
+        uint8 Class = 0;
         bool EnteredDungeon = false;
         bool PreparationBuffed = false;
         bool GroupLeadershipEnsured = false;
@@ -516,6 +519,19 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
                                             demand.BucketPlayers.insert(
                                                 member.GetCounter());
                                 }
+                                demand.DamageClasses.clear();
+                                for (auto const& assignedRole :
+                                     bucket.GetRoles())
+                                {
+                                    if (assignedRole.second !=
+                                        lfg::PLAYER_ROLE_DAMAGE)
+                                        continue;
+                                    if (Player* damagePlayer =
+                                        ObjectAccessor::FindConnectedPlayer(
+                                            assignedRole.first))
+                                        demand.DamageClasses.insert(
+                                            damagePlayer->GetClass());
+                                }
                                 demand.NeededTanks = bucket.GetRemainingSlots(
                                     lfg::PLAYER_ROLE_TANK);
                                 demand.NeededHealers = bucket.GetRemainingSlots(
@@ -547,6 +563,9 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
             demandItr->second.RequesterGuid != staged.RequesterGuid)
             continue;
 
+        if (staged.Role == lfg::PLAYER_ROLE_DAMAGE && staged.Class)
+            demandItr->second.DamageClasses.insert(staged.Class);
+
         uint32* needed = nullptr;
         if (staged.Role == lfg::PLAYER_ROLE_TANK)
             needed = &demandItr->second.NeededTanks;
@@ -569,8 +588,12 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
     {
         LfgAutoQueueManagedBot const& managed = managedPair.second;
         auto demandItr = lfgDemands.find(managed.RequesterGuid);
-        if (demandItr == lfgDemands.end() ||
-            demandItr->second.BucketPlayers.count(managedPair.first))
+        if (demandItr == lfgDemands.end())
+            continue;
+
+        if (managed.Role == lfg::PLAYER_ROLE_DAMAGE && managed.Class)
+            demandItr->second.DamageClasses.insert(managed.Class);
+        if (demandItr->second.BucketPlayers.count(managedPair.first))
             continue;
 
         uint32* needed = nullptr;
@@ -807,8 +830,8 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
             }
 
             LfgAutoQueueManagedBots[botGuid] =
-                { staged.RequesterGuid, staged.Role, false, false, false,
-                  false, false };
+                { staged.RequesterGuid, staged.Role, bot->GetClass(), false,
+                  false, false, false, false };
             ++lfgBotsJoined;
             TC_LOG_INFO("server",
                 "AutoQueue LFG joined staged bot name=%s guid=%u role=%u requester=%u compatible-dungeons=%u random-dungeon=%u",
@@ -846,11 +869,23 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
 
             if (bot->GetMap() && bot->GetMap()->Instanceable())
             {
+                bool const firstDungeonObservation =
+                    !managedPair.second.EnteredDungeon;
                 managedPair.second.EnteredDungeon = true;
-                if (!bot->IsAlive())
+                // Repair only the exceptional dead-on-arrival state. Once a
+                // bot has entered the dungeon, deaths must remain normal
+                // encounter deaths until a player resurrection or a genuine
+                // wipe/release flow handles them. Reviving here every observer
+                // tick created an endless die/revive loop on lethal mechanics
+                // such as Lilian Voss's abilities.
+                if (firstDungeonObservation && !bot->IsAlive())
                 {
                     Revive(bot);
                     bot->SetHealth(bot->GetMaxHealth());
+                    TC_LOG_WARN("server",
+                        "AutoQueue LFG repaired dead-on-arrival bot=%s guid=%u requester=%u",
+                        bot->GetName().c_str(), managedPair.first,
+                        managedPair.second.RequesterGuid);
                 }
 
                 // Native matchmaking may randomly choose any solo queuer as
@@ -1133,6 +1168,11 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
                     uint32 selectedGuid = 0;
                     std::string selectedName;
                     uint8 selectedSpecializationTab = 0;
+                    uint8 selectedClass = 0;
+                    uint32 fallbackGuid = 0;
+                    std::string fallbackName;
+                    uint8 fallbackSpecializationTab = 0;
+                    uint8 fallbackClass = 0;
                     do
                     {
                         Field* fields = candidates->Fetch();
@@ -1171,13 +1211,46 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
                         if (specializationTab == classSpecializations.end())
                             continue;
 
+                        uint8 candidateClass = fields[3].GetUInt8();
+                        uint8 candidateSpecializationTab = uint8(
+                            std::distance(classSpecializations.begin(),
+                                specializationTab));
+                        if (role == lfg::PLAYER_ROLE_DAMAGE &&
+                            demand.DamageClasses.count(candidateClass))
+                        {
+                            // Keep one duplicate-class candidate only as a
+                            // fallback. A normal five-player group should use
+                            // three different DPS classes whenever the offline
+                            // pool has a valid alternative. Healer/tank classes
+                            // deliberately do not participate in this set.
+                            if (!fallbackGuid)
+                            {
+                                fallbackGuid = candidateGuid;
+                                fallbackName = fields[1].GetString();
+                                fallbackSpecializationTab =
+                                    candidateSpecializationTab;
+                                fallbackClass = candidateClass;
+                            }
+                            continue;
+                        }
+
                         selectedGuid = candidateGuid;
                         selectedName = fields[1].GetString();
-                        selectedSpecializationTab = uint8(std::distance(
-                            classSpecializations.begin(), specializationTab));
+                        selectedSpecializationTab =
+                            candidateSpecializationTab;
+                        selectedClass = candidateClass;
                         break;
                     }
                     while (candidates->NextRow());
+
+                    if (!selectedGuid && fallbackGuid)
+                    {
+                        selectedGuid = fallbackGuid;
+                        selectedName = fallbackName;
+                        selectedSpecializationTab =
+                            fallbackSpecializationTab;
+                        selectedClass = fallbackClass;
+                    }
 
                     if (!selectedGuid)
                         break;
@@ -1187,7 +1260,9 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
                     LfgAutoQueueStagedLogins[selectedGuid] =
                         { demand.Team, demand.RequesterGuid, demand.Dungeons,
                           demand.RandomDungeon, role,
-                          selectedSpecializationTab };
+                          selectedSpecializationTab, selectedClass };
+                    if (role == lfg::PLAYER_ROLE_DAMAGE)
+                        demand.DamageClasses.insert(selectedClass);
                     AddPlayerBot(selectedObjectGuid, 0);
                     --needed;
                     ++lfgBotsStaged;
