@@ -64,6 +64,8 @@ namespace
         uint8 Team = 0;
         uint32 RequesterGuid = 0;
         lfg::LfgDungeonSet Dungeons;
+        uint32 RandomDungeon = 0;
+        std::set<uint32> BucketPlayers;
         uint32 NeededTanks = 0;
         uint32 NeededHealers = 0;
         uint32 NeededDamage = 0;
@@ -74,6 +76,7 @@ namespace
         uint8 Team = 0;
         uint32 RequesterGuid = 0;
         lfg::LfgDungeonSet Dungeons;
+        uint32 RandomDungeon = 0;
         lfg::LfgRoles Role = lfg::PLAYER_ROLE_NONE;
     };
 
@@ -492,6 +495,22 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
                                 demand.Team = managerPair.first;
                                 demand.RequesterGuid = requesterGuid;
                                 demand.Dungeons = queuePair.second.Dungeons;
+                                demand.RandomDungeon = sLFGMgr->GetRandomDungeon(
+                                    ObjectGuid::Create<HighGuid::Player>(requesterGuid),
+                                    queuePair.second.QueueId);
+                                demand.BucketPlayers.clear();
+                                for (lfg::Queuer const& bucketQueuer :
+                                     bucket.GetQueuers())
+                                {
+                                    if (bucketQueuer.IsPlayer())
+                                        demand.BucketPlayers.insert(
+                                            bucketQueuer.GetGUID().GetCounter());
+                                    else
+                                        for (ObjectGuid const& member :
+                                             bucketQueuer.GetGroupPlayers())
+                                            demand.BucketPlayers.insert(
+                                                member.GetCounter());
+                                }
                                 demand.NeededTanks = bucket.GetRemainingSlots(
                                     lfg::PLAYER_ROLE_TANK);
                                 demand.NeededHealers = bucket.GetRemainingSlots(
@@ -529,6 +548,32 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
         else if (staged.Role == lfg::PLAYER_ROLE_HEALER)
             needed = &demandItr->second.NeededHealers;
         else if (staged.Role == lfg::PLAYER_ROLE_DAMAGE)
+            needed = &demandItr->second.NeededDamage;
+        if (needed && *needed)
+            --*needed;
+    }
+
+    // Once a complete bucket becomes an LFG proposal, native matchmaking
+    // temporarily removes all of its queuers from the dungeon buckets. The
+    // real requester can immediately appear alone again even though this
+    // lifecycle still owns the exact healer/DPS fillers waiting in that
+    // proposal. Reserve only managed bots which are absent from the current
+    // requester bucket; bots still present there are already reflected in the
+    // bucket's remaining-slot counts.
+    for (auto const& managedPair : LfgAutoQueueManagedBots)
+    {
+        LfgAutoQueueManagedBot const& managed = managedPair.second;
+        auto demandItr = lfgDemands.find(managed.RequesterGuid);
+        if (demandItr == lfgDemands.end() ||
+            demandItr->second.BucketPlayers.count(managedPair.first))
+            continue;
+
+        uint32* needed = nullptr;
+        if (managed.Role == lfg::PLAYER_ROLE_TANK)
+            needed = &demandItr->second.NeededTanks;
+        else if (managed.Role == lfg::PLAYER_ROLE_HEALER)
+            needed = &demandItr->second.NeededHealers;
+        else if (managed.Role == lfg::PLAYER_ROLE_DAMAGE)
             needed = &demandItr->second.NeededDamage;
         if (needed && *needed)
             --*needed;
@@ -601,6 +646,14 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
             }
 
             lfg::LfgDungeonSet dungeons = staged.Dungeons;
+            // Preserve the requester's original random-dungeon category for
+            // the bot's client/LFG state. JoinLfg expands it internally for
+            // compatibility matching, just as it did for the real requester.
+            if (staged.RandomDungeon)
+            {
+                dungeons.clear();
+                dungeons.insert(staged.RandomDungeon);
+            }
             sLFGMgr->JoinLfg(bot, staged.Role, dungeons,
                 "request-driven playerbot LFG fill");
             if (!bot->IsUsingLfg())
@@ -619,9 +672,10 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
                 { staged.RequesterGuid, staged.Role, false, false, false };
             ++lfgBotsJoined;
             TC_LOG_INFO("server",
-                "AutoQueue LFG joined staged bot name=%s guid=%u role=%u requester=%u dungeons=%u",
+                "AutoQueue LFG joined staged bot name=%s guid=%u role=%u requester=%u compatible-dungeons=%u random-dungeon=%u",
                 bot->GetName().c_str(), botGuid, uint32(staged.Role),
-                staged.RequesterGuid, uint32(dungeons.size()));
+                staged.RequesterGuid, uint32(dungeons.size()),
+                staged.RandomDungeon);
             itr = LfgAutoQueueStagedLogins.erase(itr);
         }
 
@@ -630,19 +684,26 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
         // this request-driven lifecycle.
         for (auto& managedPair : LfgAutoQueueManagedBots)
         {
-            Player* bot = GetPlayerBot(ObjectGuid::Create<HighGuid::Player>(
-                managedPair.first));
-            if (!bot || !bot->IsInWorld())
-                continue;
+            ObjectGuid botGuid = ObjectGuid::Create<HighGuid::Player>(
+                managedPair.first);
+            Player* bot = GetPlayerBot(botGuid);
 
-            if (sLFGMgr->AnswerProposalForPlayer(bot->GetGUID(), true))
+            // Proposal acceptance is GUID-based and does not require the bot
+            // to be in the world at this exact instant. A headless bot can be
+            // between maps while the proposal is created; gating acceptance
+            // on IsInWorld made the proposal stall and eventually time out.
+            if (sLFGMgr->AnswerProposalForPlayer(botGuid, true))
             {
                 ++lfgProposalsAccepted;
                 TC_LOG_INFO("server",
                     "AutoQueue LFG accepted proposal bot=%s guid=%u role=%u",
-                    bot->GetName().c_str(), managedPair.first,
+                    bot ? bot->GetName().c_str() : "<loading>",
+                    managedPair.first,
                     uint32(managedPair.second.Role));
             }
+
+            if (!bot || !bot->IsInWorld())
+                continue;
 
             if (bot->GetMap() && bot->GetMap()->Instanceable())
             {
@@ -676,6 +737,11 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
                     }
                     if (requester && group && requesterGroup == group)
                     {
+                        if (PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot))
+                        {
+                            botAI->SetMaster(requester);
+                            botAI->ResetStrategies();
+                        }
                         if (group->GetLeaderGUID() != requester->GetGUID())
                             group->ChangeLeader(requester->GetGUID());
                         managedPair.second.GroupLeadershipEnsured =
@@ -843,7 +909,8 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
                     ObjectGuid selectedObjectGuid =
                         ObjectGuid::Create<HighGuid::Player>(selectedGuid);
                     LfgAutoQueueStagedLogins[selectedGuid] =
-                        { demand.Team, demand.RequesterGuid, demand.Dungeons, role };
+                        { demand.Team, demand.RequesterGuid, demand.Dungeons,
+                          demand.RandomDungeon, role };
                     AddPlayerBot(selectedObjectGuid, 0);
                     --needed;
                     ++lfgBotsStaged;
