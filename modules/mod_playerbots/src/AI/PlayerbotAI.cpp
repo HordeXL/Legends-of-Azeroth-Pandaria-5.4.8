@@ -819,6 +819,8 @@ bool PlayerbotAI::AllowActivity(ActivityType activityType, bool checkNow)
 
 void PlayerbotAI::Reset(bool full)
 {
+    std::lock_guard<std::recursive_mutex> strategyLock(_strategyMutex);
+
     if (bot->HasUnitState(UNIT_STATE_IN_FLIGHT))
         return;
 
@@ -878,6 +880,8 @@ void PlayerbotAI::Reset(bool full)
 
 void PlayerbotAI::ResetStrategies()
 {
+    std::lock_guard<std::recursive_mutex> strategyLock(_strategyMutex);
+
     for (uint8 i = 0; i < BOT_STATE_MAX; i++)
         _engines[i]->removeAllStrategies();
 
@@ -925,6 +929,8 @@ void PlayerbotAI::ChangeEngine(BotState type)
 }
 void PlayerbotAI::ChangeStrategy(std::string const names, BotState type)
 {
+    std::lock_guard<std::recursive_mutex> strategyLock(_strategyMutex);
+
     Engine* e = _engines[type];
     if (!e)
         return;
@@ -934,6 +940,8 @@ void PlayerbotAI::ChangeStrategy(std::string const names, BotState type)
 
 void PlayerbotAI::ClearStrategies(BotState type)
 {
+    std::lock_guard<std::recursive_mutex> strategyLock(_strategyMutex);
+
     Engine* e = _engines[type];
     if (!e)
         return;
@@ -943,6 +951,8 @@ void PlayerbotAI::ClearStrategies(BotState type)
 
 std::vector<std::string> PlayerbotAI::GetStrategies(BotState type)
 {
+    std::lock_guard<std::recursive_mutex> strategyLock(_strategyMutex);
+
     Engine* e = _engines[type];
     if (!e)
         return std::vector<std::string>();
@@ -952,6 +962,8 @@ std::vector<std::string> PlayerbotAI::GetStrategies(BotState type)
 
 void PlayerbotAI::DoNextAction(bool min)
 {
+    std::lock_guard<std::recursive_mutex> strategyLock(_strategyMutex);
+
     if (!bot->IsInWorld() || bot->IsBeingTeleported() || (GetMaster() && GetMaster()->IsBeingTeleported()))
     {
         SetNextCheckDelay(sPlayerbotAIConfig->globalCoolDown);
@@ -1376,6 +1388,8 @@ bool PlayerbotAI::IsOpposing(uint8 race1, uint8 race2)
 }
 bool PlayerbotAI::HasStrategy(std::string const name, BotState type)
 {
+    std::lock_guard<std::recursive_mutex> strategyLock(_strategyMutex);
+
     if (_engines[type])
         return _engines[type]->HasStrategy(name);
     return false;
@@ -1383,6 +1397,8 @@ bool PlayerbotAI::HasStrategy(std::string const name, BotState type)
 
 bool PlayerbotAI::ContainsStrategy(StrategyType type)
 {
+    std::lock_guard<std::recursive_mutex> strategyLock(_strategyMutex);
+
     for (uint8 i = 0; i < BOT_STATE_MAX; i++)
     {
         if (_engines[i]->HasStrategyType(type))
