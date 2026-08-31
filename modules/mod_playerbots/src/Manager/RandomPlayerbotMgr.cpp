@@ -87,6 +87,7 @@ namespace
         bool EnteredDungeon = false;
         bool PreparationBuffed = false;
         bool GroupLeadershipEnsured = false;
+        bool CleanupRequested = false;
     };
 
     std::map<uint32, LfgAutoQueueStagedLogin> LfgAutoQueueStagedLogins;
@@ -645,6 +646,59 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
                 bot->SetHealth(bot->GetMaxHealth());
             }
 
+            // A character row having a valid specialization does not imply a
+            // usable dungeon build. Fill missing equipment, repair pieces
+            // which do not match the active specialization, and initialize
+            // talents, glyphs and pets before exposing the bot to native LFG.
+            BotFactory factory(bot, bot->GetLevel());
+            factory.InitEquipmentForSpec();
+            factory.InitTalentsTree(false);
+            factory.InitGlyphs();
+            factory.InitPet();
+
+            Item* mainHand = bot->GetItemByPos(
+                INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_MAINHAND);
+            uint32 glyphCount = 0;
+            for (uint8 slot = 0; slot < MAX_GLYPH_SLOT_INDEX; ++slot)
+                if (bot->GetGlyph(bot->GetActiveSpec(), slot))
+                    ++glyphCount;
+
+            uint32 expectedTalents = std::min<uint32>(6,
+                bot->GetLevel() / 15);
+            uint32 expectedGlyphs = bot->GetLevel() >= 75 ? 6 :
+                (bot->GetLevel() >= 50 ? 4 :
+                    (bot->GetLevel() >= 25 ? 2 : 0));
+            std::string equipmentFailure;
+            char const* buildFailure = !factory.HasRequiredWeaponSetForSpec(
+                    &equipmentFailure) ? equipmentFailure.c_str() :
+                (bot->GetUsedTalentCount() < expectedTalents ?
+                    "incomplete-talents" :
+                    (glyphCount < expectedGlyphs ?
+                        "incomplete-glyphs" : nullptr));
+            if (buildFailure)
+            {
+                LfgAutoQueueIneligibleBots.insert(botGuid);
+                TC_LOG_ERROR("server",
+                    "AutoQueue LFG build rejected name=%s guid=%u role=%u reason=%s talents=%u/%u glyphs=%u/%u",
+                    bot->GetName().c_str(), botGuid, uint32(staged.Role),
+                    buildFailure, bot->GetUsedTalentCount(), expectedTalents,
+                    glyphCount, expectedGlyphs);
+                LogoutPlayerBot(guid);
+                itr = LfgAutoQueueStagedLogins.erase(itr);
+                continue;
+            }
+
+            TC_LOG_INFO("server",
+                "AutoQueue LFG PvE build ready name=%s guid=%u role=%u specialization=%u main-hand=%u off-hand=%u talents=%u glyphs=%u pet=%u",
+                bot->GetName().c_str(), botGuid, uint32(staged.Role),
+                uint32(bot->GetSpecialization()), mainHand->GetEntry(),
+                bot->GetItemByPos(INVENTORY_SLOT_BAG_0,
+                    EQUIPMENT_SLOT_OFFHAND) ?
+                    bot->GetItemByPos(INVENTORY_SLOT_BAG_0,
+                        EQUIPMENT_SLOT_OFFHAND)->GetEntry() : 0,
+                bot->GetUsedTalentCount(), glyphCount,
+                bot->GetGuardianPet() ? bot->GetGuardianPet()->GetEntry() : 0);
+
             lfg::LfgDungeonSet dungeons = staged.Dungeons;
             // Preserve the requester's original random-dungeon category for
             // the bot's client/LFG state. JoinLfg expands it internally for
@@ -669,7 +723,8 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
             }
 
             LfgAutoQueueManagedBots[botGuid] =
-                { staged.RequesterGuid, staged.Role, false, false, false };
+                { staged.RequesterGuid, staged.Role, false, false, false,
+                  false };
             ++lfgBotsJoined;
             TC_LOG_INFO("server",
                 "AutoQueue LFG joined staged bot name=%s guid=%u role=%u requester=%u compatible-dungeons=%u random-dungeon=%u",
@@ -713,8 +768,6 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
                     Revive(bot);
                     bot->SetHealth(bot->GetMaxHealth());
                 }
-                if (PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot))
-                    botAI->ResetStrategies();
 
                 // Native matchmaking may randomly choose any solo queuer as
                 // leader.  For a request-driven bot party the real requester
@@ -741,6 +794,13 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
                         {
                             botAI->SetMaster(requester);
                             botAI->ResetStrategies();
+                            // Native LFG group creation does not emit the
+                            // normal playerbot invitation action which usually
+                            // enables follow. Make the dungeon navigation
+                            // contract explicit for every LFG filler.
+                            botAI->ChangeStrategy(
+                                "+follow,-stay,-lfg,-bg",
+                                BOT_STATE_NON_COMBAT);
                         }
                         if (group->GetLeaderGUID() != requester->GetGUID())
                             group->ChangeLeader(requester->GetGUID());
@@ -781,17 +841,118 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
             Player* bot = GetPlayerBot(guid);
             Player* requester = ObjectAccessor::FindConnectedPlayer(
                 ObjectGuid::Create<HighGuid::Player>(itr->second.RequesterGuid));
-            bool requesterActive = requester && requester->IsInWorld() &&
+            Group* botGroup = bot ? bot->GetGroup(GroupSlot::Instance) : nullptr;
+            if (bot && !botGroup)
+                botGroup = bot->GetGroup();
+            Group* requesterGroup = requester ?
+                requester->GetGroup(GroupSlot::Instance) : nullptr;
+            if (requester && !requesterGroup)
+                requesterGroup = requester->GetGroup();
+            bool requesterSharesGroup = botGroup &&
+                requesterGroup == botGroup;
+            bool requesterActive = requester &&
                 (requester->IsUsingLfg() || requester->GetGroup() ||
                  requester->IsBeingTeleported() ||
-                 (requester->GetMap() && requester->GetMap()->Instanceable()));
+                 (requester->IsInWorld() && requester->GetMap() &&
+                  requester->GetMap()->Instanceable()));
 
-            if (!bot || !bot->IsInWorld())
+            if (!bot)
             {
                 if (!IsBotLoading(guid))
                     itr = LfgAutoQueueManagedBots.erase(itr);
                 else
                     ++itr;
+                continue;
+            }
+
+            // Leaving an LFG instance removes only the real requester from the
+            // native group. The four headless fillers would otherwise remain
+            // in the dungeon indefinitely and receive a continue offer which
+            // they cannot answer. Once an entered filler no longer shares the
+            // requester's group, unwind that filler through the native LFG
+            // leave path, wait for its return teleport, then log it out.
+            if (itr->second.EnteredDungeon && !requesterSharesGroup &&
+                !itr->second.CleanupRequested)
+            {
+                itr->second.CleanupRequested = true;
+                TC_LOG_INFO("server",
+                    "AutoQueue LFG cleanup requested bot=%s guid=%u requester=%u requester-online=%u",
+                    bot->GetName().c_str(), itr->first,
+                    itr->second.RequesterGuid, requester ? 1u : 0u);
+            }
+
+            if (itr->second.CleanupRequested)
+            {
+                if (!bot->IsInWorld() || bot->IsBeingTeleported() ||
+                    IsBotLoading(guid))
+                {
+                    ++itr;
+                    continue;
+                }
+
+                if (!bot->IsAlive())
+                {
+                    Revive(bot);
+                    bot->SetHealth(bot->GetMaxHealth());
+                }
+
+                botGroup = bot->GetGroup(GroupSlot::Instance);
+                if (!botGroup)
+                    botGroup = bot->GetGroup();
+                if (botGroup)
+                {
+                    TC_LOG_INFO("server",
+                        "AutoQueue LFG removing filler from instance group bot=%s guid=%u group=%u",
+                        bot->GetName().c_str(), itr->first,
+                        botGroup->GetGUID().GetCounter());
+                    Player::RemoveFromGroup(botGroup, bot->GetGUID(),
+                        GROUP_REMOVEMETHOD_LEAVE);
+                    ++itr;
+                    continue;
+                }
+
+                if (bot->GetMap() && bot->GetMap()->Instanceable())
+                {
+                    if (bot->TeleportToBGEntryPoint())
+                    {
+                        TC_LOG_INFO("server",
+                            "AutoQueue LFG returning filler to entry point bot=%s guid=%u map=%u",
+                            bot->GetName().c_str(), itr->first,
+                            bot->GetMapId());
+                        ++itr;
+                        continue;
+                    }
+
+                    // A missing entry point must not strand an ownerless bot
+                    // in a dungeon forever. Persist its current safe state and
+                    // let the normal login/homebind validation recover it.
+                    TC_LOG_ERROR("server",
+                        "AutoQueue LFG filler has no return entry point; logging out bot=%s guid=%u map=%u",
+                        bot->GetName().c_str(), itr->first,
+                        bot->GetMapId());
+                }
+
+                if (bot->IsUsingLfg())
+                    sLFGMgr->RemovePlayerQueues(bot->GetGUID());
+                TC_LOG_INFO("server",
+                    "AutoQueue LFG cleanup complete bot=%s guid=%u requester=%u",
+                    bot->GetName().c_str(), itr->first,
+                    itr->second.RequesterGuid);
+                LogoutPlayerBot(guid);
+                itr = LfgAutoQueueManagedBots.erase(itr);
+                continue;
+            }
+
+            // TeleportPlayer temporarily removes a playerbot from the world.
+            // Keep ownership across that transition so the following observer
+            // tick can assign the real requester as master and enable follow.
+            if (!bot->IsInWorld())
+            {
+                if (requesterActive || bot->IsUsingLfg() || bot->GetGroup() ||
+                    bot->IsBeingTeleported() || IsBotLoading(guid))
+                    ++itr;
+                else
+                    itr = LfgAutoQueueManagedBots.erase(itr);
                 continue;
             }
 
@@ -2205,7 +2366,34 @@ void RandomPlayerbotMgr::OnBotLoginInternal(Player* const bot)
     // Inventory capacity must exist before Caller, arena or specialization
     // preparation can preserve replaced equipment in the bot's bags.
     BotFactory factory(bot, bot->GetLevel());
-    factory.InitBags();
+    if (bot->GetSpecialization() != SPEC_NONE)
+    {
+        std::string previousEquipmentIssue;
+        bool neededRepair = !factory.HasRequiredEquipmentForSpec(
+            &previousEquipmentIssue);
+        factory.InitEquipmentForSpec();
+        std::string remainingWeaponIssue;
+        if (!factory.HasRequiredWeaponSetForSpec(&remainingWeaponIssue))
+            TC_LOG_ERROR("playerbots",
+                "Bot equipment repair incomplete name=%s guid=%u specialization=%u reason=%s",
+                bot->GetName().c_str(), bot->GetGUID().GetCounter(),
+                uint32(bot->GetSpecialization()),
+                remainingWeaponIssue.c_str());
+        else if (neededRepair && factory.HasRequiredEquipmentForSpec())
+            TC_LOG_INFO("playerbots",
+                "Bot equipment repaired name=%s guid=%u specialization=%u previous-issue=%s main-hand=%u off-hand=%u",
+                bot->GetName().c_str(), bot->GetGUID().GetCounter(),
+                uint32(bot->GetSpecialization()),
+                previousEquipmentIssue.c_str(),
+                bot->GetItemByPos(INVENTORY_SLOT_BAG_0,
+                    EQUIPMENT_SLOT_MAINHAND)->GetEntry(),
+                bot->GetItemByPos(INVENTORY_SLOT_BAG_0,
+                    EQUIPMENT_SLOT_OFFHAND) ?
+                    bot->GetItemByPos(INVENTORY_SLOT_BAG_0,
+                        EQUIPMENT_SLOT_OFFHAND)->GetEntry() : 0);
+    }
+    else
+        factory.InitBags();
 
     // If this player has been created recently and is not assign horde / alliance as pandaren
     if (bot->GetRace() == RACE_PANDAREN_NEUTRAL)

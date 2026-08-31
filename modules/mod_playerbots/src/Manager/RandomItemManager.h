@@ -39,13 +39,19 @@ public:
     bool CanEquipArmor(Player* bot, ItemTemplate const* proto);
     bool CanEquipWeapon(Player* bot, ItemTemplate const* proto);
     bool CanEquipSubArmor(Player* bot, ItemTemplate const* proto);
+    bool IsItemValidForEquipmentSlot(Player* bot, EquipmentSlots slot,
+        ItemTemplate const* proto);
+    bool SupportsOffhandForSpec(Player* bot) const;
+    bool NeedsOffhandForSpec(Player* bot) const;
 private:
     void AddItemStats(uint32 mod, uint8& sp, uint8& ap, uint8& tank);
     bool CanEquipItem(EquipmentSlots slot, ItemTemplate const* proto);
-    
+
     bool CheckItemStats(Classes clazz, uint8 sp, uint8 ap, uint8 tank);
+    bool MatchesPrimaryStatForSpec(Player* bot, ItemTemplate const* proto) const;
     bool ShouldEquipArmorForSpec(uint32 level, Classes playerclass, Specializations spec, ItemTemplate const* proto);
-    bool ShouldEquipWeaponForSpec(Classes playerclass, Specializations spec, ItemTemplate const* proto);
+    bool ShouldEquipWeaponForSpec(Classes playerclass, Specializations spec,
+        EquipmentSlots slot, ItemTemplate const* proto) const;
 private:
     std::map<uint32, std::map<uint32, std::vector<uint32>>> _equipCacheNew;
     std::map<EquipmentSlots, std::set<InventoryType>> _viable_slots;

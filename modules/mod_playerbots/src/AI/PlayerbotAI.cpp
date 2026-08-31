@@ -239,6 +239,36 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
         bot->IsDuringRemoveFromWorld())
         return;
 
+    // Playerbot-controlled pets must never acquire targets on their own. This
+    // covers regular pets (hunter/warlock), permanent guardians (DK ghoul,
+    // water elemental) and any other class guardian exposed through the same
+    // owner slot. The combat strategy explicitly commands the pet only after
+    // HasEngagedTarget confirms that its owner has started the attack.
+    if (Guardian* pet = bot->GetGuardianPet())
+    {
+        pet->SetReactState(REACT_PASSIVE);
+        if (Unit* petTarget = pet->GetVictim())
+        {
+            if (!HasEngagedTarget(petTarget))
+            {
+                pet->AttackStop();
+                pet->SetTarget(ObjectGuid::Empty);
+                if (CharmInfo* charmInfo = pet->GetCharmInfo())
+                {
+                    charmInfo->SetIsCommandAttack(false);
+                    charmInfo->SetIsAtStay(false);
+                    charmInfo->SetIsFollowing(false);
+                    charmInfo->SetIsCommandFollow(true);
+                    charmInfo->SetIsReturning(true);
+                    charmInfo->SetCommandState(COMMAND_FOLLOW);
+                }
+                pet->GetMotionMaster()->Clear();
+                pet->GetMotionMaster()->MoveFollow(
+                    bot, PET_FOLLOW_DIST, pet->GetFollowAngle());
+            }
+        }
+    }
+
     // Playerbot sessions are not driven through WorldSession's normal socket
     // receive queue. Process synthetic time-sync replies here, after the login
     // callback and the outgoing SendPacket stack have completely returned.
@@ -3022,4 +3052,42 @@ bool PlayerbotAI::HasAggro(Unit* unit)
         return true;
     }
     return false;
+}
+
+bool PlayerbotAI::HasEngagedTarget(Unit* target) const
+{
+    if (!bot || !target || !bot->IsValidAttackTarget(target))
+        return false;
+
+    // Do not let a pet continue on an old target after its owner switches or
+    // clears targets. Threat from an earlier hit alone is not a current order.
+    Unit* ownerTarget = _aiObjectContext ?
+        _aiObjectContext->GetValue<Unit*>("current target")->Get() : nullptr;
+    if (ownerTarget != target)
+        return false;
+
+    // Melee and explicit auto-attacks establish a victim immediately.
+    if (bot->GetVictim() == target)
+        return true;
+
+    // Ranged and caster owners may not have a melee victim yet. Recognize a
+    // harmful cast aimed at this exact unit so their pet can assist as the
+    // owner's attack begins, rather than after an arbitrary party member pulls.
+    for (uint8 type = CURRENT_MELEE_SPELL; type < CURRENT_MAX_SPELL; ++type)
+    {
+        Spell* spell = bot->GetCurrentSpell(CurrentSpellTypes(type));
+        if (!spell || spell->m_targets.GetUnitTargetGUID() != target->GetGUID())
+            continue;
+
+        SpellInfo const* spellInfo = spell->GetSpellInfo();
+        if (spellInfo && spellInfo->DmgClass != SPELL_DAMAGE_CLASS_NONE &&
+            !bot->IsFriendlyTo(target))
+            return true;
+    }
+
+    // Instant attacks may already have finished by the next AI update. A
+    // positive threat entry proves that this owner actually engaged the PvE
+    // target; target combat caused solely by another group member does not.
+    return target->CanHaveThreatList() &&
+        target->GetThreatManager().getThreat(bot) > 0.0f;
 }

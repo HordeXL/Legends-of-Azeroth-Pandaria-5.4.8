@@ -165,6 +165,7 @@ public:
     bool IsSafe(Player* player);
     bool IsSafe(WorldObject* obj);
     bool HasAggro(Unit* unit);
+    bool HasEngagedTarget(Unit* target) const;
 
     // Get the group leader or the master of the bot.
     // Checks if the bot is summoned as alt of a player

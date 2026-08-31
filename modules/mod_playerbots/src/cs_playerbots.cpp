@@ -5309,6 +5309,7 @@ void UpdateWorldBossStagedRaid(uint32 diff)
             factory.InitTalentsTree(false);
             factory.InitGlyphs();
             factory.InitPet();
+            factory.InitEquipmentForSpec();
             bool expectsPersistentPet = bot->GetClass() == CLASS_HUNTER ||
                 bot->GetClass() == CLASS_WARLOCK ||
                 bot->GetSpecialization() == SPEC_MAGE_FROST;
