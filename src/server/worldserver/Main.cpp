@@ -41,6 +41,7 @@
 #include "CliRunnable.h"
 #include "DeadlineTimer.h"
 #include "GitRevision.h"
+#include "GroupMgr.h"
 #include "IoContext.h"
 #include "InstanceSaveMgr.h"
 #include "Log.h"
@@ -238,6 +239,12 @@ extern int main(int argc, char** argv)
 
     // unload all grids (including locked in memory)
     auto mapManagementHandle = Trinity::make_unique_ptr_with_deleter(sMapMgr, [](MapManager* mgr) { mgr->UnloadAll(); });
+
+    // Groups remove their instance-save bindings while being destroyed, and
+    // that cleanup queries MapManager. Destroy all groups explicitly before
+    // mapManagementHandle unloads the maps; relying on function-local static
+    // destruction order caused a shutdown-only access violation.
+    auto groupManagementHandle = Trinity::make_unique_ptr_with_deleter(sGroupMgr, [](GroupMgr* mgr) { mgr->Unload(); });
 
     // unload battleground templates before different singletons destroyed
     auto battlegroundMgrHandle = Trinity::make_unique_ptr_with_deleter(sBattlegroundMgr, [](BattlegroundMgr* mgr) { mgr->DeleteAllBattlegrounds(); });

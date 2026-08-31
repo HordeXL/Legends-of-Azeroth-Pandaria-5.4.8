@@ -30,6 +30,7 @@ private:
     void InitEquipmentInternal(bool incremental, bool second_chance,
                                bool missingOnly, bool specCompatible);
     bool MoveEquippedItemToBag(uint8 slot);
+    uint32 GetWeaponReferenceItemLevel() const;
     void Prepare();
     void CancelAuras();
 

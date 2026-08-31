@@ -1,8 +1,10 @@
 #include "BotFactory.h"
 
+#include <algorithm>
 #include <random>
 #include <set>
 #include <utility>
+#include <vector>
  
 #include "AccountMgr.h"
 #include "AiFactory.h"
@@ -840,6 +842,38 @@ void BotFactory::InitEquipmentForSpec()
     InitEquipmentInternal(true, false, true, true);
 }
 
+uint32 BotFactory::GetWeaponReferenceItemLevel() const
+{
+    // Weapons dominate damage output, so compare them with the character's
+    // actual core armor instead of accepting any level-appropriate weapon.
+    // Jewelry and cloaks are intentionally excluded because their item level
+    // can vary widely without representing the bot's combat tier.
+    static uint8 const armorSlots[] =
+    {
+        EQUIPMENT_SLOT_HEAD, EQUIPMENT_SLOT_SHOULDERS,
+        EQUIPMENT_SLOT_CHEST, EQUIPMENT_SLOT_WAIST,
+        EQUIPMENT_SLOT_LEGS, EQUIPMENT_SLOT_FEET,
+        EQUIPMENT_SLOT_WRISTS, EQUIPMENT_SLOT_HANDS
+    };
+
+    std::vector<uint32> levels;
+    for (uint8 slot : armorSlots)
+        if (Item* item = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot))
+            if (ItemTemplate const* itemTemplate = item->GetTemplate())
+                if (itemTemplate->ItemLevel)
+                    levels.push_back(itemTemplate->ItemLevel);
+
+    if (levels.empty())
+        return bot->GetLevel() >= 90 ? 450 : 0;
+
+    std::sort(levels.begin(), levels.end());
+    uint32 reference = levels[levels.size() / 2];
+    if (levels.size() % 2 == 0)
+        reference = (reference + levels[levels.size() / 2 - 1]) / 2;
+
+    return std::max(reference, bot->GetLevel() >= 90 ? 450u : 0u);
+}
+
 bool BotFactory::MoveEquippedItemToBag(uint8 slot)
 {
     Item* item = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
@@ -866,6 +900,10 @@ void BotFactory::InitEquipmentInternal(bool incremental, bool second_chance,
     std::unordered_map<uint8, std::vector<uint32>> items;
     uint32 blevel = bot->GetLevel();
     int32 delta = std::min(blevel, 10u);
+    uint32 const weaponReferenceItemLevel = specCompatible ?
+        GetWeaponReferenceItemLevel() : 0;
+    uint32 const weaponMinimumItemLevel = weaponReferenceItemLevel > 35 ?
+        weaponReferenceItemLevel - 35 : weaponReferenceItemLevel;
 
     for (int32 slot = (int32)EQUIPMENT_SLOT_TABARD; slot >= (int32)EQUIPMENT_SLOT_START; slot--)
     {
@@ -890,9 +928,24 @@ void BotFactory::InitEquipmentInternal(bool incremental, bool second_chance,
         // paths retain their historical full-randomization behaviour.
         if (missingOnly && oldItem)
         {
-            if (!specCompatible || sRandomItemMgr->IsItemValidForEquipmentSlot(
-                    bot, EquipmentSlots(slot), oldItem->GetTemplate()))
+            bool const validForSpec = !specCompatible ||
+                sRandomItemMgr->IsItemValidForEquipmentSlot(
+                    bot, EquipmentSlots(slot), oldItem->GetTemplate());
+            bool const weaponSlot = slot == EQUIPMENT_SLOT_MAINHAND ||
+                slot == EQUIPMENT_SLOT_OFFHAND;
+            bool const underleveledWeapon = specCompatible && weaponSlot &&
+                validForSpec && oldItem->GetTemplate()->ItemLevel <
+                    weaponMinimumItemLevel;
+
+            if (validForSpec && !underleveledWeapon)
                 continue;
+
+            if (underleveledWeapon)
+                TC_LOG_INFO("playerbots",
+                    "Upgrading underleveled weapon %u (ilvl %u, floor %u) for bot %s slot %u",
+                    oldItem->GetEntry(), oldItem->GetTemplate()->ItemLevel,
+                    weaponMinimumItemLevel, bot->GetName().c_str(),
+                    uint32(slot));
         }
 
         if (specCompatible && slot == EQUIPMENT_SLOT_OFFHAND &&
@@ -944,6 +997,8 @@ void BotFactory::InitEquipmentInternal(bool incremental, bool second_chance,
         }
 
         uint32 bestItemForSlot = 0;
+        uint32 bestItemLevelDistance = UINT32_MAX;
+        uint32 bestItemLevel = 0;
         for (int index = 0; index < ids.size(); index++)
         {
             ItemTemplate const* proto = sObjectMgr->GetItemTemplate(ids[index]);
@@ -958,6 +1013,27 @@ void BotFactory::InitEquipmentInternal(bool incremental, bool second_chance,
             uint16 dest;
             if (!CanEquipUnseenItem(slot, dest, proto->ItemId))
                 continue;
+
+            bool const weaponSlot = slot == EQUIPMENT_SLOT_MAINHAND ||
+                slot == EQUIPMENT_SLOT_OFFHAND;
+            if (specCompatible && weaponSlot &&
+                proto->ItemLevel < weaponMinimumItemLevel)
+                continue;
+
+            if (specCompatible && weaponSlot && weaponReferenceItemLevel)
+            {
+                uint32 const distance = proto->ItemLevel > weaponReferenceItemLevel ?
+                    proto->ItemLevel - weaponReferenceItemLevel :
+                    weaponReferenceItemLevel - proto->ItemLevel;
+                if (bestItemForSlot &&
+                    (distance > bestItemLevelDistance ||
+                     (distance == bestItemLevelDistance &&
+                      proto->ItemLevel <= bestItemLevel)))
+                    continue;
+
+                bestItemLevelDistance = distance;
+                bestItemLevel = proto->ItemLevel;
+            }
             bestItemForSlot = proto->ItemId;
         }
 

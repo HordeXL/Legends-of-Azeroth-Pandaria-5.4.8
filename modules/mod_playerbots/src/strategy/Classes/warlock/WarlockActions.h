@@ -15,11 +15,21 @@ class Unit;
 // -- TALENTS
 SPELL_ACTION(CastDarkRegenerationAction, "dark regeneration");
 SPELL_ACTION(CastDemonicBreathAction, "demonic breath");
-SPELL_ACTION(CastMortalCoilAction, "mortal coil");
+class CastMortalCoilAction : public CastSpellAction
+{
+public:
+    CastMortalCoilAction(PlayerbotAI* botAI) : CastSpellAction(botAI, "mortal coil") {}
+    bool isUseful() override;
+};
 BUFF_ACTION(CastSoulLinkAction, "soul link");
 SPELL_ACTION(CastSacrificialPactAction, "sacrificial pact");
 SPELL_ACTION(CastDarkBarginAction, "dark bargain");
-SPELL_ACTION(CastBloodHorrorAction, "blood horror");
+class CastBloodHorrorAction : public CastSpellAction
+{
+public:
+    CastBloodHorrorAction(PlayerbotAI* botAI) : CastSpellAction(botAI, "blood horror") {}
+    bool isUseful() override;
+};
 SPELL_ACTION(CastGrmoireOfSupremacyAction, "grimoire of supremacy");
 SPELL_ACTION(CastGrimoireOfSacrificeAction, "grimoire of sacrifice");
 SPELL_ACTION(CastMannorothFuryAction, "mannoroth's fury");
@@ -92,6 +102,7 @@ class CastFearAction : public CastDebuffSpellAction
 {
 public:
     CastFearAction(PlayerbotAI* botAI) : CastDebuffSpellAction(botAI, "fear") {}
+    bool isUseful() override;
 };
 
 class CastFearOnCcAction : public CastBuffSpellAction
