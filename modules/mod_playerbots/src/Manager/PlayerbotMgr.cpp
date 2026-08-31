@@ -861,7 +861,7 @@ std::vector<std::string> PlayerbotHolder::HandlePlayerbotCommand(char const* arg
             BotFactory factory(bot, bot->GetLevel());
             factory.InitTalentsTree(false);
             factory.InitGlyphs();
-            factory.InitEquipment(true);
+            factory.InitEquipmentForSpec();
             GET_PLAYERBOT_AI(bot)->ResetStrategies();
             GET_PLAYERBOT_AI(bot)->Reset(true);
         }
@@ -958,7 +958,7 @@ std::vector<std::string> PlayerbotHolder::HandlePlayerbotCommand(char const* arg
                 BotFactory factory(bot, bot->GetLevel());
                 factory.InitTalentsTree(true);
                 factory.InitGlyphs();
-                factory.InitEquipment(true);
+                factory.InitEquipmentForSpec();
             }).detach();
             
             messages.push_back("Add class " + std::string(charname));

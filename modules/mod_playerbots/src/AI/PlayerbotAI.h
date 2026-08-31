@@ -1,6 +1,9 @@
 #ifndef _PLAYERBOT_PLAYERBOTAI_H
 #define _PLAYERBOT_PLAYERBOTAI_H
 
+#include <atomic>
+#include <mutex>
+
 #include <queue>
 #include <stack>
 
@@ -167,6 +170,7 @@ public:
     bool IsSafe(Player* player);
     bool IsSafe(WorldObject* obj);
     bool HasAggro(Unit* unit);
+    bool HasEngagedTarget(Unit* target) const;
 
     // Get the group leader or the master of the bot.
     // Checks if the bot is summoned as alt of a player
@@ -177,6 +181,10 @@ public:
     bool ContainsStrategy(StrategyType type);
 
     void SetMaster(Player* newMaster) { master = newMaster; }
+    void SetLfgAutoQueueControl(bool reserved, uint32 requesterGuid,
+        bool initializeInDungeon = false);
+    bool IsLfgAutoQueueReserved() const;
+    bool CanLfgAutoQueueEngage(Unit const* target) const;
 
     bool CanMove();
 
@@ -266,6 +274,16 @@ protected:
     PacketHandlingHelper masterIncomingPacketHandlers;
     PacketHandlingHelper masterOutgoingPacketHandlers;
     std::queue<uint32> _pendingTimeSyncCounters;
+    // Written by the world-thread LFG coordinator and consumed by the bot's
+    // map update thread. Strategy rebuilding itself is never done cross-thread.
+    std::atomic<bool> _lfgAutoQueueReserved{ false };
+    std::atomic<bool> _lfgAutoQueueInitializePending{ false };
+    std::atomic<uint32> _lfgAutoQueueRequesterGuid{ 0 };
+    uint32 _invalidFollowPositionSince = 0;
+    // Some login/group/queue callbacks run on the world thread while normal
+    // actions run on a map worker. Keep Engine strategy/action ownership valid
+    // for the complete duration of an action selection/execution cycle.
+    std::recursive_mutex _strategyMutex;
     //CompositeChatFilter chatFilter;
     //PlayerbotSecurity security;
     std::map<std::string, time_t> whispers;

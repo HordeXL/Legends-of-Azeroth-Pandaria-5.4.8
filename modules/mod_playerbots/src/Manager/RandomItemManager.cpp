@@ -54,6 +54,7 @@ void RandomItemManager::Init()
     _viable_slots[EQUIPMENT_SLOT_MAINHAND].insert(INVTYPE_RANGED);
     _viable_slots[EQUIPMENT_SLOT_OFFHAND].insert(INVTYPE_WEAPON);
     _viable_slots[EQUIPMENT_SLOT_OFFHAND].insert(INVTYPE_2HWEAPON);
+    _viable_slots[EQUIPMENT_SLOT_OFFHAND].insert(INVTYPE_WEAPONOFFHAND);
     _viable_slots[EQUIPMENT_SLOT_OFFHAND].insert(INVTYPE_SHIELD);
     _viable_slots[EQUIPMENT_SLOT_OFFHAND].insert(INVTYPE_WEAPONMAINHAND);
     _viable_slots[EQUIPMENT_SLOT_OFFHAND].insert(INVTYPE_HOLDABLE);
@@ -215,8 +216,6 @@ bool RandomItemManager::ShouldEquipArmorForSpec(uint32 level, Classes playerclas
                 return false;
 
             resultArmorSubClass = { ITEM_SUBCLASS_ARMOR_PLATE };
-            if (spec != Specializations::SPEC_WARRIOR_PROTECTION)
-                resultArmorSubClass = { ITEM_SUBCLASS_ARMOR_MAIL, ITEM_SUBCLASS_ARMOR_PLATE };
             if (level < 40)
                 resultArmorSubClass = { ITEM_SUBCLASS_ARMOR_LEATHER, ITEM_SUBCLASS_ARMOR_MAIL, ITEM_SUBCLASS_ARMOR_PLATE };
             break;
@@ -235,8 +234,6 @@ bool RandomItemManager::ShouldEquipArmorForSpec(uint32 level, Classes playerclas
                 return false;
 
             resultArmorSubClass = { ITEM_SUBCLASS_ARMOR_PLATE };
-            if (spec != Specializations::SPEC_PALADIN_PROTECTION)
-                resultArmorSubClass = { ITEM_SUBCLASS_ARMOR_MAIL, ITEM_SUBCLASS_ARMOR_PLATE };
             if (level < 40)
                 resultArmorSubClass = { ITEM_SUBCLASS_ARMOR_LEATHER, ITEM_SUBCLASS_ARMOR_MAIL, ITEM_SUBCLASS_ARMOR_PLATE };
 
@@ -247,7 +244,10 @@ bool RandomItemManager::ShouldEquipArmorForSpec(uint32 level, Classes playerclas
             if (proto->InventoryType == INVTYPE_HOLDABLE)
                 return false;
 
-            resultArmorSubClass = { ITEM_SUBCLASS_ARMOR_LEATHER, ITEM_SUBCLASS_ARMOR_MAIL };
+            resultArmorSubClass = level < 40 ?
+                std::unordered_set<uint32>{ ITEM_SUBCLASS_ARMOR_LEATHER,
+                    ITEM_SUBCLASS_ARMOR_MAIL } :
+                std::unordered_set<uint32>{ ITEM_SUBCLASS_ARMOR_MAIL };
             break;
         }
         case CLASS_ROGUE:
@@ -261,9 +261,10 @@ bool RandomItemManager::ShouldEquipArmorForSpec(uint32 level, Classes playerclas
         {
             if (spec == Specializations::SPEC_SHAMAN_ENHANCEMENT && proto->InventoryType == INVTYPE_HOLDABLE)
                 return false;
-            resultArmorSubClass = { ITEM_SUBCLASS_ARMOR_CLOTH, ITEM_SUBCLASS_ARMOR_LEATHER, ITEM_SUBCLASS_ARMOR_MAIL };
-            if (spec == Specializations::SPEC_SHAMAN_ENHANCEMENT && level > 40)
-                resultArmorSubClass = { ITEM_SUBCLASS_ARMOR_MAIL };
+            resultArmorSubClass = level < 40 ?
+                std::unordered_set<uint32>{ ITEM_SUBCLASS_ARMOR_CLOTH,
+                    ITEM_SUBCLASS_ARMOR_LEATHER, ITEM_SUBCLASS_ARMOR_MAIL } :
+                std::unordered_set<uint32>{ ITEM_SUBCLASS_ARMOR_MAIL };
 
             break;
         }
@@ -279,9 +280,7 @@ bool RandomItemManager::ShouldEquipArmorForSpec(uint32 level, Classes playerclas
             if ((spec == Specializations::SPEC_DRUID_FERAL || spec == Specializations::SPEC_DRUID_GUARDIAN) &&
                 proto->InventoryType == INVTYPE_HOLDABLE)
                 return false;
-            resultArmorSubClass = { ITEM_SUBCLASS_ARMOR_CLOTH, ITEM_SUBCLASS_ARMOR_LEATHER };
-            if (spec == Specializations::SPEC_DRUID_FERAL || spec == Specializations::SPEC_DRUID_GUARDIAN)
-                resultArmorSubClass = { ITEM_SUBCLASS_ARMOR_LEATHER };
+            resultArmorSubClass = { ITEM_SUBCLASS_ARMOR_LEATHER };
 
             break;
         }
@@ -297,24 +296,10 @@ bool RandomItemManager::ShouldEquipArmorForSpec(uint32 level, Classes playerclas
     return (resultArmorSubClass.find(proto->SubClass) != resultArmorSubClass.end());
 }
 
-bool RandomItemManager::ShouldEquipWeaponForSpec(Classes playerclass, Specializations spec, ItemTemplate const* proto)
+bool RandomItemManager::ShouldEquipWeaponForSpec(Classes playerclass,
+    Specializations spec, EquipmentSlots slot, ItemTemplate const* proto) const
 {
-    EquipmentSlots slot_mh = EQUIPMENT_SLOT_START;
-    EquipmentSlots slot_oh = EQUIPMENT_SLOT_START;
-    for (auto i = _viable_slots.begin(); i != _viable_slots.end(); ++i)
-    {
-        std::set<InventoryType> slots = _viable_slots[(EquipmentSlots)i->first];
-        if (slots.find((InventoryType)proto->InventoryType) != slots.end())
-        {
-            if (i->first == EQUIPMENT_SLOT_MAINHAND)
-                slot_mh = i->first;
-            if (i->first == EQUIPMENT_SLOT_OFFHAND)
-                slot_oh = i->first;
-        }
-    }
-
-
-    if (slot_mh == EQUIPMENT_SLOT_START && slot_oh == EQUIPMENT_SLOT_START)
+    if (slot != EQUIPMENT_SLOT_MAINHAND && slot != EQUIPMENT_SLOT_OFFHAND)
         return false;
 
     std::unordered_set<uint32> mh_weapons;
@@ -330,11 +315,35 @@ bool RandomItemManager::ShouldEquipWeaponForSpec(Classes playerclass, Specializa
                               ITEM_SUBCLASS_WEAPON_DAGGER, ITEM_SUBCLASS_WEAPON_FIST_WEAPON };
                 oh_weapons = { ITEM_SUBCLASS_ARMOR_SHIELD };
             }
+            else if (spec == Specializations::SPEC_WARRIOR_FURY)
+            {
+                mh_weapons = { ITEM_SUBCLASS_WEAPON_SWORD, ITEM_SUBCLASS_WEAPON_AXE,
+                              ITEM_SUBCLASS_WEAPON_MACE, ITEM_SUBCLASS_WEAPON_FIST_WEAPON,
+                              ITEM_SUBCLASS_WEAPON_SWORD2, ITEM_SUBCLASS_WEAPON_AXE2,
+                              ITEM_SUBCLASS_WEAPON_MACE2 };
+                oh_weapons = mh_weapons;
+            }
             else
             {
                 mh_weapons = { ITEM_SUBCLASS_WEAPON_SWORD2, ITEM_SUBCLASS_WEAPON_AXE2, ITEM_SUBCLASS_WEAPON_MACE2,
                               ITEM_SUBCLASS_WEAPON_STAFF, ITEM_SUBCLASS_WEAPON_POLEARM };
             }
+            break;
+        }
+        case CLASS_DEATH_KNIGHT:
+        {
+            if (spec == Specializations::SPEC_DEATH_KNIGHT_FROST)
+            {
+                mh_weapons = { ITEM_SUBCLASS_WEAPON_SWORD, ITEM_SUBCLASS_WEAPON_AXE,
+                              ITEM_SUBCLASS_WEAPON_MACE, ITEM_SUBCLASS_WEAPON_SWORD2,
+                              ITEM_SUBCLASS_WEAPON_AXE2, ITEM_SUBCLASS_WEAPON_MACE2,
+                              ITEM_SUBCLASS_WEAPON_POLEARM };
+                oh_weapons = { ITEM_SUBCLASS_WEAPON_SWORD, ITEM_SUBCLASS_WEAPON_AXE,
+                              ITEM_SUBCLASS_WEAPON_MACE };
+            }
+            else
+                mh_weapons = { ITEM_SUBCLASS_WEAPON_SWORD2, ITEM_SUBCLASS_WEAPON_AXE2,
+                              ITEM_SUBCLASS_WEAPON_MACE2, ITEM_SUBCLASS_WEAPON_POLEARM };
             break;
         }
         case CLASS_PALADIN:
@@ -347,7 +356,7 @@ bool RandomItemManager::ShouldEquipWeaponForSpec(Classes playerclass, Specializa
             else if (spec == Specializations::SPEC_PALADIN_HOLY)
             {
                 mh_weapons = { ITEM_SUBCLASS_WEAPON_SWORD, ITEM_SUBCLASS_WEAPON_AXE, ITEM_SUBCLASS_WEAPON_MACE };
-                oh_weapons = { ITEM_SUBCLASS_ARMOR_SHIELD, ITEM_SUBCLASS_ARMOR_MISCELLANEOUS };
+                oh_weapons = { ITEM_SUBCLASS_ARMOR_SHIELD };
             }
             else
             {
@@ -363,13 +372,24 @@ bool RandomItemManager::ShouldEquipWeaponForSpec(Classes playerclass, Specializa
         }
         case CLASS_ROGUE:
         {
-            mh_weapons = { ITEM_SUBCLASS_WEAPON_DAGGER };
-            oh_weapons = { ITEM_SUBCLASS_WEAPON_DAGGER };
+            if (spec == Specializations::SPEC_ROGUE_COMBAT)
+            {
+                mh_weapons = { ITEM_SUBCLASS_WEAPON_DAGGER, ITEM_SUBCLASS_WEAPON_SWORD,
+                              ITEM_SUBCLASS_WEAPON_AXE, ITEM_SUBCLASS_WEAPON_MACE,
+                              ITEM_SUBCLASS_WEAPON_FIST_WEAPON };
+                oh_weapons = mh_weapons;
+            }
+            else
+            {
+                mh_weapons = { ITEM_SUBCLASS_WEAPON_DAGGER };
+                oh_weapons = { ITEM_SUBCLASS_WEAPON_DAGGER };
+            }
             break;
         }
         case CLASS_PRIEST:
         {
-            mh_weapons = { ITEM_SUBCLASS_WEAPON_STAFF, ITEM_SUBCLASS_WEAPON_DAGGER, ITEM_SUBCLASS_WEAPON_MACE };
+            mh_weapons = { ITEM_SUBCLASS_WEAPON_STAFF, ITEM_SUBCLASS_WEAPON_DAGGER,
+                          ITEM_SUBCLASS_WEAPON_MACE, ITEM_SUBCLASS_WEAPON_WAND };
             oh_weapons = { ITEM_SUBCLASS_ARMOR_MISCELLANEOUS };
             break;
         }
@@ -377,26 +397,32 @@ bool RandomItemManager::ShouldEquipWeaponForSpec(Classes playerclass, Specializa
         {
             if (spec == Specializations::SPEC_SHAMAN_RESTORATION)
             {
-                mh_weapons = { ITEM_SUBCLASS_WEAPON_DAGGER, ITEM_SUBCLASS_WEAPON_AXE, ITEM_SUBCLASS_WEAPON_MACE,
+                mh_weapons = { ITEM_SUBCLASS_WEAPON_STAFF, ITEM_SUBCLASS_WEAPON_DAGGER,
+                              ITEM_SUBCLASS_WEAPON_AXE, ITEM_SUBCLASS_WEAPON_MACE,
                               ITEM_SUBCLASS_WEAPON_FIST_WEAPON };
                 oh_weapons = { ITEM_SUBCLASS_ARMOR_MISCELLANEOUS, ITEM_SUBCLASS_ARMOR_SHIELD };
             }
             else if (spec == Specializations::SPEC_SHAMAN_ENHANCEMENT)
             {
-                mh_weapons = { ITEM_SUBCLASS_WEAPON_MACE2, ITEM_SUBCLASS_WEAPON_AXE2, ITEM_SUBCLASS_WEAPON_DAGGER,
-                              ITEM_SUBCLASS_WEAPON_AXE,   ITEM_SUBCLASS_WEAPON_MACE, ITEM_SUBCLASS_WEAPON_FIST_WEAPON };
-                oh_weapons = { ITEM_SUBCLASS_ARMOR_SHIELD };
+                mh_weapons = { ITEM_SUBCLASS_WEAPON_AXE, ITEM_SUBCLASS_WEAPON_MACE,
+                              ITEM_SUBCLASS_WEAPON_FIST_WEAPON };
+                oh_weapons = mh_weapons;
             }
             else
             {
-                mh_weapons = { ITEM_SUBCLASS_WEAPON_STAFF };
+                mh_weapons = { ITEM_SUBCLASS_WEAPON_STAFF, ITEM_SUBCLASS_WEAPON_DAGGER,
+                              ITEM_SUBCLASS_WEAPON_AXE, ITEM_SUBCLASS_WEAPON_MACE,
+                              ITEM_SUBCLASS_WEAPON_FIST_WEAPON };
+                oh_weapons = { ITEM_SUBCLASS_ARMOR_MISCELLANEOUS,
+                              ITEM_SUBCLASS_ARMOR_SHIELD };
             }
             break;
         }
         case CLASS_MAGE:
         case CLASS_WARLOCK:
         {
-            mh_weapons = { ITEM_SUBCLASS_WEAPON_STAFF, ITEM_SUBCLASS_WEAPON_DAGGER, ITEM_SUBCLASS_WEAPON_SWORD };
+            mh_weapons = { ITEM_SUBCLASS_WEAPON_STAFF, ITEM_SUBCLASS_WEAPON_DAGGER,
+                          ITEM_SUBCLASS_WEAPON_SWORD, ITEM_SUBCLASS_WEAPON_WAND };
             oh_weapons = { ITEM_SUBCLASS_ARMOR_MISCELLANEOUS };
             break;
         }
@@ -404,7 +430,8 @@ bool RandomItemManager::ShouldEquipWeaponForSpec(Classes playerclass, Specializa
         {
             if (spec == Specializations::SPEC_DRUID_GUARDIAN)
             {
-                mh_weapons = { ITEM_SUBCLASS_WEAPON_STAFF, ITEM_SUBCLASS_WEAPON_MACE2 };
+                mh_weapons = { ITEM_SUBCLASS_WEAPON_STAFF, ITEM_SUBCLASS_WEAPON_MACE2,
+                              ITEM_SUBCLASS_WEAPON_POLEARM };
             }
             else if (spec == Specializations::SPEC_DRUID_RESTORATION)
             {
@@ -414,26 +441,37 @@ bool RandomItemManager::ShouldEquipWeaponForSpec(Classes playerclass, Specializa
             }
             else if (spec == Specializations::SPEC_DRUID_FERAL)
             {
-                mh_weapons = { ITEM_SUBCLASS_WEAPON_STAFF, ITEM_SUBCLASS_WEAPON_MACE2 };
+                mh_weapons = { ITEM_SUBCLASS_WEAPON_STAFF, ITEM_SUBCLASS_WEAPON_MACE2,
+                              ITEM_SUBCLASS_WEAPON_POLEARM };
             }
             else
             {
-                mh_weapons = { ITEM_SUBCLASS_WEAPON_STAFF };
+                mh_weapons = { ITEM_SUBCLASS_WEAPON_STAFF, ITEM_SUBCLASS_WEAPON_DAGGER,
+                              ITEM_SUBCLASS_WEAPON_MACE };
+                oh_weapons = { ITEM_SUBCLASS_ARMOR_MISCELLANEOUS };
             }
             break;
         }
         case CLASS_MONK:
         {
-            mh_weapons = { ITEM_SUBCLASS_WEAPON_STAFF, ITEM_SUBCLASS_WEAPON_AXE , ITEM_SUBCLASS_WEAPON_SWORD , ITEM_SUBCLASS_WEAPON_MACE , ITEM_SUBCLASS_WEAPON_FIST_WEAPON };
-            oh_weapons = { ITEM_SUBCLASS_WEAPON_AXE , ITEM_SUBCLASS_WEAPON_SWORD , ITEM_SUBCLASS_WEAPON_MACE , ITEM_SUBCLASS_WEAPON_FIST_WEAPON };
+            mh_weapons = { ITEM_SUBCLASS_WEAPON_STAFF, ITEM_SUBCLASS_WEAPON_POLEARM,
+                          ITEM_SUBCLASS_WEAPON_AXE, ITEM_SUBCLASS_WEAPON_SWORD,
+                          ITEM_SUBCLASS_WEAPON_MACE, ITEM_SUBCLASS_WEAPON_FIST_WEAPON };
+            if (spec == Specializations::SPEC_MONK_MISTWEAVER)
+                oh_weapons = { ITEM_SUBCLASS_ARMOR_MISCELLANEOUS };
+            else
+                oh_weapons = { ITEM_SUBCLASS_WEAPON_AXE, ITEM_SUBCLASS_WEAPON_SWORD,
+                              ITEM_SUBCLASS_WEAPON_MACE, ITEM_SUBCLASS_WEAPON_FIST_WEAPON };
             break;
         }
     }
 
-    if (slot_mh == EQUIPMENT_SLOT_MAINHAND && mh_weapons.find(proto->SubClass) != mh_weapons.end())
+    if (slot == EQUIPMENT_SLOT_MAINHAND &&
+        mh_weapons.find(proto->SubClass) != mh_weapons.end())
         return true;
 
-    if (slot_oh == EQUIPMENT_SLOT_OFFHAND && oh_weapons.find(proto->SubClass) != oh_weapons.end())
+    if (slot == EQUIPMENT_SLOT_OFFHAND &&
+        oh_weapons.find(proto->SubClass) != oh_weapons.end())
         return true;
 
     return false;
@@ -536,9 +574,9 @@ bool RandomItemManager::CanEquipSubArmor(Player* bot, ItemTemplate const* proto)
         }
         case CLASS_PALADIN:
         {
-            if (spec == Specializations::SPEC_PALADIN_PROTECTION && proto->SubClass == ITEM_SUBCLASS_ARMOR_SHIELD)
-                return true;
-            if (spec == Specializations::SPEC_PALADIN_HOLY && proto->SubClass == ITEM_SUBCLASS_ARMOR_MISCELLANEOUS)
+            if ((spec == Specializations::SPEC_PALADIN_PROTECTION ||
+                spec == Specializations::SPEC_PALADIN_HOLY) &&
+                proto->SubClass == ITEM_SUBCLASS_ARMOR_SHIELD)
                 return true;
             return false;
         }
@@ -551,14 +589,15 @@ bool RandomItemManager::CanEquipSubArmor(Player* bot, ItemTemplate const* proto)
         }
         case CLASS_DRUID:
         {
-            if ((spec == Specializations::SPEC_DRUID_BALANCE || spec == Specializations::SPEC_DRUID_FERAL)
+            if ((spec == Specializations::SPEC_DRUID_BALANCE || spec == Specializations::SPEC_DRUID_RESTORATION)
                 && proto->SubClass == ITEM_SUBCLASS_ARMOR_MISCELLANEOUS)
                 return true;
             return false;
         }
         case CLASS_MONK:
         {
-            if (spec == Specializations::SPEC_MONK_MISTWEAVER && proto->SubClass != ITEM_SUBCLASS_ARMOR_MISCELLANEOUS)
+            if (spec == Specializations::SPEC_MONK_MISTWEAVER &&
+                proto->SubClass == ITEM_SUBCLASS_ARMOR_MISCELLANEOUS)
                 return true;
             return false;
         }
@@ -578,17 +617,7 @@ bool RandomItemManager::CanEquipArmor(Player* bot, ItemTemplate const* proto)
     if (!ShouldEquipArmorForSpec(level, clazz, bot->GetSpecialization(), proto))
         return false;
 
-    uint8 sp = 0, ap = 0, tank = 0;
-    for (uint8 j = 0; j < MAX_ITEM_PROTO_STATS; ++j)
-    {
-        // for ItemStatValue != 0
-        if (!proto->ItemStat[j].ItemStatValue)
-            continue;
-
-        AddItemStats(proto->ItemStat[j].ItemStatType, sp, ap, tank);
-    }
-
-    return CheckItemStats(clazz, sp, ap, tank);
+    return MatchesPrimaryStatForSpec(bot, proto);
 }
 
 bool RandomItemManager::CanEquipWeapon(Player* bot, ItemTemplate const* proto)
@@ -653,16 +682,107 @@ bool RandomItemManager::CanEquipWeapon(Player* bot, ItemTemplate const* proto)
         {
             if (proto->SubClass != ITEM_SUBCLASS_WEAPON_AXE && proto->SubClass != ITEM_SUBCLASS_WEAPON_SWORD &&
                 proto->SubClass != ITEM_SUBCLASS_WEAPON_STAFF && proto->SubClass != ITEM_SUBCLASS_WEAPON_MACE &&
-                proto->SubClass != ITEM_SUBCLASS_WEAPON_FIST_WEAPON)
+                proto->SubClass != ITEM_SUBCLASS_WEAPON_FIST_WEAPON &&
+                proto->SubClass != ITEM_SUBCLASS_WEAPON_POLEARM)
                 return false;
             break;
         }
     }
 
-    if (!ShouldEquipWeaponForSpec((Classes)bot->GetClass(), bot->GetSpecialization(), proto))
+    if (!ShouldEquipWeaponForSpec((Classes)bot->GetClass(),
+            bot->GetSpecialization(), EQUIPMENT_SLOT_MAINHAND, proto) &&
+        !ShouldEquipWeaponForSpec((Classes)bot->GetClass(),
+            bot->GetSpecialization(), EQUIPMENT_SLOT_OFFHAND, proto))
         return false;
 
-    return true;
+    return MatchesPrimaryStatForSpec(bot, proto);
+}
+
+bool RandomItemManager::SupportsOffhandForSpec(Player* bot) const
+{
+    switch (bot->GetSpecialization())
+    {
+        case SPEC_WARRIOR_FURY:
+        case SPEC_WARRIOR_PROTECTION:
+        case SPEC_PALADIN_HOLY:
+        case SPEC_PALADIN_PROTECTION:
+        case SPEC_DEATH_KNIGHT_FROST:
+        case SPEC_ROGUE_ASSASSINATION:
+        case SPEC_ROGUE_COMBAT:
+        case SPEC_ROGUE_SUBTLETY:
+        case SPEC_PRIEST_DISCIPLINE:
+        case SPEC_PRIEST_HOLY:
+        case SPEC_PRIEST_SHADOW:
+        case SPEC_SHAMAN_ELEMENTAL:
+        case SPEC_SHAMAN_ENHANCEMENT:
+        case SPEC_SHAMAN_RESTORATION:
+        case SPEC_MAGE_ARCANE:
+        case SPEC_MAGE_FIRE:
+        case SPEC_MAGE_FROST:
+        case SPEC_WARLOCK_AFFLICTION:
+        case SPEC_WARLOCK_DEMONOLOGY:
+        case SPEC_WARLOCK_DESTRUCTION:
+        case SPEC_DRUID_BALANCE:
+        case SPEC_DRUID_RESTORATION:
+        case SPEC_MONK_BREWMASTER:
+        case SPEC_MONK_WINDWALKER:
+        case SPEC_MONK_MISTWEAVER:
+            return true;
+        default:
+            return false;
+    }
+}
+
+bool RandomItemManager::NeedsOffhandForSpec(Player* bot) const
+{
+    if (!SupportsOffhandForSpec(bot))
+        return false;
+
+    // Fury's Titan's Grip/Single-Minded Fury design always uses two weapons,
+    // including a second two-hander when the specialization permits it.
+    if (bot->GetSpecialization() == SPEC_WARRIOR_FURY)
+        return true;
+
+    Item* mainHand = bot->GetItemByPos(INVENTORY_SLOT_BAG_0,
+        EQUIPMENT_SLOT_MAINHAND);
+    if (!mainHand)
+        return false;
+
+    InventoryType type = InventoryType(mainHand->GetTemplate()->InventoryType);
+    return type != INVTYPE_2HWEAPON && type != INVTYPE_RANGED;
+}
+
+bool RandomItemManager::IsItemValidForEquipmentSlot(Player* bot,
+    EquipmentSlots slot, ItemTemplate const* proto)
+{
+    if (!bot || !proto || !CanEquipItem(slot, proto))
+        return false;
+
+    if (slot == EQUIPMENT_SLOT_MAINHAND || slot == EQUIPMENT_SLOT_OFFHAND)
+    {
+        if (!ShouldEquipWeaponForSpec((Classes)bot->GetClass(),
+                bot->GetSpecialization(), slot, proto))
+            return false;
+        return MatchesPrimaryStatForSpec(bot, proto);
+    }
+
+    switch (slot)
+    {
+        case EQUIPMENT_SLOT_HEAD:
+        case EQUIPMENT_SLOT_SHOULDERS:
+        case EQUIPMENT_SLOT_CHEST:
+        case EQUIPMENT_SLOT_WAIST:
+        case EQUIPMENT_SLOT_LEGS:
+        case EQUIPMENT_SLOT_FEET:
+        case EQUIPMENT_SLOT_WRISTS:
+        case EQUIPMENT_SLOT_HANDS:
+            return CanEquipArmor(bot, proto);
+        case EQUIPMENT_SLOT_BODY:
+        case EQUIPMENT_SLOT_TABARD:
+            return true;
+        default:
+            return MatchesPrimaryStatForSpec(bot, proto);
+    }
 }
 
 // Définition des seuils de qualité avec une valeur de repli
@@ -696,8 +816,6 @@ static const std::map<uint32, std::tuple<ItemQualities, ItemQualities, uint32, u
 uint32 RandomItemManager::FindBestItemForLevelAndEquip(Player* bot, InventoryType invType)
 {
     uint32 level = (uint32)bot->GetLevel();
-    uint32 bot_class = bot->GetClass();
-    uint32 bot_race = bot->GetRace();
     int32 delta = std::min(level, 10u);
 
     for (uint32 requiredLevel = bot->GetLevel(); requiredLevel > std::max((int32)bot->GetLevel() - delta, 0); requiredLevel--)
@@ -768,24 +886,79 @@ uint32 RandomItemManager::FindBestItemForLevelAndEquip(Player* bot, InventoryTyp
                 !CanEquipWeapon(bot, proto))
                 continue;
 
-            else
-            {
-                uint8 sp = 0, ap = 0, tank = 0;
-                for (uint8 j = 0; j < MAX_ITEM_PROTO_STATS; ++j)
-                {
-                    // for ItemStatValue != 0
-                    if (!proto->ItemStat[j].ItemStatValue)
-                        continue;
-
-                    AddItemStats(proto->ItemStat[j].ItemStatType, sp, ap, tank);
-                }
-
-                if (!CheckItemStats((Classes)bot_class, sp, ap, tank)) continue;
-            }
+            if (!MatchesPrimaryStatForSpec(bot, proto))
+                continue;
 
             // ok ?
             return proto->ItemId;
         }
     }
     return 0;
+}
+
+bool RandomItemManager::MatchesPrimaryStatForSpec(Player* bot,
+    ItemTemplate const* proto) const
+{
+    bool intellect = false;
+    bool agility = false;
+    bool strength = false;
+    for (uint8 index = 0; index < MAX_ITEM_PROTO_STATS; ++index)
+    {
+        if (proto->ItemStat[index].ItemStatValue <= 0)
+            continue;
+        switch (proto->ItemStat[index].ItemStatType)
+        {
+            case ITEM_MOD_INTELLECT:
+            case ITEM_MOD_SPELL_POWER:
+                intellect = true;
+                break;
+            case ITEM_MOD_AGILITY:
+                agility = true;
+                break;
+            case ITEM_MOD_STRENGTH:
+                strength = true;
+                break;
+            default:
+                break;
+        }
+    }
+
+    // Jewelry and low-level items can legitimately carry only secondary
+    // stats. Preserve/allow them rather than creating an unfillable slot.
+    if (!intellect && !agility && !strength)
+        return true;
+
+    switch (bot->GetSpecialization())
+    {
+        case SPEC_PALADIN_HOLY:
+        case SPEC_PRIEST_DISCIPLINE:
+        case SPEC_PRIEST_HOLY:
+        case SPEC_PRIEST_SHADOW:
+        case SPEC_SHAMAN_ELEMENTAL:
+        case SPEC_SHAMAN_RESTORATION:
+        case SPEC_MAGE_ARCANE:
+        case SPEC_MAGE_FIRE:
+        case SPEC_MAGE_FROST:
+        case SPEC_WARLOCK_AFFLICTION:
+        case SPEC_WARLOCK_DEMONOLOGY:
+        case SPEC_WARLOCK_DESTRUCTION:
+        case SPEC_DRUID_BALANCE:
+        case SPEC_DRUID_RESTORATION:
+        case SPEC_MONK_MISTWEAVER:
+            return intellect;
+        case SPEC_HUNTER_BEAST_MASTERY:
+        case SPEC_HUNTER_MARKSMANSHIP:
+        case SPEC_HUNTER_SURVIVAL:
+        case SPEC_ROGUE_ASSASSINATION:
+        case SPEC_ROGUE_COMBAT:
+        case SPEC_ROGUE_SUBTLETY:
+        case SPEC_SHAMAN_ENHANCEMENT:
+        case SPEC_DRUID_FERAL:
+        case SPEC_DRUID_GUARDIAN:
+        case SPEC_MONK_BREWMASTER:
+        case SPEC_MONK_WINDWALKER:
+            return agility;
+        default:
+            return strength;
+    }
 }
