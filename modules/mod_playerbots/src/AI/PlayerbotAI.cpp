@@ -150,6 +150,11 @@ PlayerbotAI::PlayerbotAI(Player* bot)
 
 PlayerbotAI::~PlayerbotAI()
 {
+    // Logout can be initiated by a world-thread queue/group coordinator while
+    // the map worker is still finishing an AI action. Do not destroy cached
+    // Action/Value objects until every action entry point has returned.
+    std::lock_guard<std::recursive_mutex> strategyLock(_strategyMutex);
+
     for (uint8 i = 0; i < BOT_STATE_MAX; i++)
     {
         if (_engines[i])
@@ -488,6 +493,11 @@ void PlayerbotAI::UpdateAIInternal([[maybe_unused]] uint32 elapsed, bool minimal
 
 bool PlayerbotAI::DoSpecificAction(std::string const name, Event event, bool silent, std::string const qualifier)
 {
+    // Preparation buffs and a few administrative commands call this entry
+    // point from the world thread. It shares cached Action objects and the AI
+    // context with DoNextAction, so both paths must use the same lifetime lock.
+    std::lock_guard<std::recursive_mutex> strategyLock(_strategyMutex);
+
     std::ostringstream out;
 
     for (uint8 i = 0; i < BOT_STATE_MAX; i++)
