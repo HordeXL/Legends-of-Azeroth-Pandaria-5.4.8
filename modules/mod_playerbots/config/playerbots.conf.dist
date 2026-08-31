@@ -1695,6 +1695,13 @@ AiPlayerbot.RandomBotSayWithoutMaster = 0
 # 1 - to enable broadcasts globally, 0 - to disable (default 1)
 AiPlayerbot.EnableBroadcasts = 1
 #
+# Drop a speech line instead of showing it when one of its placeholders could
+# not be resolved for this bot (no target, empty bags, no reputation, ...) or
+# when the text uses a placeholder the server does not implement.
+# This keeps raw tokens such as "%category" out of the chat box.
+# 1 - to hide such lines (default 1), 0 - to speak them as-is
+AiPlayerbot.HideUnformattedText = 1
+#
 # all broadcast chances should be in range 0-30000
 #
 # value of 0 will disable this particular broadcast

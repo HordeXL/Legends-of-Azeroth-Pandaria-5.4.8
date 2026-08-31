@@ -353,8 +353,11 @@ public:
                 continue;
 
             PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot);
-            if (!botAI)
+                if (!botAI)
                 continue;
+
+            // Let the bot address the speaker by name (%s / %other_name).
+            botAI->SetLastSpeaker(player->GetName());
 
             if (thunderfury)
                 botAI->TryTalk("thunderfury_spam", sPlayerbotAIConfig->thunderfuryRepliesChance * 300);
@@ -410,7 +413,11 @@ public:
             // When the whisper was not a bot command, the bot may reply with a
             // random "reply" text (reply_type entries in ai_playerbot_texts).
             if (!handled && sPlayerbotAIConfig->randomBotTalk && sPlayerbotAIConfig->enableBroadcasts)
+            {
+                // Let the bot address the whisperer by name (%s / %other_name).
+                botAI->SetLastSpeaker(player->GetName());
                 botAI->TryTalk("reply", sPlayerbotAIConfig->broadcastChanceSuggestSomething / 10);
+            }
         }
     }
 

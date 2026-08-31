@@ -247,6 +247,7 @@ bool PlayerbotAIConfig::Initialize()
     guildFeedback = sConfigMgr->GetBoolDefault("AIPlayerbot.GuildFeedback", true);
     randomBotSayWithoutMaster = sConfigMgr->GetBoolDefault("AiPlayerbot.RandomBotSayWithoutMaster", false);
     enableBroadcasts = sConfigMgr->GetBoolDefault("AiPlayerbot.EnableBroadcasts", true);
+    hideUnformattedText = sConfigMgr->GetBoolDefault("AiPlayerbot.HideUnformattedText", true);
 
     broadcastToGuildGlobalChance = sConfigMgr->GetIntDefault("AiPlayerbot.BroadcastToGuildGlobalChance", 15000);
     broadcastToWorldGlobalChance = sConfigMgr->GetIntDefault("AiPlayerbot.BroadcastToWorldGlobalChance", 15000);

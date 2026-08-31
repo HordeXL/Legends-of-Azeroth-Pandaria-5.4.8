@@ -107,6 +107,9 @@ public:
     uint32 toxicLinksRepliesChance, thunderfuryRepliesChance, guildRepliesRate;
     bool randomBotSayWithoutMaster;
     bool enableBroadcasts;
+    // Drop a speech line instead of showing it when one of its placeholders
+    // could not be resolved (keeps "%category" out of the chat box).
+    bool hideUnformattedText;
     // channel broadcast global chances (0-30000)
     uint32 broadcastToGuildGlobalChance, broadcastToWorldGlobalChance, broadcastToGeneralGlobalChance,
         broadcastToTradeGlobalChance, broadcastToLFGGlobalChance, broadcastToLocalDefenseGlobalChance,

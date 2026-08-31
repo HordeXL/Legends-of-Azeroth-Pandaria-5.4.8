@@ -9,6 +9,7 @@
 #include "Item.h"
 #include "PlayerbotAIBase.h"
 #include "NewRpgStrategy.h"
+#include "PlayerbotTextMgr.h"
 #include "WorldPacket.h"
 
 enum BotState
@@ -235,9 +236,18 @@ public:
     // Rolls the chance (0-30000) and broadcasts when the roll succeeds.
     bool TryBroadcast(std::string const name, uint32 chance, Unit* target = nullptr, ItemTemplate const* item = nullptr);
 
+    // Remembers the last player who spoke to the bot so placeholders such as
+    // "%s" can address them by name. Expires after a short while.
+    void SetLastSpeaker(std::string const name);
+    std::string GetLastSpeaker() const;
+
     // Periodic random speech checks (taunt/aoe/random chatter). Called from UpdateAI.
     void UpdateRandomSpeech(uint32 elapsed);
 private:
+    // Fills the placeholder context used by PlayerbotTextMgr::Format().
+    PlayerbotTextContext BuildTextContext(LocaleConstant locale, Unit* target = nullptr,
+        ItemTemplate const* item = nullptr);
+
     bool _isBotInitializing;
 
 protected:
@@ -259,6 +269,8 @@ protected:
     //CompositeChatFilter chatFilter;
     //PlayerbotSecurity security;
     std::map<std::string, time_t> whispers;
+    std::string _lastSpeaker;
+    time_t _lastSpeakerTime = 0;
     //std::pair<ChatMsg, time_t> currentChat;
     //static std::set<std::string> unsecuredCommands;
     bool _allowActive[MAX_ACTIVITY_TYPE];

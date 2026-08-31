@@ -1671,12 +1671,54 @@ bool PlayerbotAI::Talk(std::string const name, Unit* target, ItemTemplate const*
     if (text.empty())
         return false;
 
-    text = sPlayerbotTextMgr->Format(std::move(text), bot, target, item);
+    text = sPlayerbotTextMgr->Format(std::move(text), BuildTextContext(locale, target, item));
+    if (text.empty())
+        return false;
+
+    text = sPlayerbotTextMgr->TruncateChatText(std::move(text));
 
     if (sayType == 1)
         return Yell(text);
 
     return Say(text);
+}
+
+PlayerbotTextContext PlayerbotAI::BuildTextContext(LocaleConstant locale, Unit* target, ItemTemplate const* item)
+{
+    PlayerbotTextContext ctx;
+    ctx.bot = bot;
+    ctx.target = target;
+    ctx.item = item;
+    ctx.locale = locale;
+    ctx.speaker = GetLastSpeaker();
+
+    // Fall back to the master so "%s" still resolves for bots that were not
+    // directly addressed by a real player.
+    if (ctx.speaker.empty())
+    {
+        if (Player* m = GetMaster())
+            ctx.speaker = m->GetName();
+    }
+
+    return ctx;
+}
+
+void PlayerbotAI::SetLastSpeaker(std::string const name)
+{
+    _lastSpeaker = name;
+    _lastSpeakerTime = time(nullptr);
+}
+
+std::string PlayerbotAI::GetLastSpeaker() const
+{
+    // Forget the speaker quickly: an old name must not leak into later chatter.
+    if (_lastSpeaker.empty() || !_lastSpeakerTime)
+        return "";
+
+    if ((time(nullptr) - _lastSpeakerTime) > 60)
+        return "";
+
+    return _lastSpeaker;
 }
 
 bool PlayerbotAI::TryTalk(std::string const name, uint32 chance, Unit* target, ItemTemplate const* item)
@@ -1711,7 +1753,11 @@ bool PlayerbotAI::Broadcast(std::string const name, Unit* target, ItemTemplate c
     if (text.empty())
         return false;
 
-    text = sPlayerbotTextMgr->Format(std::move(text), bot, target, item);
+    text = sPlayerbotTextMgr->Format(std::move(text), BuildTextContext(locale, target, item));
+    if (text.empty())
+        return false;
+
+    text = sPlayerbotTextMgr->TruncateChatText(std::move(text));
 
     // 1) Guild chat (most reliable - no channel membership needed)
     if (Guild* guild = bot->GetGuild())
