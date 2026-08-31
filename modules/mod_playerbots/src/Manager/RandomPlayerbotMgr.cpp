@@ -166,8 +166,10 @@ namespace
             return reject("already-using-lfg");
         if (bot->InBattleground() || bot->InBattlegroundQueue())
             return reject("using-pvp");
-        if (bot->IsInCombat() || bot->IsInFlight())
-            return reject("busy");
+        if (bot->IsInCombat())
+            return reject("in-combat");
+        if (bot->IsInFlight())
+            return reject("in-flight");
         if (!bot->GetMap() || bot->GetMap()->Instanceable())
             return reject("instance-map");
 
@@ -294,6 +296,46 @@ RandomPlayerbotMgr::RandomPlayerbotMgr()
 }
 
 RandomPlayerbotMgr::~RandomPlayerbotMgr() {}
+
+bool RandomPlayerbotMgr::IsLfgAutoQueueReserved(Player const* bot) const
+{
+    if (!bot)
+        return false;
+
+    uint32 guid = bot->GetGUID().GetCounter();
+    if (LfgAutoQueueStagedLogins.count(guid))
+        return true;
+
+    auto managed = LfgAutoQueueManagedBots.find(guid);
+    return managed != LfgAutoQueueManagedBots.end() &&
+        (!bot->GetMap() || !bot->GetMap()->Instanceable());
+}
+
+bool RandomPlayerbotMgr::CanLfgAutoQueueBotEngage(
+    Player const* bot, Unit const* target) const
+{
+    if (!bot)
+        return false;
+
+    auto managed = LfgAutoQueueManagedBots.find(bot->GetGUID().GetCounter());
+    if (managed == LfgAutoQueueManagedBots.end())
+        return LfgAutoQueueStagedLogins.count(bot->GetGUID().GetCounter()) == 0;
+
+    Player* requester = ObjectAccessor::FindConnectedPlayer(
+        ObjectGuid::Create<HighGuid::Player>(managed->second.RequesterGuid));
+    if (!requester || !requester->IsInWorld())
+        return false;
+
+    // The real player owns the pull. Once the player has attacked or is being
+    // attacked, normal tank/healer/DPS behavior is allowed for the whole
+    // server-controlled party.
+    if (requester->IsInCombat() || requester->GetVictim() ||
+        requester->HasUnitState(UNIT_STATE_MELEE_ATTACKING) ||
+        !requester->getAttackers().empty())
+        return true;
+
+    return target && target->GetVictim() == requester;
+}
 
 void RandomPlayerbotMgr::Reserve(const uint32 size)
 {
@@ -629,15 +671,53 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
             if (!CanAutoQueueLfgBot(bot, staged.Team, &rejectionReason) ||
                 GetLfgRole(bot) != staged.Role)
             {
-                LfgAutoQueueIneligibleBots.insert(botGuid);
-                TC_LOG_ERROR("server",
-                    "AutoQueue LFG staged bot ineligible name=%s guid=%u role=%u reason=%s",
-                    bot->GetName().c_str(), botGuid, uint32(staged.Role),
-                    rejectionReason.empty() ? "wrong-role" : rejectionReason.c_str());
-                if (!bot->IsUsingLfg() && !bot->GetGroup())
-                    LogoutPlayerBot(guid);
-                itr = LfgAutoQueueStagedLogins.erase(itr);
-                continue;
+                // A bot loaded specifically for LFG may resume an old taxi or
+                // let its normal open-world AI acquire an NPC before this
+                // observer sees it. Neither state makes the character an
+                // invalid dungeon filler. Stop it locally and validate all
+                // eligibility rules again.
+                if (rejectionReason == "in-combat")
+                {
+                    bot->CombatStopWithPets(true);
+                    bot->AttackStop();
+                    bot->SetTarget(ObjectGuid::Empty);
+                    rejectionReason.clear();
+                    CanAutoQueueLfgBot(bot, staged.Team, &rejectionReason);
+                }
+                else if (rejectionReason == "in-flight")
+                {
+                    bot->GetMotionMaster()->MovementExpired();
+                    bot->CleanupAfterTaxiFlight();
+                    rejectionReason.clear();
+                    CanAutoQueueLfgBot(bot, staged.Team, &rejectionReason);
+                }
+
+                if (!rejectionReason.empty() || GetLfgRole(bot) != staged.Role)
+                {
+                    // Combat/flight can be re-applied by the world during the
+                    // same update. Keep this reserved candidate passive and
+                    // retry next tick instead of blacklisting it.
+                    if (rejectionReason == "in-combat" ||
+                        rejectionReason == "in-flight")
+                    {
+                        ++itr;
+                        continue;
+                    }
+
+                    LfgAutoQueueIneligibleBots.insert(botGuid);
+                    TC_LOG_ERROR("server",
+                        "AutoQueue LFG staged bot ineligible name=%s guid=%u role=%u reason=%s",
+                        bot->GetName().c_str(), botGuid, uint32(staged.Role),
+                        rejectionReason.empty() ? "wrong-role" : rejectionReason.c_str());
+                    if (!bot->IsUsingLfg() && !bot->GetGroup())
+                        LogoutPlayerBot(guid);
+                    itr = LfgAutoQueueStagedLogins.erase(itr);
+                    continue;
+                }
+
+                TC_LOG_INFO("server",
+                    "AutoQueue LFG cleared transient open-world state name=%s guid=%u role=%u",
+                    bot->GetName().c_str(), botGuid, uint32(staged.Role));
             }
 
             if (!bot->IsAlive())
@@ -708,10 +788,14 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
                 dungeons.clear();
                 dungeons.insert(staged.RandomDungeon);
             }
+            // Register before JoinLfg: adding the final required role can
+            // create a proposal synchronously.
+            sLFGMgr->SetProposalAutoAccept(bot->GetGUID(), true);
             sLFGMgr->JoinLfg(bot, staged.Role, dungeons,
                 "request-driven playerbot LFG fill");
             if (!bot->IsUsingLfg())
             {
+                sLFGMgr->SetProposalAutoAccept(bot->GetGUID(), false);
                 LfgAutoQueueIneligibleBots.insert(botGuid);
                 TC_LOG_ERROR("server",
                     "AutoQueue LFG join refused name=%s guid=%u role=%u requester=%u",
@@ -793,6 +877,9 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
                         if (PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot))
                         {
                             botAI->SetMaster(requester);
+                            // Do not carry an open-world target or pending
+                            // cast across the LFG teleport.
+                            botAI->Reset(false);
                             botAI->ResetStrategies();
                             // Native LFG group creation does not emit the
                             // normal playerbot invitation action which usually
@@ -859,7 +946,10 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
             if (!bot)
             {
                 if (!IsBotLoading(guid))
+                {
+                    sLFGMgr->SetProposalAutoAccept(guid, false);
                     itr = LfgAutoQueueManagedBots.erase(itr);
+                }
                 else
                     ++itr;
                 continue;
@@ -934,6 +1024,7 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
 
                 if (bot->IsUsingLfg())
                     sLFGMgr->RemovePlayerQueues(bot->GetGUID());
+                sLFGMgr->SetProposalAutoAccept(bot->GetGUID(), false);
                 TC_LOG_INFO("server",
                     "AutoQueue LFG cleanup complete bot=%s guid=%u requester=%u",
                     bot->GetName().c_str(), itr->first,
@@ -952,7 +1043,10 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
                     bot->IsBeingTeleported() || IsBotLoading(guid))
                     ++itr;
                 else
+                {
+                    sLFGMgr->SetProposalAutoAccept(guid, false);
                     itr = LfgAutoQueueManagedBots.erase(itr);
+                }
                 continue;
             }
 
@@ -989,6 +1083,7 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
                     bot->GetName().c_str(), itr->first,
                     itr->second.RequesterGuid,
                     itr->second.EnteredDungeon ? 1u : 0u);
+                sLFGMgr->SetProposalAutoAccept(bot->GetGUID(), false);
                 LogoutPlayerBot(guid);
                 itr = LfgAutoQueueManagedBots.erase(itr);
                 continue;

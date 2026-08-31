@@ -280,6 +280,19 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
         bot->GetSession()->HandleTimeSyncResp(response);
     }
 
+    // A bot logged in only to fill an LFG request must not wander, grind or
+    // acquire an open-world target while the queue/proposal is being built.
+    // Its equipment/session maintenance remains available to the manager.
+    if (sRandomPlayerbotMgr->IsLfgAutoQueueReserved(bot))
+    {
+        if (bot->IsInCombat())
+            bot->CombatStopWithPets(true);
+        bot->AttackStop();
+        bot->SetTarget(ObjectGuid::Empty);
+        SetNextCheckDelay(100);
+        return;
+    }
+
     AllowActivity();
 
     if (!CanUpdateAI())
@@ -2263,6 +2276,14 @@ bool PlayerbotAI::CastSpell(uint32 spellId, Unit* target, Item* itemTarget)
 
     if (!target)
         target = bot;
+
+    // Apply the same real-player pull ownership to direct class spell
+    // actions. Many rotations cast through this function without first
+    // calling AttackAction, so guarding only the melee/target-selection path
+    // would still allow an autonomous ranged pull.
+    if (target != bot && bot->IsValidAttackTarget(target) &&
+        !sRandomPlayerbotMgr->CanLfgAutoQueueBotEngage(bot, target))
+        return false;
 
     Pet* pet = bot->GetPet();
     SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
