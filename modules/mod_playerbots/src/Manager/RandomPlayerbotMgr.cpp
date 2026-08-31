@@ -87,6 +87,7 @@ namespace
         bool EnteredDungeon = false;
         bool PreparationBuffed = false;
         bool GroupLeadershipEnsured = false;
+        bool AiInitializationRequested = false;
         bool CleanupRequested = false;
     };
 
@@ -296,46 +297,6 @@ RandomPlayerbotMgr::RandomPlayerbotMgr()
 }
 
 RandomPlayerbotMgr::~RandomPlayerbotMgr() {}
-
-bool RandomPlayerbotMgr::IsLfgAutoQueueReserved(Player const* bot) const
-{
-    if (!bot)
-        return false;
-
-    uint32 guid = bot->GetGUID().GetCounter();
-    if (LfgAutoQueueStagedLogins.count(guid))
-        return true;
-
-    auto managed = LfgAutoQueueManagedBots.find(guid);
-    return managed != LfgAutoQueueManagedBots.end() &&
-        (!bot->GetMap() || !bot->GetMap()->Instanceable());
-}
-
-bool RandomPlayerbotMgr::CanLfgAutoQueueBotEngage(
-    Player const* bot, Unit const* target) const
-{
-    if (!bot)
-        return false;
-
-    auto managed = LfgAutoQueueManagedBots.find(bot->GetGUID().GetCounter());
-    if (managed == LfgAutoQueueManagedBots.end())
-        return LfgAutoQueueStagedLogins.count(bot->GetGUID().GetCounter()) == 0;
-
-    Player* requester = ObjectAccessor::FindConnectedPlayer(
-        ObjectGuid::Create<HighGuid::Player>(managed->second.RequesterGuid));
-    if (!requester || !requester->IsInWorld())
-        return false;
-
-    // The real player owns the pull. Once the player has attacked or is being
-    // attacked, normal tank/healer/DPS behavior is allowed for the whole
-    // server-controlled party.
-    if (requester->IsInCombat() || requester->GetVictim() ||
-        requester->HasUnitState(UNIT_STATE_MELEE_ATTACKING) ||
-        !requester->getAttackers().empty())
-        return true;
-
-    return target && target->GetVictim() == requester;
-}
 
 void RandomPlayerbotMgr::Reserve(const uint32 size)
 {
@@ -645,8 +606,11 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
 
             if (!requesterActive)
             {
+                if (bot)
+                    if (PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot))
+                        botAI->SetLfgAutoQueueControl(false, 0);
                 if (bot && !bot->IsUsingLfg() && !bot->GetGroup() &&
-                    !bot->GetMap()->Instanceable())
+                    bot->GetMap() && !bot->GetMap()->Instanceable())
                     LogoutPlayerBot(guid);
                 if (IsBotLoading(guid))
                 {
@@ -666,6 +630,13 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
                 ++itr;
                 continue;
             }
+
+            // This character was logged in solely for the outstanding real
+            // player's LFG request. Publish that ownership into PlayerbotAI
+            // itself so its map thread remains passive without reading the
+            // coordinator's world-thread containers.
+            if (PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot))
+                botAI->SetLfgAutoQueueControl(true, staged.RequesterGuid);
 
             std::string rejectionReason;
             if (!CanAutoQueueLfgBot(bot, staged.Team, &rejectionReason) ||
@@ -709,6 +680,8 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
                         "AutoQueue LFG staged bot ineligible name=%s guid=%u role=%u reason=%s",
                         bot->GetName().c_str(), botGuid, uint32(staged.Role),
                         rejectionReason.empty() ? "wrong-role" : rejectionReason.c_str());
+                    if (PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot))
+                        botAI->SetLfgAutoQueueControl(false, 0);
                     if (!bot->IsUsingLfg() && !bot->GetGroup())
                         LogoutPlayerBot(guid);
                     itr = LfgAutoQueueStagedLogins.erase(itr);
@@ -763,6 +736,8 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
                     bot->GetName().c_str(), botGuid, uint32(staged.Role),
                     buildFailure, bot->GetUsedTalentCount(), expectedTalents,
                     glyphCount, expectedGlyphs);
+                if (PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot))
+                    botAI->SetLfgAutoQueueControl(false, 0);
                 LogoutPlayerBot(guid);
                 itr = LfgAutoQueueStagedLogins.erase(itr);
                 continue;
@@ -801,6 +776,8 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
                     "AutoQueue LFG join refused name=%s guid=%u role=%u requester=%u",
                     bot->GetName().c_str(), botGuid, uint32(staged.Role),
                     staged.RequesterGuid);
+                if (PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot))
+                    botAI->SetLfgAutoQueueControl(false, 0);
                 LogoutPlayerBot(guid);
                 itr = LfgAutoQueueStagedLogins.erase(itr);
                 continue;
@@ -808,7 +785,7 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
 
             LfgAutoQueueManagedBots[botGuid] =
                 { staged.RequesterGuid, staged.Role, false, false, false,
-                  false };
+                  false, false };
             ++lfgBotsJoined;
             TC_LOG_INFO("server",
                 "AutoQueue LFG joined staged bot name=%s guid=%u role=%u requester=%u compatible-dungeons=%u random-dungeon=%u",
@@ -857,7 +834,8 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
                 // leader.  For a request-driven bot party the real requester
                 // must remain the navigation master; otherwise all fillers can
                 // follow an arbitrary bot and leave the player behind.
-                if (!managedPair.second.GroupLeadershipEnsured)
+                if (!managedPair.second.GroupLeadershipEnsured ||
+                    !managedPair.second.AiInitializationRequested)
                 {
                     Player* requester = ObjectAccessor::FindConnectedPlayer(
                         ObjectGuid::Create<HighGuid::Player>(
@@ -874,20 +852,19 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
                     }
                     if (requester && group && requesterGroup == group)
                     {
-                        if (PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot))
+                        if (!managedPair.second.AiInitializationRequested)
                         {
-                            botAI->SetMaster(requester);
-                            // Do not carry an open-world target or pending
-                            // cast across the LFG teleport.
-                            botAI->Reset(false);
-                            botAI->ResetStrategies();
-                            // Native LFG group creation does not emit the
-                            // normal playerbot invitation action which usually
-                            // enables follow. Make the dungeon navigation
-                            // contract explicit for every LFG filler.
-                            botAI->ChangeStrategy(
-                                "+follow,-stay,-lfg,-bg",
-                                BOT_STATE_NON_COMBAT);
+                            if (PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot))
+                            {
+                                // Strategy/action ownership belongs to the
+                                // bot's map thread. Post only an atomic request
+                                // here; UpdateAI performs ResetStrategies
+                                // between action executions.
+                                botAI->SetLfgAutoQueueControl(false,
+                                    managedPair.second.RequesterGuid, true);
+                                managedPair.second.AiInitializationRequested =
+                                    true;
+                            }
                         }
                         if (group->GetLeaderGUID() != requester->GetGUID())
                             group->ChangeLeader(requester->GetGUID());
@@ -1029,6 +1006,8 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
                     "AutoQueue LFG cleanup complete bot=%s guid=%u requester=%u",
                     bot->GetName().c_str(), itr->first,
                     itr->second.RequesterGuid);
+                if (PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot))
+                    botAI->SetLfgAutoQueueControl(false, 0);
                 LogoutPlayerBot(guid);
                 itr = LfgAutoQueueManagedBots.erase(itr);
                 continue;
@@ -1045,6 +1024,8 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
                 else
                 {
                     sLFGMgr->SetProposalAutoAccept(guid, false);
+                    if (PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot))
+                        botAI->SetLfgAutoQueueControl(false, 0);
                     itr = LfgAutoQueueManagedBots.erase(itr);
                 }
                 continue;
@@ -1084,6 +1065,8 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
                     itr->second.RequesterGuid,
                     itr->second.EnteredDungeon ? 1u : 0u);
                 sLFGMgr->SetProposalAutoAccept(bot->GetGUID(), false);
+                if (PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot))
+                    botAI->SetLfgAutoQueueControl(false, 0);
                 LogoutPlayerBot(guid);
                 itr = LfgAutoQueueManagedBots.erase(itr);
                 continue;
@@ -2457,6 +2440,17 @@ void RandomPlayerbotMgr::OnBotLoginInternal(Player* const bot)
 {
     auto maxAllowed = sRandomPlayerbotMgr->GetMaxAllowedBotCount();
     TC_LOG_INFO("playerbots", "%u/%u Bot %s logged in - Active spec tab: %u Spec: %u", playerBots.size(), maxAllowed, bot->GetName().c_str(), (uint32)bot->GetActiveSpec(), (uint32)bot->GetSpecialization());
+
+    // AddPlayerBot finishes on the world/session update before the bot begins
+    // normal open-world AI. Mark request-driven LFG logins immediately so
+    // they cannot acquire a target while waiting for the observer's next
+    // eligibility pass.
+    auto stagedLfg = LfgAutoQueueStagedLogins.find(
+        bot->GetGUID().GetCounter());
+    if (stagedLfg != LfgAutoQueueStagedLogins.end())
+        if (PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot))
+            botAI->SetLfgAutoQueueControl(true,
+                stagedLfg->second.RequesterGuid);
 
     // Inventory capacity must exist before Caller, arena or specialization
     // preparation can preserve replaced equipment in the bot's bags.

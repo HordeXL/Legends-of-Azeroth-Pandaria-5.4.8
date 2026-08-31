@@ -26,7 +26,6 @@ public:
 };
 
 class Player;
-class Unit;
 class ObjectGuid;
 class RandomPlayerbotMgr : public PlayerbotHolder
 {
@@ -88,8 +87,6 @@ public:
 public:
     bool IsRandomBot(Player* bot);
     bool IsRandomBot(ObjectGuid::LowType bot);
-    bool IsLfgAutoQueueReserved(Player const* bot) const;
-    bool CanLfgAutoQueueBotEngage(Player const* bot, Unit const* target) const;
 
     void TagForRandomize(Player* bot, uint32 level);
     void RandomizeFirst(Player* bot);

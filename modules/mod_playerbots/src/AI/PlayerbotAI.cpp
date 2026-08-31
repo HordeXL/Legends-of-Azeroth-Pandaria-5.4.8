@@ -160,6 +160,44 @@ PlayerbotAI::~PlayerbotAI()
         delete _aiObjectContext;
 }
 
+void PlayerbotAI::SetLfgAutoQueueControl(bool reserved,
+    uint32 requesterGuid, bool initializeInDungeon)
+{
+    _lfgAutoQueueRequesterGuid.store(requesterGuid);
+    if (initializeInDungeon)
+        _lfgAutoQueueInitializePending.store(true);
+    else if (!requesterGuid)
+        _lfgAutoQueueInitializePending.store(false);
+    // Publish the reservation flag last. In particular, a map update which
+    // observes reservation release must also observe the pending in-dungeon
+    // initialization request posted above.
+    _lfgAutoQueueReserved.store(reserved);
+}
+
+bool PlayerbotAI::IsLfgAutoQueueReserved() const
+{
+    return _lfgAutoQueueReserved.load();
+}
+
+bool PlayerbotAI::CanLfgAutoQueueEngage(Unit const* target) const
+{
+    uint32 requesterGuid = _lfgAutoQueueRequesterGuid.load();
+    if (!requesterGuid)
+        return true;
+
+    Player* requester = ObjectAccessor::FindConnectedPlayer(
+        ObjectGuid::Create<HighGuid::Player>(requesterGuid));
+    if (!requester || !requester->IsInWorld())
+        return false;
+
+    if (requester->IsInCombat() || requester->GetVictim() ||
+        requester->HasUnitState(UNIT_STATE_MELEE_ATTACKING) ||
+        !requester->getAttackers().empty())
+        return true;
+
+    return target && target->GetVictim() == requester;
+}
+
 uint32 PlayerbotAI::GetReactDelay()
 {
     uint32 base = sPlayerbotAIConfig->reactDelay;  // Default 100(ms)
@@ -280,10 +318,41 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
         bot->GetSession()->HandleTimeSyncResp(response);
     }
 
+    // Strategy containers belong to this map update thread. The LFG
+    // coordinator only posts an atomic request so actions cannot be destroyed
+    // while Engine::DoNextAction is using them.
+    if (_lfgAutoQueueInitializePending.exchange(false))
+    {
+        uint32 requesterGuid = _lfgAutoQueueRequesterGuid.load();
+        Player* requester = requesterGuid ?
+            ObjectAccessor::FindConnectedPlayer(
+                ObjectGuid::Create<HighGuid::Player>(requesterGuid)) : nullptr;
+        Group* botGroup = bot->GetGroup(GroupSlot::Instance);
+        if (!botGroup)
+            botGroup = bot->GetGroup();
+        Group* requesterGroup = requester ?
+            requester->GetGroup(GroupSlot::Instance) : nullptr;
+        if (requester && !requesterGroup)
+            requesterGroup = requester->GetGroup();
+
+        if (requester && botGroup && requesterGroup == botGroup)
+        {
+            SetMaster(requester);
+            Reset(false);
+            ResetStrategies();
+            ChangeStrategy("+follow,-stay,-lfg,-bg", BOT_STATE_NON_COMBAT);
+        }
+        else if (requesterGuid)
+        {
+            // Teleport/group visibility may lag by one map tick.
+            _lfgAutoQueueInitializePending.store(true);
+        }
+    }
+
     // A bot logged in only to fill an LFG request must not wander, grind or
     // acquire an open-world target while the queue/proposal is being built.
     // Its equipment/session maintenance remains available to the manager.
-    if (sRandomPlayerbotMgr->IsLfgAutoQueueReserved(bot))
+    if (IsLfgAutoQueueReserved())
     {
         if (bot->IsInCombat())
             bot->CombatStopWithPets(true);
@@ -2282,7 +2351,7 @@ bool PlayerbotAI::CastSpell(uint32 spellId, Unit* target, Item* itemTarget)
     // calling AttackAction, so guarding only the melee/target-selection path
     // would still allow an autonomous ranged pull.
     if (target != bot && bot->IsValidAttackTarget(target) &&
-        !sRandomPlayerbotMgr->CanLfgAutoQueueBotEngage(bot, target))
+        !CanLfgAutoQueueEngage(target))
         return false;
 
     Pet* pet = bot->GetPet();

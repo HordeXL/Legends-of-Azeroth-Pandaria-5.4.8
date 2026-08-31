@@ -11,7 +11,6 @@
 #include "PlayerbotAI.h"
 #include "Playerbots.h"
 #include "PlayerbotSpec.h"
-#include "RandomPlayerbotMgr.h"
 #include "ServerFacade.h"
 #include "SharedDefines.h"
 #include "Unit.h"
@@ -56,7 +55,7 @@ bool AttackAction::Attack(Unit* target, bool with_pet /*true*/)
 {
     // Request-driven LFG bots assist the real player; they never initiate a
     // dungeon pull merely because their autonomous target scan saw an NPC.
-    if (!sRandomPlayerbotMgr->CanLfgAutoQueueBotEngage(bot, target))
+    if (!botAI->CanLfgAutoQueueEngage(target))
         return false;
 
     if (bot->GetMotionMaster()->GetCurrentMovementGeneratorType() == FLIGHT_MOTION_TYPE ||
