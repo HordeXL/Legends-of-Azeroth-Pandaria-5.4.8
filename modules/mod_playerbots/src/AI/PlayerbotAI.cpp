@@ -323,6 +323,68 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
         bot->GetSession()->HandleTimeSyncResp(response);
     }
 
+    // Instance navmeshes occasionally place a following bot on geometry
+    // below a narrow ramp/platform (notably the Hollowed Out Tree in Siege of
+    // Niuzao Temple). Recover only the unambiguous "directly below the real
+    // player and separated by collision" case, after it persists for a full
+    // second. The narrow 2D/vertical limits avoid skipping legitimate paths
+    // between different dungeon floors.
+    Player* followRecoveryMaster = GetMaster();
+    bool canRecoverFollow = followRecoveryMaster &&
+        !GET_PLAYERBOT_AI(followRecoveryMaster) &&
+        followRecoveryMaster->IsInWorld() &&
+        followRecoveryMaster->GetMap() == bot->GetMap() &&
+        bot->GetMap() && bot->GetMap()->Instanceable() &&
+        !bot->IsBeingTeleported() &&
+        !followRecoveryMaster->IsBeingTeleported() &&
+        !bot->GetVehicle() && !followRecoveryMaster->GetVehicle() &&
+        !bot->GetTransport() && !followRecoveryMaster->GetTransport();
+    bool invalidFollowPosition = canRecoverFollow &&
+        followRecoveryMaster->GetPositionZ() - bot->GetPositionZ() > 5.0f &&
+        bot->GetExactDist2d(followRecoveryMaster) < 12.0f &&
+        !bot->IsWithinLOSInMap(followRecoveryMaster);
+
+    if (invalidFollowPosition)
+    {
+        uint32 now = getMSTime();
+        if (!_invalidFollowPositionSince)
+            _invalidFollowPositionSince = now;
+        else if (getMSTimeDiff(_invalidFollowPositionSince, now) >= 1000)
+        {
+            float oldZ = bot->GetPositionZ();
+            float x, y, z;
+            followRecoveryMaster->GetClosePoint(x, y, z,
+                bot->GetObjectSize(), 1.5f,
+                static_cast<float>(M_PI));
+            z += 0.5f;
+            bot->GetMotionMaster()->Clear();
+            bot->NearTeleportTo(x, y, z,
+                followRecoveryMaster->GetOrientation());
+
+            if (Pet* pet = bot->GetPet())
+            {
+                float petX, petY, petZ;
+                bot->GetClosePoint(petX, petY, petZ,
+                    pet->GetObjectSize(), PET_FOLLOW_DIST,
+                    pet->GetFollowAngle());
+                petZ += 0.5f;
+                pet->GetMotionMaster()->Clear();
+                pet->NearTeleportTo(petX, petY, petZ,
+                    bot->GetOrientation());
+            }
+
+            TC_LOG_WARN("server",
+                "Playerbot recovered from invalid instance follow position bot=%s guid=%u map=%u old-z=%.2f master=%s master-z=%.2f",
+                bot->GetName().c_str(), bot->GetGUID().GetCounter(),
+                bot->GetMapId(), oldZ,
+                followRecoveryMaster->GetName().c_str(),
+                followRecoveryMaster->GetPositionZ());
+            _invalidFollowPositionSince = 0;
+        }
+    }
+    else
+        _invalidFollowPositionSince = 0;
+
     // Strategy containers belong to this map update thread. The LFG
     // coordinator only posts an atomic request so actions cannot be destroyed
     // while Engine::DoNextAction is using them.

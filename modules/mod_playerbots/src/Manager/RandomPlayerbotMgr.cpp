@@ -78,6 +78,7 @@ namespace
         lfg::LfgDungeonSet Dungeons;
         uint32 RandomDungeon = 0;
         lfg::LfgRoles Role = lfg::PLAYER_ROLE_NONE;
+        uint8 SpecializationTab = 0;
     };
 
     struct LfgAutoQueueManagedBot
@@ -638,6 +639,28 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
             if (PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot))
                 botAI->SetLfgAutoQueueControl(true, staged.RequesterGuid);
 
+            // The offline candidate query reads the saved specialization,
+            // while some bot sessions initially expose SPEC_NONE until the
+            // specialization handler has rebuilt runtime state. Restore the
+            // exact saved class tab before role eligibility is evaluated;
+            // otherwise a valid filler is needlessly blacklisted and replaced.
+            if (GetLfgRole(bot) == lfg::PLAYER_ROLE_NONE &&
+                staged.SpecializationTab < MAX_TALENT_TABS)
+            {
+                WorldPacket specialization(CMSG_SET_PRIMARY_TALENT_TREE);
+                specialization << uint32(staged.SpecializationTab);
+                bot->GetSession()->HandeSetTalentSpecialization(
+                    specialization);
+                BotFactory specializationFactory(bot, bot->GetLevel());
+                specializationFactory.InitTalentsTree(false);
+                TC_LOG_INFO("server",
+                    "AutoQueue LFG restored staged specialization name=%s guid=%u tab=%u specialization=%u role=%u",
+                    bot->GetName().c_str(), botGuid,
+                    uint32(staged.SpecializationTab),
+                    uint32(bot->GetSpecialization()),
+                    uint32(GetLfgRole(bot)));
+            }
+
             std::string rejectionReason;
             if (!CanAutoQueueLfgBot(bot, staged.Team, &rejectionReason) ||
                 GetLfgRole(bot) != staged.Role)
@@ -1109,6 +1132,7 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
 
                     uint32 selectedGuid = 0;
                     std::string selectedName;
+                    uint8 selectedSpecializationTab = 0;
                     do
                     {
                         Field* fields = candidates->Fetch();
@@ -1133,11 +1157,24 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
                         uint8 activeSpec = fields[5].GetUInt8();
                         if (activeSpec >= MAX_TALENT_SPECS)
                             activeSpec = 0;
-                        if (GetLfgRole(Specializations(specs[activeSpec])) != role)
+                        Specializations selectedSpecialization =
+                            Specializations(specs[activeSpec]);
+                        if (GetLfgRole(selectedSpecialization) != role)
+                            continue;
+
+                        dbc::TalentTabs classSpecializations =
+                            dbc::GetClassSpecializations(fields[3].GetUInt8());
+                        auto specializationTab = std::find(
+                            classSpecializations.begin(),
+                            classSpecializations.end(),
+                            uint32(selectedSpecialization));
+                        if (specializationTab == classSpecializations.end())
                             continue;
 
                         selectedGuid = candidateGuid;
                         selectedName = fields[1].GetString();
+                        selectedSpecializationTab = uint8(std::distance(
+                            classSpecializations.begin(), specializationTab));
                         break;
                     }
                     while (candidates->NextRow());
@@ -1149,7 +1186,8 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
                         ObjectGuid::Create<HighGuid::Player>(selectedGuid);
                     LfgAutoQueueStagedLogins[selectedGuid] =
                         { demand.Team, demand.RequesterGuid, demand.Dungeons,
-                          demand.RandomDungeon, role };
+                          demand.RandomDungeon, role,
+                          selectedSpecializationTab };
                     AddPlayerBot(selectedObjectGuid, 0);
                     --needed;
                     ++lfgBotsStaged;
