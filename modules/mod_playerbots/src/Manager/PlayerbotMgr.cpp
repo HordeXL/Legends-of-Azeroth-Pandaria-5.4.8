@@ -1083,7 +1083,23 @@ void PlayerbotMgr::HandleMasterIncomingPacket(WorldPacket const& packet)
         Player* const bot = it->second;
         PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot);
         if (botAI && botAI->GetMaster() == GetMaster())
+        {
+            // A logout request has a 20-second client countdown in ordinary
+            // instance locations. Pause only request-owned LFG fillers during
+            // that window, before the following map update can enter another
+            // action. If the real player cancels, normal AI resumes. A
+            // completed logout is converted into delayed teardown by
+            // RandomPlayerbotMgr::OnPlayerLogout.
+            if (sRandomPlayerbotMgr->IsLfgAutoQueueManagedBot(
+                bot->GetGUID().GetCounter()))
+            {
+                if (packet.GetOpcode() == CMSG_LOGOUT_REQUEST)
+                    bot->BeginPlayerbotCleanup();
+                else if (packet.GetOpcode() == CMSG_LOGOUT_CANCEL)
+                    bot->EndPlayerbotCleanup();
+            }
             botAI->HandleMasterIncomingPacket(packet);
+        }
     }
 
     switch (packet.GetOpcode())

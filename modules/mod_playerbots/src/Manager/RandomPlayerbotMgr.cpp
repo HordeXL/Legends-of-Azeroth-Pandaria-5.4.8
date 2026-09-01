@@ -93,6 +93,7 @@ namespace
         bool GroupLeadershipEnsured = false;
         bool AiInitializationRequested = false;
         bool CleanupRequested = false;
+        uint32 CleanupPauseStarted = 0;
     };
 
     std::map<uint32, LfgAutoQueueStagedLogin> LfgAutoQueueStagedLogins;
@@ -1035,6 +1036,8 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
                 !itr->second.CleanupRequested)
             {
                 itr->second.CleanupRequested = true;
+                itr->second.CleanupPauseStarted = getMSTime();
+                bot->BeginPlayerbotCleanup();
                 TC_LOG_INFO("server",
                     "AutoQueue LFG cleanup requested bot=%s guid=%u requester=%u requester-online=%u",
                     bot->GetName().c_str(), itr->first,
@@ -1043,6 +1046,24 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
 
             if (itr->second.CleanupRequested)
             {
+                // OnAfterUpdate runs on a map worker, while this lifecycle is
+                // coordinated by the world thread. Pause the bot first and
+                // allow any AI call which already passed the pause check to
+                // return before group/teleport/session state is destroyed.
+                if (!bot->IsPlayerbotCleanupPending())
+                {
+                    bot->BeginPlayerbotCleanup();
+                    itr->second.CleanupPauseStarted = getMSTime();
+                }
+                if (!itr->second.CleanupPauseStarted)
+                    itr->second.CleanupPauseStarted = getMSTime();
+                if (getMSTimeDiff(itr->second.CleanupPauseStarted,
+                    getMSTime()) < 2000)
+                {
+                    ++itr;
+                    continue;
+                }
+
                 if (!bot->IsInWorld() || bot->IsBeingTeleported() ||
                     IsBotLoading(guid))
                 {
@@ -2543,6 +2564,12 @@ uint32 RandomPlayerbotMgr::SetEventValue(uint32 bot, std::string const event, ui
 
 uint32 RandomPlayerbotMgr::GetValue(uint32 bot, std::string const type) { return GetEventValue(bot, type); }
 
+bool RandomPlayerbotMgr::IsLfgAutoQueueManagedBot(
+    ObjectGuid::LowType bot) const
+{
+    return LfgAutoQueueManagedBots.count(bot) != 0;
+}
+
 uint32 RandomPlayerbotMgr::GetValue(Player* bot, std::string const type)
 {
     return GetValue(bot->GetGUID().GetCounter(), type);
@@ -2566,6 +2593,35 @@ void RandomPlayerbotMgr::OnPlayerLogout(Player* player)
         return;
 
     DisablePlayerBot(player->GetGUID());
+
+    // Native LFG keeps an offline member in its group and elects another
+    // member as leader. Server-controlled fillers have no client which can
+    // leave that abandoned group. Mark every filler owned by this real
+    // requester for the observer's safe, delayed group/teleport/logout path.
+    // Marking the Player before the next map update also prevents a map worker
+    // from entering bot AI while its master is being deleted.
+    uint32 const requesterGuid = player->GetGUID().GetCounter();
+    uint32 const cleanupStarted = getMSTime();
+    for (auto& managedPair : LfgAutoQueueManagedBots)
+    {
+        LfgAutoQueueManagedBot& managed = managedPair.second;
+        if (managed.RequesterGuid != requesterGuid)
+            continue;
+
+        if (!managed.CleanupRequested)
+        {
+            managed.CleanupRequested = true;
+            managed.CleanupPauseStarted = cleanupStarted;
+            TC_LOG_INFO("server",
+                "AutoQueue LFG requester logout scheduled filler cleanup bot-guid=%u requester=%u",
+                managedPair.first, requesterGuid);
+        }
+
+        ObjectGuid botGuid = ObjectGuid::Create<HighGuid::Player>(
+            managedPair.first);
+        if (Player* managedBot = GetPlayerBot(botGuid))
+            managedBot->BeginPlayerbotCleanup();
+    }
 
     for (PlayerBotMap::const_iterator it = GetPlayerBotsBegin(); it != GetPlayerBotsEnd(); ++it)
     {

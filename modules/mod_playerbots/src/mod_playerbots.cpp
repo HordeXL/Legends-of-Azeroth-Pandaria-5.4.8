@@ -317,7 +317,8 @@ public:
         // World-boss cleanup runs from the world update while playerbot AI
         // runs on map workers. Do not let an action retain AI-context pointers
         // while the coordinator disbands, teleports, and logs out that bot.
-        if (player->IsWorldBossStagingCleanup())
+        if (player->IsWorldBossStagingCleanup() ||
+            player->IsPlayerbotCleanupPending())
             return;
 
         if (PlayerbotAI* botAI = GET_PLAYERBOT_AI(player))
