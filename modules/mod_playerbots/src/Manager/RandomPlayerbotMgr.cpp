@@ -758,7 +758,7 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
                     }
 
                     LfgAutoQueueIneligibleBots.insert(botGuid);
-                    TC_LOG_ERROR("server",
+                    TC_LOG_INFO("server",
                         "AutoQueue LFG staged bot ineligible name=%s guid=%u role=%u reason=%s",
                         bot->GetName().c_str(), botGuid, uint32(staged.Role),
                         rejectionReason.empty() ? "wrong-role" : rejectionReason.c_str());

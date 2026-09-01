@@ -18553,10 +18553,17 @@ void Player::_LoadBGData(PreparedQueryResult result)
 
     m_bgData.bgInstanceID = fields[0].GetUInt32();
     m_bgData.bgTeam       = fields[1].GetUInt16();
-    m_bgData.joinPos      = WorldLocation(fields[6].GetUInt16(),    // Map
-                                          fields[2].GetFloat(),     // X
-                                          fields[3].GetFloat(),     // Y
-                                          fields[4].GetFloat(),     // Z
+    uint16 bgJoinMap      = fields[6].GetUInt16();
+    // The character table stores this field as an unsigned SMALLINT, so the
+    // persisted invalid sentinel is read back as 65535 rather than the
+    // in-memory uint32 MAPID_INVALID (0xFFFFFFFF). Normalize it before any
+    // interrupted-instance recovery calls TeleportToBGEntryPoint().
+    uint32 normalizedBgJoinMap = bgJoinMap == uint16(MAPID_INVALID) ?
+        MAPID_INVALID : uint32(bgJoinMap);
+    m_bgData.joinPos      = WorldLocation(normalizedBgJoinMap,      // Map
+                                           fields[2].GetFloat(),     // X
+                                           fields[3].GetFloat(),     // Y
+                                           fields[4].GetFloat(),     // Z
                                           fields[5].GetFloat());    // Orientation
     m_bgData.taxiPath[0]  = fields[7].GetUInt32();
     m_bgData.taxiPath[1]  = fields[8].GetUInt32();
