@@ -378,6 +378,9 @@ class LFGMgr
         ObjectGuid GetLeader(ObjectGuid guid);
         /// Initializes locked dungeons for given player (called at login or level change)
         void InitializeLockedDungeons(Player* player, uint8 level = 0);
+        /// Refreshes locks after a temporary LFR filler's loadout changes and
+        /// clears only personal progression gates for the requested LFR wing.
+        uint32 PrepareLfrFillerLocks(Player* player, LfgDungeonSet const& dungeons);
         /// Sets player team
         void SetTeam(ObjectGuid guid, uint8 team);
         /// Sets player group

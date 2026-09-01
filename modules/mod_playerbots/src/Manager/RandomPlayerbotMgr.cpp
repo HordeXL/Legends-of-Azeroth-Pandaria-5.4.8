@@ -791,6 +791,24 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
             factory.InitGlyphs();
             factory.InitPet();
 
+            // Equipment is initialized after the login scripts have cached
+            // this character's dungeon locks.  Rebuild that cache before
+            // joining or a newly completed loadout can still be rejected by
+            // LFG using the bot's pre-login average item level.
+            // Request-driven LFR fillers are temporary server participants,
+            // not autonomous progression characters.  They must still meet
+            // level, faction, expansion, season and item-level restrictions,
+            // but personal quest/achievement/attunement items must not make a
+            // role permanently impossible to fill.  The real requester's LFR
+            // eligibility has already been validated by the native queue.
+            uint32 bypassedProgressionLocks =
+                sLFGMgr->PrepareLfrFillerLocks(bot, staged.Dungeons);
+            if (bypassedProgressionLocks)
+                TC_LOG_INFO("server",
+                    "AutoQueue LFR bypassed filler progression locks name=%s guid=%u count=%u",
+                    bot->GetName().c_str(), botGuid,
+                    bypassedProgressionLocks);
+
             Item* mainHand = bot->GetItemByPos(
                 INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_MAINHAND);
             uint32 glyphCount = 0;
@@ -848,16 +866,39 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
             // Register before JoinLfg: adding the final required role can
             // create a proposal synchronously.
             sLFGMgr->SetProposalAutoAccept(bot->GetGUID(), true);
+            lfg::LfgDungeonSet requestedDungeons = dungeons;
             sLFGMgr->JoinLfg(bot, staged.Role, dungeons,
                 "request-driven playerbot LFG fill");
             if (!bot->IsUsingLfg())
             {
+                std::ostringstream lockDetails;
+                lfg::LfgLockMap const& currentLocks =
+                    sLFGMgr->GetLockedDungeons(bot->GetGUID());
+                for (uint32 dungeonId : requestedDungeons)
+                {
+                    for (auto const& lock : currentLocks)
+                    {
+                        if ((lock.first & 0x00FFFFFF) != dungeonId)
+                            continue;
+
+                        if (lockDetails.tellp() > 0)
+                            lockDetails << ',';
+                        lockDetails << dungeonId << ':' << lock.second.lockStatus
+                            << ":ilvl=" << uint32(lock.second.currentItemLevel)
+                            << '/' << lock.second.requiredItemLevel;
+                    }
+                }
                 sLFGMgr->SetProposalAutoAccept(bot->GetGUID(), false);
                 LfgAutoQueueIneligibleBots.insert(botGuid);
+                std::string lockSummary = lockDetails.str();
                 TC_LOG_ERROR("server",
-                    "AutoQueue LFG join refused name=%s guid=%u role=%u requester=%u",
+                    "AutoQueue LFG join refused name=%s guid=%u role=%u requester=%u active-queue=%u group=%u avg-ilvl=%u locks=%s",
                     bot->GetName().c_str(), botGuid, uint32(staged.Role),
-                    staged.RequesterGuid);
+                    staged.RequesterGuid,
+                    sLFGMgr->GetActiveQueueId(bot->GetGUID()),
+                    bot->GetGroup() ? bot->GetGroup()->GetGUID().GetCounter() : 0,
+                    uint32(bot->GetAverageItemLevel()),
+                    lockSummary.empty() ? "none" : lockSummary.c_str());
                 if (PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot))
                     botAI->SetLfgAutoQueueControl(false, 0);
                 LogoutPlayerBot(guid);

@@ -481,6 +481,49 @@ void LFGMgr::InitializeLockedDungeons(Player* player, uint8 level /* = 0 */)
     SetLockedDungeons(guid, lock);
 }
 
+uint32 LFGMgr::PrepareLfrFillerLocks(Player* player, LfgDungeonSet const& dungeons)
+{
+    if (!player)
+        return 0;
+
+    // Login scripts calculate this cache before request-driven bots receive
+    // their completed PvE loadout. Always refresh it before testing the queue.
+    InitializeLockedDungeons(player);
+
+    LfgLockMap locks = GetLockedDungeons(player->GetGUID());
+    uint32 removed = 0;
+    for (auto itr = locks.begin(); itr != locks.end();)
+    {
+        uint32 dungeonId = itr->first & 0x00FFFFFF;
+        if (!dungeons.count(dungeonId))
+        {
+            ++itr;
+            continue;
+        }
+
+        LFGDungeonData const* dungeon = GetLFGDungeon(dungeonId);
+        uint32 lockStatus = itr->second.lockStatus;
+        bool progressionLock =
+            lockStatus == LFG_LOCKSTATUS_QUEST_NOT_COMPLETED ||
+            lockStatus == LFG_LOCKSTATUS_MISSING_ITEM ||
+            lockStatus == LFG_LOCKSTATUS_MISSING_ACHIEVEMENT ||
+            lockStatus == LFG_LOCKSTATUS_ATTUNEMENT_TOO_LOW_LEVEL ||
+            lockStatus == LFG_LOCKSTATUS_ATTUNEMENT_TOO_HIGH_LEVEL;
+        if (dungeon && dungeon->category == LFG_CATEGORY_LFR && progressionLock)
+        {
+            itr = locks.erase(itr);
+            ++removed;
+            continue;
+        }
+
+        ++itr;
+    }
+
+    if (removed)
+        SetLockedDungeons(player->GetGUID(), locks);
+    return removed;
+}
+
 /**
     Adds the player/group to lfg queue. If player is in a group then it is the leader
     of the group tying to join the group. Join conditions are checked before adding
