@@ -195,12 +195,32 @@ bool PlayerbotAI::CanLfgAutoQueueEngage(Unit const* target) const
     if (!requester || !requester->IsInWorld())
         return false;
 
-    if (requester->IsInCombat() || requester->GetVictim() ||
-        requester->HasUnitState(UNIT_STATE_MELEE_ATTACKING) ||
-        !requester->getAttackers().empty())
+    if (!target || target->GetMap() != requester->GetMap())
+        return false;
+
+    // The old check allowed every hostile target as soon as the requester was
+    // in combat. That let a filler chain-pull unrelated packs while the real
+    // player was still fighting the first one. LFG fillers may now engage only
+    // the requester's actual target or an enemy already attacking the party.
+    if (requester->GetVictim() == target)
         return true;
 
-    return target && target->GetVictim() == requester;
+    for (Unit* attacker : requester->getAttackers())
+        if (attacker == target)
+            return true;
+
+    if (Unit* victim = target->GetVictim())
+    {
+        if (Player* victimOwner =
+            victim->GetCharmerOrOwnerPlayerOrPlayerItself())
+        {
+            if (victimOwner == requester ||
+                requester->IsInSameGroupWith(victimOwner))
+                return true;
+        }
+    }
+
+    return false;
 }
 
 uint32 PlayerbotAI::GetReactDelay()
@@ -427,6 +447,54 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
         bot->SetTarget(ObjectGuid::Empty);
         SetNextCheckDelay(100);
         return;
+    }
+
+    // Native AI may reconsider its master after group/map transitions. A bot
+    // owned by an active LFG request must remain attached to that real player
+    // for the complete dungeon, not choose another bot or resume autonomous
+    // roaming. Reapply the follow strategy only when repair is needed.
+    uint32 const lfgRequesterGuid = _lfgAutoQueueRequesterGuid.load();
+    if (lfgRequesterGuid)
+    {
+        Player* requester = ObjectAccessor::FindConnectedPlayer(
+            ObjectGuid::Create<HighGuid::Player>(lfgRequesterGuid));
+        Group* botGroup = bot->GetGroup(GroupSlot::Instance);
+        if (!botGroup)
+            botGroup = bot->GetGroup();
+        Group* requesterGroup = requester ?
+            requester->GetGroup(GroupSlot::Instance) : nullptr;
+        if (requester && !requesterGroup)
+            requesterGroup = requester->GetGroup();
+
+        if (requester && requester->IsInWorld() &&
+            requester->GetMap() == bot->GetMap() && botGroup &&
+            requesterGroup == botGroup && GetMaster() != requester)
+        {
+            SetMaster(requester);
+            ResetStrategies();
+            ChangeStrategy("+follow,-stay,-lfg,-bg",
+                BOT_STATE_NON_COMBAT);
+            TC_LOG_WARN("server",
+                "AutoQueue LFG repaired requester master/follow bot=%s guid=%u requester=%s requester-guid=%u map=%u",
+                bot->GetName().c_str(), bot->GetGUID().GetCounter(),
+                requester->GetName().c_str(), lfgRequesterGuid,
+                bot->GetMapId());
+        }
+
+        Value<Unit*>* currentTargetValue =
+            _aiObjectContext->GetValue<Unit*>("current target");
+        Unit* currentTarget = currentTargetValue ?
+            currentTargetValue->Get() : nullptr;
+        if (currentTarget && bot->IsValidAttackTarget(currentTarget) &&
+            !CanLfgAutoQueueEngage(currentTarget))
+        {
+            currentTargetValue->Set(nullptr);
+            bot->AttackStop();
+            bot->SetTarget(ObjectGuid::Empty);
+            bot->StopMoving();
+            if (Pet* pet = bot->GetPet())
+                pet->AttackStop();
+        }
     }
 
     AllowActivity();

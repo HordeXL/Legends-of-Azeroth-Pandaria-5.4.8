@@ -46,7 +46,10 @@ Status recorded for the current local project configuration on 2026-09-01:
   after entering the dungeon and before combat; unlike Arena preparation, it is not
   retried after the requester or bot enters combat. Unsupported action target values
   are rejected safely and logged once with the bot, class, specialization, action and
-  target-value names instead of crashing the map worker. When the
+  target-value names instead of crashing the map worker. The real requester remains
+  every filler's pinned master for the complete run; fillers assist the requester's
+  target and enemies already attacking the party, but cannot autonomously chain-pull
+  unrelated packs merely because the requester is in combat. When the
   real requester leaves or logs out, only the automation-owned fillers are
   quiesced, removed from the abandoned instance group, returned outside and
   logged out; they are not left behind under a bot leader.
