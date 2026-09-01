@@ -44,7 +44,9 @@ Status recorded for the current local project configuration on 2026-09-01:
   level, specialization and eligibility. Bot entry, proposal acceptance and group
   ownership use the core's normal LFG paths. Each filler gets one class-buff attempt
   after entering the dungeon and before combat; unlike Arena preparation, it is not
-  retried after the requester or bot enters combat. When the
+  retried after the requester or bot enters combat. Unsupported action target values
+  are rejected safely and logged once with the bot, class, specialization, action and
+  target-value names instead of crashing the map worker. When the
   real requester leaves or logs out, only the automation-owned fillers are
   quiesced, removed from the abandoned instance group, returned outside and
   logged out; they are not left behind under a bot leader.

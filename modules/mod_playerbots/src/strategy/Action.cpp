@@ -94,7 +94,34 @@ void NextAction::destroy(NextAction** actions)
 
 Value<Unit*>* Action::GetTargetValue() { return context->GetValue<Unit*>(GetTargetName()); }
 
-Unit* Action::GetTarget() { return GetTargetValue()->Get(); }
+Unit* Action::GetTarget()
+{
+    Value<Unit*>* targetValue = GetTargetValue();
+    if (!targetValue)
+    {
+        if (!missingTargetValueLogged)
+        {
+            missingTargetValueLogged = true;
+            std::string const targetName = GetTargetName();
+            TC_LOG_ERROR("server",
+                "Playerbot action requested an unsupported target value; action skipped bot=%s guid=%u class=%u specialization=%u action=%s target-value=%s map=%u position=(%.3f, %.3f, %.3f, %.3f)",
+                bot ? bot->GetName().c_str() : "<none>",
+                bot ? bot->GetGUID().GetCounter() : 0u,
+                bot ? uint32(bot->GetClass()) : 0u,
+                bot ? uint32(bot->GetSpecialization()) : 0u,
+                getName().c_str(), targetName.c_str(),
+                bot ? bot->GetMapId() : 0u,
+                bot ? bot->GetPositionX() : 0.0f,
+                bot ? bot->GetPositionY() : 0.0f,
+                bot ? bot->GetPositionZ() : 0.0f,
+                bot ? bot->GetOrientation() : 0.0f);
+        }
+
+        return nullptr;
+    }
+
+    return targetValue->Get();
+}
 
 ActionBasket::ActionBasket(ActionNode* action, float relevance, bool skipPrerequisites, Event event)
     : action(action), relevance(relevance), skipPrerequisites(skipPrerequisites), event(event), created(getMSTime())
