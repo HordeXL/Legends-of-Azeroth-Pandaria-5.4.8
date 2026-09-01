@@ -224,7 +224,16 @@ uint32 CreatureTextMgr::SendChat(Creature* source, uint8 textGroup, WorldObject 
     CreatureTextMap::const_iterator sList = mTextMap.find(source->GetEntry());
     if (sList == mTextMap.end())
     {
-        TC_LOG_ERROR("sql.sql", "CreatureTextMgr: Could not find Text for Creature(%s) Entry %u in 'creature_text' table. Ignoring.", source->GetName().c_str(), source->GetEntry());
+        ObjectGuid const ownerGuid = source->GetOwnerGUID();
+        Unit const* owner = source->GetOwner();
+        TC_LOG_ERROR("sql.sql",
+            "CreatureTextMgr: Could not find Text for Creature(%s) Entry %u in 'creature_text' table. requested-textGroup=%u source-guid=%s map=%u position=(%.3f, %.3f, %.3f, %.3f) owner-guid=%s owner-name=%s. Ignoring.",
+            source->GetName().c_str(), source->GetEntry(), uint32(textGroup),
+            source->GetGUID().ToString().c_str(), source->GetMapId(),
+            source->GetPositionX(), source->GetPositionY(),
+            source->GetPositionZ(), source->GetOrientation(),
+            ownerGuid.ToString().c_str(),
+            owner ? owner->GetName().c_str() : "<none>");
         return 0;
     }
 
@@ -232,7 +241,16 @@ uint32 CreatureTextMgr::SendChat(Creature* source, uint8 textGroup, WorldObject 
     CreatureTextHolder::const_iterator itr = textHolder.find(textGroup);
     if (itr == textHolder.end())
     {
-        TC_LOG_ERROR("sql.sql", "CreatureTextMgr: Could not find TextGroup %u for Creature(%s) GuidLow %u Entry %u. Ignoring.", uint32(textGroup), source->GetName().c_str(), source->GetGUID().GetCounter(), source->GetEntry());
+        ObjectGuid const ownerGuid = source->GetOwnerGUID();
+        Unit const* owner = source->GetOwner();
+        TC_LOG_ERROR("sql.sql",
+            "CreatureTextMgr: Could not find TextGroup %u for Creature(%s) Entry %u. requested-textGroup=%u source-guid=%s map=%u position=(%.3f, %.3f, %.3f, %.3f) owner-guid=%s owner-name=%s. Ignoring.",
+            uint32(textGroup), source->GetName().c_str(), source->GetEntry(),
+            uint32(textGroup), source->GetGUID().ToString().c_str(),
+            source->GetMapId(), source->GetPositionX(),
+            source->GetPositionY(), source->GetPositionZ(),
+            source->GetOrientation(), ownerGuid.ToString().c_str(),
+            owner ? owner->GetName().c_str() : "<none>");
         return 0;
     }
 

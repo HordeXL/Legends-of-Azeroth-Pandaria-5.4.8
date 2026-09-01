@@ -89,7 +89,7 @@ namespace
         lfg::LfgRoles Role = lfg::PLAYER_ROLE_NONE;
         uint8 Class = 0;
         bool EnteredDungeon = false;
-        bool PreparationBuffed = false;
+        bool PreparationHandled = false;
         bool GroupLeadershipEnsured = false;
         bool AiInitializationRequested = false;
         bool CleanupRequested = false;
@@ -886,6 +886,13 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
                 managedPair.first);
             Player* bot = GetPlayerBot(botGuid);
 
+            // Logout/teardown owns this bot now. Do not accept another
+            // proposal, rebuild strategies, change leadership, or cast a
+            // preparation buff while the AI quiescence interval is running.
+            if (managedPair.second.CleanupRequested ||
+                (bot && bot->IsPlayerbotCleanupPending()))
+                continue;
+
             // Proposal acceptance is GUID-based and does not require the bot
             // to be in the world at this exact instant. A headless bot can be
             // between maps while the proposal is created; gating acceptance
@@ -973,18 +980,29 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
                     }
                 }
 
-                // Use only real class-supported party buffs. DoSpecificAction
-                // first checks whether the aura is useful, so duplicate class
-                // auras are not blindly recast. Revisit on later ticks until a
-                // cast succeeds, which covers teleport/GCD timing.
-                if (!managedPair.second.PreparationBuffed &&
-                    CastAutomatedPvpPreparationBuff(bot))
+                // LFG has no arena-style preparation countdown. Give each bot
+                // exactly one stable, pre-combat opportunity to apply its real
+                // class buff. Never retry after the requester or bot has begun
+                // fighting: a world-thread preparation cast must not compete
+                // with the map-thread PvE rotation during an active pull.
+                if (!managedPair.second.PreparationHandled)
                 {
-                    managedPair.second.PreparationBuffed = true;
+                    Player* requester = ObjectAccessor::FindConnectedPlayer(
+                        ObjectGuid::Create<HighGuid::Player>(
+                            managedPair.second.RequesterGuid));
+                    bool combatStarted = bot->IsInCombat() || bot->GetVictim() ||
+                        !bot->getAttackers().empty() ||
+                        (requester && (requester->IsInCombat() ||
+                            requester->GetVictim() ||
+                            !requester->getAttackers().empty()));
+                    bool buffCast = !combatStarted && requester &&
+                        CastAutomatedPvpPreparationBuff(bot);
+                    managedPair.second.PreparationHandled = true;
                     TC_LOG_INFO("server",
-                        "AutoQueue LFG preparation buff cast bot=%s guid=%u role=%u map=%u",
+                        "AutoQueue LFG one-shot preparation finished bot=%s guid=%u role=%u map=%u cast=%u combat-started=%u",
                         bot->GetName().c_str(), managedPair.first,
-                        uint32(managedPair.second.Role), bot->GetMapId());
+                        uint32(managedPair.second.Role), bot->GetMapId(),
+                        buffCast ? 1u : 0u, combatStarted ? 1u : 0u);
                 }
             }
         }
