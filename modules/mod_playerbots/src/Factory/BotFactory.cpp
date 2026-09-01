@@ -951,10 +951,16 @@ void BotFactory::InitEquipmentInternal(bool incremental, bool second_chance,
         if (specCompatible && slot == EQUIPMENT_SLOT_OFFHAND &&
             !sRandomItemMgr->SupportsOffhandForSpec(bot))
         {
-            if (oldItem && !MoveEquippedItemToBag(slot))
-                TC_LOG_ERROR("playerbots",
-                    "Cannot preserve unsupported offhand item %u for bot %s",
-                    oldItem->GetEntry(), bot->GetName().c_str());
+            if (oldItem)
+            {
+                if (!MoveEquippedItemToBag(slot))
+                {
+                    TC_LOG_DEBUG("playerbots",
+                        "Cannot preserve unsupported offhand item %u for bot %s, destroying",
+                        oldItem->GetEntry(), bot->GetName().c_str());
+                    bot->DestroyItem(INVENTORY_SLOT_BAG_0, slot, true);
+                }
+            }
             continue;
         }
         if (oldItem && second_chance)
@@ -1052,10 +1058,11 @@ void BotFactory::InitEquipmentInternal(bool incremental, bool second_chance,
         {
             if (!MoveEquippedItemToBag(slot))
             {
-                TC_LOG_ERROR("playerbots",
-                    "Cannot preserve incompatible item %u for bot %s slot %u",
+                TC_LOG_DEBUG("playerbots",
+                    "Cannot preserve incompatible item %u for bot %s slot %u, destroying",
                     oldItem->GetEntry(), bot->GetName().c_str(), uint32(slot));
-                continue;
+                bot->DestroyItem(INVENTORY_SLOT_BAG_0, slot, true);
+                oldItem = nullptr;
             }
         }
         else if (oldItem)

@@ -137,6 +137,88 @@ CharacterDatabaseInfo = "127.0.0.1;3306;root;root;characters"
 PlayerbotsDatabaseInfo = "127.0.0.1;3306;root;root;acore_playerbots"
 
 #
+#    PlayerbotsDatabase.WorkerThreads
+#    PlayerbotsDatabase.SynchThreads
+#        Description: Worker and synchronous threads for the playerbots database.
+#        Default:     1
+
+PlayerbotsDatabase.WorkerThreads = 1
+PlayerbotsDatabase.SynchThreads = 1
+
+#
+#    AiPlayerbot.AutoQueue.LFG.Automatic
+#        Description: Auto-queue bots for LFG dungeons.
+#        Default:     0 - (Disabled)
+#                     1 - (Enabled)
+#
+#    AiPlayerbot.AutoQueue.Battleground.Automatic
+#        Description: Auto-queue bots for battlegrounds.
+#        Default:     0 - (Disabled)
+#                     1 - (Enabled)
+#
+#    AiPlayerbot.AutoQueue.Battleground.Loadout
+#        Description: Equip bots with battleground-appropriate gear before queuing.
+#        Default:     0 - (Disabled)
+#                     1 - (Enabled)
+#
+#    AiPlayerbot.AutoQueue.Battleground.PreparationBuffs
+#        Description: Apply preparation buffs to bots before battlegrounds.
+#        Default:     0 - (Disabled)
+#                     1 - (Enabled)
+#
+#    AiPlayerbot.AutoQueue.Battleground.MaxBotsPerCycle
+#        Description: Maximum number of bots to queue per cycle.
+#        Default:     10
+#
+#    AiPlayerbot.AutoQueue.Arena.PreparationBuffs
+#        Description: Apply preparation buffs to bots before arenas.
+#        Default:     0 - (Disabled)
+#                     1 - (Enabled)
+#
+#    AiPlayerbot.AutoQueue.Arena.PreparationFaceOpponent
+#        Description: Face the opponent during arena preparation.
+#        Default:     0 - (Disabled)
+#                     1 - (Enabled)
+#
+#    AiPlayerbot.AutoQueue.Arena.Reward.Enabled
+#        Description: Enable arena reward distribution for bots.
+#        Default:     0 - (Disabled)
+#                     1 - (Enabled)
+#
+#    AiPlayerbot.AutoQueue.Arena.Reward.Conquest.2v2
+#    AiPlayerbot.AutoQueue.Arena.Reward.Conquest.3v3
+#    AiPlayerbot.AutoQueue.Arena.Reward.Conquest.5v5
+#        Description: Conquest points awarded per win by arena size.
+#        Default:     180 - (2v2)
+#                     270 - (3v3)
+#                     450 - (5v5)
+
+AiPlayerbot.AutoQueue.LFG.Automatic = 0
+AiPlayerbot.AutoQueue.Battleground.Automatic = 0
+AiPlayerbot.AutoQueue.Battleground.Loadout = 0
+AiPlayerbot.AutoQueue.Battleground.PreparationBuffs = 0
+AiPlayerbot.AutoQueue.Battleground.MaxBotsPerCycle = 10
+AiPlayerbot.AutoQueue.Arena.PreparationBuffs = 0
+AiPlayerbot.AutoQueue.Arena.PreparationFaceOpponent = 0
+AiPlayerbot.AutoQueue.Arena.Reward.Enabled = 0
+AiPlayerbot.AutoQueue.Arena.Reward.Conquest.2v2 = 180
+AiPlayerbot.AutoQueue.Arena.Reward.Conquest.3v3 = 270
+AiPlayerbot.AutoQueue.Arena.Reward.Conquest.5v5 = 450
+
+#
+#    AiPlayerbot.CombatAssistant.Enabled
+#        Description: Enable combat assistant AI for bots (pushes AI actions to bots).
+#        Default:     0 - (Disabled)
+#                     1 - (Enabled)
+#
+#    AiPlayerbot.CombatAssistant.PushInterval
+#        Description: Interval in milliseconds between AI action pushes.
+#        Default:     200
+
+AiPlayerbot.CombatAssistant.Enabled = 0
+AiPlayerbot.CombatAssistant.PushInterval = 200
+
+#
 #    LoginDatabase.WorkerThreads
 #    WorldDatabase.WorkerThreads
 #    CharacterDatabase.WorkerThreads
