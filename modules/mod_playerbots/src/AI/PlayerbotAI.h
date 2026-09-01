@@ -232,6 +232,10 @@ public:
     // Returns false when speech is disabled, the category is empty, or the bot
     // cannot speak right now.
     bool Talk(std::string const name, Unit* target = nullptr, ItemTemplate const* item = nullptr);
+    // Speaks a random text from the whole ai_playerbot_texts table, ignoring the
+    // name (category) field entirely. Returns false when speech is disabled or
+    // the bot cannot speak right now.
+    bool TalkRandom();
     // Rolls the chance (0-30000, matching the broadcast config scale) and speaks
     // when the roll succeeds.
     bool TryTalk(std::string const name, uint32 chance, Unit* target = nullptr, ItemTemplate const* item = nullptr);

@@ -19,6 +19,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <cmath>
 #include <mutex>
 #include <sstream>
@@ -62,6 +63,21 @@
 #include "Unit.h"
 #include "Vehicle.h"
 #include "UpdateFields.h"
+
+// True when the text still contains an unresolved placeholder (a %name token or
+// a <name> token) that PlayerbotTextMgr::Format could not substitute. Used to
+// re-roll random ambient texts so no raw placeholders reach chat.
+static bool HasUnresolvedPlaceholders(std::string const& text)
+{
+    for (size_t i = 0; i + 1 < text.size(); ++i)
+    {
+        if (text[i] == '%' && (std::isalpha(static_cast<unsigned char>(text[i + 1])) || text[i + 1] == '_'))
+            return true;
+        if (text[i] == '<' && text.find('>', i + 1) != std::string::npos)
+            return true;
+    }
+    return false;
+}
 
 PlayerbotChatHandler::PlayerbotChatHandler(Player* pMasterPlayer) : ChatHandler(pMasterPlayer->GetSession())
 {
@@ -1879,6 +1895,66 @@ bool PlayerbotAI::Talk(std::string const name, Unit* target, ItemTemplate const*
     return Say(text);
 }
 
+bool PlayerbotAI::TalkRandom()
+{
+    if (!sPlayerbotAIConfig->randomBotTalk)
+        return false;
+    if (!bot || !bot->IsInWorld() || bot->IsDuringRemoveFromWorld())
+        return false;
+    if (bot->IsInCombat() && _currentState != BOT_STATE_COMBAT)
+        return false;
+
+    LocaleConstant locale = DEFAULT_LOCALE;
+    if (Player* m = GetMaster())
+        locale = m->GetSession()->GetSessionDbcLocale();
+    else
+        locale = bot->GetSession()->GetSessionDbcLocale();
+
+    // Server-wide ambient speech slot: no matter how many bots are online,
+    // only one wins a slot per ~20s, so the World channel never floods with
+    // simultaneous bot chatter.
+    if (!sPlayerbotTextMgr->TryReserveAmbientSpeech(20))
+        return false;
+
+    // Pick a random text from the whole table. Some rows are templates whose
+    // placeholders (e.g. %quest_link, %category, %faction) Format() cannot fill
+    // without extra context, so re-roll a few times until the formatted text is
+    // clean (no raw placeholders) before sending it to chat.
+    for (uint32 attempt = 0; attempt < 10; ++attempt)
+    {
+        uint32 sayType = 0;
+        std::string text = sPlayerbotTextMgr->GetRandomText(locale, &sayType);
+        if (text.empty())
+            return false;
+
+        text = sPlayerbotTextMgr->Format(std::move(text), bot);
+        if (HasUnresolvedPlaceholders(text))
+            continue;
+
+        // Prefer speaking in the World channel (the bot joins it at login so
+        // other players can see the ambient chatter). Fall back to a local
+        // say/yell if the channel is unavailable.
+        if (ChannelMgr* cMgr = ChannelMgr::forTeam(bot->GetTeamId()))
+        {
+            Channel* channel = cMgr->GetChannel("World", bot, false);
+            if (!channel)
+                channel = cMgr->GetJoinChannel("World", 0);
+            if (channel)
+            {
+                channel->JoinChannel(bot, "");
+                channel->Say(bot->GetGUID(), text, LANG_UNIVERSAL);
+                return true;
+            }
+        }
+
+        if (sayType == 1)
+            return Yell(text);
+        return Say(text);
+    }
+
+    return false;
+}
+
 bool PlayerbotAI::TryTalk(std::string const name, uint32 chance, Unit* target, ItemTemplate const* item)
 {
     if (chance == 0)
@@ -2018,8 +2094,8 @@ void PlayerbotAI::UpdateRandomSpeech(uint32 /*elapsed*/)
     if (now < _speechCheckTimer)
         return;
 
-    // anti-spam: at most one ambient speech check every 10 seconds
-    _speechCheckTimer = now + 10;
+    // anti-spam: at most one ambient speech check every 20 seconds
+    _speechCheckTimer = now + 20;
 
     if (bot->IsInCombat())
     {
@@ -2072,16 +2148,11 @@ void PlayerbotAI::UpdateRandomSpeech(uint32 /*elapsed*/)
                 return;
             }
 
-            // general ambient chatter
-            if (urand(0, 29999) < sPlayerbotAIConfig->broadcastChanceSuggestSomething / 10)
-            {
-                static std::vector<std::string> const chatterCategories = {
-                    "suggest_something", "suggest_quest", "suggest_trade",
-                    "broadcast_levelup_generic", "loot"
-                };
-                std::string const& category = chatterCategories[urand(0, uint32(chatterCategories.size() - 1))];
-                Talk(category);
-            }
+            // general ambient chatter: one random text from the whole
+            // ai_playerbot_texts table, ignoring the name (category) field.
+            // TalkRandom() acquires a server-wide slot so that no matter how
+            // many bots are online only one bot speaks per ~20s window.
+            TalkRandom();
         }
     }
 }

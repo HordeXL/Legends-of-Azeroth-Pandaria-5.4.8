@@ -484,6 +484,17 @@ void PlayerbotHolder::OnBotLogin(Player* const bot)
         return;
     }
 
+    // Make the bot join the world chat channel so it can participate in world
+    // chat even when it has no real-player master. Standard channels (General/
+    // Trade/LocalDefense/LFG/WorldDefense) are handled by the core's
+    // Player::UpdateLocalChannels on zone change; the custom "World" channel
+    // is not covered by that path, so join it explicitly here.
+    if (ChannelMgr* cMgr = ChannelMgr::forTeam(bot->GetTeamId()))
+    {
+        if (Channel* world = cMgr->GetJoinChannel("World", 0))
+            world->JoinChannel(bot, "");
+    }
+
     Player* master = botAI->GetMaster();
     if (!master)
     {
@@ -582,90 +593,8 @@ void PlayerbotHolder::OnBotLogin(Player* const bot)
     }
 
     uint32 accountId = bot->GetSession()->GetAccountId();
-    /*bool isRandomAccount = sPlayerbotAIConfig->IsInRandomAccountList(accountId);
-
-    if (isRandomAccount && sPlayerbotAIConfig->randomBotFixedLevel)
-    {
-        bot->SetPlayerFlag(PLAYER_FLAGS_NO_XP_GAIN);
-    }
-    else if (isRandomAccount && !sPlayerbotAIConfig->randomBotFixedLevel)
-    {
-        bot->RemovePlayerFlag(PLAYER_FLAGS_NO_XP_GAIN);
-    }*/
 
     bot->SaveToDB(false);
-    /*if (master && isRandomAccount && master->getLevel() < bot->getLevel())
-    {
-        uint32 mixedGearScore =
-            PlayerbotAI::GetMixedGearScore(master, true, false, 12) * sPlayerbotAIConfig->autoInitEquipLevelLimitRatio;
-        PlayerbotFactory factory(bot, master->GetLevel(), ITEM_QUALITY_LEGENDARY, mixedGearScore);
-        factory.Randomize(false);
-    }
-
-    // bots join World chat if not solo oriented
-    if (bot->getLevel() >= 10 && sRandomPlayerbotMgr->IsRandomBot(bot) && GET_PLAYERBOT_AI(bot) &&
-        GET_PLAYERBOT_AI(bot)->GetGrouperType() != GrouperType::SOLO)
-    {
-        // TODO make action/config
-        // Make the bot join the world channel for chat
-        WorldPacket pkt(CMSG_JOIN_CHANNEL);
-        pkt << uint32(0) << uint8(0) << uint8(0);
-        pkt << std::string("World");
-        pkt << "";  // Pass
-        bot->GetSession()->HandleJoinChannel(pkt);
-    }
-
-    // join standard channels
-    uint8 locale = BroadcastHelper::GetLocale();
-    AreaTableEntry const* current_zone = GET_PLAYERBOT_AI(bot)->GetCurrentZone();
-    ChannelMgr* cMgr = ChannelMgr::forTeam(bot->GetTeamId());
-    std::string current_zone_name = current_zone ? GET_PLAYERBOT_AI(bot)->GetLocalizedAreaName(current_zone) : "";
-
-    if (current_zone && cMgr)
-    {
-        for (uint32 i = 0; i < sChatChannelsStore.GetNumRows(); ++i)
-        {
-            ChatChannelsEntry const* channel = sChatChannelsStore.LookupEntry(i);
-            if (!channel)
-                continue;
-
-            Channel* new_channel = nullptr;
-            switch (channel->ChannelID)
-            {
-            case ChatChannelId::GENERAL:
-            case ChatChannelId::LOCAL_DEFENSE:
-            {
-                char new_channel_name_buf[100];
-                snprintf(new_channel_name_buf, 100, channel->pattern[locale], current_zone_name.c_str());
-                new_channel = cMgr->GetJoinChannel(new_channel_name_buf, channel->ChannelID);
-                break;
-            }
-            case ChatChannelId::TRADE:
-            case ChatChannelId::GUILD_RECRUITMENT:
-            {
-                char new_channel_name_buf[100];
-                //3459 is ID for a zone named "City" (only exists for the sake of using its name)
-                //Currently in magons TBC, if you switch zones, then you join "Trade - <zone>" and "GuildRecruitment - <zone>"
-                //which is a core bug, should be "Trade - City" and "GuildRecruitment - City" in both 1.12 and TBC
-                //but if you (actual player) logout in a city and log back in - you join "City" versions
-                snprintf(new_channel_name_buf, 100, channel->pattern[locale], GET_PLAYERBOT_AI(bot)->GetLocalizedAreaName(GetAreaEntryByAreaID(3459)).c_str());
-                new_channel = cMgr->GetJoinChannel(new_channel_name_buf, channel->ChannelID);
-                break;
-            }
-            case ChatChannelId::LOOKING_FOR_GROUP:
-            case ChatChannelId::WORLD_DEFENSE:
-            {
-                new_channel = cMgr->GetJoinChannel(channel->pattern[locale], channel->ChannelID);
-                break;
-            }
-            default:
-                break;
-            }
-
-            if (new_channel)
-                new_channel->JoinChannel(bot, "");
-        }
-    }*/
 }
 
 std::string const PlayerbotHolder::ProcessBotCommand(std::string const cmd, ObjectGuid guid, ObjectGuid masterguid,

@@ -9,6 +9,8 @@
 #include <functional>
 #include <sstream>
 
+#include "AiFactory.h"
+#include "PlayerbotAI.h"
 #include "Containers.h"
 #include "DBCStores.h"
 #include "DatabaseEnv.h"
@@ -141,6 +143,63 @@ std::string PlayerbotTextMgr::GetText(std::string const name, LocaleConstant loc
     return entry.text;
 }
 
+std::string PlayerbotTextMgr::GetRandomText(LocaleConstant locale, uint32* sayTypeOut)
+{
+    // Flatten every category into one pool and pick a uniformly random entry,
+    // so the name (category) field does not influence the selection.
+    uint32 total = 0;
+    for (auto const& [name, entries] : _texts)
+        total += uint32(entries.size());
+
+    if (total == 0)
+        return "";
+
+    uint32 pick = urand(0, total - 1);
+    for (auto const& [name, entries] : _texts)
+    {
+        if (pick < entries.size())
+        {
+            TextEntry const& entry = entries[pick];
+
+            if (sayTypeOut)
+                *sayTypeOut = entry.sayType;
+
+            if (locale > LOCALE_enUS && locale <= LOCALE_ruRU)
+            {
+                std::string const& localized = entry.loc[locale - 1];
+                if (!localized.empty())
+                    return localized;
+            }
+
+            return entry.text;
+        }
+        pick -= uint32(entries.size());
+    }
+
+    return "";
+}
+
+bool PlayerbotTextMgr::TryReserveAmbientSpeech(uint32 intervalSec)
+{
+    time_t now = time(nullptr);
+
+    // Fast path: if the previous slot is older than intervalSec the caller may
+    // try to claim the slot. CAS prevents two bots from both winning it.
+    time_t last = _lastAmbientSpeech.load(std::memory_order_relaxed);
+    while (last + intervalSec <= now)
+    {
+        if (_lastAmbientSpeech.compare_exchange_weak(last, now,
+                std::memory_order_relaxed, std::memory_order_relaxed))
+        {
+            return true;  // this caller won the slot
+        }
+        // CAS failed -> another thread claimed it; re-read and retry.
+        last = _lastAmbientSpeech.load(std::memory_order_relaxed);
+    }
+
+    return false;  // within cooldown, another bot spoke recently
+}
+
 std::string PlayerbotTextMgr::GetSpeech(std::string const name, std::string const target)
 {
     auto it = _speech.find(name);
@@ -173,6 +232,20 @@ std::string PlayerbotTextMgr::Format(std::string text, Player* bot, Unit* target
 
         ReplaceAll(text, "%my_level", std::to_string(bot->GetLevel()));
 
+        // %my_role - the bot's current group role (tank / healer / dps)
+        if (text.find("%my_role") != std::string::npos)
+        {
+            std::string role = "dps";
+            switch (AiFactory::GetPlayerRoles(bot))
+            {
+                case BOT_ROLE_TANK:   role = "tank";   break;
+                case BOT_ROLE_HEALER: role = "healer"; break;
+                case BOT_ROLE_DPS:    role = "dps";    break;
+                default:              role = "dps";    break;
+            }
+            ReplaceAll(text, "%my_role", role);
+        }
+
         // %instance_name - the bot's current map/instance name (dungeon suggestions)
         if (text.find("%instance_name") != std::string::npos)
         {
@@ -185,12 +258,16 @@ std::string PlayerbotTextMgr::Format(std::string text, Player* bot, Unit* target
 
     if (target)
         ReplaceAll(text, "<target>", target->GetName());
+    else
+        ReplaceAll(text, "<target>", "someone");
 
     if (item)
     {
         std::string name = item->Name1.empty() ? "item" : item->Name1;
         ReplaceAll(text, "%item_link", "[" + name + "]");
     }
+    else
+        ReplaceAll(text, "%item_link", "[item]");
 
     return text;
 }
