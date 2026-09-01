@@ -708,6 +708,41 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
                     rejectionReason.clear();
                     CanAutoQueueLfgBot(bot, staged.Team, &rejectionReason);
                 }
+                else if (rejectionReason == "instance-map")
+                {
+                    // An offline random bot can retain the map of an LFG
+                    // dungeon after an interrupted session even though it no
+                    // longer has an instance group or a usable LFG return
+                    // point. Do not permanently blacklist that character.
+                    // Return it to its recorded entry point when available,
+                    // otherwise use its homebind, and keep the staged request
+                    // reserved while the far teleport completes.
+                    bot->CombatStopWithPets(true);
+                    bot->AttackStop();
+                    bot->SetTarget(ObjectGuid::Empty);
+                    if (!bot->IsAlive())
+                    {
+                        Revive(bot);
+                        bot->SetHealth(bot->GetMaxHealth());
+                    }
+
+                    uint32 oldMap = bot->GetMapId();
+                    bool recovering = bot->TeleportToBGEntryPoint();
+                    if (!recovering)
+                        recovering = bot->TeleportTo(bot->m_homebindMapId,
+                            bot->m_homebindX, bot->m_homebindY,
+                            bot->m_homebindZ, bot->GetOrientation());
+
+                    if (recovering)
+                    {
+                        TC_LOG_WARN("server",
+                            "AutoQueue LFG recovering stranded staged bot name=%s guid=%u old-map=%u destination-map=%u",
+                            bot->GetName().c_str(), botGuid, oldMap,
+                            bot->GetTeleportDest().GetMapId());
+                        ++itr;
+                        continue;
+                    }
+                }
 
                 if (!rejectionReason.empty() || GetLfgRole(bot) != staged.Role)
                 {
@@ -1156,7 +1191,7 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
                     QueryResult candidates = CharacterDatabase.PQuery(
                         "SELECT guid,name,race,class,talentTree,activespec "
                         "FROM characters WHERE account >= %u AND account <= %u "
-                        "AND level=%u AND online=0 AND instance_id=0 "
+                        "AND level=%u AND online=0 "
                         "AND guid NOT IN (SELECT guid FROM guild_member) "
                         "AND guid NOT IN (SELECT memberGuid FROM group_member) "
                         "AND guid NOT IN (SELECT owner_guid FROM solo_arena_loadout_backup) "

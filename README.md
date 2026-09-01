@@ -12,7 +12,7 @@ more in-game encounter testing before they should be treated as production-ready
 
 ## Project Features and Current Status
 
-Status recorded for the current local project configuration on 2026-08-27:
+Status recorded for the current local project configuration on 2026-08-31:
 
 | Component | Included | Current local status | Notes |
 | --- | --- | --- | --- |
@@ -23,7 +23,7 @@ Status recorded for the current local project configuration on 2026-08-27:
 | LFG bot fill | Yes | Enabled, experimental | Stages missing tank/healer/damage roles for a real player and uses the normal 5.4.8 LFG validation and proposal flow. Dungeon-specific mechanics still require gameplay coverage. |
 | World-boss raid bots | Yes | Available, experimental | Neutral Boss Bot Caller NPCs support 10/25-player preview/call, PvE role selection and gear, legendary cloaks, raid marks, summon, buffs/rebuff, wipe recovery, status and dismiss/cleanup. Encounter-specific AI is still being tuned. |
 | Combat Assistant 5.4.8 | Yes | Server side enabled | One physical click/key press casts the server-recommended ability. All playable classes/specs are supported; the client addon must also be installed. |
-| VIP hybrid/test vendors | Yes | SQL package included | VIP1-3 test equipment plus optional gems, enchants, riding, mounts and profession helpers. VIP3 includes class/spec-labelled Siege of Orgrimmar T16 PvE sets, appearances, weapons and genuine five-piece bonuses. |
+| VIP hybrid/test vendors | Yes | SQL package included | VIP1-3 test equipment plus optional gems, enchants, riding, mounts and profession helpers. VIP1/T14, VIP2/T15 and VIP3/T16 include class/spec-labelled five-piece PvE sets with genuine 2/4-piece bonuses. |
 | AuctionHouseBot | Yes | **Disabled** | Seller and buyer are both disabled in the active `worldserver.conf`; normal player auctions are unaffected. |
 | Warden client checks | Yes | **Disabled** | The Warden subsystem and check data are present, but `Warden.Enabled = 0` in the active configuration. |
 
@@ -59,7 +59,8 @@ Status recorded for the current local project configuration on 2026-08-27:
   auto-casts and does not bypass GCD, range, facing, immunity or line of sight.
 - **VIP PvE test equipment:** the package in
   [`vip_hybrid_solo_set_sql`](vip_hybrid_solo_set_sql) provides free test vendors
-  and class/spec-aware VIP3 T16 equipment for solo and encounter testing. The
+  and class/spec-aware VIP1 T14, VIP2 T15 and VIP3 T16 equipment for solo and
+  encounter testing. The
   package keeps its generated SQL and source generator together so it can be
   reproduced on another database.
 
