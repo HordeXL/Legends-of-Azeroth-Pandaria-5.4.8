@@ -105,6 +105,23 @@ bool ReleaseSpiritAction::Execute(Event event)
 
 bool AutoReleaseSpiritAction::Execute(Event event)
 {
+    // Resurrection spells and engineering items create the same normal core
+    // request a client player accepts through CMSG_RESURRECT_RESPONSE. A
+    // headless playerbot has no client to send that packet, so accept an
+    // already-created request here before considering a spirit release. This
+    // does not invent a resurrection or bypass spell/item validation.
+    if (!bot->IsAlive() && bot->IsRessurectRequested())
+    {
+        bool const wasGhost = bot->HasPlayerFlag(PLAYER_FLAGS_GHOST);
+        bot->ResurrectUsingRequestData();
+        TC_LOG_INFO("playerbots", "Bot %s %s:%u <%s> accepted resurrection request ghost=%u",
+            bot->GetGUID().ToString().c_str(),
+            bot->GetTeamId() == TEAM_ALLIANCE ? "A" : "H", bot->GetLevel(),
+            bot->GetName().c_str(), wasGhost ? 1u : 0u);
+        botAI->SetNextCheckDelay(1000);
+        return true;
+    }
+
     // Release only once. Re-sending CMSG_REPOP_REQUEST every dead-engine tick while
     // already a ghost can reset movement/state while the bot is waiting at a BG
     // spirit guide.
@@ -197,6 +214,12 @@ bool AutoReleaseSpiritAction::isUseful()
 {
     if (!bot->isDead())
         return false;
+
+    // Dungeon bots normally remain beside their corpse while a living real
+    // player can resurrect them. Ensure the dead engine runs this action when
+    // that real request arrives, even though it must not release their spirit.
+    if (bot->IsRessurectRequested())
+        return true;
 
     if (bot->InArena())
         return false;
