@@ -2362,7 +2362,14 @@ bool CanPrepareLfgInterrupt(Unit* caster, Unit* target,
     if (!caster || !target || !spellInfo)
         return false;
 
-    Spell probe(caster, spellInfo, TRIGGERED_NONE);
+    // CheckCast() is normally reached through Spell::prepare(), which fills
+    // m_powerType and m_powerCost first.  This is only a disposable probe, so
+    // calling CheckCast() directly with TRIGGERED_NONE can read the
+    // uninitialised power fields and eventually assert in Unit::GetPowerIndex.
+    // The real cast still performs its normal power/reagent checks below; the
+    // probe only needs to validate target, range, LOS and caster state.
+    Spell probe(caster, spellInfo,
+        TRIGGERED_IGNORE_POWER_AND_REAGENT_COST);
     if (spellInfo->Targets & TARGET_FLAG_DEST_LOCATION)
         probe.m_targets.SetDst(*target);
     else if (spellInfo->Targets & TARGET_FLAG_SOURCE_LOCATION)
