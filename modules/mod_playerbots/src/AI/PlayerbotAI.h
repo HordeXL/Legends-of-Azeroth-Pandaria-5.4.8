@@ -189,6 +189,7 @@ public:
 
     uint32 GetReactDelay();
     void InterruptSpell();
+    bool TryLfgCoordinatedInterrupt();
     virtual bool IsInterruptableSpellCasting(Unit* player, std::string const spell);
     bool canDispel(SpellInfo const* spellInfo, uint32 dispelType);
     virtual bool HasAuraToDispel(Unit* player, uint32 dispelType);

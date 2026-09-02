@@ -17,10 +17,15 @@
 
 #include "PlayerbotAI.h"
 
+#include <algorithm>
+#include <array>
 #include <cmath>
+#include <limits>
 #include <mutex>
 #include <sstream>
 #include <string>
+#include <tuple>
+#include <vector>
 
 #include "AiFactory.h"
 #include "ChannelMgr.h"
@@ -49,6 +54,7 @@
 #include "SharedDefines.h"
 #include "SocialMgr.h"
 #include "SpellAuraEffects.h"
+#include "SpellHistory.h"
 #include "SpellInfo.h"
 #include "Transport.h"
 #include "TradeData.h"
@@ -557,6 +563,15 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
 
     if (!CanUpdateAI())
         return;
+
+    // Interrupts are checked before the ordinary "wait for current cast"
+    // path. This lets the one bot selected by the LFG group coordinator stop
+    // its own heal/damage cast and answer a short enemy cast immediately.
+    if (TryLfgCoordinatedInterrupt())
+    {
+        YieldThread(GetReactDelay());
+        return;
+    }
 
     // Handle the current spell
     Spell* currentSpell = bot->GetCurrentSpell(CURRENT_GENERIC_SPELL);
@@ -2196,6 +2211,285 @@ bool PlayerbotAI::IsInterruptableSpellCasting(Unit* target, std::string const sp
         if ((spellInfo->Effects[i].Effect == SPELL_EFFECT_APPLY_AURA) &&
             spellInfo->Effects[i].ApplyAuraName == SPELL_AURA_MOD_SILENCE)
             return true;
+    }
+
+    return false;
+}
+
+namespace
+{
+std::vector<char const*> GetLfgInterruptActions(Player* player)
+{
+    if (!player)
+        return {};
+
+    switch (player->GetClass())
+    {
+        case CLASS_WARRIOR:      return { "pummel", "disrupting shout" };
+        case CLASS_PALADIN:      return { "rebuke" };
+        case CLASS_HUNTER:       return { "counter shot", "silencing shot" };
+        case CLASS_ROGUE:        return { "kick" };
+        case CLASS_PRIEST:       return { "silence" };
+        case CLASS_DEATH_KNIGHT: return { "mind freeze", "strangulate" };
+        case CLASS_SHAMAN:       return { "wind shear" };
+        case CLASS_MAGE:         return { "counterspell" };
+        case CLASS_WARLOCK:      return { "spell lock", "optical blast" };
+        case CLASS_MONK:         return { "spear hand strike" };
+        case CLASS_DRUID:
+            // Skull Bash requires a melee form; caster druids should try
+            // their ranged interrupt first instead of cancelling a heal only
+            // to fail the shapeshift requirement.
+            return player->GetSpecialization() == SPEC_DRUID_FERAL ||
+                   player->GetSpecialization() == SPEC_DRUID_GUARDIAN ?
+                std::vector<char const*> { "skull bash", "solar beam" } :
+                std::vector<char const*> { "solar beam", "skull bash" };
+        default:                 return {};
+    }
+}
+
+Spell const* GetInterruptibleCurrentSpell(Unit* target)
+{
+    if (!target || !target->IsNonMeleeSpellCasted(false))
+        return nullptr;
+
+    for (uint8 type = CURRENT_GENERIC_SPELL;
+         type <= CURRENT_CHANNELED_SPELL; ++type)
+    {
+        Spell const* spell = target->GetCurrentSpell(CurrentSpellTypes(type));
+        SpellInfo const* info = spell ? spell->GetSpellInfo() : nullptr;
+        if (info &&
+            (info->InterruptFlags & SPELL_INTERRUPT_FLAG_INTERRUPT) &&
+            info->PreventionType == SPELL_PREVENTION_TYPE_SILENCE)
+            return spell;
+    }
+
+    return nullptr;
+}
+
+bool IsCastingNonMeleeSpell(Player* player)
+{
+    return player &&
+        (player->GetCurrentSpell(CURRENT_GENERIC_SPELL) ||
+         player->GetCurrentSpell(CURRENT_CHANNELED_SPELL));
+}
+
+uint8 GetInterruptRolePriority(Player* player)
+{
+    if (!player)
+        return 3;
+    if (PlayerBotSpec::IsHeal(player))
+        return 2;
+    if (PlayerBotSpec::IsTank(player))
+        return 1;
+    return 0;
+}
+
+bool CanPrepareLfgInterrupt(Unit* caster, Unit* target,
+    SpellInfo const* spellInfo)
+{
+    if (!caster || !target || !spellInfo)
+        return false;
+
+    Spell probe(caster, spellInfo, TRIGGERED_NONE);
+    if (spellInfo->Targets & TARGET_FLAG_DEST_LOCATION)
+        probe.m_targets.SetDst(*target);
+    else if (spellInfo->Targets & TARGET_FLAG_SOURCE_LOCATION)
+        probe.m_targets.SetDst(*caster);
+    else
+        probe.m_targets.SetUnitTarget(target);
+
+    SpellCastResult result = caster->ToPet() ?
+        probe.CheckPetCast(target) : probe.CheckCast(true);
+    return result == SPELL_CAST_OK ||
+        result == SPELL_FAILED_NOT_INFRONT ||
+        result == SPELL_FAILED_UNIT_NOT_INFRONT ||
+        result == SPELL_FAILED_NOT_STANDING;
+}
+}
+
+bool PlayerbotAI::TryLfgCoordinatedInterrupt()
+{
+    uint32 requesterGuid = _lfgAutoQueueRequesterGuid.load();
+    if (!requesterGuid || !bot || !bot->IsAlive() ||
+        !bot->GetMap() || !bot->GetMap()->Instanceable())
+        return false;
+
+    Group* group = bot->GetGroup(GroupSlot::Instance);
+    if (!group)
+        group = bot->GetGroup();
+    if (!group)
+        return false;
+
+    Player* requester = ObjectAccessor::FindConnectedPlayer(
+        ObjectGuid::Create<HighGuid::Player>(requesterGuid));
+    Group* requesterGroup = requester ?
+        requester->GetGroup(GroupSlot::Instance) : nullptr;
+    if (requester && !requesterGroup)
+        requesterGroup = requester->GetGroup();
+    if (!requester || requesterGroup != group ||
+        requester->GetMap() != bot->GetMap())
+        return false;
+
+    // Build a group-wide view. A caster may not be this bot's current target,
+    // but it can still be attacking another party member or be that member's
+    // selected rotation target.
+    std::vector<Unit*> castingTargets;
+    auto addCastingTarget = [&](Unit* target)
+    {
+        if (!target || target->GetMap() != bot->GetMap() ||
+            !target->IsAlive() || !bot->IsValidAttackTarget(target) ||
+            !GetInterruptibleCurrentSpell(target))
+            return;
+        if (std::find(castingTargets.begin(), castingTargets.end(), target) ==
+            castingTargets.end())
+            castingTargets.push_back(target);
+    };
+
+    for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+    {
+        Player* member = ref->GetSource();
+        if (!member || member->GetMap() != bot->GetMap())
+            continue;
+
+        addCastingTarget(member->GetVictim());
+        addCastingTarget(member->GetSelectedUnit());
+        for (Unit* attacker : member->getAttackers())
+            addCastingTarget(attacker);
+
+        if (PlayerbotAI* memberAI = GET_PLAYERBOT_AI(member))
+            addCastingTarget(memberAI->GetAiObjectContext()->
+                GetValue<Unit*>("current target")->Get());
+    }
+
+    if (castingTargets.empty())
+        return false;
+
+    // Every bot computes the same ordering, so only one provider wins without
+    // a cross-thread reservation. Handle the cast closest to completion first.
+    std::sort(castingTargets.begin(), castingTargets.end(),
+        [](Unit* left, Unit* right)
+        {
+            Spell const* leftSpell = GetInterruptibleCurrentSpell(left);
+            Spell const* rightSpell = GetInterruptibleCurrentSpell(right);
+            int32 leftTimer = leftSpell ? leftSpell->GetCurrentCastTimer() :
+                std::numeric_limits<int32>::max();
+            int32 rightTimer = rightSpell ? rightSpell->GetCurrentCastTimer() :
+                std::numeric_limits<int32>::max();
+            return std::make_tuple(leftTimer,
+                       left->GetGUID().GetCounter()) <
+                std::make_tuple(rightTimer,
+                    right->GetGUID().GetCounter());
+        });
+
+    struct InterruptChoice
+    {
+        Player* player = nullptr;
+        Unit* caster = nullptr;
+        uint32 spellId = 0;
+        char const* action = nullptr;
+        std::tuple<uint8, uint8, uint32, uint8, float, uint32> rank;
+    };
+
+    for (Unit* target : castingTargets)
+    {
+        InterruptChoice best;
+        bool found = false;
+
+        for (GroupReference* ref = group->GetFirstMember(); ref;
+             ref = ref->next())
+        {
+            Player* candidate = ref->GetSource();
+            PlayerbotAI* candidateAI = candidate ?
+                GET_PLAYERBOT_AI(candidate) : nullptr;
+            if (!candidate || !candidateAI || candidateAI->IsRealPlayer() ||
+                !candidate->IsAlive() || candidate->GetMap() != bot->GetMap() ||
+                candidateAI->_lfgAutoQueueRequesterGuid.load() != requesterGuid ||
+                candidate->HasUnitState(UNIT_STATE_LOST_CONTROL))
+                continue;
+
+            for (char const* action :
+                 GetLfgInterruptActions(candidate))
+            {
+                uint32 spellId = candidateAI->GetAiObjectContext()->
+                    GetValue<uint32>("spell id", action)->Get();
+                SpellInfo const* spellInfo = spellId ?
+                    sSpellMgr->GetSpellInfo(spellId) : nullptr;
+                if (!spellInfo ||
+                    !candidateAI->IsInterruptableSpellCasting(target, action))
+                    continue;
+
+                Pet* pet = candidate->GetPet();
+                Unit* caster = nullptr;
+                if (candidate->HasSpell(spellId))
+                    caster = candidate;
+                else if (pet && pet->IsAlive() && pet->HasSpell(spellId))
+                    caster = pet;
+                if (!caster || !caster->GetSpellHistory()->IsReady(spellId) ||
+                    !caster->IsWithinLOSInMap(target))
+                    continue;
+
+                float maxRange = caster->GetSpellMaxRangeForTarget(
+                    target, spellInfo);
+                if (maxRange <= 0.0f)
+                    maxRange = 5.0f;
+                if (!caster->IsWithinCombatRange(target, maxRange))
+                    continue;
+                if (!CanPrepareLfgInterrupt(caster, target, spellInfo))
+                    continue;
+
+                bool focused = candidate->GetVictim() == target ||
+                    candidateAI->GetAiObjectContext()->
+                        GetValue<Unit*>("current target")->Get() == target;
+                uint32 cooldown = std::max(spellInfo->RecoveryTime,
+                    spellInfo->CategoryRecoveryTime);
+                auto rank = std::make_tuple(
+                    uint8(focused ? 0 : 1),
+                    uint8(caster == candidate &&
+                        IsCastingNonMeleeSpell(candidate) ? 1 : 0),
+                    cooldown, GetInterruptRolePriority(candidate),
+                    candidate->GetDistance(target),
+                    candidate->GetGUID().GetCounter());
+
+                if (!found || rank < best.rank)
+                {
+                    found = true;
+                    best = { candidate, caster, spellId, action, rank };
+                }
+                // Use this class's first ready interrupt. Its action order
+                // keeps the normal short cooldown before longer silences.
+                break;
+            }
+        }
+
+        if (!found || best.player != bot)
+            continue;
+
+        bool success = false;
+        if (best.caster == bot)
+        {
+            // Interrupts must pre-empt a long heal or damage cast. Spell::
+            // cancel also removes the GCD started by that cancelled cast.
+            InterruptSpell();
+            success = CastSpell(best.spellId, target);
+        }
+        else if (Pet* pet = best.caster->ToPet())
+        {
+            pet->CastSpell(target, best.spellId, false);
+            success = true;
+        }
+
+        if (success)
+        {
+            Spell const* enemySpell = GetInterruptibleCurrentSpell(target);
+            TC_LOG_INFO("server",
+                "AutoQueue LFG coordinated interrupt bot=%s guid=%u role=%u action=%s spell=%u target=%s target-guid=%u enemy-spell=%u",
+                bot->GetName().c_str(), bot->GetGUID().GetCounter(),
+                uint32(GetInterruptRolePriority(bot)), best.action,
+                best.spellId, target->GetName().c_str(),
+                target->GetGUID().GetCounter(),
+                enemySpell ? enemySpell->GetSpellInfo()->Id : 0);
+            return true;
+        }
     }
 
     return false;
