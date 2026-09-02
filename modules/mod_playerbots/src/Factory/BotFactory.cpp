@@ -1,6 +1,7 @@
 #include "BotFactory.h"
 
 #include <algorithm>
+#include <cctype>
 #include <random>
 #include <set>
 #include <utility>
@@ -11,6 +12,7 @@
 #include "ArenaTeam.h"
 #include "Bag.h"
 #include "DatabaseEnv.h"
+#include "DB2Stores.h"
 #include "DBCStores.h"
 #include "DBCStructure.h"
 #include "GuildMgr.h"
@@ -35,6 +37,61 @@
 #include "SpellInfo.h"
 #include "SpellMgr.h"
 #include "World.h"
+
+namespace
+{
+bool IsManagedPvpItem(ItemTemplate const* itemTemplate)
+{
+    if (!itemTemplate)
+        return false;
+
+    // Some 5.4.8 Gladiator templates in this database have their scaled stat
+    // rows empty, so ItemTemplate::IsPvPItem() cannot see PvP Power or
+    // Resilience. Their canonical item name is still reliable.
+    static std::string const pvpName = "gladiator";
+    bool const gladiatorName = std::search(itemTemplate->Name1.begin(),
+        itemTemplate->Name1.end(), pvpName.begin(), pvpName.end(),
+        [](char left, char right)
+        {
+            return std::tolower(static_cast<unsigned char>(left)) == right;
+        }) != itemTemplate->Name1.end();
+    return itemTemplate->IsPvPItem() || gladiatorName;
+}
+
+uint32 GetMaximumManagedUpgradeId(uint32 itemId)
+{
+    uint32 upgradeId = GetUpgradeId(itemId);
+    if (!upgradeId)
+        return 0;
+
+    // Upgrade paths are short (2/2 or 4/4), but keep a guard in case a bad
+    // DB2 row introduces a cycle.
+    for (uint8 step = 0; step < 8; ++step)
+    {
+        ItemUpgradeEntry const* current = sItemUpgradeStore.LookupEntry(upgradeId);
+        if (!current)
+            break;
+
+        ItemUpgradeEntry const* next = nullptr;
+        for (uint32 row = 0; row < sItemUpgradeStore.GetNumRows(); ++row)
+        {
+            ItemUpgradeEntry const* candidate = sItemUpgradeStore.LookupEntry(row);
+            if (!candidate || candidate->PrevItemUpgradeID != upgradeId ||
+                candidate->ItemUpgradePathID != current->ItemUpgradePathID)
+                continue;
+
+            if (!next || candidate->ItemLevelBonus > next->ItemLevelBonus)
+                next = candidate;
+        }
+
+        if (!next || next->ID == upgradeId)
+            break;
+        upgradeId = next->ID;
+    }
+
+    return upgradeId;
+}
+}
   
 BotFactory::BotFactory(Player* bot, uint32 level, uint32 itemQuality, uint32 gearScoreLimit)
     : level(level), bot(bot)
@@ -842,13 +899,18 @@ void BotFactory::InitEquipmentForSpec()
     InitEquipmentInternal(true, false, true, true);
 }
 
-void BotFactory::InitManagedEquipmentForSpec(uint32 minimumItemLevel)
+void BotFactory::InitManagedEquipmentForSpec(uint32 minimumItemLevel,
+                                             ManagedLoadoutMode mode)
 {
     // Managed group fillers must have every specialization-compatible slot,
     // not just five armor pieces and a weapon.  Two passes let a main-hand
     // replacement unlock a dependent shield/off-hand on the second pass.
-    InitEquipmentInternal(true, false, true, true, minimumItemLevel, false, true);
-    InitEquipmentInternal(true, false, true, true, minimumItemLevel, false, true);
+    bool const pveOnly = mode == ManagedLoadoutMode::Pve;
+    InitEquipmentInternal(true, false, true, true, minimumItemLevel, false,
+        true, pveOnly);
+    InitEquipmentInternal(true, false, true, true, minimumItemLevel, false,
+        true, pveOnly);
+    NormalizeManagedWeaponSet(minimumItemLevel, true, pveOnly);
 }
 
 uint32 BotFactory::InitManagedEnhancements(ManagedLoadoutMode mode)
@@ -872,8 +934,18 @@ uint32 BotFactory::InitManagedEnhancements(ManagedLoadoutMode mode)
     // MoP SpellItemEnchantment.dbc IDs.  Gems are represented by the
     // enchantment carried by the corresponding gem item.
     uint32 const primaryGem = intellect ? 4644u : (agility ? 4643u : 4646u);
-    uint32 const pvpPowerGem = 4588u;
-    uint32 const resilienceGem = 4586u;
+    // Match every ordinary socket colour so the item's socket bonus activates.
+    // Orange/purple hybrids retain the build's primary stat while contributing
+    // a useful secondary stat. PvP uses the genuine MoP yellow resilience and
+    // blue PvP Power gems instead of the older mismatched enchant IDs.
+    uint32 const yellowGem = mode == ManagedLoadoutMode::Pvp ? 4651u :
+        (intellect ? (healer ? 4623u : 4619u) :
+            (agility ? 4609u : 4620u));
+    uint32 const blueGem = mode == ManagedLoadoutMode::Pvp ? 4588u :
+        (intellect ? (healer ? 4589u : 4633u) :
+            (agility ? 4631u : 4635u));
+    uint32 const shaTouchedGem = intellect ? 4998u :
+        (agility ? 4996u : 4997u);
     uint32 const metaGemItem = tank ? 76895u :
         (healer ? 76888u :
             (intellect ? 76885u : (agility ? 76884u : 76886u)));
@@ -903,11 +975,42 @@ uint32 BotFactory::InitManagedEnhancements(ManagedLoadoutMode mode)
         if (!item)
             continue;
 
+        uint32 const maximumUpgrade =
+            GetMaximumManagedUpgradeId(item->GetEntry());
+        uint32 const currentUpgrade = item->GetDynamicUInt32Value(
+            ITEM_DYNAMIC_MODIFIERS, ITEM_MODIFIER_INDEX_UPGRADE);
+        if (maximumUpgrade && maximumUpgrade != currentUpgrade)
+        {
+            bool const applyBonuses = item->IsEquipped() && !item->IsBroken();
+            if (applyBonuses)
+            {
+                bot->_ApplyItemBonuses(item, item->GetSlot(), false);
+                bot->ApplyItemEquipSpell(item, false);
+                bot->ApplyEnchantment(item, false);
+            }
+
+            item->SetDynamicModifier(ITEM_MODIFIER_INDEX_UPGRADE,
+                maximumUpgrade, bot);
+            item->OverrideItemLevel(bot->GetItemLevel(item));
+
+            if (applyBonuses)
+            {
+                bot->_ApplyItemBonuses(item, item->GetSlot(), true);
+                bot->ApplyItemEquipSpell(item, true);
+                bot->ApplyEnchantment(item, true);
+            }
+
+            TC_LOG_INFO("playerbots",
+                "Managed loadout maximized item upgrade item=%u upgrade=%u ilvl=%u bot=%s slot=%u",
+                item->GetEntry(), maximumUpgrade, item->GetItemLevel(),
+                bot->GetName().c_str(), uint32(equipmentSlot));
+            ++changed;
+        }
+
         for (uint8 socket = 0; socket < MAX_GEM_SOCKETS; ++socket)
         {
             uint32 const color = item->GetTemplate()->Socket[socket].Color;
-            if (!color || color == SOCKET_COLOR_COGWHEEL ||
-                color == SOCKET_COLOR_HYDRAULIC)
+            if (!color || color == SOCKET_COLOR_COGWHEEL)
                 continue;
 
             EnchantmentSlot const enchantmentSlot =
@@ -931,12 +1034,12 @@ uint32 BotFactory::InitManagedEnhancements(ManagedLoadoutMode mode)
             }
 
             uint32 gem = primaryGem;
-            if (mode == ManagedLoadoutMode::Pvp)
-                gem = tank || color == SOCKET_COLOR_YELLOW ?
-                    resilienceGem : (color == SOCKET_COLOR_BLUE ?
-                        pvpPowerGem : primaryGem);
-            else if (healer && color == SOCKET_COLOR_BLUE)
-                gem = 4589u; // Sparkling: Spirit
+            if (color == SOCKET_COLOR_HYDRAULIC)
+                gem = shaTouchedGem;
+            else if (color == SOCKET_COLOR_YELLOW)
+                gem = yellowGem;
+            else if (color == SOCKET_COLOR_BLUE)
+                gem = blueGem;
 
             replaceEnchant(item, enchantmentSlot, gem);
         }
@@ -993,7 +1096,7 @@ bool BotFactory::PrepareManagedLoadout(ManagedLoadoutMode mode,
                                        std::string* reason)
 {
     InitBags();
-    InitManagedEquipmentForSpec(minimumItemLevel);
+    InitManagedEquipmentForSpec(minimumItemLevel, mode);
     InitTalentsTree(false);
     InitGlyphs();
     InitPet();
@@ -1001,11 +1104,24 @@ bool BotFactory::PrepareManagedLoadout(ManagedLoadoutMode mode,
 
     if (!HasRequiredEquipmentForSpec(reason))
         return false;
+    if (!HasRequiredWeaponSetForSpec(reason))
+        return false;
 
     for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
     {
         if (Item* item = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot))
         {
+            if (mode == ManagedLoadoutMode::Pve &&
+                IsManagedPvpItem(item->GetTemplate()))
+            {
+                TC_LOG_ERROR("playerbots",
+                    "Managed PvE loadout rejected PvP item %u still equipped by bot %s in slot %u",
+                    item->GetEntry(), bot->GetName().c_str(), uint32(slot));
+                if (reason)
+                    *reason = "pvp-equipment-remains";
+                return false;
+            }
+
             if (!sRandomItemMgr->IsCustomServerItem(item->GetEntry()))
                 continue;
 
@@ -1068,6 +1184,169 @@ uint32 BotFactory::GetWeaponReferenceItemLevel() const
     return std::max(reference, bot->GetLevel() >= 90 ? 450u : 0u);
 }
 
+uint32 BotFactory::FindDeterministicManagedItem(EquipmentSlots slot,
+                                                uint32 minimumItemLevel,
+                                                bool genuineItemsOnly,
+                                                bool pveOnly,
+                                                bool requireTwoHanded,
+                                                bool requireOneHanded)
+{
+    bool const weaponSlot = slot == EQUIPMENT_SLOT_MAINHAND ||
+        slot == EQUIPMENT_SLOT_OFFHAND;
+    uint32 const weaponReferenceItemLevel = weaponSlot ?
+        GetWeaponReferenceItemLevel() : 0;
+    uint32 const weaponMinimumItemLevel = weaponReferenceItemLevel > 35 ?
+        weaponReferenceItemLevel - 35 : weaponReferenceItemLevel;
+    uint32 const targetItemLevel = weaponSlot ?
+        std::max(weaponReferenceItemLevel, minimumItemLevel) :
+        minimumItemLevel;
+    uint32 bestItem = 0;
+    uint32 bestDistance = UINT32_MAX;
+    uint32 bestItemLevel = 0;
+
+    ItemTemplateContainer const* itemTemplates = sObjectMgr->GetItemTemplateStore();
+    if (!itemTemplates)
+        return 0;
+
+    for (auto const& pair : *itemTemplates)
+    {
+        ItemTemplate const* proto = &pair.second;
+        if (genuineItemsOnly && sRandomItemMgr->IsCustomServerItem(proto->ItemId))
+            continue;
+        if (pveOnly && IsManagedPvpItem(proto))
+            continue;
+        if (sRandomItemMgr->IsTestItem(proto->ItemId) ||
+            proto->Quality < ITEM_QUALITY_EPIC ||
+            proto->ItemLevel < minimumItemLevel ||
+            proto->RequiredLevel > level)
+            continue;
+        if ((proto->AllowableClass & bot->GetClassMask()) == 0 ||
+            (proto->AllowableRace & bot->GetRaceMask()) == 0)
+            continue;
+        if (requireTwoHanded && proto->InventoryType != INVTYPE_2HWEAPON)
+            continue;
+        if (requireOneHanded &&
+            proto->InventoryType != INVTYPE_WEAPON &&
+            proto->InventoryType != INVTYPE_WEAPONMAINHAND &&
+            proto->InventoryType != INVTYPE_WEAPONOFFHAND)
+            continue;
+        if (!CanEquipItem(proto) ||
+            !sRandomItemMgr->IsItemValidForEquipmentSlot(bot, slot, proto))
+            continue;
+        if (weaponSlot && proto->ItemLevel < weaponMinimumItemLevel)
+            continue;
+
+        uint16 candidateDest;
+        if (!CanEquipUnseenItem(uint8(slot), candidateDest, proto->ItemId))
+            continue;
+
+        uint32 const distance = proto->ItemLevel > targetItemLevel ?
+            proto->ItemLevel - targetItemLevel :
+            targetItemLevel - proto->ItemLevel;
+        if (bestItem &&
+            (distance > bestDistance ||
+             (distance == bestDistance && proto->ItemLevel <= bestItemLevel)))
+            continue;
+
+        bestItem = proto->ItemId;
+        bestDistance = distance;
+        bestItemLevel = proto->ItemLevel;
+    }
+
+    return bestItem;
+}
+
+void BotFactory::NormalizeManagedWeaponSet(uint32 minimumItemLevel,
+                                           bool genuineItemsOnly,
+                                           bool pveOnly)
+{
+    Item* mainHand = bot->GetItemByPos(INVENTORY_SLOT_BAG_0,
+        EQUIPMENT_SLOT_MAINHAND);
+    Item* offHand = bot->GetItemByPos(INVENTORY_SLOT_BAG_0,
+        EQUIPMENT_SLOT_OFFHAND);
+
+    // Frost death knights, caster/healer specs and non-healer monks can use
+    // either a two-hander or a one-hander with an off-hand. Never retain a
+    // stale off-hand when their managed main hand becomes two-handed.
+    if (bot->GetSpecialization() != SPEC_WARRIOR_FURY)
+    {
+        if (mainHand && offHand &&
+            mainHand->GetTemplate()->InventoryType == INVTYPE_2HWEAPON)
+        {
+            bot->DestroyItem(INVENTORY_SLOT_BAG_0,
+                EQUIPMENT_SLOT_OFFHAND, true);
+            TC_LOG_INFO("playerbots",
+                "Managed loadout removed off-hand paired with a two-handed weapon for bot %s specialization %u",
+                bot->GetName().c_str(), uint32(bot->GetSpecialization()));
+        }
+        return;
+    }
+    bool const alreadyTwoHandedPair = mainHand && offHand &&
+        mainHand->GetTemplate()->InventoryType == INVTYPE_2HWEAPON &&
+        offHand->GetTemplate()->InventoryType == INVTYPE_2HWEAPON &&
+        (!pveOnly || (!IsManagedPvpItem(mainHand->GetTemplate()) &&
+                      !IsManagedPvpItem(offHand->GetTemplate())));
+    if (alreadyTwoHandedPair)
+        return;
+
+    auto clearWeapons = [&]()
+    {
+        if (bot->GetItemByPos(INVENTORY_SLOT_BAG_0,
+                EQUIPMENT_SLOT_OFFHAND))
+            bot->DestroyItem(INVENTORY_SLOT_BAG_0,
+                EQUIPMENT_SLOT_OFFHAND, true);
+        if (bot->GetItemByPos(INVENTORY_SLOT_BAG_0,
+                EQUIPMENT_SLOT_MAINHAND))
+            bot->DestroyItem(INVENTORY_SLOT_BAG_0,
+                EQUIPMENT_SLOT_MAINHAND, true);
+    };
+
+    auto equipPair = [&](bool twoHanded) -> bool
+    {
+        EquipmentSlots const slots[] =
+        {
+            EQUIPMENT_SLOT_MAINHAND,
+            EQUIPMENT_SLOT_OFFHAND
+        };
+        for (EquipmentSlots slot : slots)
+        {
+            uint32 itemId = FindDeterministicManagedItem(slot,
+                minimumItemLevel, genuineItemsOnly, pveOnly,
+                twoHanded, !twoHanded);
+            uint16 dest;
+            if (!itemId || !CanEquipUnseenItem(uint8(slot), dest, itemId) ||
+                !bot->EquipNewItem(dest, itemId, true))
+                return false;
+        }
+        return true;
+    };
+
+    clearWeapons();
+    if (equipPair(true))
+    {
+        TC_LOG_INFO("playerbots",
+            "Managed Fury loadout equipped matched two-handed weapons for bot %s",
+            bot->GetName().c_str());
+        return;
+    }
+
+    // A malformed/missing Titan's Grip passive must not leave a filler without
+    // weapons. Fall back to a valid Single-Minded Fury pair, never a 1H/2H mix.
+    clearWeapons();
+    if (equipPair(false))
+    {
+        TC_LOG_WARN("playerbots",
+            "Managed Fury loadout used matched one-handed fallback weapons for bot %s",
+            bot->GetName().c_str());
+        return;
+    }
+
+    clearWeapons();
+    TC_LOG_ERROR("playerbots",
+        "Managed Fury loadout could not build a matched weapon pair for bot %s",
+        bot->GetName().c_str());
+}
+
 bool BotFactory::MoveEquippedItemToBag(uint8 slot)
 {
     Item* item = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
@@ -1090,7 +1369,8 @@ void BotFactory::InitEquipmentInternal(bool incremental, bool second_chance,
                                        bool missingOnly, bool specCompatible,
                                        uint32 minimumItemLevel,
                                        bool preserveReplaced,
-                                       bool genuineItemsOnly)
+                                       bool genuineItemsOnly,
+                                       bool pveOnly)
 {
     InitBags();
 
@@ -1127,7 +1407,9 @@ void BotFactory::InitEquipmentInternal(bool incremental, bool second_chance,
         {
             bool const customServerItem = genuineItemsOnly &&
                 sRandomItemMgr->IsCustomServerItem(oldItem->GetEntry());
-            bool const validForSpec = !customServerItem &&
+            bool const pvpItem = pveOnly &&
+                IsManagedPvpItem(oldItem->GetTemplate());
+            bool const validForSpec = !customServerItem && !pvpItem &&
                 (!specCompatible ||
                     sRandomItemMgr->IsItemValidForEquipmentSlot(
                         bot, EquipmentSlots(slot), oldItem->GetTemplate()));
@@ -1150,6 +1432,11 @@ void BotFactory::InitEquipmentInternal(bool incremental, bool second_chance,
             else if (customServerItem)
                 TC_LOG_INFO("playerbots",
                     "Replacing custom managed item %u for bot %s slot %u with client-known equipment",
+                    oldItem->GetEntry(), bot->GetName().c_str(),
+                    uint32(slot));
+            else if (pvpItem)
+                TC_LOG_INFO("playerbots",
+                    "Replacing PvP managed item %u for bot %s slot %u with PvE equipment",
                     oldItem->GetEntry(), bot->GetName().c_str(),
                     uint32(slot));
         }
@@ -1206,11 +1493,6 @@ void BotFactory::InitEquipmentInternal(bool incremental, bool second_chance,
         } while (items[slot].size() < 25 && !isforcedbreak);
 
         std::vector<uint32>& ids = items[slot];
-        if (ids.empty())
-        {
-            continue;
-        }
-
         uint32 bestItemForSlot = 0;
         uint32 bestItemLevelDistance = UINT32_MAX;
         uint32 bestItemLevel = 0;
@@ -1221,6 +1503,8 @@ void BotFactory::InitEquipmentInternal(bool incremental, bool second_chance,
             // delay heavy check to here
             if (genuineItemsOnly &&
                 sRandomItemMgr->IsCustomServerItem(proto->ItemId))
+                continue;
+            if (pveOnly && IsManagedPvpItem(proto))
                 continue;
             if (!CanEquipItem(proto))
                 continue;
@@ -1255,6 +1539,31 @@ void BotFactory::InitEquipmentInternal(bool incremental, bool second_chance,
                 bestItemLevel = proto->ItemLevel;
             }
             bestItemForSlot = proto->ItemId;
+        }
+
+        // The legacy random cache returns one candidate per inventory type.
+        // For off-hands in particular it can repeatedly return weapons or
+        // shields which are valid for the class but not for the active spec,
+        // while never exposing an otherwise valid caster holdable. Managed
+        // fillers must not become permanently ineligible because of that
+        // random sampling. Fall back to a deterministic scan and choose the
+        // closest genuine item at or above the requested floor.
+        if (bestItemForSlot == 0 && minimumItemLevel && specCompatible)
+        {
+            bestItemForSlot = FindDeterministicManagedItem(
+                EquipmentSlots(slot), minimumItemLevel, genuineItemsOnly,
+                pveOnly);
+
+            if (bestItemForSlot)
+            {
+                ItemTemplate const* fallback =
+                    sObjectMgr->GetItemTemplate(bestItemForSlot);
+                TC_LOG_INFO("playerbots",
+                    "Managed deterministic equipment fallback selected item %u (ilvl %u, target %u) for bot %s slot %u",
+                    bestItemForSlot, fallback ? fallback->ItemLevel : 0,
+                    std::max(weaponReferenceItemLevel, minimumItemLevel),
+                    bot->GetName().c_str(), uint32(slot));
+            }
         }
 
         if (bestItemForSlot == 0)
@@ -1412,15 +1721,32 @@ bool BotFactory::HasRequiredWeaponSetForSpec(std::string* reason) const
             EQUIPMENT_SLOT_MAINHAND, mainHand->GetTemplate()))
         return fail("invalid-main-hand-for-specialization");
 
+    Item* offHand = bot->GetItemByPos(INVENTORY_SLOT_BAG_0,
+        EQUIPMENT_SLOT_OFFHAND);
+    bool const mainTwoHanded =
+        mainHand->GetTemplate()->InventoryType == INVTYPE_2HWEAPON;
+    if (bot->GetSpecialization() != SPEC_WARRIOR_FURY &&
+        mainTwoHanded && offHand)
+        return fail("off-hand-with-two-handed-weapon");
+
     if (sRandomItemMgr->NeedsOffhandForSpec(bot))
     {
-        Item* offHand = bot->GetItemByPos(INVENTORY_SLOT_BAG_0,
-            EQUIPMENT_SLOT_OFFHAND);
         if (!offHand)
             return fail("missing-required-off-hand");
         if (!sRandomItemMgr->IsItemValidForEquipmentSlot(bot,
                 EQUIPMENT_SLOT_OFFHAND, offHand->GetTemplate()))
             return fail("invalid-off-hand-for-specialization");
+    }
+
+    if (bot->GetSpecialization() == SPEC_WARRIOR_FURY)
+    {
+        if (!offHand)
+            return fail("missing-required-off-hand");
+
+        bool const offTwoHanded =
+            offHand->GetTemplate()->InventoryType == INVTYPE_2HWEAPON;
+        if (mainTwoHanded != offTwoHanded)
+            return fail("mismatched-fury-weapon-types");
     }
 
     if (reason)

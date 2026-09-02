@@ -51,6 +51,8 @@ private:
 
     bool CheckItemStats(Classes clazz, uint8 sp, uint8 ap, uint8 tank);
     bool MatchesPrimaryStatForSpec(Player* bot, ItemTemplate const* proto) const;
+    bool IsPassiveTrinketValidForSpec(Player* bot,
+        ItemTemplate const* proto) const;
     bool ShouldEquipArmorForSpec(uint32 level, Classes playerclass, Specializations spec, ItemTemplate const* proto);
     bool ShouldEquipWeaponForSpec(Classes playerclass, Specializations spec,
         EquipmentSlots slot, ItemTemplate const* proto) const;
