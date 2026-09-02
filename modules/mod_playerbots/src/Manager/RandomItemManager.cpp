@@ -40,8 +40,12 @@ void InspectTrinketSpell(uint32 spellId, TrinketAffinity& affinity,
     if (!spellInfo)
         return;
 
-    for (SpellEffectInfo const& effect : spellInfo->GetEffects())
+    // This 5.4.8 core populates the public Effects array in SpellInfo's
+    // constructor. The newer _effects/GetEffects storage remains empty, so
+    // using it silently misses proc chains such as Bad Juju -> Agility.
+    for (uint8 index = 0; index < MAX_SPELL_EFFECTS; ++index)
     {
+        SpellEffectInfo const& effect = spellInfo->Effects[index];
         if (!effect.IsEffect())
             continue;
 
@@ -86,6 +90,13 @@ void InspectTrinketSpell(uint32 spellId, TrinketAffinity& affinity,
                 break;
             case SPELL_AURA_MOD_DODGE_PERCENT:
             case SPELL_AURA_MOD_PARRY_PERCENT:
+                affinity.tanking = true;
+                break;
+            case SPELL_AURA_MOD_RATING:
+                if (effect.MiscValue & ((1 << CR_DODGE) | (1 << CR_PARRY)))
+                    affinity.tanking = true;
+                break;
+            case SPELL_AURA_MOD_INCREASE_HEALTH_2:
                 affinity.tanking = true;
                 break;
             default:
@@ -1124,6 +1135,13 @@ bool RandomItemManager::IsPassiveTrinketValidForSpec(Player* bot,
                 affinity.primaryMask |= TRINKET_PRIMARY_INTELLECT;
                 affinity.caster = true;
                 break;
+            case ITEM_MOD_SPIRIT:
+                affinity.caster = true;
+                affinity.healing = true;
+                break;
+            case ITEM_MOD_STAMINA:
+                affinity.tanking = true;
+                break;
             case ITEM_MOD_EXPERTISE_RATING:
                 affinity.physical = true;
                 break;
@@ -1191,8 +1209,7 @@ bool RandomItemManager::IsPassiveTrinketValidForSpec(Player* bot,
             break;
     }
 
-    if (affinity.primaryMask &&
-        !(affinity.primaryMask & expectedPrimary))
+    if (affinity.primaryMask && !(affinity.primaryMask & expectedPrimary))
         return false;
     if (expectedPrimary == TRINKET_PRIMARY_INTELLECT && affinity.physical &&
         !affinity.caster)
@@ -1200,13 +1217,38 @@ bool RandomItemManager::IsPassiveTrinketValidForSpec(Player* bot,
     if (expectedPrimary != TRINKET_PRIMARY_INTELLECT && affinity.caster &&
         !affinity.physical)
         return false;
-    if (affinity.healing && !PlayerBotSpec::IsHeal(bot, true) &&
-        !affinity.physical)
-        return false;
-    if (affinity.tanking && !PlayerBotSpec::IsTank(bot, true) &&
-        affinity.primaryMask == TRINKET_PRIMARY_NONE &&
-        !affinity.physical && !affinity.caster)
-        return false;
+
+    bool const healer = PlayerBotSpec::IsHeal(bot, true);
+    bool const tank = PlayerBotSpec::IsTank(bot, true);
+    if (healer)
+    {
+        // An intellect proc alone does not make a caster-DPS trinket suitable
+        // for a healer. Require a passive/proc mana, spirit or healing effect.
+        if (!affinity.healing)
+            return false;
+    }
+    else if (tank)
+    {
+        if (!affinity.tanking)
+            return false;
+    }
+    else
+    {
+        // Damage fillers must not consume healer or survival trinkets merely
+        // because their secondary/static row is otherwise equippable.
+        if (affinity.healing || affinity.tanking)
+            return false;
+
+        bool const primaryMatches =
+            affinity.primaryMask & expectedPrimary;
+        if (expectedPrimary == TRINKET_PRIMARY_INTELLECT)
+        {
+            if (!primaryMatches && !affinity.caster)
+                return false;
+        }
+        else if (!primaryMatches && !affinity.physical)
+            return false;
+    }
 
     return true;
 }

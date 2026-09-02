@@ -2284,14 +2284,43 @@ std::vector<char const*> GetSoloArenaPreparationBuffActions(Player* bot)
     if (!bot)
         return {};
 
+    Specializations specialization = bot->GetSpecialization();
     switch (bot->GetClass())
     {
-        case CLASS_PRIEST:       return { "power word: fortitude on party" };
-        case CLASS_DRUID:        return { "mark of the wild on party" };
-        case CLASS_MAGE:         return { "arcane brilliance on party" };
-        case CLASS_PALADIN:      return { "blessing of kings", "blessing of might" };
-        case CLASS_WARRIOR:      return { "battle shout" };
-        case CLASS_DEATH_KNIGHT: return { "horn of winter" };
+        case CLASS_PRIEST:
+            return specialization == SPEC_PRIEST_SHADOW ?
+                std::vector<char const*> { "power word: fortitude on party", "shadowform" } :
+                std::vector<char const*> { "power word: fortitude on party", "remove shadowform" };
+        case CLASS_DRUID:
+            if (specialization == SPEC_DRUID_BALANCE)
+                return { "mark of the wild on party", "moonkin form" };
+            if (specialization == SPEC_DRUID_FERAL)
+                return { "mark of the wild on party", "cat form" };
+            if (specialization == SPEC_DRUID_GUARDIAN)
+                return { "mark of the wild on party", "bear form" };
+            return { "mark of the wild on party", "caster form" };
+        case CLASS_MAGE:
+            if (specialization == SPEC_MAGE_ARCANE)
+                return { "arcane brilliance on party", "mage armor" };
+            if (specialization == SPEC_MAGE_FIRE)
+                return { "arcane brilliance on party", "molten armor" };
+            return { "arcane brilliance on party", "frost armor" };
+        case CLASS_PALADIN:
+            if (specialization == SPEC_PALADIN_RETRIBUTION)
+                return { "blessing of kings", "blessing of might", "seal of truth" };
+            return { "blessing of kings", "blessing of might", "seal of insight" };
+        // The two shouts are exclusive only for the same caster. Raid-aware
+        // coordination below lets duplicate warriors split them safely.
+        case CLASS_WARRIOR:
+            return specialization == SPEC_WARRIOR_PROTECTION ?
+                std::vector<char const*> { "battle shout", "commanding shout", "defensive stance" } :
+                std::vector<char const*> { "battle shout", "commanding shout", "battle stance" };
+        case CLASS_DEATH_KNIGHT:
+            if (specialization == SPEC_DEATH_KNIGHT_BLOOD)
+                return { "horn of winter", "blood presence" };
+            if (specialization == SPEC_DEATH_KNIGHT_UNHOLY)
+                return { "horn of winter", "unholy presence" };
+            return { "horn of winter", "frost presence" };
         case CLASS_WARLOCK:      return { "dark intent" };
         // Water Shield and Lightning Shield are mutually exclusive. Returning
         // both made the preparation loop alternate between them for the entire
@@ -2302,9 +2331,74 @@ std::vector<char const*> GetSoloArenaPreparationBuffActions(Player* bot)
                 std::vector<char const*> { "water shield" } :
                 std::vector<char const*> { "lightning shield" };
         case CLASS_HUNTER:       return { "trueshot aura", "aspect of the hawk" };
+        case CLASS_MONK:
+            if (specialization == SPEC_MONK_BREWMASTER)
+                return { "legacy of the emperor on party", "legacy of the white tiger on party",
+                         "stance of the sturdy ox" };
+            if (specialization == SPEC_MONK_MISTWEAVER)
+                return { "legacy of the emperor on party", "legacy of the white tiger on party",
+                         "stance of the wise serpent" };
+            return { "legacy of the emperor on party", "legacy of the white tiger on party",
+                     "stance of the fierce tiger" };
         default:                 return {};
     }
 }
+
+char const* GetAutomaticRoleModeAction(Player* bot)
+{
+    if (!bot)
+        return nullptr;
+
+    Specializations specialization = bot->GetSpecialization();
+    switch (bot->GetClass())
+    {
+        case CLASS_PRIEST:
+            return specialization == SPEC_PRIEST_SHADOW ?
+                "shadowform" : "remove shadowform";
+        case CLASS_DRUID:
+            if (specialization == SPEC_DRUID_BALANCE)
+                return "moonkin form";
+            if (specialization == SPEC_DRUID_FERAL)
+                return "cat form";
+            if (specialization == SPEC_DRUID_GUARDIAN)
+                return "bear form";
+            return "caster form";
+        case CLASS_MAGE:
+            if (specialization == SPEC_MAGE_ARCANE)
+                return "mage armor";
+            if (specialization == SPEC_MAGE_FIRE)
+                return "molten armor";
+            return "frost armor";
+        case CLASS_PALADIN:
+            return specialization == SPEC_PALADIN_RETRIBUTION ?
+                "seal of truth" : "seal of insight";
+        case CLASS_WARRIOR:
+            return specialization == SPEC_WARRIOR_PROTECTION ?
+                "defensive stance" : "battle stance";
+        case CLASS_DEATH_KNIGHT:
+            if (specialization == SPEC_DEATH_KNIGHT_BLOOD)
+                return "blood presence";
+            if (specialization == SPEC_DEATH_KNIGHT_UNHOLY)
+                return "unholy presence";
+            return "frost presence";
+        case CLASS_SHAMAN:
+            return PlayerBotSpec::IsHeal(bot) ?
+                "water shield" : "lightning shield";
+        case CLASS_HUNTER:
+            return "aspect of the hawk";
+        case CLASS_MONK:
+            if (specialization == SPEC_MONK_BREWMASTER)
+                return "stance of the sturdy ox";
+            if (specialization == SPEC_MONK_MISTWEAVER)
+                return "stance of the wise serpent";
+            return "stance of the fierce tiger";
+        default:
+            return nullptr;
+    }
+}
+
+bool CastAutomaticPreparationBuff(Player* bot, PlayerbotAI* botAI,
+    char const** castAction = nullptr);
 
 void CastSoloArenaAutomaticPreparationBuffs(Battleground* arena,
     std::vector<Player*> const& participants)
@@ -2328,19 +2422,18 @@ void CastSoloArenaAutomaticPreparationBuffs(Battleground* arena,
         // Execute real, class-supported PlayerbotAI actions. This is retried by
         // the preparation state until a cast succeeds, so teleport/GCD timing
         // cannot silently turn the old generic strategy toggle into a no-op.
-        for (char const* action : GetSoloArenaPreparationBuffActions(participant))
-            if (botAI->DoSpecificAction(action, Event(), true))
-            {
-                SoloArenaAutomaticPreparationBuffedBots.insert(
-                    participant->GetGUID().GetCounter());
-                TC_LOG_INFO("server",
-                    "SoloArena preparation buff cast instance=%u map=%u name=%s guid=%u class=%u action=%s",
-                    arena->GetInstanceID(), arena->GetMapId(),
-                    participant->GetName().c_str(),
-                    participant->GetGUID().GetCounter(),
-                    uint32(participant->GetClass()), action);
-                break;
-            }
+        char const* castAction = nullptr;
+        if (CastAutomaticPreparationBuff(participant, botAI, &castAction))
+        {
+            SoloArenaAutomaticPreparationBuffedBots.insert(
+                participant->GetGUID().GetCounter());
+            TC_LOG_INFO("server",
+                "SoloArena preparation buff cast instance=%u map=%u name=%s guid=%u class=%u action=%s",
+                arena->GetInstanceID(), arena->GetMapId(),
+                participant->GetName().c_str(),
+                participant->GetGUID().GetCounter(),
+                uint32(participant->GetClass()), castAction);
+        }
     }
 }
 
@@ -2465,6 +2558,102 @@ void ActivateSoloArenaAutomaticCombat(Battleground* arena,
             opponent->GetName().c_str(), opponent->GetGUID().GetCounter(),
             uint32(attackStarted));
     }
+}
+
+SpellGroup GetPreparationRaidBuffGroup(char const* action)
+{
+    if (!action)
+        return SPELL_GROUP_NONE;
+
+    // MoP raid-buff equivalence groups from the world spell_group table.
+    // Checking the category prevents equivalent class buffs from endlessly
+    // overwriting one another during periodic LFG maintenance.
+    std::string_view name(action);
+    if (name == "mark of the wild on party" || name == "blessing of kings" ||
+        name == "legacy of the emperor on party")
+        return SpellGroup(1118); // primary stats
+    if (name == "power word: fortitude on party" || name == "commanding shout")
+        return SpellGroup(1109); // stamina
+    if (name == "battle shout" || name == "horn of winter" ||
+        name == "trueshot aura")
+        return SpellGroup(1137); // attack power
+    if (name == "blessing of might")
+        return SpellGroup(1127); // mastery
+    if (name == "arcane brilliance on party")
+        return SpellGroup(1133); // spell power and critical strike
+    if (name == "legacy of the white tiger on party")
+        return SpellGroup(1141); // critical strike
+
+    // Personal shields/aspects retain their action's exact-aura check. Dark
+    // Intent uses several effect-specific parent groups, not one category.
+    return SPELL_GROUP_NONE;
+}
+
+bool HasPreparationRaidBuff(Player const* member, SpellGroup group)
+{
+    if (!member || group == SPELL_GROUP_NONE)
+        return false;
+
+    for (auto const& auraPair : member->GetAppliedAuras())
+    {
+        AuraApplication const* application = auraPair.second;
+        Aura const* aura = application ? application->GetBase() : nullptr;
+        if (aura && sSpellMgr->IsSpellMemberOfSpellGroup(aura->GetId(), group))
+            return true;
+    }
+
+    return false;
+}
+
+bool IsPreparationRaidBuffMissing(Player* bot, SpellGroup group)
+{
+    if (!bot || group == SPELL_GROUP_NONE)
+        return true;
+
+    Group* party = bot->GetGroup(GroupSlot::Instance);
+    if (!party)
+        party = bot->GetGroup();
+    if (!party)
+        return !HasPreparationRaidBuff(bot, group);
+
+    bool checkedMember = false;
+    for (GroupReference* ref = party->GetFirstMember(); ref; ref = ref->next())
+    {
+        Player* member = ref->GetSource();
+        if (!member || !member->IsAlive() || member->GetMap() != bot->GetMap() ||
+            !bot->IsWithinDistInMap(member, 100.0f))
+            continue;
+
+        checkedMember = true;
+        if (!HasPreparationRaidBuff(member, group))
+            return true;
+    }
+
+    return !checkedMember;
+}
+
+bool CastAutomaticPreparationBuff(Player* bot, PlayerbotAI* botAI,
+    char const** castAction)
+{
+    if (!bot || !botAI || botAI->IsRealPlayer())
+        return false;
+
+    for (char const* action : GetSoloArenaPreparationBuffActions(bot))
+    {
+        SpellGroup group = GetPreparationRaidBuffGroup(action);
+        if (group != SPELL_GROUP_NONE &&
+            !IsPreparationRaidBuffMissing(bot, group))
+            continue;
+
+        if (botAI->DoSpecificAction(action, Event(), true))
+        {
+            if (castAction)
+                *castAction = action;
+            return true;
+        }
+    }
+
+    return false;
 }
 
 void ProcessSoloArenaAutomaticReward(Battleground* arena)
@@ -5640,16 +5829,17 @@ void UpdateWorldBossStagedRaid(uint32 diff)
                         botAI->SetMaster(requester);
                         botAI->ChangeStrategy("+follow", BOT_STATE_NON_COMBAT);
                         botAI->ChangeStrategy("+avoid aoe", BOT_STATE_COMBAT);
-                        for (char const* action : actions)
-                            if (botAI->DoSpecificAction(action, Event(), true))
-                            {
-                                complete = true;
-                                TC_LOG_INFO("server",
-                                    "WorldBoss preparation buff cast raid=%u boss=%u name=%s guid=%u action=%s",
-                                    WorldBossStageGroup, WorldBossStageBossEntry,
-                                    bot->GetName().c_str(), staged.first, action);
-                                break;
-                            }
+                        char const* castAction = nullptr;
+                        if (CastAutomaticPreparationBuff(bot, botAI,
+                            &castAction))
+                        {
+                            complete = true;
+                            TC_LOG_INFO("server",
+                                "WorldBoss preparation buff cast raid=%u boss=%u name=%s guid=%u action=%s",
+                                WorldBossStageGroup, WorldBossStageBossEntry,
+                                bot->GetName().c_str(), staged.first,
+                                castAction);
+                        }
                     }
                 }
                 if (complete)
@@ -6319,14 +6509,15 @@ bool RestoreAutomatedPvpBotLoadout(Player* bot, char const* reason,
 bool CastAutomatedPvpPreparationBuff(Player* bot)
 {
     PlayerbotAI* botAI = bot ? GET_PLAYERBOT_AI(bot) : nullptr;
-    if (!botAI || botAI->IsRealPlayer())
-        return false;
+    return CastAutomaticPreparationBuff(bot, botAI);
+}
 
-    for (char const* action : GetSoloArenaPreparationBuffActions(bot))
-        if (botAI->DoSpecificAction(action, Event(), true))
-            return true;
-
-    return false;
+bool CastAutomatedRoleMode(Player* bot)
+{
+    PlayerbotAI* botAI = bot ? GET_PLAYERBOT_AI(bot) : nullptr;
+    char const* action = GetAutomaticRoleModeAction(bot);
+    return botAI && !botAI->IsRealPlayer() && action &&
+        botAI->DoSpecificAction(action, Event(), true);
 }
 
 void UpdateAutomatedPvpLoadoutRecovery(uint32 diff)

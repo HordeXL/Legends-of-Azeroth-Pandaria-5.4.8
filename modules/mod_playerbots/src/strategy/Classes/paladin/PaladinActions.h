@@ -17,6 +17,7 @@ class Unit;
 BUFF_ACTION(CastSealOfRighteousnessAction, "seal of righteousness");
 BUFF_ACTION(CastSealOfCommandAction, "seal of command");
 BUFF_ACTION(CastSealOfInsightAction, "seal of insight");
+BUFF_ACTION(CastSealOfTruthAction, "seal of truth");
 
 // judgements
 SPELL_ACTION(CastJudgementAction, "judgement");

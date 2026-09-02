@@ -478,7 +478,14 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
             }
         }
 
-        if (safe && CastAutomatedPvpPreparationBuff(bot))
+        // Establish the specialization's personal stance/presence/form first.
+        // Unlike arenas, LFG has no preparation countdown and combat can begin
+        // immediately after loading. If the mode is already correct, continue
+        // with one normal raid buff from the same request.
+        bool cast = safe && CastAutomatedRoleMode(bot);
+        if (safe && !cast)
+            cast = CastAutomatedPvpPreparationBuff(bot);
+        if (cast)
             TC_LOG_INFO("server",
                 "AutoQueue LFG map-thread preparation cast bot=%s guid=%u requester=%u map=%u",
                 bot->GetName().c_str(), bot->GetGUID().GetCounter(),

@@ -17,15 +17,20 @@ bool CastHeroicLeapAction::isUseful()
 
 bool CastBattleStanceAction::isUseful()
 {
-    return (botAI->GetBot() && botAI->GetBot()->GetGroup() && !PlayerBotSpec::IsTank(botAI->GetBot()));
+    return botAI->GetBot() && botAI->GetBot()->GetGroup() &&
+        !PlayerBotSpec::IsTank(botAI->GetBot()) &&
+        CastBuffSpellAction::isUseful();
 }
 bool CastBerserkerStanceAction::isUseful()
 {
-    return (botAI->GetBot() && !botAI->GetBot()->GetGroup() && !PlayerBotSpec::IsTank(botAI->GetBot()));
+    return botAI->GetBot() && !botAI->GetBot()->GetGroup() &&
+        !PlayerBotSpec::IsTank(botAI->GetBot()) &&
+        CastBuffSpellAction::isUseful();
 }
 bool CastDefensiveStanceAction::isUseful()
 {
-    return PlayerBotSpec::IsTank(botAI->GetBot());
+    return PlayerBotSpec::IsTank(botAI->GetBot()) &&
+        CastBuffSpellAction::isUseful();
 }
 
 Unit* CastVigilanceAction::GetTarget()

@@ -20,15 +20,16 @@ bool RuneOfPowerTrigger::IsActive()
 
 bool MageArmorTrigger::IsActive()
 {
-    return 
-        (botAI->GetBot()->GetSpecialization() != Specializations::SPEC_MAGE_FIRE && bot->GetGroup() ||
-        botAI->GetBot()->GetSpecialization() == Specializations::SPEC_MAGE_ARCANE) &&
+    return botAI->GetBot()->GetSpecialization() ==
+        Specializations::SPEC_MAGE_ARCANE &&
         !botAI->HasAura("mage armor", bot);
 }
 
 bool FrostArmorTrigger::IsActive()
 {
-    return (botAI->GetBot()->GetSpecialization() == Specializations::SPEC_MAGE_FROST && !botAI->HasAura("frost armor", bot) && !bot->GetGroup());
+    return botAI->GetBot()->GetSpecialization() ==
+        Specializations::SPEC_MAGE_FROST &&
+        !botAI->HasAura("frost armor", bot);
 }
 
 bool MoltenArmorTrigger::IsActive()

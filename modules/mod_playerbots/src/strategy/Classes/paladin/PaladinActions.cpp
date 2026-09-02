@@ -13,7 +13,7 @@
 #include "SharedDefines.h"
 
 
-bool CastSealSpellAction::isUseful() { return AI_VALUE2(bool, "combat", "self target"); }
+bool CastSealSpellAction::isUseful() { return CastBuffSpellAction::isUseful(); }
 
 Value<Unit*>* CastTurnUndeadAction::GetTargetValue() { return context->GetValue<Unit*>("cc target", getName()); }
 

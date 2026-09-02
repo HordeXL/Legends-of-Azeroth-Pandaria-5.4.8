@@ -42,7 +42,7 @@ void DpsPaladinStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 {
     GenericPaladinStrategy::InitTriggers(triggers);
 
-    triggers.push_back(new TriggerNode("seal", NextAction::array(0, new NextAction("seal of righteousness", ACTION_HIGH), nullptr)));
+    triggers.push_back(new TriggerNode("seal", NextAction::array(0, new NextAction("seal of truth", ACTION_HIGH), nullptr)));
     triggers.push_back(new TriggerNode("enemy out of melee", NextAction::array(0, new NextAction("reach melee", ACTION_HIGH + 1), NULL)));
     triggers.push_back(new TriggerNode("medium aoe", NextAction::array(0,
         new NextAction("divine storm", ACTION_HIGH + 2),

@@ -903,13 +903,21 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
             }
 
             TC_LOG_INFO("server",
-                "AutoQueue LFG PvE build ready name=%s guid=%u role=%u specialization=%u main-hand=%u off-hand=%u talents=%u glyphs=%u pet=%u",
+                "AutoQueue LFG PvE build ready name=%s guid=%u role=%u specialization=%u main-hand=%u off-hand=%u trinkets=%u/%u talents=%u glyphs=%u pet=%u",
                 bot->GetName().c_str(), botGuid, uint32(staged.Role),
                 uint32(bot->GetSpecialization()), mainHand->GetEntry(),
                 bot->GetItemByPos(INVENTORY_SLOT_BAG_0,
                     EQUIPMENT_SLOT_OFFHAND) ?
                     bot->GetItemByPos(INVENTORY_SLOT_BAG_0,
                         EQUIPMENT_SLOT_OFFHAND)->GetEntry() : 0,
+                bot->GetItemByPos(INVENTORY_SLOT_BAG_0,
+                    EQUIPMENT_SLOT_TRINKET1) ?
+                    bot->GetItemByPos(INVENTORY_SLOT_BAG_0,
+                        EQUIPMENT_SLOT_TRINKET1)->GetEntry() : 0,
+                bot->GetItemByPos(INVENTORY_SLOT_BAG_0,
+                    EQUIPMENT_SLOT_TRINKET2) ?
+                    bot->GetItemByPos(INVENTORY_SLOT_BAG_0,
+                        EQUIPMENT_SLOT_TRINKET2)->GetEntry() : 0,
                 bot->GetUsedTalentCount(), glyphCount,
                 bot->GetGuardianPet() ? bot->GetGuardianPet()->GetEntry() : 0);
 

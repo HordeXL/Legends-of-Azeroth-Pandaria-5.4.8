@@ -52,6 +52,7 @@ bool ApplyAutomatedPvpBotLoadout(Player* bot, uint32 requesterGuid,
     uint32& changedSlots, std::string& error);
 bool RestoreAutomatedPvpBotLoadout(Player* bot, char const* reason,
     uint32& restoredSlots, uint32& remainingSlots, std::string& error);
+bool CastAutomatedRoleMode(Player* bot);
 bool CastAutomatedPvpPreparationBuff(Player* bot);
 void UpdateAutomatedPvpLoadoutRecovery(uint32 diff);
 void UpdateWorldBossStagedRaid(uint32 diff);
