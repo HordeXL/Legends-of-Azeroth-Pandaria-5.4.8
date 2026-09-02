@@ -1865,7 +1865,7 @@ bool PlayerbotAI::HandleCommand(uint32 /*type*/, std::string const text, Player*
     return helper.ParseChatCommand(msg, owner);
 }
 
-bool PlayerbotAI::Talk(std::string const name, Unit* target, ItemTemplate const* item)
+bool PlayerbotAI::Talk(std::string const name, Unit* target, ItemTemplate const* item, Quest const* quest)
 {
     if (!sPlayerbotAIConfig->randomBotTalk)
         return false;
@@ -1887,7 +1887,7 @@ bool PlayerbotAI::Talk(std::string const name, Unit* target, ItemTemplate const*
     if (text.empty())
         return false;
 
-    text = sPlayerbotTextMgr->Format(std::move(text), bot, target, item);
+    text = sPlayerbotTextMgr->Format(std::move(text), bot, target, item, quest);
 
     if (sayType == 1)
         return Yell(text);
@@ -1955,17 +1955,17 @@ bool PlayerbotAI::TalkRandom()
     return false;
 }
 
-bool PlayerbotAI::TryTalk(std::string const name, uint32 chance, Unit* target, ItemTemplate const* item)
+bool PlayerbotAI::TryTalk(std::string const name, uint32 chance, Unit* target, ItemTemplate const* item, Quest const* quest)
 {
     if (chance == 0)
         return false;
     if (chance < 30000 && urand(0, 29999) >= chance)
         return false;
 
-    return Talk(name, target, item);
+    return Talk(name, target, item, quest);
 }
 
-bool PlayerbotAI::Broadcast(std::string const name, Unit* target, ItemTemplate const* item)
+bool PlayerbotAI::Broadcast(std::string const name, Unit* target, ItemTemplate const* item, Quest const* quest)
 {
     if (!sPlayerbotAIConfig->randomBotTalk || !sPlayerbotAIConfig->enableBroadcasts)
         return false;
@@ -1987,7 +1987,7 @@ bool PlayerbotAI::Broadcast(std::string const name, Unit* target, ItemTemplate c
     if (text.empty())
         return false;
 
-    text = sPlayerbotTextMgr->Format(std::move(text), bot, target, item);
+    text = sPlayerbotTextMgr->Format(std::move(text), bot, target, item, quest);
 
     // 1) Guild chat (most reliable - no channel membership needed)
     if (Guild* guild = bot->GetGuild())
@@ -2075,14 +2075,14 @@ bool PlayerbotAI::Broadcast(std::string const name, Unit* target, ItemTemplate c
     return Say(text);
 }
 
-bool PlayerbotAI::TryBroadcast(std::string const name, uint32 chance, Unit* target, ItemTemplate const* item)
+bool PlayerbotAI::TryBroadcast(std::string const name, uint32 chance, Unit* target, ItemTemplate const* item, Quest const* quest)
 {
     if (chance == 0)
         return false;
     if (chance < 30000 && urand(0, 29999) >= chance)
         return false;
 
-    return Broadcast(name, target, item);
+    return Broadcast(name, target, item, quest);
 }
 
 void PlayerbotAI::UpdateRandomSpeech(uint32 /*elapsed*/)

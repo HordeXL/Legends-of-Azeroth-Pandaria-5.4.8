@@ -59,6 +59,7 @@ class Position;
 class Unit;
 class WorldObject;
 struct CreatureData;
+class Quest;
 
 class PlayerbotChatHandler : protected ChatHandler
 {
@@ -231,21 +232,21 @@ public:
     // Random speech system: speaks a random text of the given category (say/yell).
     // Returns false when speech is disabled, the category is empty, or the bot
     // cannot speak right now.
-    bool Talk(std::string const name, Unit* target = nullptr, ItemTemplate const* item = nullptr);
+    bool Talk(std::string const name, Unit* target = nullptr, ItemTemplate const* item = nullptr, Quest const* quest = nullptr);
     // Speaks a random text from the whole ai_playerbot_texts table, ignoring the
     // name (category) field entirely. Returns false when speech is disabled or
     // the bot cannot speak right now.
     bool TalkRandom();
     // Rolls the chance (0-30000, matching the broadcast config scale) and speaks
     // when the roll succeeds.
-    bool TryTalk(std::string const name, uint32 chance, Unit* target = nullptr, ItemTemplate const* item = nullptr);
+    bool TryTalk(std::string const name, uint32 chance, Unit* target = nullptr, ItemTemplate const* item = nullptr, Quest const* quest = nullptr);
 
     // Broadcast speech: like Talk but tries to send the text to a chat channel
     // or the guild first (gated by the BroadcastTo*GlobalChance config), falling
     // back to a local /say when no channel target is available.
-    bool Broadcast(std::string const name, Unit* target = nullptr, ItemTemplate const* item = nullptr);
+    bool Broadcast(std::string const name, Unit* target = nullptr, ItemTemplate const* item = nullptr, Quest const* quest = nullptr);
     // Rolls the chance (0-30000) and broadcasts when the roll succeeds.
-    bool TryBroadcast(std::string const name, uint32 chance, Unit* target = nullptr, ItemTemplate const* item = nullptr);
+    bool TryBroadcast(std::string const name, uint32 chance, Unit* target = nullptr, ItemTemplate const* item = nullptr, Quest const* quest = nullptr);
 
     // Periodic random speech checks (taunt/aoe/random chatter). Called from UpdateAI.
     void UpdateRandomSpeech(uint32 elapsed);

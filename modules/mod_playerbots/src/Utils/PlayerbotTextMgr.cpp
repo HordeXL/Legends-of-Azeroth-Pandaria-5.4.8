@@ -214,7 +214,7 @@ std::string PlayerbotTextMgr::GetSpeech(std::string const name, std::string cons
     return text;
 }
 
-std::string PlayerbotTextMgr::Format(std::string text, Player* bot, Unit* target, ItemTemplate const* item) const
+std::string PlayerbotTextMgr::Format(std::string text, Player* bot, Unit* target, ItemTemplate const* item, Quest const* quest) const
 {
     if (bot)
     {
@@ -263,11 +263,49 @@ std::string PlayerbotTextMgr::Format(std::string text, Player* bot, Unit* target
 
     if (item)
     {
-        std::string name = item->Name1.empty() ? "item" : item->Name1;
-        ReplaceAll(text, "%item_link", "[" + name + "]");
+        // Build a real, clickable item link (|c<qualityColor>|Hitem:<entry>:...|h[<name>]|h|r)
+        // instead of a plain text item name.
+        std::string name = item->Name1;
+        if (!name.empty() && bot)
+        {
+            LocaleConstant locale = bot->GetSession()->GetSessionDbLocaleIndex();
+            if (locale != LOCALE_enUS)
+                if (ItemLocale const* il = sObjectMgr->GetItemLocale(item->ItemId))
+                    ObjectMgr::GetLocaleString(il->Name, locale, name);
+        }
+        if (name.empty())
+            name = "item";
+
+        std::ostringstream itemLink;
+        itemLink << "|c" << std::hex << ItemQualityColors[item->Quality] << std::dec
+                 << "|Hitem:" << item->ItemId << ":0:0:0:0:0:0:0:0:0|h[" << name << "]|h|r";
+        ReplaceAll(text, "%item_link", itemLink.str());
     }
-    else
-        ReplaceAll(text, "%item_link", "[item]");
+    // else: leave %item_link unresolved (no item context). TalkRandom detects the
+    // remaining placeholder and re-rolls those rows instead of showing "[item]".
+
+    if (quest)
+    {
+        // Build a real, clickable quest link
+        // (|cff808080|Hquest:<questId>:<questLevel>|h[<title>]|h|r).
+        std::string title = quest->GetLogTitle();
+        if (!title.empty() && bot)
+        {
+            LocaleConstant locale = bot->GetSession()->GetSessionDbLocaleIndex();
+            if (locale != LOCALE_enUS)
+                if (QuestTemplateLocale const* ql = sObjectMgr->GetQuestLocale(quest->GetQuestId()))
+                    ObjectMgr::GetLocaleString(ql->LogTitle, locale, title);
+        }
+        if (title.empty())
+            title = "quest";
+
+        std::ostringstream questLink;
+        questLink << "|cff808080|Hquest:" << quest->GetQuestId() << ":"
+                  << quest->GetQuestLevel() << "|h[" << title << "]|h|r";
+        ReplaceAll(text, "%quest_link", questLink.str());
+    }
+    // else: leave %quest_link unresolved (no quest context). TalkRandom detects the
+    // remaining placeholder and re-rolls those rows instead of showing raw text.
 
     return text;
 }

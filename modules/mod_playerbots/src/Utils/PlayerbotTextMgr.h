@@ -18,6 +18,7 @@
 class Player;
 class Unit;
 struct ItemTemplate;
+class Quest;
 
 // Manager for the random bot speech system. Loads the speech tables from the
 // Playerbots database and provides random texts by category, locale aware,
@@ -66,13 +67,14 @@ public:
 
     // Substitutes the supported placeholders in a raw text:
     //   <target>    -> target unit name
-    //   %item_link  -> item chat link (or "[name]" fallback)
+    //   %item_link  -> item chat link (or "[item]" fallback)
+    //   %quest_link -> quest chat link (or "[quest]" fallback)
     //   %zone_name  -> current zone name
     //   %area_name  -> current area name
     //   %my_race    -> bot race name
     //   %my_class   -> bot class name
     //   %my_level   -> bot level
-    std::string Format(std::string text, Player* bot, Unit* target = nullptr, ItemTemplate const* item = nullptr) const;
+    std::string Format(std::string text, Player* bot, Unit* target = nullptr, ItemTemplate const* item = nullptr, Quest const* quest = nullptr) const;
 
 private:
     PlayerbotTextMgr() = default;

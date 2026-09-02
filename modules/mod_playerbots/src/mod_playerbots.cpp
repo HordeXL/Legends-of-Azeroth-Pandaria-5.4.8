@@ -468,22 +468,22 @@ public:
 
     void OnQuestAdded(Player* player, const Quest* quest) override
     {
-        BroadcastQuestEvent(player, "broadcast_quest_accepted_generic", sPlayerbotAIConfig->broadcastChanceQuestAccepted);
+        BroadcastQuestEvent(player, "broadcast_quest_accepted_generic", sPlayerbotAIConfig->broadcastChanceQuestAccepted, quest);
     }
 
     void OnQuestRewarded(Player* player, const Quest* quest) override
     {
-        BroadcastQuestEvent(player, "broadcast_quest_turned_in", sPlayerbotAIConfig->broadcastChanceQuestTurnedIn);
+        BroadcastQuestEvent(player, "broadcast_quest_turned_in", sPlayerbotAIConfig->broadcastChanceQuestTurnedIn, quest);
     }
 
     void OnQuestCompleted(Player* player, const Quest* quest) override
     {
-        BroadcastQuestEvent(player, "broadcast_quest_update_complete", sPlayerbotAIConfig->broadcastChanceQuestUpdateComplete);
+        BroadcastQuestEvent(player, "broadcast_quest_update_complete", sPlayerbotAIConfig->broadcastChanceQuestUpdateComplete, quest);
     }
 
     void OnQuestFailed(Player* player, const Quest* quest) override
     {
-        BroadcastQuestEvent(player, "broadcast_quest_update_failed_timer", sPlayerbotAIConfig->broadcastChanceQuestUpdateFailedTimer);
+        BroadcastQuestEvent(player, "broadcast_quest_update_failed_timer", sPlayerbotAIConfig->broadcastChanceQuestUpdateFailedTimer, quest);
     }
 
     void OnAfterUpdate(Player* player, uint32 diff) override
@@ -506,13 +506,13 @@ public:
     }
 
 private:
-    static void BroadcastQuestEvent(Player* player, std::string const category, uint32 chance)
+    static void BroadcastQuestEvent(Player* player, std::string const category, uint32 chance, Quest const* quest = nullptr)
     {
         if (!player || !sPlayerbotAIConfig->enableBroadcasts || !sPlayerbotAIConfig->randomBotTalk)
             return;
 
         if (PlayerbotAI* botAI = GET_PLAYERBOT_AI(player))
-            botAI->TryBroadcast(category, chance);
+            botAI->TryBroadcast(category, chance, nullptr, nullptr, quest);
     }
 };
 
