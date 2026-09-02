@@ -25,6 +25,7 @@
 #include <sstream>
 #include <string>
 #include <tuple>
+#include <unordered_map>
 #include <vector>
 
 #include "AiFactory.h"
@@ -2218,6 +2219,54 @@ bool PlayerbotAI::IsInterruptableSpellCasting(Unit* target, std::string const sp
 
 namespace
 {
+std::mutex LfgInterruptReservationMutex;
+std::unordered_map<uint64, uint32> LfgInterruptReservations;
+
+uint64 GetLfgInterruptReservationKey(Unit* target)
+{
+    if (!target)
+        return 0;
+    return (uint64(target->GetInstanceId()) << 32) |
+        target->GetGUID().GetCounter();
+}
+
+bool IsLfgInterruptReserved(Unit* target)
+{
+    uint64 key = GetLfgInterruptReservationKey(target);
+    if (!key)
+        return false;
+
+    std::lock_guard<std::mutex> lock(LfgInterruptReservationMutex);
+    auto itr = LfgInterruptReservations.find(key);
+    if (itr == LfgInterruptReservations.end())
+        return false;
+    if (int32(itr->second - getMSTime()) > 0)
+        return true;
+    LfgInterruptReservations.erase(itr);
+    return false;
+}
+
+void ReserveLfgInterrupt(Unit* target)
+{
+    uint64 key = GetLfgInterruptReservationKey(target);
+    if (!key)
+        return;
+
+    // Keep projectile/destination stuns from prompting another bot to spend
+    // its cooldown before the first effect reaches the trash caster.
+    std::lock_guard<std::mutex> lock(LfgInterruptReservationMutex);
+    uint32 now = getMSTime();
+    for (auto itr = LfgInterruptReservations.begin();
+         itr != LfgInterruptReservations.end();)
+    {
+        if (int32(itr->second - now) <= 0)
+            itr = LfgInterruptReservations.erase(itr);
+        else
+            ++itr;
+    }
+    LfgInterruptReservations[key] = now + 750;
+}
+
 std::vector<char const*> GetLfgInterruptActions(Player* player)
 {
     if (!player)
@@ -2244,6 +2293,29 @@ std::vector<char const*> GetLfgInterruptActions(Player* player)
                 std::vector<char const*> { "skull bash", "solar beam" } :
                 std::vector<char const*> { "solar beam", "skull bash" };
         default:                 return {};
+    }
+}
+
+std::vector<char const*> GetLfgStunActions(Player* player)
+{
+    if (!player)
+        return {};
+
+    switch (player->GetClass())
+    {
+        case CLASS_WARRIOR: return { "storm bolt", "shockwave" };
+        case CLASS_PALADIN: return { "hammer of justice" };
+        case CLASS_HUNTER:  return { "intimidation", "binding shot" };
+        case CLASS_ROGUE:   return { "kidney shot" };
+        case CLASS_PRIEST:  return { "psychic horror" };
+        case CLASS_DEATH_KNIGHT: return { "asphyxiate", "gnaw" };
+        case CLASS_MAGE:    return { "deep freeze" };
+        case CLASS_WARLOCK: return { "shadowfury" };
+        case CLASS_MONK:    return { "leg sweep" };
+        case CLASS_DRUID:   return { "mighty bash", "bash" };
+        // Capacitor Totem is delayed and therefore is not a dependable cast
+        // stop. Shaman already has the much better Wind Shear above.
+        default:            return {};
     }
 }
 
@@ -2304,6 +2376,38 @@ bool CanPrepareLfgInterrupt(Unit* caster, Unit* target,
         result == SPELL_FAILED_NOT_INFRONT ||
         result == SPELL_FAILED_UNIT_NOT_INFRONT ||
         result == SPELL_FAILED_NOT_STANDING;
+}
+
+bool IsLfgBoss(Unit* target)
+{
+    Creature* creature = target ? target->ToCreature() : nullptr;
+    CreatureTemplate const* creatureTemplate = creature ?
+        creature->GetCreatureTemplate() : nullptr;
+    return creature && (creature->IsDungeonBoss() ||
+        creature->isWorldBoss() || (creatureTemplate &&
+        creatureTemplate->rank == CREATURE_ELITE_WORLDBOSS));
+}
+
+bool CanStunLfgTrash(Unit* target, SpellInfo const* spellInfo)
+{
+    if (!target || !spellInfo || IsLfgBoss(target))
+        return false;
+
+    bool hasUsableStunEffect = false;
+    for (uint8 effect = EFFECT_0; effect < MAX_SPELL_EFFECTS; ++effect)
+    {
+        SpellEffectInfo const& effectInfo = spellInfo->Effects[effect];
+        bool isStun = effectInfo.ApplyAuraName == SPELL_AURA_MOD_STUN ||
+            effectInfo.Mechanic == MECHANIC_STUN ||
+            spellInfo->Mechanic == MECHANIC_STUN;
+        if (effectInfo.IsEffect() && isStun &&
+            !target->IsImmunedToSpellEffect(spellInfo, effect))
+            hasUsableStunEffect = true;
+    }
+
+    return hasUsableStunEffect &&
+        !target->IsImmunedToSpell(spellInfo,
+            spellInfo->NegativeEffectMask);
 }
 }
 
@@ -2387,11 +2491,15 @@ bool PlayerbotAI::TryLfgCoordinatedInterrupt()
         Unit* caster = nullptr;
         uint32 spellId = 0;
         char const* action = nullptr;
-        std::tuple<uint8, uint8, uint32, uint8, float, uint32> rank;
+        bool stunFallback = false;
+        std::tuple<uint8, uint8, uint8, uint32, uint8, float, uint32> rank;
     };
 
     for (Unit* target : castingTargets)
     {
+        if (IsLfgInterruptReserved(target))
+            continue;
+
         InterruptChoice best;
         bool found = false;
 
@@ -2407,14 +2515,31 @@ bool PlayerbotAI::TryLfgCoordinatedInterrupt()
                 candidate->HasUnitState(UNIT_STATE_LOST_CONTROL))
                 continue;
 
-            for (char const* action :
-                 GetLfgInterruptActions(candidate))
+            std::vector<std::pair<char const*, bool>> actions;
+            for (char const* action : GetLfgInterruptActions(candidate))
+                actions.emplace_back(action, false);
+            if (!IsLfgBoss(target))
+                for (char const* action : GetLfgStunActions(candidate))
+                    actions.emplace_back(action, true);
+
+            bool candidateHasInterrupt = false;
+            for (auto const& actionEntry : actions)
             {
+                char const* action = actionEntry.first;
+                bool stunFallback = actionEntry.second;
+                // Once this candidate has a real interrupt, do not replace it
+                // with one of the candidate's own stun fallbacks.
+                if (stunFallback && candidateHasInterrupt)
+                    break;
+
                 uint32 spellId = candidateAI->GetAiObjectContext()->
                     GetValue<uint32>("spell id", action)->Get();
                 SpellInfo const* spellInfo = spellId ?
                     sSpellMgr->GetSpellInfo(spellId) : nullptr;
-                if (!spellInfo ||
+                if (!spellInfo)
+                    continue;
+                if (stunFallback ?
+                    !CanStunLfgTrash(target, spellInfo) :
                     !candidateAI->IsInterruptableSpellCasting(target, action))
                     continue;
 
@@ -2426,6 +2551,15 @@ bool PlayerbotAI::TryLfgCoordinatedInterrupt()
                     caster = pet;
                 if (!caster || !caster->GetSpellHistory()->IsReady(spellId) ||
                     !caster->IsWithinLOSInMap(target))
+                    continue;
+
+                uint32 castTime = spellInfo->IsChanneled() ?
+                    spellInfo->GetDuration() :
+                    spellInfo->CalcCastTime(caster->GetLevel());
+                // Damage pushback can make a cast-time interrupt arrive too
+                // late. An attacked provider remains eligible for instant
+                // Pummel/Kick/Rebuke/etc., but not for a cast-time answer.
+                if (castTime > 0 && !caster->getAttackers().empty())
                     continue;
 
                 float maxRange = caster->GetSpellMaxRangeForTarget(
@@ -2443,6 +2577,7 @@ bool PlayerbotAI::TryLfgCoordinatedInterrupt()
                 uint32 cooldown = std::max(spellInfo->RecoveryTime,
                     spellInfo->CategoryRecoveryTime);
                 auto rank = std::make_tuple(
+                    uint8(stunFallback ? 1 : 0),
                     uint8(focused ? 0 : 1),
                     uint8(caster == candidate &&
                         IsCastingNonMeleeSpell(candidate) ? 1 : 0),
@@ -2453,10 +2588,16 @@ bool PlayerbotAI::TryLfgCoordinatedInterrupt()
                 if (!found || rank < best.rank)
                 {
                     found = true;
-                    best = { candidate, caster, spellId, action, rank };
+                    best = { candidate, caster, spellId, action,
+                             stunFallback, rank };
                 }
                 // Use this class's first ready interrupt. Its action order
                 // keeps the normal short cooldown before longer silences.
+                if (!stunFallback)
+                {
+                    candidateHasInterrupt = true;
+                    break;
+                }
                 break;
             }
         }
@@ -2480,12 +2621,14 @@ bool PlayerbotAI::TryLfgCoordinatedInterrupt()
 
         if (success)
         {
+            ReserveLfgInterrupt(target);
             Spell const* enemySpell = GetInterruptibleCurrentSpell(target);
             TC_LOG_INFO("server",
-                "AutoQueue LFG coordinated interrupt bot=%s guid=%u role=%u action=%s spell=%u target=%s target-guid=%u enemy-spell=%u",
+                "AutoQueue LFG coordinated interrupt bot=%s guid=%u role=%u action=%s spell=%u fallback=%s target=%s target-guid=%u enemy-spell=%u",
                 bot->GetName().c_str(), bot->GetGUID().GetCounter(),
                 uint32(GetInterruptRolePriority(bot)), best.action,
-                best.spellId, target->GetName().c_str(),
+                best.spellId, best.stunFallback ? "stun" : "none",
+                target->GetName().c_str(),
                 target->GetGUID().GetCounter(),
                 enemySpell ? enemySpell->GetSpellInfo()->Id : 0);
             return true;
