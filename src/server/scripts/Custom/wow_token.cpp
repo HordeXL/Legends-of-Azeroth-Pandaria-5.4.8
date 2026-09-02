@@ -22,7 +22,7 @@
 
 enum BattlePayTokenTrinityStrings 
 {
-    BATTLEPAY_TOKEN_TRINITYSTRING_SUCCESS                             = 30007,    // Thanks for helping the Pandaria 5.4.8 project, you just received donate coins: %f
+    BATTLEPAY_TOKEN_TRINITYSTRING_SUCCESS                             = 30007,    // Shop points voucher redeemed: %u points were added to your account.
     BATTLEPAY_TOKEN_TRINITYSTRING_ERR_NOTENOUGH                       = 30008,    // You do not have the necessary token.
     BATTLEPAY_TOKEN_TRINITYSTRING_ERR_INBATTLE                        = 30009,    // You may not use this token whilst you are in combat or present in an arena or battleground.
     BATTLEPAY_TOKEN_TRINITYSTRING_ERR_DISABLED                        = 30010,    // Coins disabled.
@@ -30,16 +30,16 @@ enum BattlePayTokenTrinityStrings
 
 namespace BattlePay
 {
-    enum Type:int64
+    enum Type : uint32
     {
-        Coins_1                             = 10000,
-        Coins_2                             = 20000,
-        Coins_5                             = 50000,
-        Coins_10                            = 100000
+        Points_2                            = 2,
+        Points_3                            = 3,
+        Points_7                            = 7,
+        Points_13                           = 13
     };
 }
 
-template<int64 Coins>
+template<uint32 Points>
 class battle_pay_token : public ItemScript
 {
 public:
@@ -60,9 +60,9 @@ public:
         {
             if (player->HasItemCount(item->GetEntry(), 1, true))
             {
-                player->AddDonateTokenCount(Coins);
+                player->AddDonateTokenCount(uint64(Points) * 10000);
                 player->DestroyItemCount(item->GetEntry(), 1, true);
-                ChatHandler(player->GetSession()).PSendSysMessage(player->GetSession()->GetTrinityString(BATTLEPAY_TOKEN_TRINITYSTRING_SUCCESS), Coins/10000);
+                ChatHandler(player->GetSession()).PSendSysMessage(player->GetSession()->GetTrinityString(BATTLEPAY_TOKEN_TRINITYSTRING_SUCCESS), Points);
                 player->SaveToDB();
             }
             else
@@ -76,8 +76,8 @@ public:
 
 void AddSC_wow_token()
 {
-    new battle_pay_token<BattlePay::Coins_1>("wow_token_1");
-    new battle_pay_token<BattlePay::Coins_2>("wow_token_2");
-    new battle_pay_token<BattlePay::Coins_5>("wow_token_5");
-    new battle_pay_token<BattlePay::Coins_10>("wow_token_10");
+    new battle_pay_token<BattlePay::Points_2>("wow_token_1");
+    new battle_pay_token<BattlePay::Points_3>("wow_token_2");
+    new battle_pay_token<BattlePay::Points_7>("wow_token_5");
+    new battle_pay_token<BattlePay::Points_13>("wow_token_10");
 }

@@ -37,7 +37,9 @@ Status recorded for the current local project configuration on 2026-09-01:
   stored in the authentication database. The repository currently contains no
   public website integration for donations or voting, and no normal in-game
   point-earning flow is configured. The catalog can therefore be viewed, but a
-  regular player cannot obtain purchase points in this standalone setup.
+  regular player cannot obtain purchase points in this standalone setup. The
+  shop's 2/3/7/13-point vouchers are tradeable and redeem for exactly their
+  purchase price on the recipient's account.
 - **Playerbot Arena automation:** a real player can use an Arena Battlemaster's
   custom solo 2v2/3v3/5v5 choices. The server selects the required teammate and
   opponents, loads only the managed bots, creates the teams, queues the match and
