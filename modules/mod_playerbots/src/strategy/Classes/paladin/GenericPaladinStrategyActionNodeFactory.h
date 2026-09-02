@@ -19,6 +19,7 @@ public:
         creators["seal of righteousness"] = &seal_of_righteousness;
         creators["seal of command"] = &seal_of_command;
         creators["seal of insight"] = &seal_of_insight;
+        creators["seal of truth"] = &seal_of_truth;
 
         creators["blessing of kings"] = &blessing_of_kings;
         creators["blessing of might"] = &blessing_of_might;
@@ -56,6 +57,7 @@ private:
     ACTION_NODE(seal_of_righteousness, "seal of righteousness");
     ACTION_NODE(seal_of_command, "seal of command");
     ACTION_NODE(seal_of_insight, "seal of insight");
+    ACTION_NODE_A(seal_of_truth, "seal of truth", "seal of righteousness");
 
     ACTION_NODE(blessing_of_kings, "blessing of kings");
     ACTION_NODE(blessing_of_might, "blessing of might");

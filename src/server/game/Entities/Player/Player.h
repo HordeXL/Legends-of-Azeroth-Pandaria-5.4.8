@@ -3156,6 +3156,15 @@ public:
     void SetWorldBossStagingAccess(bool enabled) { m_worldBossStagingState.store(enabled ? 1 : 0); }
     void BeginWorldBossStagingCleanup() { m_worldBossStagingState.store(2); }
 
+    // A world-thread playerbot coordinator must pause map-thread AI before it
+    // removes the bot from a group, teleports it, or destroys its session.
+    // This flag is transient and is never persisted with the character.
+    bool IsPlayerbotCleanupPending() const { return m_playerbotCleanupPending.load(); }
+    void BeginPlayerbotCleanup() { m_playerbotCleanupPending.store(true); }
+    void EndPlayerbotCleanup() { m_playerbotCleanupPending.store(false); }
+    bool IsPlayerbotLootDisabled() const { return m_playerbotLootDisabled.load(); }
+    void SetPlayerbotLootDisabled(bool disabled) { m_playerbotLootDisabled.store(disabled); }
+
     bool CanFly() const { return m_movementInfo.HasMovementFlag(MOVEMENTFLAG_CAN_FLY);}
     bool CanEnterWater() const override { return true; }
 
@@ -3717,6 +3726,8 @@ protected:
     bool hasForcedMovement_;
     // 0 = unmanaged, 1 = active caller raid, 2 = cleanup with bot AI paused.
     std::atomic<uint8> m_worldBossStagingState{ 0 };
+    std::atomic<bool> m_playerbotCleanupPending{ false };
+    std::atomic<bool> m_playerbotLootDisabled{ false };
 
     SceneMgr m_sceneMgr;
     std::map<int8, PetData> m_petList;

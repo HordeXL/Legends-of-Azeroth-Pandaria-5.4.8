@@ -67,6 +67,10 @@ public:
 
 protected:
     bool verbose;
+    // A malformed or unsupported action qualifier can ask AiObjectContext for
+    // a Value<Unit*> that does not exist. Keep that action harmless and emit
+    // only one diagnostic instead of flooding the log every AI tick.
+    bool missingTargetValueLogged = false;
     float relevance = 0;
 };
 

@@ -11,5 +11,19 @@
 
 bool SealTrigger::IsActive()
 {
-	return !botAI->HasAura("seal of righteousness", bot) || !botAI->HasAura("seal of command", bot) || !botAI->HasAura("seal of insight", bot);
+    switch (bot->GetSpecialization())
+    {
+        case SPEC_PALADIN_HOLY:
+        case SPEC_PALADIN_PROTECTION:
+            return !botAI->HasAura("seal of insight", bot);
+        case SPEC_PALADIN_RETRIBUTION:
+            // Righteousness remains a safe fallback if this character has
+            // not learned Seal of Truth for any reason.
+            return !botAI->HasAura("seal of truth", bot) &&
+                !botAI->HasAura("seal of righteousness", bot);
+        default:
+            return !botAI->HasAnyAuraOf(bot, "seal of truth",
+                "seal of insight", "seal of righteousness",
+                "seal of command", nullptr);
+    }
 }

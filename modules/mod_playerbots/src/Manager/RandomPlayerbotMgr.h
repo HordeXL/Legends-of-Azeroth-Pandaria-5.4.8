@@ -87,6 +87,7 @@ public:
 public:
     bool IsRandomBot(Player* bot);
     bool IsRandomBot(ObjectGuid::LowType bot);
+    bool IsLfgAutoQueueManagedBot(ObjectGuid::LowType bot) const;
 
     void TagForRandomize(Player* bot, uint32 level);
     void RandomizeFirst(Player* bot);

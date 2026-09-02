@@ -9,6 +9,12 @@
 class BotFactory
 {
 public:
+    enum class ManagedLoadoutMode : uint8
+    {
+        Pve,
+        Pvp
+    };
+
     BotFactory(Player* bot, uint32 level, uint32 itemQuality = 0, uint32 gearScoreLimit = 0);
 
     static ObjectGuid GetRandomBot();
@@ -21,6 +27,12 @@ public:
     void InitEquipment(bool incremental, bool second_chance = false);
     void InitMissingEquipment();
     void InitEquipmentForSpec();
+    void InitManagedEquipmentForSpec(uint32 minimumItemLevel,
+                                     ManagedLoadoutMode mode);
+    uint32 InitManagedEnhancements(ManagedLoadoutMode mode);
+    bool PrepareManagedLoadout(ManagedLoadoutMode mode,
+                               uint32 minimumItemLevel,
+                               std::string* reason = nullptr);
     bool HasRequiredEquipmentForSpec(std::string* reason = nullptr) const;
     bool HasRequiredWeaponSetForSpec(std::string* reason = nullptr) const;
     void InitPet();
@@ -28,7 +40,20 @@ public:
     void InitGlyphs();
 private:
     void InitEquipmentInternal(bool incremental, bool second_chance,
-                               bool missingOnly, bool specCompatible);
+                               bool missingOnly, bool specCompatible,
+                               uint32 minimumItemLevel = 0,
+                               bool preserveReplaced = true,
+                               bool genuineItemsOnly = false,
+                               bool pveOnly = false);
+    uint32 FindDeterministicManagedItem(EquipmentSlots slot,
+                                        uint32 minimumItemLevel,
+                                        bool genuineItemsOnly,
+                                        bool pveOnly,
+                                        bool requireTwoHanded = false,
+                                        bool requireOneHanded = false);
+    void NormalizeManagedWeaponSet(uint32 minimumItemLevel,
+                                   bool genuineItemsOnly,
+                                   bool pveOnly);
     bool MoveEquippedItemToBag(uint8 slot);
     uint32 GetWeaponReferenceItemLevel() const;
     void Prepare();

@@ -183,6 +183,7 @@ public:
     void SetMaster(Player* newMaster) { master = newMaster; }
     void SetLfgAutoQueueControl(bool reserved, uint32 requesterGuid,
         bool initializeInDungeon = false);
+    void RequestLfgPreparationBuff() { _lfgPreparationBuffPending.store(true); }
     bool IsLfgAutoQueueReserved() const;
     bool CanLfgAutoQueueEngage(Unit const* target) const;
 
@@ -190,6 +191,7 @@ public:
 
     uint32 GetReactDelay();
     void InterruptSpell();
+    bool TryLfgCoordinatedInterrupt();
     virtual bool IsInterruptableSpellCasting(Unit* player, std::string const spell);
     bool canDispel(SpellInfo const* spellInfo, uint32 dispelType);
     virtual bool HasAuraToDispel(Unit* player, uint32 dispelType);
@@ -273,6 +275,7 @@ protected:
     // map update thread. Strategy rebuilding itself is never done cross-thread.
     std::atomic<bool> _lfgAutoQueueReserved{ false };
     std::atomic<bool> _lfgAutoQueueInitializePending{ false };
+    std::atomic<bool> _lfgPreparationBuffPending{ false };
     std::atomic<uint32> _lfgAutoQueueRequesterGuid{ 0 };
     uint32 _invalidFollowPositionSince = 0;
     // Some login/group/queue callbacks run on the world thread while normal

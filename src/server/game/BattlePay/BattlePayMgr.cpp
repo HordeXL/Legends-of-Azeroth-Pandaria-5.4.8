@@ -25,9 +25,163 @@
 #include "Player.h"
 #include "ServiceBoost.h"
 #include "BattlePetMgr.h"
+#include "DBCStores.h"
+#include "ItemSpec.h"
 #include "Realm.h"
 
 #pragma execution_character_set("UTF-8")
+
+namespace
+{
+char const* GetBattlePayInventoryTypeName(uint32 inventoryType)
+{
+    switch (inventoryType)
+    {
+        case INVTYPE_HEAD:          return "Head";
+        case INVTYPE_NECK:          return "Neck";
+        case INVTYPE_SHOULDERS:     return "Shoulders";
+        case INVTYPE_BODY:          return "Shirt";
+        case INVTYPE_CHEST:         return "Chest";
+        case INVTYPE_WAIST:         return "Waist";
+        case INVTYPE_LEGS:          return "Legs";
+        case INVTYPE_FEET:          return "Feet";
+        case INVTYPE_WRISTS:        return "Wrists";
+        case INVTYPE_HANDS:         return "Hands";
+        case INVTYPE_FINGER:        return "Finger";
+        case INVTYPE_TRINKET:       return "Trinket";
+        case INVTYPE_WEAPON:        return "One-hand weapon";
+        case INVTYPE_SHIELD:        return "Off hand - shield";
+        case INVTYPE_RANGED:        return "Ranged weapon";
+        case INVTYPE_CLOAK:         return "Back";
+        case INVTYPE_2HWEAPON:      return "Two-hand weapon";
+        case INVTYPE_BAG:           return "Bag";
+        case INVTYPE_TABARD:        return "Tabard";
+        case INVTYPE_ROBE:          return "Chest";
+        case INVTYPE_WEAPONMAINHAND:return "Main-hand weapon";
+        case INVTYPE_WEAPONOFFHAND: return "Off-hand weapon";
+        case INVTYPE_HOLDABLE:      return "Off hand";
+        case INVTYPE_THROWN:        return "Thrown weapon";
+        case INVTYPE_RANGEDRIGHT:   return "Ranged weapon";
+        default:                    return nullptr;
+    }
+}
+
+char const* GetBattlePayArmorTypeName(ItemTemplate const* item)
+{
+    if (!item || item->Class != ITEM_CLASS_ARMOR || item->InventoryType == INVTYPE_CLOAK)
+        return nullptr;
+
+    switch (item->SubClass)
+    {
+        case ITEM_SUBCLASS_ARMOR_CLOTH:   return "Cloth";
+        case ITEM_SUBCLASS_ARMOR_LEATHER: return "Leather";
+        case ITEM_SUBCLASS_ARMOR_MAIL:    return "Mail";
+        case ITEM_SUBCLASS_ARMOR_PLATE:   return "Plate";
+        case ITEM_SUBCLASS_ARMOR_SHIELD:  return "Shield";
+        default:                          return nullptr;
+    }
+}
+
+std::string BuildBattlePayItemDescription(BattlePayProductItemsVector const* items,
+                                          WorldSession* session,
+                                          std::string const& configuredDescription)
+{
+    if (!items || items->empty() || !session)
+        return configuredDescription;
+
+    std::ostringstream description;
+    bool wroteItem = false;
+    LocaleConstant locale = session->GetSessionDbLocaleIndex();
+    LocaleConstant dbcLocale = session->GetSessionDbcLocale();
+
+    for (BattlePayProductItem const& productItem : *items)
+    {
+        ItemTemplate const* item = sObjectMgr->GetItemTemplate(productItem.ItemId);
+        if (!item)
+            continue;
+
+        if (wroteItem)
+            description << "; ";
+        wroteItem = true;
+
+        std::string itemName = item->Name1;
+        if (locale != LOCALE_enUS)
+            if (ItemLocale const* itemLocale = sObjectMgr->GetItemLocale(item->ItemId))
+                ObjectMgr::GetLocaleString(itemLocale->Name, locale, itemName);
+
+        description << "You receive " << productItem.Count << "x " << itemName
+                    << " (item " << item->ItemId << ')';
+
+        if (item->ItemLevel)
+            description << ". Item level " << item->ItemLevel;
+        if (char const* slot = GetBattlePayInventoryTypeName(item->InventoryType))
+            description << ". Slot: " << slot;
+        if (char const* armorType = GetBattlePayArmorTypeName(item))
+            description << ". Type: " << armorType;
+
+        // ItemSpec is the same specialization suitability calculation used by
+        // the client and personal-loot code.  Showing it here prevents a
+        // customer from buying a correctly named item for the wrong role.
+        if (item->InventoryType != INVTYPE_NON_EQUIP && item->InventoryType != INVTYPE_BAG)
+        {
+            ItemSpecInfo const* itemSpec = sObjectMgr->GetItemSpecInfo(item->ItemId, 90);
+            std::map<uint32, std::vector<std::string>> suitableSpecs;
+            uint32 totalKnownSpecs = 0;
+            uint32 suitableSpecCount = 0;
+
+            for (uint32 i = 0; i < sChrSpecializationStore.GetNumRows(); ++i)
+            {
+                ChrSpecializationEntry const* spec = sChrSpecializationStore.LookupEntry(i);
+                ChrClassesEntry const* playerClass = spec ? sChrClassesStore.LookupEntry(spec->classId) : nullptr;
+                if (!spec || !playerClass)
+                    continue;
+
+                ++totalKnownSpecs;
+                if (!itemSpec || !itemSpec->HasSpecializationId(spec->Id))
+                    continue;
+                if (item->AllowableClass != -1 && !(item->AllowableClass & (1 << (spec->classId - 1))))
+                    continue;
+
+                ++suitableSpecCount;
+                suitableSpecs[spec->classId].push_back(spec->Name[dbcLocale]);
+            }
+
+            if (suitableSpecCount && suitableSpecCount < totalKnownSpecs)
+            {
+                description << ". Recommended for: ";
+                bool firstClass = true;
+                for (auto const& classSpecs : suitableSpecs)
+                {
+                    ChrClassesEntry const* playerClass = sChrClassesStore.LookupEntry(classSpecs.first);
+                    if (!playerClass)
+                        continue;
+                    if (!firstClass)
+                        description << "; ";
+                    firstClass = false;
+                    description << playerClass->name[dbcLocale] << " (";
+                    for (size_t specIndex = 0; specIndex < classSpecs.second.size(); ++specIndex)
+                    {
+                        if (specIndex)
+                            description << ", ";
+                        description << classSpecs.second[specIndex];
+                    }
+                    description << ')';
+                }
+            }
+            else if (suitableSpecCount == totalKnownSpecs && suitableSpecCount)
+                description << ". Recommended for: all specializations";
+        }
+    }
+
+    if (!wroteItem)
+        return configuredDescription;
+
+    if (!configuredDescription.empty() && configuredDescription.find("Item level ") != 0)
+        description << ". " << configuredDescription;
+
+    return description.str();
+}
+}
 
 
 BattlePayMgr::BattlePayMgr() : m_enabled(false), m_currency(BATTLE_PAY_CURRENCY_BETA)
@@ -573,6 +727,7 @@ void BattlePayMgr::SendBattlePayProductList(WorldSession* session)
                 ObjectMgr::GetLocaleString(locProd->Title, localeConstant, productTitle);
                 ObjectMgr::GetLocaleString(locProd->Description, localeConstant, productDescription);
             }
+        productDescription = BuildBattlePayItemDescription(items, session, productDescription);
 
         data.WriteBits(product->ChoiceType, 2);
         data.WriteBits(items->size(), 20);
@@ -665,6 +820,8 @@ void BattlePayMgr::SendBattlePayProductList(WorldSession* session)
                 ObjectMgr::GetLocaleString(locEntry->Title, localeConstant, entryTitle);
                 ObjectMgr::GetLocaleString(locEntry->Description, localeConstant, entryDescription);
             }
+        entryDescription = BuildBattlePayItemDescription(
+            GetItemsByProductId(entry->ProductId), session, entryDescription);
 
         data.WriteBit(!entryTitle.empty() ? true : false);
         if (!entryTitle.empty())
@@ -720,6 +877,7 @@ void BattlePayMgr::SendBattlePayProductList(WorldSession* session)
                 ObjectMgr::GetLocaleString(locProd->Title, localeConstant, productTitle);
                 ObjectMgr::GetLocaleString(locProd->Description, localeConstant, productDescription);
             }
+        productDescription = BuildBattlePayItemDescription(items, session, productDescription);
 
         data << uint8(product->Type);
         for (auto&& item : *items)
@@ -778,6 +936,8 @@ void BattlePayMgr::SendBattlePayProductList(WorldSession* session)
                 ObjectMgr::GetLocaleString(locEntry->Title, localeConstant, entryTitle);
                 ObjectMgr::GetLocaleString(locEntry->Description, localeConstant, entryDescription);
             }
+        entryDescription = BuildBattlePayItemDescription(
+            GetItemsByProductId(entry->ProductId), session, entryDescription);
 
         if (!entryTitle.empty())
         {

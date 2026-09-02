@@ -12,23 +12,34 @@ more in-game encounter testing before they should be treated as production-ready
 
 ## Project Features and Current Status
 
-Status recorded for the current local project configuration on 2026-08-27:
+Status recorded for the current local project configuration on 2026-09-01:
 
 | Component | Included | Current local status | Notes |
 | --- | --- | --- | --- |
 | MoP 5.4.8 core | Yes | Enabled | Client build `18414`; `authserver`, `worldserver`, scripts and extraction tools. |
+| In-game Battle Pay shop | Yes | Enabled, catalog only | The client SHOP button is available after login and the catalog is loaded from the world database. This standalone repository does not include a website, donation checkout or vote-reward system, so normal players currently have no public way to earn the shop points required for purchases. |
 | Playerbots | Yes | Enabled | `AiPlayerbot.Enabled = 1`; automatic random-bot login remains disabled. |
 | Solo Arena bot fill | Yes | Enabled, experimental | Arena Battlemaster choices for 2v2, 3v3 and 5v5; role/faction-aware bot selection, temporary PvP loadouts, preparation buffs, rewards, exit/health recovery and cleanup. |
 | Battleground bot fill and objectives | Yes | Enabled, experimental | Fills a real player's queue, builds both factions, applies temporary PvP loadouts and includes CTF, node, orb, cart, vehicle, resurrection, escort, mount and basic path/LoS handling. |
-| LFG bot fill | Yes | Enabled, experimental | Stages missing tank/healer/damage roles for a real player and uses the normal 5.4.8 LFG validation and proposal flow. Dungeon-specific mechanics still require gameplay coverage. |
+| LFG/LFR bot fill | Yes | Enabled, experimental | Stages missing tank/healer/damage roles for a real player, including the native 25-player Raid Finder 2/6/17 composition, and uses the normal 5.4.8 proposal flow. Filler dungeon locks are refreshed after equipment preparation; temporary LFR fillers inherit the real requester's progression access while retaining level, faction, season and item-level checks. Each filler gets one pre-combat class-buff attempt; there is no Arena-style waiting/retry stage once combat begins. Requester leave/logout pauses managed bot AI, removes the fillers from the instance group, returns them outside and logs them out. Dungeon-specific mechanics still require gameplay coverage. |
 | World-boss raid bots | Yes | Available, experimental | Neutral Boss Bot Caller NPCs support 10/25-player preview/call, PvE role selection and gear, legendary cloaks, raid marks, summon, buffs/rebuff, wipe recovery, status and dismiss/cleanup. Encounter-specific AI is still being tuned. |
 | Combat Assistant 5.4.8 | Yes | Server side enabled | One physical click/key press casts the server-recommended ability. All playable classes/specs are supported; the client addon must also be installed. |
-| VIP hybrid/test vendors | Yes | SQL package included | VIP1-3 test equipment plus optional gems, enchants, riding, mounts and profession helpers. VIP3 includes class/spec-labelled Siege of Orgrimmar T16 PvE sets, appearances, weapons and genuine five-piece bonuses. |
+| VIP hybrid/test vendors | Yes | SQL package included | VIP1-3 test equipment plus optional gems, enchants, riding, mounts and profession helpers. VIP1/T14, VIP2/T15 and VIP3/T16 include class/spec-labelled five-piece PvE sets with genuine 2/4-piece bonuses; all three ranks' real weapons accept one Sha-Touched legendary gem. |
 | AuctionHouseBot | Yes | **Disabled** | Seller and buyer are both disabled in the active `worldserver.conf`; normal player auctions are unaffected. |
 | Warden client checks | Yes | **Disabled** | The Warden subsystem and check data are present, but `Warden.Enabled = 0` in the active configuration. |
 
 ### Major Custom Systems
 
+- **In-game Battle Pay shop:** the MoP client SHOP window is enabled after login.
+  Its categories, products and product items are loaded from the world database
+  `battle_pay_group`, `battle_pay_entry`, `battle_pay_product` and
+  `battle_pay_product_items` tables, while an account's purchasable balance is
+  stored in the authentication database. The repository currently contains no
+  public website integration for donations or voting, and no normal in-game
+  point-earning flow is configured. The catalog can therefore be viewed, but a
+  regular player cannot obtain purchase points in this standalone setup. The
+  shop's 2/3/7/13-point vouchers are tradeable and redeem for exactly their
+  purchase price on the recipient's account.
 - **Playerbot Arena automation:** a real player can use an Arena Battlemaster's
   custom solo 2v2/3v3/5v5 choices. The server selects the required teammate and
   opponents, loads only the managed bots, creates the teams, queues the match and
@@ -41,8 +52,18 @@ Status recorded for the current local project configuration on 2026-08-27:
   Gorge, Silvershard Mines, Alterac Valley, Isle of Conquest and Strand of the
   Ancients. Score and rewards still go through normal battleground handlers.
 - **Playerbot LFG automation:** missing dungeon roles are selected by faction,
-  level, specialization and eligibility. Bot entry, proposal acceptance, group
-  ownership and preparation buffs use the core's normal LFG paths.
+  level, specialization and eligibility. Bot entry, proposal acceptance and group
+  ownership use the core's normal LFG paths. Each filler gets one class-buff attempt
+  after entering the dungeon and before combat; unlike Arena preparation, it is not
+  retried after the requester or bot enters combat. Unsupported action target values
+  are rejected safely and logged once with the bot, class, specialization, action and
+  target-value names instead of crashing the map worker. The real requester remains
+  every filler's pinned master for the complete run; fillers assist the requester's
+  target and enemies already attacking the party, but cannot autonomously chain-pull
+  unrelated packs merely because the requester is in combat. When the
+  real requester leaves or logs out, only the automation-owned fillers are
+  quiesced, removed from the abandoned instance group, returned outside and
+  logged out; they are not left behind under a bot leader.
 - **Pandaria world-boss raid staging:** visible neutral Boss Bot Callers are placed
   at supported outdoor bosses. They can assemble 10- or 25-player PvE raids around
   the requester, revive bots, apply role-appropriate builds/equipment, mark the
@@ -59,7 +80,8 @@ Status recorded for the current local project configuration on 2026-08-27:
   auto-casts and does not bypass GCD, range, facing, immunity or line of sight.
 - **VIP PvE test equipment:** the package in
   [`vip_hybrid_solo_set_sql`](vip_hybrid_solo_set_sql) provides free test vendors
-  and class/spec-aware VIP3 T16 equipment for solo and encounter testing. The
+  and class/spec-aware VIP1 T14, VIP2 T15 and VIP3 T16 equipment for solo and
+  encounter testing. The
   package keeps its generated SQL and source generator together so it can be
   reproduced on another database.
 
@@ -82,6 +104,8 @@ deletions made only to silence logs. Notable completed work includes:
   required credits and allow the quest to complete normally. The underlying
   SmartAI no-parameter event fallthrough that caused duplicate summons was fixed
   in the core.
+- Missing `creature_text` diagnostics include the requested text group, full source
+  GUID, map, position and owner identity so an invalid `Talk()` caller can be traced.
 - Spell scripts, conditions, SmartAI, creature text, LFG destinations, item random
   suffix data, vendors, pools and gameobject/creature spawns have been audited
   against compatible local SkyFire/Trinity database sources with backups before
@@ -101,6 +125,8 @@ SkyFire migration/source comparison notes are in
 
 ### Known Limits
 
+- The visible in-game SHOP is database-backed, but this repository has no bundled
+  donation/vote website or player-facing method for earning its purchase points.
 - Playerbots and the Arena/BG/LFG/world-boss automation are development/test
   features. Individual class AI and encounter mechanics still need wider in-game
   verification.

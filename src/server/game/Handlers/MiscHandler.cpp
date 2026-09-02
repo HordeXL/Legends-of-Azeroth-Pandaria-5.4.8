@@ -2562,7 +2562,10 @@ void WorldSession::HandleObjectUpdateFailedOpcode(WorldPacket& recvPacket)
     recvPacket.ReadByteSeq(guid[4]);
 
     WorldObject* obj = ObjectAccessor::GetWorldObject(*GetPlayer(), guid);
-        TC_LOG_ERROR("network", "Object update failed for object %s (%s) for player %s (%u)", guid.ToString().c_str(), obj ? obj->GetName().c_str() : "object-not-found", GetPlayerName().c_str(), GetGuidLow());
+    if (obj)
+        TC_LOG_ERROR("network", "Object update failed for object %s (%s) for player %s (%u)", guid.ToString().c_str(), obj->GetName().c_str(), GetPlayerName().c_str(), GetGuidLow());
+    else
+        TC_LOG_DEBUG("network", "Discarding stale object update GUID %s after a visibility/map change for player %s (%u)", guid.ToString().c_str(), GetPlayerName().c_str(), GetGuidLow());
 
     // If create object failed for current player then client will be stuck on loading screen
     if (_player->GetGUID() == guid)
@@ -2571,8 +2574,21 @@ void WorldSession::HandleObjectUpdateFailedOpcode(WorldPacket& recvPacket)
         return;
     }
 
-    // Pretend we've never seen this object
+    // Pretend we've never seen this object. If it disappeared between the
+    // queued update and this client response (most commonly during an
+    // instance transfer), explicitly retire the stale GUID on the client as
+    // well. Merely erasing the server-side visibility cache can leave the
+    // 5.4.8 client retrying the same missing object and has been observed just
+    // before deterministic ERROR #132 crashes.
     _player->m_clientGUIDs.erase(guid);
+    if (!obj)
+    {
+        UpdateData updateData(_player->GetMapId());
+        updateData.AddOutOfRangeGUID(guid);
+        WorldPacket updatePacket;
+        updateData.BuildPacket(&updatePacket);
+        SendPacket(&updatePacket);
+    }
 }
 
 void WorldSession::HandleSaveCUFProfiles(WorldPacket& recvPacket)

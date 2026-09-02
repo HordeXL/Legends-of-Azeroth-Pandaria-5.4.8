@@ -2,10 +2,112 @@
 
 #include "Player.h"
 #include "PlayerbotSpec.h"
+#include "SpellMgr.h"
 
 #include <bitset>
 #include <map>
 #include <tuple>
+#include <unordered_set>
+
+namespace
+{
+enum TrinketPrimaryMask : uint8
+{
+    TRINKET_PRIMARY_NONE = 0,
+    TRINKET_PRIMARY_STRENGTH = 1 << 0,
+    TRINKET_PRIMARY_AGILITY = 1 << 1,
+    TRINKET_PRIMARY_INTELLECT = 1 << 2,
+    TRINKET_PRIMARY_ALL = TRINKET_PRIMARY_STRENGTH |
+        TRINKET_PRIMARY_AGILITY | TRINKET_PRIMARY_INTELLECT
+};
+
+struct TrinketAffinity
+{
+    uint8 primaryMask = TRINKET_PRIMARY_NONE;
+    bool physical = false;
+    bool caster = false;
+    bool healing = false;
+    bool tanking = false;
+};
+
+void InspectTrinketSpell(uint32 spellId, TrinketAffinity& affinity,
+                         std::unordered_set<uint32>& visited, uint8 depth)
+{
+    if (!spellId || depth > 4 || !visited.insert(spellId).second)
+        return;
+
+    SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
+    if (!spellInfo)
+        return;
+
+    // This 5.4.8 core populates the public Effects array in SpellInfo's
+    // constructor. The newer _effects/GetEffects storage remains empty, so
+    // using it silently misses proc chains such as Bad Juju -> Agility.
+    for (uint8 index = 0; index < MAX_SPELL_EFFECTS; ++index)
+    {
+        SpellEffectInfo const& effect = spellInfo->Effects[index];
+        if (!effect.IsEffect())
+            continue;
+
+        switch (effect.ApplyAuraName)
+        {
+            case SPELL_AURA_MOD_STAT:
+            case SPELL_AURA_MOD_TOTAL_STAT_PERCENTAGE:
+                switch (effect.MiscValue)
+                {
+                    case -1:
+                        affinity.primaryMask |= TRINKET_PRIMARY_ALL;
+                        break;
+                    case STAT_STRENGTH:
+                        affinity.primaryMask |= TRINKET_PRIMARY_STRENGTH;
+                        break;
+                    case STAT_AGILITY:
+                        affinity.primaryMask |= TRINKET_PRIMARY_AGILITY;
+                        break;
+                    case STAT_INTELLECT:
+                        affinity.primaryMask |= TRINKET_PRIMARY_INTELLECT;
+                        break;
+                    default:
+                        break;
+                }
+                break;
+            case SPELL_AURA_MOD_ATTACK_POWER:
+            case SPELL_AURA_MOD_ATTACK_POWER_PCT:
+            case SPELL_AURA_MOD_RANGED_ATTACK_POWER:
+            case SPELL_AURA_MOD_RANGED_ATTACK_POWER_PCT:
+            case SPELL_AURA_MOD_EXPERTISE:
+                affinity.physical = true;
+                break;
+            case SPELL_AURA_MOD_SPELL_POWER_PCT:
+                affinity.caster = true;
+                break;
+            case SPELL_AURA_MOD_HEALING:
+            case SPELL_AURA_MOD_HEALING_PCT:
+            case SPELL_AURA_MOD_HEALING_DONE:
+            case SPELL_AURA_MOD_HEALING_DONE_PERCENT:
+                affinity.caster = true;
+                affinity.healing = true;
+                break;
+            case SPELL_AURA_MOD_DODGE_PERCENT:
+            case SPELL_AURA_MOD_PARRY_PERCENT:
+                affinity.tanking = true;
+                break;
+            case SPELL_AURA_MOD_RATING:
+                if (effect.MiscValue & ((1 << CR_DODGE) | (1 << CR_PARRY)))
+                    affinity.tanking = true;
+                break;
+            case SPELL_AURA_MOD_INCREASE_HEALTH_2:
+                affinity.tanking = true;
+                break;
+            default:
+                break;
+        }
+
+        InspectTrinketSpell(effect.TriggerSpell, affinity, visited,
+            depth + 1);
+    }
+}
+}
 
 RandomItemManager::RandomItemManager()
 {
@@ -780,6 +882,9 @@ bool RandomItemManager::IsItemValidForEquipmentSlot(Player* bot,
         case EQUIPMENT_SLOT_BODY:
         case EQUIPMENT_SLOT_TABARD:
             return true;
+        case EQUIPMENT_SLOT_TRINKET1:
+        case EQUIPMENT_SLOT_TRINKET2:
+            return IsPassiveTrinketValidForSpec(bot, proto);
         default:
             return MatchesPrimaryStatForSpec(bot, proto);
     }
@@ -813,7 +918,17 @@ static const std::map<uint32, std::tuple<ItemQualities, ItemQualities, uint32, u
 * Random items stat not supposed to be assigned (ex shaman enhance with intellect spell power etc)
 */
 
-uint32 RandomItemManager::FindBestItemForLevelAndEquip(Player* bot, InventoryType invType)
+bool RandomItemManager::IsCustomServerItem(uint32 itemId) const
+{
+    // The server shop/VIP equipment lives in this private high-entry range.
+    // Its stats are valid server-side, but stock 5.4.8 clients do not reliably
+    // have matching item appearances. Managed PvE/PvP fillers must therefore
+    // use genuine client-known equipment.
+    return itemId >= 990000u;
+}
+
+uint32 RandomItemManager::FindBestItemForLevelAndEquip(Player* bot,
+    InventoryType invType, bool genuineItemsOnly)
 {
     uint32 level = (uint32)bot->GetLevel();
     int32 delta = std::min(level, 10u);
@@ -831,6 +946,7 @@ uint32 RandomItemManager::FindBestItemForLevelAndEquip(Player* bot, InventoryTyp
             uint32 itemID = *it;
 
             if (IsTestItem(itemID)) continue;
+            if (genuineItemsOnly && IsCustomServerItem(itemID)) continue;
 
             ItemTemplate const* proto = sObjectMgr->GetItemTemplate(itemID);
             if (proto->RequiredLevel > level) continue;
@@ -923,10 +1039,40 @@ bool RandomItemManager::MatchesPrimaryStatForSpec(Player* bot,
         }
     }
 
-    // Jewelry and low-level items can legitimately carry only secondary
-    // stats. Preserve/allow them rather than creating an unfillable slot.
+    // Jewelry, trinkets and low-level items can legitimately carry only
+    // secondary stats. High-level armor and weapons cannot be considered
+    // specialization-correct when their primary-stat row is absent (several
+    // incomplete PvP templates in this database have exactly that shape).
     if (!intellect && !agility && !strength)
+    {
+        if (proto->RequiredLevel >= 80)
+        {
+            switch (proto->InventoryType)
+            {
+                case INVTYPE_HEAD:
+                case INVTYPE_SHOULDERS:
+                case INVTYPE_CHEST:
+                case INVTYPE_ROBE:
+                case INVTYPE_WAIST:
+                case INVTYPE_LEGS:
+                case INVTYPE_FEET:
+                case INVTYPE_WRISTS:
+                case INVTYPE_HANDS:
+                case INVTYPE_CLOAK:
+                case INVTYPE_WEAPON:
+                case INVTYPE_2HWEAPON:
+                case INVTYPE_WEAPONMAINHAND:
+                case INVTYPE_WEAPONOFFHAND:
+                case INVTYPE_RANGED:
+                case INVTYPE_SHIELD:
+                case INVTYPE_HOLDABLE:
+                    return false;
+                default:
+                    break;
+            }
+        }
         return true;
+    }
 
     switch (bot->GetSpecialization())
     {
@@ -961,4 +1107,148 @@ bool RandomItemManager::MatchesPrimaryStatForSpec(Player* bot,
         default:
             return strength;
     }
+}
+
+bool RandomItemManager::IsPassiveTrinketValidForSpec(Player* bot,
+    ItemTemplate const* proto) const
+{
+    if (!bot || !proto || proto->InventoryType != INVTYPE_TRINKET ||
+        !MatchesPrimaryStatForSpec(bot, proto))
+        return false;
+
+    TrinketAffinity affinity;
+    for (uint8 index = 0; index < MAX_ITEM_PROTO_STATS; ++index)
+    {
+        if (proto->ItemStat[index].ItemStatValue <= 0)
+            continue;
+
+        switch (proto->ItemStat[index].ItemStatType)
+        {
+            case ITEM_MOD_STRENGTH:
+                affinity.primaryMask |= TRINKET_PRIMARY_STRENGTH;
+                break;
+            case ITEM_MOD_AGILITY:
+                affinity.primaryMask |= TRINKET_PRIMARY_AGILITY;
+                break;
+            case ITEM_MOD_INTELLECT:
+            case ITEM_MOD_SPELL_POWER:
+                affinity.primaryMask |= TRINKET_PRIMARY_INTELLECT;
+                affinity.caster = true;
+                break;
+            case ITEM_MOD_SPIRIT:
+                affinity.caster = true;
+                affinity.healing = true;
+                break;
+            case ITEM_MOD_STAMINA:
+                affinity.tanking = true;
+                break;
+            case ITEM_MOD_EXPERTISE_RATING:
+                affinity.physical = true;
+                break;
+            case ITEM_MOD_DODGE_RATING:
+            case ITEM_MOD_PARRY_RATING:
+                affinity.tanking = true;
+                break;
+            default:
+                break;
+        }
+    }
+
+    std::unordered_set<uint32> visitedSpells;
+    for (uint8 index = 0; index < MAX_ITEM_PROTO_SPELLS; ++index)
+    {
+        if (!proto->Spells[index].SpellId)
+            continue;
+
+        ItemSpelltriggerType const trigger =
+            ItemSpelltriggerType(proto->Spells[index].SpellTrigger);
+        // Managed bots do not press equipment buttons. Do not equip a
+        // trinket whose advertised benefit is permanently unavailable.
+        if (trigger == ITEM_SPELLTRIGGER_ON_USE ||
+            trigger == ITEM_SPELLTRIGGER_ON_NO_DELAY_USE)
+            return false;
+
+        InspectTrinketSpell(proto->Spells[index].SpellId, affinity,
+            visitedSpells, 0);
+    }
+
+    uint8 expectedPrimary = TRINKET_PRIMARY_STRENGTH;
+    switch (bot->GetSpecialization())
+    {
+        case SPEC_PALADIN_HOLY:
+        case SPEC_PRIEST_DISCIPLINE:
+        case SPEC_PRIEST_HOLY:
+        case SPEC_PRIEST_SHADOW:
+        case SPEC_SHAMAN_ELEMENTAL:
+        case SPEC_SHAMAN_RESTORATION:
+        case SPEC_MAGE_ARCANE:
+        case SPEC_MAGE_FIRE:
+        case SPEC_MAGE_FROST:
+        case SPEC_WARLOCK_AFFLICTION:
+        case SPEC_WARLOCK_DEMONOLOGY:
+        case SPEC_WARLOCK_DESTRUCTION:
+        case SPEC_DRUID_BALANCE:
+        case SPEC_DRUID_RESTORATION:
+        case SPEC_MONK_MISTWEAVER:
+            expectedPrimary = TRINKET_PRIMARY_INTELLECT;
+            break;
+        case SPEC_HUNTER_BEAST_MASTERY:
+        case SPEC_HUNTER_MARKSMANSHIP:
+        case SPEC_HUNTER_SURVIVAL:
+        case SPEC_ROGUE_ASSASSINATION:
+        case SPEC_ROGUE_COMBAT:
+        case SPEC_ROGUE_SUBTLETY:
+        case SPEC_SHAMAN_ENHANCEMENT:
+        case SPEC_DRUID_FERAL:
+        case SPEC_DRUID_GUARDIAN:
+        case SPEC_MONK_BREWMASTER:
+        case SPEC_MONK_WINDWALKER:
+            expectedPrimary = TRINKET_PRIMARY_AGILITY;
+            break;
+        default:
+            break;
+    }
+
+    if (affinity.primaryMask && !(affinity.primaryMask & expectedPrimary))
+        return false;
+    if (expectedPrimary == TRINKET_PRIMARY_INTELLECT && affinity.physical &&
+        !affinity.caster)
+        return false;
+    if (expectedPrimary != TRINKET_PRIMARY_INTELLECT && affinity.caster &&
+        !affinity.physical)
+        return false;
+
+    bool const healer = PlayerBotSpec::IsHeal(bot, true);
+    bool const tank = PlayerBotSpec::IsTank(bot, true);
+    if (healer)
+    {
+        // An intellect proc alone does not make a caster-DPS trinket suitable
+        // for a healer. Require a passive/proc mana, spirit or healing effect.
+        if (!affinity.healing)
+            return false;
+    }
+    else if (tank)
+    {
+        if (!affinity.tanking)
+            return false;
+    }
+    else
+    {
+        // Damage fillers must not consume healer or survival trinkets merely
+        // because their secondary/static row is otherwise equippable.
+        if (affinity.healing || affinity.tanking)
+            return false;
+
+        bool const primaryMatches =
+            affinity.primaryMask & expectedPrimary;
+        if (expectedPrimary == TRINKET_PRIMARY_INTELLECT)
+        {
+            if (!primaryMatches && !affinity.caster)
+                return false;
+        }
+        else if (!primaryMatches && !affinity.physical)
+            return false;
+    }
+
+    return true;
 }

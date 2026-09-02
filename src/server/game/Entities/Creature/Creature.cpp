@@ -1405,7 +1405,13 @@ bool Creature::LoadCreatureFromDB(uint32 guid, Map* map, bool addToMap)
     m_spawnId = guid;
     if (map->GetInstanceId() == 0)
     {
-        if (map->GetCreature(ObjectGuid(HighGuid::Unit, data->id, guid)))
+        // A creature template can be stored as either HighGuid::Unit or
+        // HighGuid::Vehicle. Looking it up with a hard-coded Unit GUID misses
+        // an already-loaded vehicle and lets grid loading create a second
+        // object with the same final GUID, which asserts in AddToWorld().
+        // The database spawn id is unique on a non-instanced map and works for
+        // both GUID types.
+        if (map->GetCreatureBySpawnId(guid))
             return false;
     }
     else

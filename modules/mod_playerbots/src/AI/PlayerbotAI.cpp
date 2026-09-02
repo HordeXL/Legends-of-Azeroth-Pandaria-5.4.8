@@ -21,9 +21,13 @@
 #include <array>
 #include <cctype>
 #include <cmath>
+#include <limits>
 #include <mutex>
 #include <sstream>
 #include <string>
+#include <tuple>
+#include <unordered_map>
+#include <vector>
 
 #include "AiFactory.h"
 #include "Channel.h"
@@ -57,6 +61,7 @@
 #include "SharedDefines.h"
 #include "SocialMgr.h"
 #include "SpellAuraEffects.h"
+#include "SpellHistory.h"
 #include "SpellInfo.h"
 #include "Transport.h"
 #include "TradeData.h"
@@ -195,7 +200,10 @@ void PlayerbotAI::SetLfgAutoQueueControl(bool reserved,
     if (initializeInDungeon)
         _lfgAutoQueueInitializePending.store(true);
     else if (!requesterGuid)
+    {
         _lfgAutoQueueInitializePending.store(false);
+        _lfgPreparationBuffPending.store(false);
+    }
     // Publish the reservation flag last. In particular, a map update which
     // observes reservation release must also observe the pending in-dungeon
     // initialization request posted above.
@@ -218,12 +226,32 @@ bool PlayerbotAI::CanLfgAutoQueueEngage(Unit const* target) const
     if (!requester || !requester->IsInWorld())
         return false;
 
-    if (requester->IsInCombat() || requester->GetVictim() ||
-        requester->HasUnitState(UNIT_STATE_MELEE_ATTACKING) ||
-        !requester->getAttackers().empty())
+    if (!target || target->GetMap() != requester->GetMap())
+        return false;
+
+    // The old check allowed every hostile target as soon as the requester was
+    // in combat. That let a filler chain-pull unrelated packs while the real
+    // player was still fighting the first one. LFG fillers may now engage only
+    // the requester's actual target or an enemy already attacking the party.
+    if (requester->GetVictim() == target)
         return true;
 
-    return target && target->GetVictim() == requester;
+    for (Unit* attacker : requester->getAttackers())
+        if (attacker == target)
+            return true;
+
+    if (Unit* victim = target->GetVictim())
+    {
+        if (Player* victimOwner =
+            victim->GetCharmerOrOwnerPlayerOrPlayerItself())
+        {
+            if (victimOwner == requester ||
+                requester->IsInSameGroupWith(victimOwner))
+                return true;
+        }
+    }
+
+    return false;
 }
 
 uint32 PlayerbotAI::GetReactDelay()
@@ -439,6 +467,59 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
         }
     }
 
+    // Buff maintenance is requested by the world coordinator but executed on
+    // this bot's map thread. Never cast during a pull, teleport, cleanup, or
+    // while any same-map party member is fighting. A later periodic request
+    // retries naturally if the group was busy on this tick.
+    if (_lfgPreparationBuffPending.exchange(false))
+    {
+        uint32 requesterGuid = _lfgAutoQueueRequesterGuid.load();
+        Player* requester = requesterGuid ?
+            ObjectAccessor::FindConnectedPlayer(
+                ObjectGuid::Create<HighGuid::Player>(requesterGuid)) : nullptr;
+        Group* group = bot->GetGroup(GroupSlot::Instance);
+        if (!group)
+            group = bot->GetGroup();
+        Group* requesterGroup = requester ?
+            requester->GetGroup(GroupSlot::Instance) : nullptr;
+        if (requester && !requesterGroup)
+            requesterGroup = requester->GetGroup();
+
+        bool safe = requester && requester->IsInWorld() &&
+            requester->GetMap() == bot->GetMap() && group &&
+            requesterGroup == group && bot->IsAlive() &&
+            !bot->IsBeingTeleported() && !requester->IsBeingTeleported() &&
+            !bot->IsPlayerbotCleanupPending();
+        if (safe)
+        {
+            for (GroupReference* ref = group->GetFirstMember(); ref;
+                 ref = ref->next())
+            {
+                Player* member = ref->GetSource();
+                if (member && member->GetMap() == bot->GetMap() &&
+                    (member->IsInCombat() || member->GetVictim() ||
+                     !member->getAttackers().empty()))
+                {
+                    safe = false;
+                    break;
+                }
+            }
+        }
+
+        // Establish the specialization's personal stance/presence/form first.
+        // Unlike arenas, LFG has no preparation countdown and combat can begin
+        // immediately after loading. If the mode is already correct, continue
+        // with one normal raid buff from the same request.
+        bool cast = safe && CastAutomatedRoleMode(bot);
+        if (safe && !cast)
+            cast = CastAutomatedPvpPreparationBuff(bot);
+        if (cast)
+            TC_LOG_INFO("server",
+                "AutoQueue LFG map-thread preparation cast bot=%s guid=%u requester=%u map=%u",
+                bot->GetName().c_str(), bot->GetGUID().GetCounter(),
+                requesterGuid, bot->GetMapId());
+    }
+
     // A bot logged in only to fill an LFG request must not wander, grind or
     // acquire an open-world target while the queue/proposal is being built.
     // Its equipment/session maintenance remains available to the manager.
@@ -452,10 +533,67 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
         return;
     }
 
+    // Native AI may reconsider its master after group/map transitions. A bot
+    // owned by an active LFG request must remain attached to that real player
+    // for the complete dungeon, not choose another bot or resume autonomous
+    // roaming. Reapply the follow strategy only when repair is needed.
+    uint32 const lfgRequesterGuid = _lfgAutoQueueRequesterGuid.load();
+    if (lfgRequesterGuid)
+    {
+        Player* requester = ObjectAccessor::FindConnectedPlayer(
+            ObjectGuid::Create<HighGuid::Player>(lfgRequesterGuid));
+        Group* botGroup = bot->GetGroup(GroupSlot::Instance);
+        if (!botGroup)
+            botGroup = bot->GetGroup();
+        Group* requesterGroup = requester ?
+            requester->GetGroup(GroupSlot::Instance) : nullptr;
+        if (requester && !requesterGroup)
+            requesterGroup = requester->GetGroup();
+
+        if (requester && requester->IsInWorld() &&
+            requester->GetMap() == bot->GetMap() && botGroup &&
+            requesterGroup == botGroup && GetMaster() != requester)
+        {
+            SetMaster(requester);
+            ResetStrategies();
+            ChangeStrategy("+follow,-stay,-lfg,-bg",
+                BOT_STATE_NON_COMBAT);
+            TC_LOG_WARN("server",
+                "AutoQueue LFG repaired requester master/follow bot=%s guid=%u requester=%s requester-guid=%u map=%u",
+                bot->GetName().c_str(), bot->GetGUID().GetCounter(),
+                requester->GetName().c_str(), lfgRequesterGuid,
+                bot->GetMapId());
+        }
+
+        Value<Unit*>* currentTargetValue =
+            _aiObjectContext->GetValue<Unit*>("current target");
+        Unit* currentTarget = currentTargetValue ?
+            currentTargetValue->Get() : nullptr;
+        if (currentTarget && bot->IsValidAttackTarget(currentTarget) &&
+            !CanLfgAutoQueueEngage(currentTarget))
+        {
+            currentTargetValue->Set(nullptr);
+            bot->AttackStop();
+            bot->SetTarget(ObjectGuid::Empty);
+            bot->StopMoving();
+            if (Pet* pet = bot->GetPet())
+                pet->AttackStop();
+        }
+    }
+
     AllowActivity();
 
     if (!CanUpdateAI())
         return;
+
+    // Interrupts are checked before the ordinary "wait for current cast"
+    // path. This lets the one bot selected by the LFG group coordinator stop
+    // its own heal/damage cast and answer a short enemy cast immediately.
+    if (TryLfgCoordinatedInterrupt())
+    {
+        YieldThread(GetReactDelay());
+        return;
+    }
 
     // Handle the current spell
     Spell* currentSpell = bot->GetCurrentSpell(CURRENT_GENERIC_SPELL);
@@ -2513,6 +2651,427 @@ bool PlayerbotAI::IsInterruptableSpellCasting(Unit* target, std::string const sp
         if ((spellInfo->Effects[i].Effect == SPELL_EFFECT_APPLY_AURA) &&
             spellInfo->Effects[i].ApplyAuraName == SPELL_AURA_MOD_SILENCE)
             return true;
+    }
+
+    return false;
+}
+
+namespace
+{
+std::mutex LfgInterruptReservationMutex;
+std::unordered_map<uint64, uint32> LfgInterruptReservations;
+
+uint64 GetLfgInterruptReservationKey(Unit* target)
+{
+    if (!target)
+        return 0;
+    return (uint64(target->GetInstanceId()) << 32) |
+        target->GetGUID().GetCounter();
+}
+
+bool IsLfgInterruptReserved(Unit* target)
+{
+    uint64 key = GetLfgInterruptReservationKey(target);
+    if (!key)
+        return false;
+
+    std::lock_guard<std::mutex> lock(LfgInterruptReservationMutex);
+    auto itr = LfgInterruptReservations.find(key);
+    if (itr == LfgInterruptReservations.end())
+        return false;
+    if (int32(itr->second - getMSTime()) > 0)
+        return true;
+    LfgInterruptReservations.erase(itr);
+    return false;
+}
+
+void ReserveLfgInterrupt(Unit* target)
+{
+    uint64 key = GetLfgInterruptReservationKey(target);
+    if (!key)
+        return;
+
+    // Keep projectile/destination stuns from prompting another bot to spend
+    // its cooldown before the first effect reaches the trash caster.
+    std::lock_guard<std::mutex> lock(LfgInterruptReservationMutex);
+    uint32 now = getMSTime();
+    for (auto itr = LfgInterruptReservations.begin();
+         itr != LfgInterruptReservations.end();)
+    {
+        if (int32(itr->second - now) <= 0)
+            itr = LfgInterruptReservations.erase(itr);
+        else
+            ++itr;
+    }
+    LfgInterruptReservations[key] = now + 750;
+}
+
+std::vector<char const*> GetLfgInterruptActions(Player* player)
+{
+    if (!player)
+        return {};
+
+    switch (player->GetClass())
+    {
+        case CLASS_WARRIOR:      return { "pummel", "disrupting shout" };
+        case CLASS_PALADIN:      return { "rebuke" };
+        case CLASS_HUNTER:       return { "counter shot", "silencing shot" };
+        case CLASS_ROGUE:        return { "kick" };
+        case CLASS_PRIEST:       return { "silence" };
+        case CLASS_DEATH_KNIGHT: return { "mind freeze", "strangulate" };
+        case CLASS_SHAMAN:       return { "wind shear" };
+        case CLASS_MAGE:         return { "counterspell" };
+        case CLASS_WARLOCK:      return { "spell lock", "optical blast" };
+        case CLASS_MONK:         return { "spear hand strike" };
+        case CLASS_DRUID:
+            // Skull Bash requires a melee form; caster druids should try
+            // their ranged interrupt first instead of cancelling a heal only
+            // to fail the shapeshift requirement.
+            return player->GetSpecialization() == SPEC_DRUID_FERAL ||
+                   player->GetSpecialization() == SPEC_DRUID_GUARDIAN ?
+                std::vector<char const*> { "skull bash", "solar beam" } :
+                std::vector<char const*> { "solar beam", "skull bash" };
+        default:                 return {};
+    }
+}
+
+std::vector<char const*> GetLfgStunActions(Player* player)
+{
+    if (!player)
+        return {};
+
+    switch (player->GetClass())
+    {
+        case CLASS_WARRIOR: return { "storm bolt", "shockwave" };
+        case CLASS_PALADIN: return { "hammer of justice" };
+        case CLASS_HUNTER:  return { "intimidation", "binding shot" };
+        case CLASS_ROGUE:   return { "kidney shot" };
+        case CLASS_PRIEST:  return { "psychic horror" };
+        case CLASS_DEATH_KNIGHT: return { "asphyxiate", "gnaw" };
+        case CLASS_MAGE:    return { "deep freeze" };
+        case CLASS_WARLOCK: return { "shadowfury" };
+        case CLASS_MONK:    return { "leg sweep" };
+        case CLASS_DRUID:   return { "mighty bash", "bash" };
+        // Capacitor Totem is delayed and therefore is not a dependable cast
+        // stop. Shaman already has the much better Wind Shear above.
+        default:            return {};
+    }
+}
+
+Spell const* GetInterruptibleCurrentSpell(Unit* target)
+{
+    if (!target || !target->IsNonMeleeSpellCasted(false))
+        return nullptr;
+
+    for (uint8 type = CURRENT_GENERIC_SPELL;
+         type <= CURRENT_CHANNELED_SPELL; ++type)
+    {
+        Spell const* spell = target->GetCurrentSpell(CurrentSpellTypes(type));
+        SpellInfo const* info = spell ? spell->GetSpellInfo() : nullptr;
+        if (info &&
+            (info->InterruptFlags & SPELL_INTERRUPT_FLAG_INTERRUPT) &&
+            info->PreventionType == SPELL_PREVENTION_TYPE_SILENCE)
+            return spell;
+    }
+
+    return nullptr;
+}
+
+bool IsCastingNonMeleeSpell(Player* player)
+{
+    return player &&
+        (player->GetCurrentSpell(CURRENT_GENERIC_SPELL) ||
+         player->GetCurrentSpell(CURRENT_CHANNELED_SPELL));
+}
+
+uint8 GetInterruptRolePriority(Player* player)
+{
+    if (!player)
+        return 3;
+    if (PlayerBotSpec::IsHeal(player))
+        return 2;
+    if (PlayerBotSpec::IsTank(player))
+        return 1;
+    return 0;
+}
+
+bool CanPrepareLfgInterrupt(Unit* caster, Unit* target,
+    SpellInfo const* spellInfo)
+{
+    if (!caster || !target || !spellInfo)
+        return false;
+
+    Spell probe(caster, spellInfo, TRIGGERED_NONE);
+    if (spellInfo->Targets & TARGET_FLAG_DEST_LOCATION)
+        probe.m_targets.SetDst(*target);
+    else if (spellInfo->Targets & TARGET_FLAG_SOURCE_LOCATION)
+        probe.m_targets.SetDst(*caster);
+    else
+        probe.m_targets.SetUnitTarget(target);
+
+    SpellCastResult result = caster->ToPet() ?
+        probe.CheckPetCast(target) : probe.CheckCast(true);
+    return result == SPELL_CAST_OK ||
+        result == SPELL_FAILED_NOT_INFRONT ||
+        result == SPELL_FAILED_UNIT_NOT_INFRONT ||
+        result == SPELL_FAILED_NOT_STANDING;
+}
+
+bool IsLfgBoss(Unit* target)
+{
+    Creature* creature = target ? target->ToCreature() : nullptr;
+    CreatureTemplate const* creatureTemplate = creature ?
+        creature->GetCreatureTemplate() : nullptr;
+    return creature && (creature->IsDungeonBoss() ||
+        creature->isWorldBoss() || (creatureTemplate &&
+        creatureTemplate->rank == CREATURE_ELITE_WORLDBOSS));
+}
+
+bool CanStunLfgTrash(Unit* target, SpellInfo const* spellInfo)
+{
+    if (!target || !spellInfo || IsLfgBoss(target))
+        return false;
+
+    bool hasUsableStunEffect = false;
+    for (uint8 effect = EFFECT_0; effect < MAX_SPELL_EFFECTS; ++effect)
+    {
+        SpellEffectInfo const& effectInfo = spellInfo->Effects[effect];
+        bool isStun = effectInfo.ApplyAuraName == SPELL_AURA_MOD_STUN ||
+            effectInfo.Mechanic == MECHANIC_STUN ||
+            spellInfo->Mechanic == MECHANIC_STUN;
+        if (effectInfo.IsEffect() && isStun &&
+            !target->IsImmunedToSpellEffect(spellInfo, effect))
+            hasUsableStunEffect = true;
+    }
+
+    return hasUsableStunEffect &&
+        !target->IsImmunedToSpell(spellInfo,
+            spellInfo->NegativeEffectMask);
+}
+}
+
+bool PlayerbotAI::TryLfgCoordinatedInterrupt()
+{
+    uint32 requesterGuid = _lfgAutoQueueRequesterGuid.load();
+    if (!requesterGuid || !bot || !bot->IsAlive() ||
+        !bot->GetMap() || !bot->GetMap()->Instanceable())
+        return false;
+
+    Group* group = bot->GetGroup(GroupSlot::Instance);
+    if (!group)
+        group = bot->GetGroup();
+    if (!group)
+        return false;
+
+    Player* requester = ObjectAccessor::FindConnectedPlayer(
+        ObjectGuid::Create<HighGuid::Player>(requesterGuid));
+    Group* requesterGroup = requester ?
+        requester->GetGroup(GroupSlot::Instance) : nullptr;
+    if (requester && !requesterGroup)
+        requesterGroup = requester->GetGroup();
+    if (!requester || requesterGroup != group ||
+        requester->GetMap() != bot->GetMap())
+        return false;
+
+    // Build a group-wide view. A caster may not be this bot's current target,
+    // but it can still be attacking another party member or be that member's
+    // selected rotation target.
+    std::vector<Unit*> castingTargets;
+    auto addCastingTarget = [&](Unit* target)
+    {
+        if (!target || target->GetMap() != bot->GetMap() ||
+            !target->IsAlive() || !bot->IsValidAttackTarget(target) ||
+            !GetInterruptibleCurrentSpell(target))
+            return;
+        if (std::find(castingTargets.begin(), castingTargets.end(), target) ==
+            castingTargets.end())
+            castingTargets.push_back(target);
+    };
+
+    for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+    {
+        Player* member = ref->GetSource();
+        if (!member || member->GetMap() != bot->GetMap())
+            continue;
+
+        addCastingTarget(member->GetVictim());
+        addCastingTarget(member->GetSelectedUnit());
+        for (Unit* attacker : member->getAttackers())
+            addCastingTarget(attacker);
+
+        if (PlayerbotAI* memberAI = GET_PLAYERBOT_AI(member))
+            addCastingTarget(memberAI->GetAiObjectContext()->
+                GetValue<Unit*>("current target")->Get());
+    }
+
+    if (castingTargets.empty())
+        return false;
+
+    // Every bot computes the same ordering, so only one provider wins without
+    // a cross-thread reservation. Handle the cast closest to completion first.
+    std::sort(castingTargets.begin(), castingTargets.end(),
+        [](Unit* left, Unit* right)
+        {
+            Spell const* leftSpell = GetInterruptibleCurrentSpell(left);
+            Spell const* rightSpell = GetInterruptibleCurrentSpell(right);
+            int32 leftTimer = leftSpell ? leftSpell->GetCurrentCastTimer() :
+                std::numeric_limits<int32>::max();
+            int32 rightTimer = rightSpell ? rightSpell->GetCurrentCastTimer() :
+                std::numeric_limits<int32>::max();
+            return std::make_tuple(leftTimer,
+                       left->GetGUID().GetCounter()) <
+                std::make_tuple(rightTimer,
+                    right->GetGUID().GetCounter());
+        });
+
+    struct InterruptChoice
+    {
+        Player* player = nullptr;
+        Unit* caster = nullptr;
+        uint32 spellId = 0;
+        char const* action = nullptr;
+        bool stunFallback = false;
+        std::tuple<uint8, uint8, uint8, uint32, uint8, float, uint32> rank;
+    };
+
+    for (Unit* target : castingTargets)
+    {
+        if (IsLfgInterruptReserved(target))
+            continue;
+
+        InterruptChoice best;
+        bool found = false;
+
+        for (GroupReference* ref = group->GetFirstMember(); ref;
+             ref = ref->next())
+        {
+            Player* candidate = ref->GetSource();
+            PlayerbotAI* candidateAI = candidate ?
+                GET_PLAYERBOT_AI(candidate) : nullptr;
+            if (!candidate || !candidateAI || candidateAI->IsRealPlayer() ||
+                !candidate->IsAlive() || candidate->GetMap() != bot->GetMap() ||
+                candidateAI->_lfgAutoQueueRequesterGuid.load() != requesterGuid ||
+                candidate->HasUnitState(UNIT_STATE_LOST_CONTROL))
+                continue;
+
+            std::vector<std::pair<char const*, bool>> actions;
+            for (char const* action : GetLfgInterruptActions(candidate))
+                actions.emplace_back(action, false);
+            if (!IsLfgBoss(target))
+                for (char const* action : GetLfgStunActions(candidate))
+                    actions.emplace_back(action, true);
+
+            bool candidateHasInterrupt = false;
+            for (auto const& actionEntry : actions)
+            {
+                char const* action = actionEntry.first;
+                bool stunFallback = actionEntry.second;
+                // Once this candidate has a real interrupt, do not replace it
+                // with one of the candidate's own stun fallbacks.
+                if (stunFallback && candidateHasInterrupt)
+                    break;
+
+                uint32 spellId = candidateAI->GetAiObjectContext()->
+                    GetValue<uint32>("spell id", action)->Get();
+                SpellInfo const* spellInfo = spellId ?
+                    sSpellMgr->GetSpellInfo(spellId) : nullptr;
+                if (!spellInfo)
+                    continue;
+                if (stunFallback ?
+                    !CanStunLfgTrash(target, spellInfo) :
+                    !candidateAI->IsInterruptableSpellCasting(target, action))
+                    continue;
+
+                Pet* pet = candidate->GetPet();
+                Unit* caster = nullptr;
+                if (candidate->HasSpell(spellId))
+                    caster = candidate;
+                else if (pet && pet->IsAlive() && pet->HasSpell(spellId))
+                    caster = pet;
+                if (!caster || !caster->GetSpellHistory()->IsReady(spellId) ||
+                    !caster->IsWithinLOSInMap(target))
+                    continue;
+
+                uint32 castTime = spellInfo->IsChanneled() ?
+                    spellInfo->GetDuration() :
+                    spellInfo->CalcCastTime(caster->GetLevel());
+                // Damage pushback can make a cast-time interrupt arrive too
+                // late. An attacked provider remains eligible for instant
+                // Pummel/Kick/Rebuke/etc., but not for a cast-time answer.
+                if (castTime > 0 && !caster->getAttackers().empty())
+                    continue;
+
+                float maxRange = caster->GetSpellMaxRangeForTarget(
+                    target, spellInfo);
+                if (maxRange <= 0.0f)
+                    maxRange = 5.0f;
+                if (!caster->IsWithinCombatRange(target, maxRange))
+                    continue;
+                if (!CanPrepareLfgInterrupt(caster, target, spellInfo))
+                    continue;
+
+                bool focused = candidate->GetVictim() == target ||
+                    candidateAI->GetAiObjectContext()->
+                        GetValue<Unit*>("current target")->Get() == target;
+                uint32 cooldown = std::max(spellInfo->RecoveryTime,
+                    spellInfo->CategoryRecoveryTime);
+                auto rank = std::make_tuple(
+                    uint8(stunFallback ? 1 : 0),
+                    uint8(focused ? 0 : 1),
+                    uint8(caster == candidate &&
+                        IsCastingNonMeleeSpell(candidate) ? 1 : 0),
+                    cooldown, GetInterruptRolePriority(candidate),
+                    candidate->GetDistance(target),
+                    candidate->GetGUID().GetCounter());
+
+                if (!found || rank < best.rank)
+                {
+                    found = true;
+                    best = { candidate, caster, spellId, action,
+                             stunFallback, rank };
+                }
+                // Use this class's first ready interrupt. Its action order
+                // keeps the normal short cooldown before longer silences.
+                if (!stunFallback)
+                {
+                    candidateHasInterrupt = true;
+                    break;
+                }
+                break;
+            }
+        }
+
+        if (!found || best.player != bot)
+            continue;
+
+        bool success = false;
+        if (best.caster == bot)
+        {
+            // Interrupts must pre-empt a long heal or damage cast. Spell::
+            // cancel also removes the GCD started by that cancelled cast.
+            InterruptSpell();
+            success = CastSpell(best.spellId, target);
+        }
+        else if (Pet* pet = best.caster->ToPet())
+        {
+            pet->CastSpell(target, best.spellId, false);
+            success = true;
+        }
+
+        if (success)
+        {
+            ReserveLfgInterrupt(target);
+            Spell const* enemySpell = GetInterruptibleCurrentSpell(target);
+            TC_LOG_INFO("server",
+                "AutoQueue LFG coordinated interrupt bot=%s guid=%u role=%u action=%s spell=%u fallback=%s target=%s target-guid=%u enemy-spell=%u",
+                bot->GetName().c_str(), bot->GetGUID().GetCounter(),
+                uint32(GetInterruptRolePriority(bot)), best.action,
+                best.spellId, best.stunFallback ? "stun" : "none",
+                target->GetName().c_str(),
+                target->GetGUID().GetCounter(),
+                enemySpell ? enemySpell->GetSpellInfo()->Id : 0);
+            return true;
+        }
     }
 
     return false;

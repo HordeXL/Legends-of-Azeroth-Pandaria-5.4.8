@@ -108,6 +108,7 @@ public:
         creators["seal of command"] = &PaladinAiObjectContextInternal::seal_of_command;
         creators["seal of insight"] = &PaladinAiObjectContextInternal::seal_of_insight;
         creators["seal of righteousness"] = &PaladinAiObjectContextInternal::seal_of_righteousness;
+        creators["seal of truth"] = &PaladinAiObjectContextInternal::seal_of_truth;
 
         creators["blessing of might"] = &PaladinAiObjectContextInternal::blessing_of_might;
         creators["blessing of kings"] = &PaladinAiObjectContextInternal::blessing_of_kings;
@@ -184,6 +185,7 @@ private:
     static Action* seal_of_command(PlayerbotAI* botAI) { return new CastSealOfCommandAction(botAI); }
     static Action* seal_of_righteousness(PlayerbotAI* botAI) { return new CastSealOfRighteousnessAction(botAI); }
     static Action* seal_of_insight(PlayerbotAI* botAI) { return new CastSealOfInsightAction(botAI); }
+    static Action* seal_of_truth(PlayerbotAI* botAI) { return new CastSealOfTruthAction(botAI); }
 
     static Action* blessing_of_might(PlayerbotAI* botAI) { return new CastBlessingOfMightAction(botAI); }
     static Action* blessing_of_kings(PlayerbotAI* botAI) { return new CastBlessingOfKingsAction(botAI); }

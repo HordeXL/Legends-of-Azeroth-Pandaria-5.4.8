@@ -73,7 +73,7 @@ BEGIN
 
     UPDATE `item_template`
        SET `name` = CONCAT('VIP3 PvE ', `name`),
-           `description` = 'VIP3 solo PvE test armor. Siege of Orgrimmar T16 appearance and genuine 5-piece PvE set bonus.',
+           `description` = 'VIP3 solo PvE test armor. Siege of Orgrimmar T16 appearance and genuine 2/4-piece PvE set bonuses.',
            `Quality` = 5,
            `AllowableClass` = p_class_mask,
            `AllowableRace` = -1,

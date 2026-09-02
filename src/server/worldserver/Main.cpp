@@ -38,6 +38,7 @@
 #include "Banner.h"
 #include "BattlegroundMgr.h"
 #include "BigNumber.h"
+#include "Chat.h"
 #include "CliRunnable.h"
 #include "DeadlineTimer.h"
 #include "GitRevision.h"
@@ -68,6 +69,8 @@
 #include <boost/filesystem/operations.hpp>
 #include <boost/program_options.hpp>
 
+#include <atomic>
+
 using namespace boost::program_options;
 namespace fs = boost::filesystem;
 
@@ -90,6 +93,16 @@ int m_ServiceStatus = -1;
 #endif
 
 RealmNameMap realmNameStore;
+
+namespace
+{
+    std::atomic<bool> WorldLoopRunning{ false };
+    std::atomic<bool> GracefulSignalShutdownQueued{ false };
+
+    void IgnoreSignalShutdownOutput(void*, char const*)
+    {
+    }
+}
 
 class FreezeDetector
 {
@@ -324,7 +337,9 @@ extern int main(int argc, char** argv)
         cliThread.reset(new std::thread(CliThread), &ShutdownCLIThread);
     }
 
+    WorldLoopRunning.store(true);
     WorldUpdateLoop();
+    WorldLoopRunning.store(false);
 
     // Shutdown starts here
     ioContextStopHandle.reset();
@@ -468,8 +483,25 @@ void WorldUpdateLoop()
 
 void SignalHandler(boost::system::error_code const& error, int /*signalNumber*/)
 {
-    if (!error)
-        World::StopNow(SHUTDOWN_EXIT_CODE);
+    if (error)
+        return;
+
+    // A first Ctrl+C on a running realm must be processed by the world thread.
+    // This sends the client a normal shutdown notification and gives queued
+    // packets a short interval to flush before sessions are kicked. An
+    // immediate StopNow used to tear down the socket without that transition;
+    // the legacy 5.4.8 client can then hit ERROR #132 while cleaning its login
+    // UI state. Signals received before the world loop is available still use
+    // the immediate startup/shutdown fallback.
+    if (WorldLoopRunning.load() &&
+        !GracefulSignalShutdownQueued.exchange(true))
+    {
+        sWorld->QueueCliCommand(new CliCommandHolder(nullptr,
+            "server shutdown 2", &IgnoreSignalShutdownOutput, nullptr));
+        return;
+    }
+
+    World::StopNow(SHUTDOWN_EXIT_CODE);
 }
 
 void FreezeDetector::Handler(std::weak_ptr<FreezeDetector> freezeDetectorRef, boost::system::error_code const& error)
