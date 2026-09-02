@@ -172,7 +172,10 @@ void PlayerbotAI::SetLfgAutoQueueControl(bool reserved,
     if (initializeInDungeon)
         _lfgAutoQueueInitializePending.store(true);
     else if (!requesterGuid)
+    {
         _lfgAutoQueueInitializePending.store(false);
+        _lfgPreparationBuffPending.store(false);
+    }
     // Publish the reservation flag last. In particular, a map update which
     // observes reservation release must also observe the pending in-dungeon
     // initialization request posted above.
@@ -434,6 +437,52 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
             // Teleport/group visibility may lag by one map tick.
             _lfgAutoQueueInitializePending.store(true);
         }
+    }
+
+    // Buff maintenance is requested by the world coordinator but executed on
+    // this bot's map thread. Never cast during a pull, teleport, cleanup, or
+    // while any same-map party member is fighting. A later periodic request
+    // retries naturally if the group was busy on this tick.
+    if (_lfgPreparationBuffPending.exchange(false))
+    {
+        uint32 requesterGuid = _lfgAutoQueueRequesterGuid.load();
+        Player* requester = requesterGuid ?
+            ObjectAccessor::FindConnectedPlayer(
+                ObjectGuid::Create<HighGuid::Player>(requesterGuid)) : nullptr;
+        Group* group = bot->GetGroup(GroupSlot::Instance);
+        if (!group)
+            group = bot->GetGroup();
+        Group* requesterGroup = requester ?
+            requester->GetGroup(GroupSlot::Instance) : nullptr;
+        if (requester && !requesterGroup)
+            requesterGroup = requester->GetGroup();
+
+        bool safe = requester && requester->IsInWorld() &&
+            requester->GetMap() == bot->GetMap() && group &&
+            requesterGroup == group && bot->IsAlive() &&
+            !bot->IsBeingTeleported() && !requester->IsBeingTeleported() &&
+            !bot->IsPlayerbotCleanupPending();
+        if (safe)
+        {
+            for (GroupReference* ref = group->GetFirstMember(); ref;
+                 ref = ref->next())
+            {
+                Player* member = ref->GetSource();
+                if (member && member->GetMap() == bot->GetMap() &&
+                    (member->IsInCombat() || member->GetVictim() ||
+                     !member->getAttackers().empty()))
+                {
+                    safe = false;
+                    break;
+                }
+            }
+        }
+
+        if (safe && CastAutomatedPvpPreparationBuff(bot))
+            TC_LOG_INFO("server",
+                "AutoQueue LFG map-thread preparation cast bot=%s guid=%u requester=%u map=%u",
+                bot->GetName().c_str(), bot->GetGUID().GetCounter(),
+                requesterGuid, bot->GetMapId());
     }
 
     // A bot logged in only to fill an LFG request must not wander, grind or

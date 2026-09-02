@@ -3162,6 +3162,8 @@ public:
     bool IsPlayerbotCleanupPending() const { return m_playerbotCleanupPending.load(); }
     void BeginPlayerbotCleanup() { m_playerbotCleanupPending.store(true); }
     void EndPlayerbotCleanup() { m_playerbotCleanupPending.store(false); }
+    bool IsPlayerbotLootDisabled() const { return m_playerbotLootDisabled.load(); }
+    void SetPlayerbotLootDisabled(bool disabled) { m_playerbotLootDisabled.store(disabled); }
 
     bool CanFly() const { return m_movementInfo.HasMovementFlag(MOVEMENTFLAG_CAN_FLY);}
     bool CanEnterWater() const override { return true; }
@@ -3725,6 +3727,7 @@ protected:
     // 0 = unmanaged, 1 = active caller raid, 2 = cleanup with bot AI paused.
     std::atomic<uint8> m_worldBossStagingState{ 0 };
     std::atomic<bool> m_playerbotCleanupPending{ false };
+    std::atomic<bool> m_playerbotLootDisabled{ false };
 
     SceneMgr m_sceneMgr;
     std::map<int8, PetData> m_petList;

@@ -1158,6 +1158,7 @@ void PlayerbotMgr::SaveToDB()
 
 void PlayerbotMgr::OnBotLoginInternal(Player* const bot)
 {
+    bot->SetPlayerbotLootDisabled(true);
     PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot);
     if (!botAI)
     {

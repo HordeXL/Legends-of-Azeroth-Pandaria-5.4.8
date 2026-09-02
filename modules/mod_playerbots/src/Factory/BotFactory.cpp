@@ -842,6 +842,153 @@ void BotFactory::InitEquipmentForSpec()
     InitEquipmentInternal(true, false, true, true);
 }
 
+void BotFactory::InitManagedEquipmentForSpec(uint32 minimumItemLevel)
+{
+    // Managed group fillers must have every specialization-compatible slot,
+    // not just five armor pieces and a weapon.  Two passes let a main-hand
+    // replacement unlock a dependent shield/off-hand on the second pass.
+    InitEquipmentInternal(true, false, true, true, minimumItemLevel, false);
+    InitEquipmentInternal(true, false, true, true, minimumItemLevel, false);
+}
+
+uint32 BotFactory::InitManagedEnhancements(ManagedLoadoutMode mode)
+{
+    if (!bot || bot->GetSpecialization() == SPEC_NONE)
+        return 0;
+
+    Specializations const specialization = bot->GetSpecialization();
+    bool const healer = PlayerBotSpec::IsHeal(bot, true);
+    bool const tank = AiFactory::GetPlayerRoles(bot) == BOT_ROLE_TANK;
+    bool agility = bot->GetClass() == CLASS_HUNTER ||
+        bot->GetClass() == CLASS_ROGUE || bot->GetClass() == CLASS_MONK ||
+        specialization == SPEC_DRUID_FERAL ||
+        specialization == SPEC_DRUID_GUARDIAN ||
+        specialization == SPEC_SHAMAN_ENHANCEMENT;
+    bool intellect = healer || bot->GetClass() == CLASS_MAGE ||
+        bot->GetClass() == CLASS_PRIEST || bot->GetClass() == CLASS_WARLOCK ||
+        specialization == SPEC_DRUID_BALANCE ||
+        specialization == SPEC_SHAMAN_ELEMENTAL;
+
+    // MoP SpellItemEnchantment.dbc IDs.  Gems are represented by the
+    // enchantment carried by the corresponding gem item.
+    uint32 const primaryGem = intellect ? 4644u : (agility ? 4643u : 4646u);
+    uint32 const pvpPowerGem = 4588u;
+    uint32 const resilienceGem = 4586u;
+    uint32 changed = 0;
+
+    auto replaceEnchant = [&](Item* item, EnchantmentSlot slot, uint32 enchant)
+    {
+        if (!item || !enchant || item->GetEnchantmentId(slot) == enchant)
+            return;
+        bot->ApplyEnchantment(item, slot, false);
+        item->SetEnchantment(slot, enchant, 0, 0, bot->GetGUID());
+        bot->ApplyEnchantment(item, slot, true);
+        ++changed;
+    };
+
+    for (uint8 equipmentSlot = EQUIPMENT_SLOT_START;
+         equipmentSlot < EQUIPMENT_SLOT_END; ++equipmentSlot)
+    {
+        Item* item = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, equipmentSlot);
+        if (!item)
+            continue;
+
+        for (uint8 socket = 0; socket < MAX_GEM_SOCKETS; ++socket)
+        {
+            uint32 const color = item->GetTemplate()->Socket[socket].Color;
+            if (!color || color == SOCKET_COLOR_META ||
+                color == SOCKET_COLOR_COGWHEEL ||
+                color == SOCKET_COLOR_HYDRAULIC)
+                continue;
+
+            uint32 gem = primaryGem;
+            if (mode == ManagedLoadoutMode::Pvp)
+                gem = tank || color == SOCKET_COLOR_YELLOW ?
+                    resilienceGem : (color == SOCKET_COLOR_BLUE ?
+                        pvpPowerGem : primaryGem);
+            else if (healer && color == SOCKET_COLOR_BLUE)
+                gem = 4589u; // Sparkling: Spirit
+
+            replaceEnchant(item,
+                EnchantmentSlot(SOCK_ENCHANTMENT_SLOT + socket), gem);
+        }
+
+        uint32 permanentEnchant = 0;
+        switch (equipmentSlot)
+        {
+            case EQUIPMENT_SLOT_SHOULDERS:
+                permanentEnchant = tank ? 4805u :
+                    (intellect ? 4806u : (agility ? 4804u : 4803u));
+                break;
+            case EQUIPMENT_SLOT_BACK:
+                permanentEnchant = intellect ? 4423u : 4424u;
+                break;
+            case EQUIPMENT_SLOT_CHEST:
+                permanentEnchant = tank ? 4420u : 4419u;
+                break;
+            case EQUIPMENT_SLOT_WRISTS:
+                permanentEnchant = intellect ? 4414u :
+                    (agility ? 4411u : 4415u);
+                break;
+            case EQUIPMENT_SLOT_HANDS:
+                permanentEnchant = intellect || agility ? 4430u : 4432u;
+                break;
+            case EQUIPMENT_SLOT_LEGS:
+                permanentEnchant = tank ? 4824u : (intellect ?
+                    (healer ? 4826u : 4825u) : (agility ? 4822u : 4823u));
+                break;
+            case EQUIPMENT_SLOT_FEET:
+                permanentEnchant = agility ? 4428u : 4429u;
+                break;
+            case EQUIPMENT_SLOT_MAINHAND:
+                permanentEnchant = tank ? 4445u :
+                    (intellect ? 4442u : 4444u);
+                break;
+            case EQUIPMENT_SLOT_OFFHAND:
+                if (intellect && item->GetTemplate()->Class == ITEM_CLASS_ARMOR)
+                    permanentEnchant = 4434u;
+                break;
+            default:
+                break;
+        }
+        replaceEnchant(item, PERM_ENCHANTMENT_SLOT, permanentEnchant);
+    }
+
+    return changed;
+}
+
+bool BotFactory::PrepareManagedLoadout(ManagedLoadoutMode mode,
+                                       uint32 minimumItemLevel,
+                                       std::string* reason)
+{
+    InitBags();
+    InitManagedEquipmentForSpec(minimumItemLevel);
+    InitTalentsTree(false);
+    InitGlyphs();
+    InitPet();
+    uint32 const enhancements = InitManagedEnhancements(mode);
+
+    if (!HasRequiredEquipmentForSpec(reason))
+        return false;
+
+    if (minimumItemLevel && bot->GetAverageItemLevel() < minimumItemLevel)
+    {
+        if (reason)
+            *reason = "average-item-level-below-managed-floor";
+        return false;
+    }
+
+    TC_LOG_INFO("playerbots",
+        "Managed %s loadout ready name=%s guid=%u specialization=%u avg-ilvl=%u floor=%u enhancements=%u",
+        mode == ManagedLoadoutMode::Pvp ? "PvP" : "PvE",
+        bot->GetName().c_str(), bot->GetGUID().GetCounter(),
+        uint32(bot->GetSpecialization()), uint32(bot->GetAverageItemLevel()),
+        minimumItemLevel, enhancements);
+    if (reason)
+        reason->clear();
+    return true;
+}
+
 uint32 BotFactory::GetWeaponReferenceItemLevel() const
 {
     // Weapons dominate damage output, so compare them with the character's
@@ -893,7 +1040,9 @@ bool BotFactory::MoveEquippedItemToBag(uint8 slot)
 }
 
 void BotFactory::InitEquipmentInternal(bool incremental, bool second_chance,
-                                       bool missingOnly, bool specCompatible)
+                                       bool missingOnly, bool specCompatible,
+                                       uint32 minimumItemLevel,
+                                       bool preserveReplaced)
 {
     InitBags();
 
@@ -933,28 +1082,37 @@ void BotFactory::InitEquipmentInternal(bool incremental, bool second_chance,
                     bot, EquipmentSlots(slot), oldItem->GetTemplate());
             bool const weaponSlot = slot == EQUIPMENT_SLOT_MAINHAND ||
                 slot == EQUIPMENT_SLOT_OFFHAND;
-            bool const underleveledWeapon = specCompatible && weaponSlot &&
-                validForSpec && oldItem->GetTemplate()->ItemLevel <
-                    weaponMinimumItemLevel;
+            uint32 const slotFloor = minimumItemLevel ? minimumItemLevel :
+                (weaponSlot ? weaponMinimumItemLevel : 0u);
+            bool const underleveledItem = specCompatible && validForSpec &&
+                slotFloor && oldItem->GetTemplate()->ItemLevel < slotFloor;
 
-            if (validForSpec && !underleveledWeapon)
+            if (validForSpec && !underleveledItem)
                 continue;
 
-            if (underleveledWeapon)
+            if (underleveledItem)
                 TC_LOG_INFO("playerbots",
-                    "Upgrading underleveled weapon %u (ilvl %u, floor %u) for bot %s slot %u",
+                    "Upgrading underleveled managed item %u (ilvl %u, floor %u) for bot %s slot %u",
                     oldItem->GetEntry(), oldItem->GetTemplate()->ItemLevel,
-                    weaponMinimumItemLevel, bot->GetName().c_str(),
+                    slotFloor, bot->GetName().c_str(),
                     uint32(slot));
         }
 
         if (specCompatible && slot == EQUIPMENT_SLOT_OFFHAND &&
             !sRandomItemMgr->SupportsOffhandForSpec(bot))
         {
-            if (oldItem && !MoveEquippedItemToBag(slot))
-                TC_LOG_ERROR("playerbots",
-                    "Cannot preserve unsupported offhand item %u for bot %s",
-                    oldItem->GetEntry(), bot->GetName().c_str());
+            if (oldItem)
+            {
+                if (preserveReplaced)
+                {
+                    if (!MoveEquippedItemToBag(slot))
+                        TC_LOG_ERROR("playerbots",
+                            "Cannot preserve unsupported offhand item %u for bot %s",
+                            oldItem->GetEntry(), bot->GetName().c_str());
+                }
+                else
+                    bot->DestroyItem(INVENTORY_SLOT_BAG_0, slot, true);
+            }
             continue;
         }
         if (oldItem && second_chance)
@@ -1019,6 +1177,8 @@ void BotFactory::InitEquipmentInternal(bool incremental, bool second_chance,
             if (specCompatible && weaponSlot &&
                 proto->ItemLevel < weaponMinimumItemLevel)
                 continue;
+            if (minimumItemLevel && proto->ItemLevel < minimumItemLevel)
+                continue;
 
             if (specCompatible && weaponSlot && weaponReferenceItemLevel)
             {
@@ -1048,7 +1208,7 @@ void BotFactory::InitEquipmentInternal(bool incremental, bool second_chance,
         }
 
         oldItem = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
-        if (oldItem && specCompatible)
+        if (oldItem && specCompatible && preserveReplaced)
         {
             if (!MoveEquippedItemToBag(slot))
             {

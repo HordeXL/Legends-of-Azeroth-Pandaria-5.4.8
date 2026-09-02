@@ -2725,7 +2725,7 @@ PersonalLoot::PersonalLoot(uint32 lootId)
 
 void PersonalLoot::Reward(Player* player)
 {
-    if (!m_loot)
+    if (!m_loot || !player || player->IsPlayerbotLootDisabled())
         return;
 
     bool isFlexDifficulty = player->GetMap()->GetDifficulty() == RAID_DIFFICULTY_1025MAN_FLEX;

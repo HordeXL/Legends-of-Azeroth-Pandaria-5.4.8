@@ -27674,6 +27674,15 @@ void Player::AutoStoreLoot(uint8 bag, uint8 slot, uint32 loot_id, LootStore cons
 
 void Player::StoreLootItem(uint8 lootSlot, Loot* loot, Object* src, AELootResult* lootResult)
 {
+    // Server-managed playerbots are combat helpers, not independent loot
+    // recipients.  Group-roll and personal-loot paths reject them earlier;
+    // keep direct/free-for-all corpse looting from filling their bags too.
+    if (IsPlayerbotLootDisabled())
+    {
+        SendLootReleaseAll();
+        return;
+    }
+
     QuestItem* qitem    = nullptr;
     QuestItem* ffaitem  = nullptr;
     QuestItem* conditem = nullptr;
@@ -32112,6 +32121,9 @@ void Player::_SaveBattlegroundStats(CharacterDatabaseTransaction trans)
 
 bool Player::CanRollForLootIn(WorldObject const* obj) const
 {
+    if (IsPlayerbotLootDisabled())
+        return false;
+
     if (!IsAtGroupRewardDistance(obj))
         return false;
 

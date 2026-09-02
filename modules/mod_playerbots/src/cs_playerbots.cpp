@@ -5306,10 +5306,20 @@ void UpdateWorldBossStagedRaid(uint32 diff)
             // helpers preserve an existing valid build and only initialize
             // what the bot lacks; the requester's build is never touched.
             BotFactory factory(bot, bot->GetLevel());
-            factory.InitTalentsTree(false);
-            factory.InitGlyphs();
-            factory.InitPet();
-            factory.InitEquipmentForSpec();
+            std::string managedLoadoutError;
+            if (!factory.PrepareManagedLoadout(
+                    BotFactory::ManagedLoadoutMode::Pve, 522,
+                    &managedLoadoutError))
+            {
+                TC_LOG_ERROR("server",
+                    "WorldBoss managed PvE loadout failed name=%s guid=%u specialization=%u error=%s",
+                    bot->GetName().c_str(), staged.first,
+                    uint32(bot->GetSpecialization()),
+                    managedLoadoutError.c_str());
+                BeginWorldBossStageCleanup(
+                    "a staged bot could not receive its complete PvE loadout");
+                return;
+            }
             bool expectsPersistentPet = bot->GetClass() == CLASS_HUNTER ||
                 bot->GetClass() == CLASS_WARLOCK ||
                 bot->GetSpecialization() == SPEC_MAGE_FROST;
@@ -5357,18 +5367,20 @@ void UpdateWorldBossStagedRaid(uint32 diff)
                     "a staged bot could not receive its role-appropriate legendary cloak");
                 return;
             }
+            uint32 const enhancements = factory.InitManagedEnhancements(
+                BotFactory::ManagedLoadoutMode::Pve);
             uint32 glyphCount = 0;
             for (uint8 slot = 0; slot < MAX_GLYPH_SLOT_INDEX; ++slot)
                 if (bot->GetGlyph(bot->GetActiveSpec(), slot))
                     ++glyphCount;
             TC_LOG_INFO("server",
-                "WorldBoss PvE build prepared name=%s guid=%u specialization=%u talents=%u glyphs=%u T16-set=%u armor-changed=%u selected-pvp-items=%u selected-avg-ilvl=%u legendary-cloak=%u cloak-changed=%u",
+                "WorldBoss PvE build prepared name=%s guid=%u specialization=%u talents=%u glyphs=%u T16-set=%u armor-changed=%u selected-pvp-items=%u selected-avg-ilvl=%u legendary-cloak=%u cloak-changed=%u enhancements=%u",
                 bot->GetName().c_str(), staged.first,
                 uint32(bot->GetSpecialization()), bot->GetUsedTalentCount(),
                 glyphCount, pveItemSet, armorChanged,
                 staged.second.PvpItems, staged.second.AverageItemLevel,
                 legendaryCloak,
-                cloakChanged ? 1u : 0u);
+                cloakChanged ? 1u : 0u, enhancements);
             bots.push_back(bot);
         }
 
@@ -6271,7 +6283,22 @@ bool ApplyAutomatedPvpBotLoadout(Player* bot, uint32 requesterGuid,
 
     if (PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot))
         if (!botAI->IsRealPlayer())
-            return ApplySoloArenaLoadout(bot, requesterGuid, changedSlots, error);
+        {
+            BotFactory factory(bot, bot->GetLevel());
+            if (!factory.PrepareManagedLoadout(
+                    BotFactory::ManagedLoadoutMode::Pvp,
+                    sPlayerbotAIConfig->autoQueueArenaMinAverageItemLevel,
+                    &error))
+            {
+                changedSlots = 0;
+                return false;
+            }
+            if (!ApplySoloArenaLoadout(bot, requesterGuid, changedSlots, error))
+                return false;
+            factory.InitManagedEnhancements(
+                BotFactory::ManagedLoadoutMode::Pvp);
+            return true;
+        }
 
     changedSlots = 0;
     error = "real-player equipment is protected";
