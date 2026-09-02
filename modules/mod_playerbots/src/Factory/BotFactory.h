@@ -41,7 +41,8 @@ private:
     void InitEquipmentInternal(bool incremental, bool second_chance,
                                bool missingOnly, bool specCompatible,
                                uint32 minimumItemLevel = 0,
-                               bool preserveReplaced = true);
+                               bool preserveReplaced = true,
+                               bool genuineItemsOnly = false);
     bool MoveEquippedItemToBag(uint8 slot);
     uint32 GetWeaponReferenceItemLevel() const;
     void Prepare();

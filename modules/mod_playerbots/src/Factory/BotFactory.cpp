@@ -847,8 +847,8 @@ void BotFactory::InitManagedEquipmentForSpec(uint32 minimumItemLevel)
     // Managed group fillers must have every specialization-compatible slot,
     // not just five armor pieces and a weapon.  Two passes let a main-hand
     // replacement unlock a dependent shield/off-hand on the second pass.
-    InitEquipmentInternal(true, false, true, true, minimumItemLevel, false);
-    InitEquipmentInternal(true, false, true, true, minimumItemLevel, false);
+    InitEquipmentInternal(true, false, true, true, minimumItemLevel, false, true);
+    InitEquipmentInternal(true, false, true, true, minimumItemLevel, false, true);
 }
 
 uint32 BotFactory::InitManagedEnhancements(ManagedLoadoutMode mode)
@@ -874,7 +874,17 @@ uint32 BotFactory::InitManagedEnhancements(ManagedLoadoutMode mode)
     uint32 const primaryGem = intellect ? 4644u : (agility ? 4643u : 4646u);
     uint32 const pvpPowerGem = 4588u;
     uint32 const resilienceGem = 4586u;
+    uint32 const metaGemItem = tank ? 76895u :
+        (healer ? 76888u :
+            (intellect ? 76885u : (agility ? 76884u : 76886u)));
+    uint32 metaGemEnchant = 0;
+    if (ItemTemplate const* metaGem = sObjectMgr->GetItemTemplate(metaGemItem))
+        if (GemPropertiesEntry const* properties =
+                sGemPropertiesStore.LookupEntry(metaGem->GemProperties))
+            metaGemEnchant = properties->spellitemenchantement;
     uint32 changed = 0;
+    Item* changedMetaItem = nullptr;
+    EnchantmentSlot changedMetaSlot = SOCK_ENCHANTMENT_SLOT;
 
     auto replaceEnchant = [&](Item* item, EnchantmentSlot slot, uint32 enchant)
     {
@@ -896,10 +906,29 @@ uint32 BotFactory::InitManagedEnhancements(ManagedLoadoutMode mode)
         for (uint8 socket = 0; socket < MAX_GEM_SOCKETS; ++socket)
         {
             uint32 const color = item->GetTemplate()->Socket[socket].Color;
-            if (!color || color == SOCKET_COLOR_META ||
-                color == SOCKET_COLOR_COGWHEEL ||
+            if (!color || color == SOCKET_COLOR_COGWHEEL ||
                 color == SOCKET_COLOR_HYDRAULIC)
                 continue;
+
+            EnchantmentSlot const enchantmentSlot =
+                EnchantmentSlot(SOCK_ENCHANTMENT_SLOT + socket);
+            if (color == SOCKET_COLOR_META)
+            {
+                if (metaGemEnchant &&
+                    item->GetEnchantmentId(enchantmentSlot) != metaGemEnchant)
+                {
+                    // Apply the new meta only after all ordinary gems are in
+                    // place, otherwise its colour requirement can be tested
+                    // against a half-finished loadout.
+                    bot->ApplyEnchantment(item, enchantmentSlot, false);
+                    item->SetEnchantment(enchantmentSlot, metaGemEnchant,
+                        0, 0, bot->GetGUID());
+                    changedMetaItem = item;
+                    changedMetaSlot = enchantmentSlot;
+                    ++changed;
+                }
+                continue;
+            }
 
             uint32 gem = primaryGem;
             if (mode == ManagedLoadoutMode::Pvp)
@@ -909,8 +938,7 @@ uint32 BotFactory::InitManagedEnhancements(ManagedLoadoutMode mode)
             else if (healer && color == SOCKET_COLOR_BLUE)
                 gem = 4589u; // Sparkling: Spirit
 
-            replaceEnchant(item,
-                EnchantmentSlot(SOCK_ENCHANTMENT_SLOT + socket), gem);
+            replaceEnchant(item, enchantmentSlot, gem);
         }
 
         uint32 permanentEnchant = 0;
@@ -954,6 +982,9 @@ uint32 BotFactory::InitManagedEnhancements(ManagedLoadoutMode mode)
         replaceEnchant(item, PERM_ENCHANTMENT_SLOT, permanentEnchant);
     }
 
+    if (changedMetaItem)
+        bot->ApplyEnchantment(changedMetaItem, changedMetaSlot, true);
+
     return changed;
 }
 
@@ -970,6 +1001,22 @@ bool BotFactory::PrepareManagedLoadout(ManagedLoadoutMode mode,
 
     if (!HasRequiredEquipmentForSpec(reason))
         return false;
+
+    for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
+    {
+        if (Item* item = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot))
+        {
+            if (!sRandomItemMgr->IsCustomServerItem(item->GetEntry()))
+                continue;
+
+            TC_LOG_ERROR("playerbots",
+                "Managed loadout rejected custom item %u still equipped by bot %s in slot %u",
+                item->GetEntry(), bot->GetName().c_str(), uint32(slot));
+            if (reason)
+                *reason = "custom-equipment-remains";
+            return false;
+        }
+    }
 
     if (minimumItemLevel && bot->GetAverageItemLevel() < minimumItemLevel)
     {
@@ -1042,7 +1089,8 @@ bool BotFactory::MoveEquippedItemToBag(uint8 slot)
 void BotFactory::InitEquipmentInternal(bool incremental, bool second_chance,
                                        bool missingOnly, bool specCompatible,
                                        uint32 minimumItemLevel,
-                                       bool preserveReplaced)
+                                       bool preserveReplaced,
+                                       bool genuineItemsOnly)
 {
     InitBags();
 
@@ -1077,9 +1125,12 @@ void BotFactory::InitEquipmentInternal(bool incremental, bool second_chance,
         // paths retain their historical full-randomization behaviour.
         if (missingOnly && oldItem)
         {
-            bool const validForSpec = !specCompatible ||
-                sRandomItemMgr->IsItemValidForEquipmentSlot(
-                    bot, EquipmentSlots(slot), oldItem->GetTemplate());
+            bool const customServerItem = genuineItemsOnly &&
+                sRandomItemMgr->IsCustomServerItem(oldItem->GetEntry());
+            bool const validForSpec = !customServerItem &&
+                (!specCompatible ||
+                    sRandomItemMgr->IsItemValidForEquipmentSlot(
+                        bot, EquipmentSlots(slot), oldItem->GetTemplate()));
             bool const weaponSlot = slot == EQUIPMENT_SLOT_MAINHAND ||
                 slot == EQUIPMENT_SLOT_OFFHAND;
             uint32 const slotFloor = minimumItemLevel ? minimumItemLevel :
@@ -1095,6 +1146,11 @@ void BotFactory::InitEquipmentInternal(bool incremental, bool second_chance,
                     "Upgrading underleveled managed item %u (ilvl %u, floor %u) for bot %s slot %u",
                     oldItem->GetEntry(), oldItem->GetTemplate()->ItemLevel,
                     slotFloor, bot->GetName().c_str(),
+                    uint32(slot));
+            else if (customServerItem)
+                TC_LOG_INFO("playerbots",
+                    "Replacing custom managed item %u for bot %s slot %u with client-known equipment",
+                    oldItem->GetEntry(), bot->GetName().c_str(),
                     uint32(slot));
         }
 
@@ -1127,7 +1183,8 @@ void BotFactory::InitEquipmentInternal(bool incremental, bool second_chance,
         {
             for (InventoryType inventoryType : GetPossibleInventoryTypeListBySlot((EquipmentSlots)slot))
             {
-                uint32 itemid = sRandomItemMgr->FindBestItemForLevelAndEquip(bot, inventoryType);
+                uint32 itemid = sRandomItemMgr->FindBestItemForLevelAndEquip(
+                    bot, inventoryType, genuineItemsOnly);
                 if (itemid)
                 {
                     uint32 skipProb = 25;
@@ -1162,6 +1219,9 @@ void BotFactory::InitEquipmentInternal(bool incremental, bool second_chance,
             ItemTemplate const* proto = sObjectMgr->GetItemTemplate(ids[index]);
 
             // delay heavy check to here
+            if (genuineItemsOnly &&
+                sRandomItemMgr->IsCustomServerItem(proto->ItemId))
+                continue;
             if (!CanEquipItem(proto))
                 continue;
             if (specCompatible &&

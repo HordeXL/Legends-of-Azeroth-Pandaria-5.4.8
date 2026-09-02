@@ -31,8 +31,10 @@ public:
         return &instance;
     }
 
-    uint32 FindBestItemForLevelAndEquip(Player* bot, InventoryType invType);
+    uint32 FindBestItemForLevelAndEquip(Player* bot, InventoryType invType,
+                                        bool genuineItemsOnly = false);
     bool IsTestItem(uint32 itemId) { return _itemForTest.find(itemId) != _itemForTest.end(); }
+    bool IsCustomServerItem(uint32 itemId) const;
 
     std::vector<uint32> GetCachedEquipments(uint32 requiredLevel, uint32 inventoryType);
 

@@ -813,7 +813,17 @@ static const std::map<uint32, std::tuple<ItemQualities, ItemQualities, uint32, u
 * Random items stat not supposed to be assigned (ex shaman enhance with intellect spell power etc)
 */
 
-uint32 RandomItemManager::FindBestItemForLevelAndEquip(Player* bot, InventoryType invType)
+bool RandomItemManager::IsCustomServerItem(uint32 itemId) const
+{
+    // The server shop/VIP equipment lives in this private high-entry range.
+    // Its stats are valid server-side, but stock 5.4.8 clients do not reliably
+    // have matching item appearances. Managed PvE/PvP fillers must therefore
+    // use genuine client-known equipment.
+    return itemId >= 990000u;
+}
+
+uint32 RandomItemManager::FindBestItemForLevelAndEquip(Player* bot,
+    InventoryType invType, bool genuineItemsOnly)
 {
     uint32 level = (uint32)bot->GetLevel();
     int32 delta = std::min(level, 10u);
@@ -831,6 +841,7 @@ uint32 RandomItemManager::FindBestItemForLevelAndEquip(Player* bot, InventoryTyp
             uint32 itemID = *it;
 
             if (IsTestItem(itemID)) continue;
+            if (genuineItemsOnly && IsCustomServerItem(itemID)) continue;
 
             ItemTemplate const* proto = sObjectMgr->GetItemTemplate(itemID);
             if (proto->RequiredLevel > level) continue;

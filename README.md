@@ -17,6 +17,7 @@ Status recorded for the current local project configuration on 2026-09-01:
 | Component | Included | Current local status | Notes |
 | --- | --- | --- | --- |
 | MoP 5.4.8 core | Yes | Enabled | Client build `18414`; `authserver`, `worldserver`, scripts and extraction tools. |
+| In-game Battle Pay shop | Yes | Enabled, catalog only | The client SHOP button is available after login and the catalog is loaded from the world database. This standalone repository does not include a website, donation checkout or vote-reward system, so normal players currently have no public way to earn the shop points required for purchases. |
 | Playerbots | Yes | Enabled | `AiPlayerbot.Enabled = 1`; automatic random-bot login remains disabled. |
 | Solo Arena bot fill | Yes | Enabled, experimental | Arena Battlemaster choices for 2v2, 3v3 and 5v5; role/faction-aware bot selection, temporary PvP loadouts, preparation buffs, rewards, exit/health recovery and cleanup. |
 | Battleground bot fill and objectives | Yes | Enabled, experimental | Fills a real player's queue, builds both factions, applies temporary PvP loadouts and includes CTF, node, orb, cart, vehicle, resurrection, escort, mount and basic path/LoS handling. |
@@ -29,6 +30,14 @@ Status recorded for the current local project configuration on 2026-09-01:
 
 ### Major Custom Systems
 
+- **In-game Battle Pay shop:** the MoP client SHOP window is enabled after login.
+  Its categories, products and product items are loaded from the world database
+  `battle_pay_group`, `battle_pay_entry`, `battle_pay_product` and
+  `battle_pay_product_items` tables, while an account's purchasable balance is
+  stored in the authentication database. The repository currently contains no
+  public website integration for donations or voting, and no normal in-game
+  point-earning flow is configured. The catalog can therefore be viewed, but a
+  regular player cannot obtain purchase points in this standalone setup.
 - **Playerbot Arena automation:** a real player can use an Arena Battlemaster's
   custom solo 2v2/3v3/5v5 choices. The server selects the required teammate and
   opponents, loads only the managed bots, creates the teams, queues the match and
@@ -114,6 +123,8 @@ SkyFire migration/source comparison notes are in
 
 ### Known Limits
 
+- The visible in-game SHOP is database-backed, but this repository has no bundled
+  donation/vote website or player-facing method for earning its purchase points.
 - Playerbots and the Arena/BG/LFG/world-boss automation are development/test
   features. Individual class AI and encounter mechanics still need wider in-game
   verification.
