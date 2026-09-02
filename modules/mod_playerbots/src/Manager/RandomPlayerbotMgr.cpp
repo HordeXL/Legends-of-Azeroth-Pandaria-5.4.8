@@ -2092,17 +2092,26 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
         }
     }
 
-    TC_LOG_INFO("server",
-        "AutoQueue observer (dry-run=%u, max-bots=%u, bg-max-bots=%u): LFG real/bot=%u/%u staged=%u joined=%u accepted=%u demands=%u pending=%u managed=%u, BG real/bot=%u/%u staged=%u joined=%u accepted=%u demands=%u pending=%u managed=%u, Arena real/bot=%u/%u",
-        sPlayerbotAIConfig->autoQueueDryRun ? 1 : 0, sPlayerbotAIConfig->autoQueueMaxBotsPerCycle,
-        sPlayerbotAIConfig->autoQueueBattlegroundMaxBotsPerCycle,
-        realLfg, botLfg, lfgBotsStaged, lfgBotsJoined, lfgProposalsAccepted,
-        uint32(lfgDemands.size()), uint32(LfgAutoQueueStagedLogins.size()),
-        uint32(LfgAutoQueueManagedBots.size()),
-        realBg, botBg, bgBotsStaged, bgBotsJoined, bgInvitesAccepted,
-        uint32(bgDemands.size()), uint32(BgAutoQueueStagedLogins.size()),
-        uint32(BgAutoQueueManagedBots.size()),
-        realArena, botArena);
+    bool const hasQueueActivity = realLfg || botLfg || lfgBotsStaged ||
+        lfgBotsJoined || lfgProposalsAccepted || !lfgDemands.empty() ||
+        !LfgAutoQueueStagedLogins.empty() || !LfgAutoQueueManagedBots.empty() ||
+        realBg || botBg || bgBotsStaged || bgBotsJoined || bgInvitesAccepted ||
+        !bgDemands.empty() || !BgAutoQueueStagedLogins.empty() ||
+        !BgAutoQueueManagedBots.empty() || realArena || botArena;
+    if (hasQueueActivity)
+    {
+        TC_LOG_INFO("server",
+            "AutoQueue observer (dry-run=%u, max-bots=%u, bg-max-bots=%u): LFG real/bot=%u/%u staged=%u joined=%u accepted=%u demands=%u pending=%u managed=%u, BG real/bot=%u/%u staged=%u joined=%u accepted=%u demands=%u pending=%u managed=%u, Arena real/bot=%u/%u",
+            sPlayerbotAIConfig->autoQueueDryRun ? 1 : 0, sPlayerbotAIConfig->autoQueueMaxBotsPerCycle,
+            sPlayerbotAIConfig->autoQueueBattlegroundMaxBotsPerCycle,
+            realLfg, botLfg, lfgBotsStaged, lfgBotsJoined, lfgProposalsAccepted,
+            uint32(lfgDemands.size()), uint32(LfgAutoQueueStagedLogins.size()),
+            uint32(LfgAutoQueueManagedBots.size()),
+            realBg, botBg, bgBotsStaged, bgBotsJoined, bgInvitesAccepted,
+            uint32(bgDemands.size()), uint32(BgAutoQueueStagedLogins.size()),
+            uint32(BgAutoQueueManagedBots.size()),
+            realArena, botArena);
+    }
 }
 
 uint32 RandomPlayerbotMgr::AddRandomBots()
