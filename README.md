@@ -12,12 +12,12 @@ more in-game encounter testing before they should be treated as production-ready
 
 ## Project Features and Current Status
 
-Status recorded for the current local project configuration on 2026-09-01:
+Status recorded for the current local project configuration on 2026-09-03:
 
 | Component | Included | Current local status | Notes |
 | --- | --- | --- | --- |
 | MoP 5.4.8 core | Yes | Enabled | Client build `18414`; `authserver`, `worldserver`, scripts and extraction tools. |
-| In-game Battle Pay shop | Yes | Enabled, catalog only | The client SHOP button is available after login and the catalog is loaded from the world database. This standalone repository does not include a website, donation checkout or vote-reward system, so normal players currently have no public way to earn the shop points required for purchases. |
+| In-game Battle Pay shop | Yes | Enabled, catalog only | The client SHOP button is available after login and the catalog is loaded from the world database. It includes class-filtered VIP1/T14, VIP2/T15 and VIP3/T16 armor categories, discounted eight-piece bundles, individual armor pieces and separately purchased VIP weapons. This standalone repository does not include a website, donation checkout or vote-reward system, so normal players currently have no public way to earn the shop points required for purchases. |
 | Playerbots | Yes | Enabled | `AiPlayerbot.Enabled = 1`; automatic random-bot login remains disabled. |
 | Solo Arena bot fill | Yes | Enabled, experimental | Arena Battlemaster choices for 2v2, 3v3 and 5v5; role/faction-aware bot selection, temporary PvP loadouts, preparation buffs, rewards, exit/health recovery and cleanup. |
 | Battleground bot fill and objectives | Yes | Enabled, experimental | Fills a real player's queue, builds both factions, applies temporary PvP loadouts and includes CTF, node, orb, cart, vehicle, resurrection, escort, mount and basic path/LoS handling. |
@@ -39,7 +39,13 @@ Status recorded for the current local project configuration on 2026-09-01:
   point-earning flow is configured. The catalog can therefore be viewed, but a
   regular player cannot obtain purchase points in this standalone setup. The
   shop's 2/3/7/13-point vouchers are tradeable and redeem for exactly their
-  purchase price on the recipient's account.
+  purchase price on the recipient's account. The in-game-only `VIP 1-3 SETS`
+  category is filtered to the logged-in character's class and exposes each
+  applicable role/spec armor block as either
+  one discounted eight-piece purchase or eight individual pieces. `VIP 1-3
+  WEAPONS` keeps weapons and off-hands as separate choices. The 5.4.8 client has
+  no nested BattlePay category protocol, so these are adjacent top-level shop
+  categories rather than submenus.
 - **Playerbot Arena automation:** a real player can use an Arena Battlemaster's
   custom solo 2v2/3v3/5v5 choices. The server selects the required teammate and
   opponents, loads only the managed bots, creates the teams, queues the match and

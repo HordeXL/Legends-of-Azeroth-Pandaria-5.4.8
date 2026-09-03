@@ -41,6 +41,7 @@
 #include "Define.h"
 #include "GridNotifiers.h"
 #include "GridNotifiersImpl.h"
+#include "GroupMgr.h"
 #include "GuildMgr.h"
 #include "LFGMgr.h"
 #include "MapManager.h"
@@ -104,6 +105,71 @@ namespace
     std::map<uint32, LfgAutoQueueStagedLogin> LfgAutoQueueStagedLogins;
     std::map<uint32, LfgAutoQueueManagedBot> LfgAutoQueueManagedBots;
     std::set<uint32> LfgAutoQueueIneligibleBots;
+    std::set<uint32> LfgAutoQueueOrphanCleanupChecked;
+
+    void CleanupOrphanedLfgBotGroups(uint32 requesterGuid)
+    {
+        if (!requesterGuid ||
+            sPlayerbotAIConfig->randomBotAccounts.empty())
+            return;
+
+        uint32 const minAccount =
+            sPlayerbotAIConfig->randomBotAccounts.front();
+        uint32 const maxAccount =
+            sPlayerbotAIConfig->randomBotAccounts.back();
+        QueryResult result = CharacterDatabase.PQuery(
+            "SELECT g.guid FROM groups g "
+            "WHERE g.leaderGuid=%u AND (g.groupType & %u)<>0 "
+            "AND NOT EXISTS (SELECT 1 FROM group_member self "
+            "WHERE self.guid=g.guid AND self.memberGuid=g.leaderGuid) "
+            "AND EXISTS (SELECT 1 FROM group_member any_member "
+            "WHERE any_member.guid=g.guid) "
+            "AND NOT EXISTS (SELECT 1 FROM group_member gm "
+            "JOIN characters c ON c.guid=gm.memberGuid "
+            "WHERE gm.guid=g.guid AND (c.account<%u OR c.account>%u))",
+            requesterGuid, uint32(GROUPTYPE_LFG), minAccount, maxAccount);
+        if (!result)
+            return;
+
+        std::vector<uint32> groupIds;
+        do
+            groupIds.push_back(result->Fetch()[0].GetUInt32());
+        while (result->NextRow());
+
+        for (uint32 groupId : groupIds)
+        {
+            Group* group = sGroupMgr->GetGroupByDbStoreId(groupId);
+            if (!group)
+            {
+                TC_LOG_ERROR("server",
+                    "AutoQueue LFG orphan group missing from GroupMgr group=%u requester=%u",
+                    groupId, requesterGuid);
+                continue;
+            }
+
+            // LFG groups can legitimately persist the real requester only as
+            // their leader while the instance slot owns the live membership.
+            // The database shape alone therefore cannot prove that a group is
+            // abandoned. Never touch a group still attached to the connected
+            // requester in either group slot.
+            Player* requester = ObjectAccessor::FindConnectedPlayer(
+                ObjectGuid::Create<HighGuid::Player>(requesterGuid));
+            if (requester &&
+                (requester->GetGroup() == group ||
+                 requester->GetGroup(GroupSlot::Instance) == group))
+            {
+                TC_LOG_INFO("server",
+                    "AutoQueue LFG retained active requester group group=%u requester=%u members=%u",
+                    groupId, requesterGuid, group->GetMembersCount());
+                continue;
+            }
+
+            TC_LOG_WARN("server",
+                "AutoQueue LFG disbanding orphaned bot-only group group=%u requester=%u members=%u",
+                groupId, requesterGuid, group->GetMembersCount());
+            group->Disband();
+        }
+    }
 
     uint32 GetLfgMinimumItemLevel(lfg::LfgDungeonSet const& dungeons)
     {
@@ -581,6 +647,23 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
         }
     }
 
+    // A crash or forced shutdown can persist an instance group after its real
+    // requester has already been removed, leaving all headless fillers marked
+    // as grouped and therefore unavailable to the next queue. Check once per
+    // requester/queue lifecycle and disband only an LFG group led by that
+    // requester whose remaining members are exclusively random-bot accounts.
+    for (auto itr = LfgAutoQueueOrphanCleanupChecked.begin();
+         itr != LfgAutoQueueOrphanCleanupChecked.end();)
+    {
+        if (!lfgDemands.count(*itr))
+            itr = LfgAutoQueueOrphanCleanupChecked.erase(itr);
+        else
+            ++itr;
+    }
+    for (auto const& demandPair : lfgDemands)
+        if (LfgAutoQueueOrphanCleanupChecked.insert(demandPair.first).second)
+            CleanupOrphanedLfgBotGroups(demandPair.first);
+
     // A staged login already reserves one of the requester's missing role
     // slots. Native LFG does not see that character until login completes, so
     // subtract these reservations now to prevent duplicate staging on the
@@ -708,18 +791,24 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
             if (PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot))
                 botAI->SetLfgAutoQueueControl(true, staged.RequesterGuid);
 
-            // The offline candidate query reads the saved specialization,
-            // while some bot sessions initially expose SPEC_NONE until the
-            // specialization handler has rebuilt runtime state. Restore the
-            // exact saved class tab before role eligibility is evaluated;
-            // otherwise a valid filler is needlessly blacklisted and replaced.
-            if (GetLfgRole(bot) == lfg::PLAYER_ROLE_NONE &&
+            // The queue may select an inactive saved specialization, or a
+            // class-compatible fallback specialization when the offline pool
+            // has no character already active in the missing role. Apply the
+            // selected class tab before role eligibility is evaluated.
+            if (GetLfgRole(bot) != staged.Role &&
                 staged.SpecializationTab < MAX_TALENT_TABS)
             {
+                // Mirror the proven playerbot `setspec` path. An already
+                // selected specialization can otherwise survive the packet
+                // handler (notably on staged random-bot sessions), leaving a
+                // healer candidate in its old tank/DPS role and making LFR
+                // wait forever for the final role slots.
+                bot->ResetTalents(true, true, true);
                 WorldPacket specialization(CMSG_SET_PRIMARY_TALENT_TREE);
                 specialization << uint32(staged.SpecializationTab);
                 bot->GetSession()->HandeSetTalentSpecialization(
                     specialization);
+                bot->ActivateSpec(0);
                 BotFactory specializationFactory(bot, bot->GetLevel());
                 specializationFactory.InitTalentsTree(false);
                 TC_LOG_INFO("server",
@@ -1378,24 +1467,51 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
                         uint8 activeSpec = fields[5].GetUInt8();
                         if (activeSpec >= MAX_TALENT_SPECS)
                             activeSpec = 0;
-                        Specializations selectedSpecialization =
-                            Specializations(specs[activeSpec]);
-                        if (GetLfgRole(selectedSpecialization) != role)
-                            continue;
-
-                        dbc::TalentTabs classSpecializations =
-                            dbc::GetClassSpecializations(fields[3].GetUInt8());
-                        auto specializationTab = std::find(
-                            classSpecializations.begin(),
-                            classSpecializations.end(),
-                            uint32(selectedSpecialization));
-                        if (specializationTab == classSpecializations.end())
-                            continue;
-
                         uint8 candidateClass = fields[3].GetUInt8();
-                        uint8 candidateSpecializationTab = uint8(
-                            std::distance(classSpecializations.begin(),
-                                specializationTab));
+                        dbc::TalentTabs classSpecializations =
+                            dbc::GetClassSpecializations(candidateClass);
+                        uint8 candidateSpecializationTab = MAX_TALENT_TABS;
+
+                        // Prefer the active saved build, then the secondary
+                        // saved build, before choosing a valid class fallback.
+                        for (uint8 pass = 0; pass < MAX_TALENT_SPECS; ++pass)
+                        {
+                            uint8 specSlot = pass == 0 ? activeSpec :
+                                uint8((activeSpec + pass) % MAX_TALENT_SPECS);
+                            Specializations savedSpecialization =
+                                Specializations(specs[specSlot]);
+                            if (GetLfgRole(savedSpecialization) != role)
+                                continue;
+
+                            auto specializationTab = std::find(
+                                classSpecializations.begin(),
+                                classSpecializations.end(),
+                                uint32(savedSpecialization));
+                            if (specializationTab == classSpecializations.end())
+                                continue;
+
+                            candidateSpecializationTab = uint8(std::distance(
+                                classSpecializations.begin(), specializationTab));
+                            break;
+                        }
+
+                        if (candidateSpecializationTab >= MAX_TALENT_TABS)
+                        {
+                            for (uint8 tab = 0;
+                                 tab < classSpecializations.size() &&
+                                 tab < MAX_TALENT_TABS; ++tab)
+                            {
+                                if (GetLfgRole(Specializations(
+                                        classSpecializations[tab])) == role)
+                                {
+                                    candidateSpecializationTab = tab;
+                                    break;
+                                }
+                            }
+                        }
+
+                        if (candidateSpecializationTab >= MAX_TALENT_TABS)
+                            continue;
                         if (usedClasses->count(candidateClass))
                         {
                             // Fill each role with different classes first.

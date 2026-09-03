@@ -101,7 +101,7 @@ BotRoles AiFactory::GetPlayerRoles(Player* player)
                 role = BOT_ROLE_HEALER;
             else if (spec == Specializations::SPEC_PALADIN_PROTECTION)
                 role = BOT_ROLE_TANK;
-            else if (spec == 2)
+            else if (spec == Specializations::SPEC_PALADIN_RETRIBUTION)
                 role = BOT_ROLE_DPS;
             break;
         case CLASS_DRUID:

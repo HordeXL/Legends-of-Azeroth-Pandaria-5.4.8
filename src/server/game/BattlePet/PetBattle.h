@@ -391,6 +391,7 @@ public:
     void AddAura(BattlePet* source, BattlePet* target, uint32 ability, uint32 abilityEffect, int32 duration, PetBattleEffectFlags flags = PET_BATTLE_EFFECT_FLAG_NONE, uint8 maxAllowed = 0);
     void Kill(BattlePet* killer, BattlePet* victim, uint32 abilityEffect, PetBattleEffectFlags flags);
     void Catch(BattlePet* source, BattlePet* target, uint32 abilityEffect);
+    void SendInitialUpdate(Player* player);
 
     PetBattleTeamIndex GetFirstAttackingTeam();
     PetBattleTeam* GetWinningTeam() { return m_winningTeam; }
@@ -414,7 +415,6 @@ public:
 
 private:
     void SendFinalizeLocation(PetBattleRequest const& request);
-    void SendInitialUpdate(Player* player);
     void SendFirstRound(Player* player);
     void SendRoundResult(Player* player);
     void SendFinalRound(Player* player);
