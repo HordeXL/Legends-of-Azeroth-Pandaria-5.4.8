@@ -464,7 +464,7 @@ void OpcodeTable::Initialize()
     // Empty client acknowledgement sent after the final pet-battle result.
     // It carries no state for the server to process, but marking it unhandled
     // produces an error after every completed battle.
-    DEFINE_HANDLER(CMSG_PET_BATTLE_FINAL_NOTIFY, STATUS_LOGGEDIN, PROCESS_INPLACE, &WorldSession::Handle_NULL); // 5.4.8 18414
+    DEFINE_HANDLER(CMSG_PET_BATTLE_FINAL_NOTIFY, STATUS_LOGGEDIN, PROCESS_INPLACE, &WorldSession::HandlePetBattleFinalNotify); // 5.4.8 18414
     DEFINE_HANDLER(CMSG_PET_BATTLE_INPUT, STATUS_LOGGEDIN, PROCESS_THREADUNSAFE, &WorldSession::HandlePetBattleInput); // 5.4.8 18414
     DEFINE_HANDLER(CMSG_PET_BATTLE_QUEUE_PROPOSE_MATCH_RESULT, STATUS_UNHANDLED, PROCESS_INPLACE, &WorldSession::Handle_NULL); // 5.4.8 18414
     DEFINE_HANDLER(CMSG_PET_BATTLE_QUIT_NOTIFY, STATUS_UNHANDLED, PROCESS_INPLACE, &WorldSession::Handle_NULL); // 5.4.8 18414

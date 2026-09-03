@@ -542,6 +542,14 @@ void WorldSession::HandleBattlePetLearn(WorldPacket& recvData)
     GetPlayer()->DestroyItem(item->GetBagSlot(), item->GetSlot(), true);
 }
 
+void WorldSession::HandlePetBattleFinalNotify(WorldPacket& recvData)
+{
+    // The client sends this empty acknowledgement after closing the final-round
+    // results. EndBattle has already awarded rewards, restored the player and
+    // marked the battle for removal, so there is no server-side state to mutate.
+    recvData.rfinish();
+}
+
 void WorldSession::HandlePetBattleInput(WorldPacket& recvData)
 {
     bool hasAbilityId = !recvData.ReadBit();
