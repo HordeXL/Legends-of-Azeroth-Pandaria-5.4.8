@@ -41,6 +41,7 @@
 #include "Define.h"
 #include "GridNotifiers.h"
 #include "GridNotifiersImpl.h"
+#include "GroupMgr.h"
 #include "GuildMgr.h"
 #include "LFGMgr.h"
 #include "MapManager.h"
@@ -104,6 +105,71 @@ namespace
     std::map<uint32, LfgAutoQueueStagedLogin> LfgAutoQueueStagedLogins;
     std::map<uint32, LfgAutoQueueManagedBot> LfgAutoQueueManagedBots;
     std::set<uint32> LfgAutoQueueIneligibleBots;
+    std::set<uint32> LfgAutoQueueOrphanCleanupChecked;
+
+    void CleanupOrphanedLfgBotGroups(uint32 requesterGuid)
+    {
+        if (!requesterGuid ||
+            sPlayerbotAIConfig->randomBotAccounts.empty())
+            return;
+
+        uint32 const minAccount =
+            sPlayerbotAIConfig->randomBotAccounts.front();
+        uint32 const maxAccount =
+            sPlayerbotAIConfig->randomBotAccounts.back();
+        QueryResult result = CharacterDatabase.PQuery(
+            "SELECT g.guid FROM groups g "
+            "WHERE g.leaderGuid=%u AND (g.groupType & %u)<>0 "
+            "AND NOT EXISTS (SELECT 1 FROM group_member self "
+            "WHERE self.guid=g.guid AND self.memberGuid=g.leaderGuid) "
+            "AND EXISTS (SELECT 1 FROM group_member any_member "
+            "WHERE any_member.guid=g.guid) "
+            "AND NOT EXISTS (SELECT 1 FROM group_member gm "
+            "JOIN characters c ON c.guid=gm.memberGuid "
+            "WHERE gm.guid=g.guid AND (c.account<%u OR c.account>%u))",
+            requesterGuid, uint32(GROUPTYPE_LFG), minAccount, maxAccount);
+        if (!result)
+            return;
+
+        std::vector<uint32> groupIds;
+        do
+            groupIds.push_back(result->Fetch()[0].GetUInt32());
+        while (result->NextRow());
+
+        for (uint32 groupId : groupIds)
+        {
+            Group* group = sGroupMgr->GetGroupByDbStoreId(groupId);
+            if (!group)
+            {
+                TC_LOG_ERROR("server",
+                    "AutoQueue LFG orphan group missing from GroupMgr group=%u requester=%u",
+                    groupId, requesterGuid);
+                continue;
+            }
+
+            // LFG groups can legitimately persist the real requester only as
+            // their leader while the instance slot owns the live membership.
+            // The database shape alone therefore cannot prove that a group is
+            // abandoned. Never touch a group still attached to the connected
+            // requester in either group slot.
+            Player* requester = ObjectAccessor::FindConnectedPlayer(
+                ObjectGuid::Create<HighGuid::Player>(requesterGuid));
+            if (requester &&
+                (requester->GetGroup() == group ||
+                 requester->GetGroup(GroupSlot::Instance) == group))
+            {
+                TC_LOG_INFO("server",
+                    "AutoQueue LFG retained active requester group group=%u requester=%u members=%u",
+                    groupId, requesterGuid, group->GetMembersCount());
+                continue;
+            }
+
+            TC_LOG_WARN("server",
+                "AutoQueue LFG disbanding orphaned bot-only group group=%u requester=%u members=%u",
+                groupId, requesterGuid, group->GetMembersCount());
+            group->Disband();
+        }
+    }
 
     uint32 GetLfgMinimumItemLevel(lfg::LfgDungeonSet const& dungeons)
     {
@@ -580,6 +646,23 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
             }
         }
     }
+
+    // A crash or forced shutdown can persist an instance group after its real
+    // requester has already been removed, leaving all headless fillers marked
+    // as grouped and therefore unavailable to the next queue. Check once per
+    // requester/queue lifecycle and disband only an LFG group led by that
+    // requester whose remaining members are exclusively random-bot accounts.
+    for (auto itr = LfgAutoQueueOrphanCleanupChecked.begin();
+         itr != LfgAutoQueueOrphanCleanupChecked.end();)
+    {
+        if (!lfgDemands.count(*itr))
+            itr = LfgAutoQueueOrphanCleanupChecked.erase(itr);
+        else
+            ++itr;
+    }
+    for (auto const& demandPair : lfgDemands)
+        if (LfgAutoQueueOrphanCleanupChecked.insert(demandPair.first).second)
+            CleanupOrphanedLfgBotGroups(demandPair.first);
 
     // A staged login already reserves one of the requester's missing role
     // slots. Native LFG does not see that character until login completes, so
