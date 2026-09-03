@@ -715,10 +715,17 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
             if (GetLfgRole(bot) != staged.Role &&
                 staged.SpecializationTab < MAX_TALENT_TABS)
             {
+                // Mirror the proven playerbot `setspec` path. An already
+                // selected specialization can otherwise survive the packet
+                // handler (notably on staged random-bot sessions), leaving a
+                // healer candidate in its old tank/DPS role and making LFR
+                // wait forever for the final role slots.
+                bot->ResetTalents(true, true, true);
                 WorldPacket specialization(CMSG_SET_PRIMARY_TALENT_TREE);
                 specialization << uint32(staged.SpecializationTab);
                 bot->GetSession()->HandeSetTalentSpecialization(
                     specialization);
+                bot->ActivateSpec(0);
                 BotFactory specializationFactory(bot, bot->GetLevel());
                 specializationFactory.InitTalentsTree(false);
                 TC_LOG_INFO("server",
