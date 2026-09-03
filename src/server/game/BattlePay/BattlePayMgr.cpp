@@ -53,6 +53,17 @@ bool IsManagedVipGroup(uint32 groupId)
     return groupId >= 20 && groupId <= 23;
 }
 
+std::string FormatBattlePayDisplayTitle(uint32 productId, std::string title)
+{
+    // Keep the database titles plain (the product column is limited to 50
+    // characters), but present complete VIP armor bundles with the standard
+    // legendary orange color in StoreUI. Individual pieces stay white.
+    if (IsManagedVipArmorProduct(productId) && title.find(" Full Set") != std::string::npos)
+        return "|cffff8000" + title + "|r";
+
+    return title;
+}
+
 bool IsBattlePayProductVisibleForSession(BattlePayProduct const* product,
                                          BattlePayProductItemsVector const* items,
                                          WorldSession const* session)
@@ -830,6 +841,7 @@ void BattlePayMgr::SendBattlePayProductList(WorldSession* session)
                 ObjectMgr::GetLocaleString(locProd->Title, localeConstant, productTitle);
                 ObjectMgr::GetLocaleString(locProd->Description, localeConstant, productDescription);
             }
+        productTitle = FormatBattlePayDisplayTitle(product->Id, productTitle);
         productDescription = BuildBattlePayItemDescription(items, session, productDescription);
 
         data.WriteBits(product->ChoiceType, 2);
@@ -923,6 +935,7 @@ void BattlePayMgr::SendBattlePayProductList(WorldSession* session)
                 ObjectMgr::GetLocaleString(locEntry->Title, localeConstant, entryTitle);
                 ObjectMgr::GetLocaleString(locEntry->Description, localeConstant, entryDescription);
             }
+        entryTitle = FormatBattlePayDisplayTitle(entry->ProductId, entryTitle);
         entryDescription = BuildBattlePayItemDescription(
             GetItemsByProductId(entry->ProductId), session, entryDescription);
 
@@ -980,6 +993,7 @@ void BattlePayMgr::SendBattlePayProductList(WorldSession* session)
                 ObjectMgr::GetLocaleString(locProd->Title, localeConstant, productTitle);
                 ObjectMgr::GetLocaleString(locProd->Description, localeConstant, productDescription);
             }
+        productTitle = FormatBattlePayDisplayTitle(product->Id, productTitle);
         productDescription = BuildBattlePayItemDescription(items, session, productDescription);
 
         data << uint8(product->Type);
@@ -1039,6 +1053,7 @@ void BattlePayMgr::SendBattlePayProductList(WorldSession* session)
                 ObjectMgr::GetLocaleString(locEntry->Title, localeConstant, entryTitle);
                 ObjectMgr::GetLocaleString(locEntry->Description, localeConstant, entryDescription);
             }
+        entryTitle = FormatBattlePayDisplayTitle(entry->ProductId, entryTitle);
         entryDescription = BuildBattlePayItemDescription(
             GetItemsByProductId(entry->ProductId), session, entryDescription);
 
@@ -1088,6 +1103,7 @@ void BattlePayMgr::SendBattlePayDistributionUpdate(WorldSession* session, uint32
             ObjectMgr::GetLocaleString(locEntry->Title, localeConstant, title);
             ObjectMgr::GetLocaleString(locEntry->Description, localeConstant, description);
         }
+    title = FormatBattlePayDisplayTitle(product->Id, title);
 
     WorldPacket data(SMSG_BATTLE_PAY_DISTRIBUTION_UPDATE);
     data.WriteBit(guid[5]);
