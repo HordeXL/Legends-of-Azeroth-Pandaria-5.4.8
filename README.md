@@ -39,9 +39,9 @@ Status recorded for the current local project configuration on 2026-09-03:
   point-earning flow is configured. The catalog can therefore be viewed, but a
   regular player cannot obtain purchase points in this standalone setup. The
   shop's 2/3/7/13-point vouchers are tradeable and redeem for exactly their
-  purchase price on the recipient's account. The in-game-only `VIP1 SETS`,
-  `VIP2 SETS` and `VIP3 SETS` categories are filtered to the logged-in
-  character's class and expose each applicable role/spec armor block as either
+  purchase price on the recipient's account. The in-game-only `VIP 1-3 SETS`
+  category is filtered to the logged-in character's class and exposes each
+  applicable role/spec armor block as either
   one discounted eight-piece purchase or eight individual pieces. `VIP 1-3
   WEAPONS` keeps weapons and off-hands as separate choices. The 5.4.8 client has
   no nested BattlePay category protocol, so these are adjacent top-level shop

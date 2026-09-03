@@ -1,8 +1,9 @@
 -- Add the custom VIP1/VIP2/VIP3 PvE armor to the in-game BattlePay shop.
 --
--- The 5.4.8 client supports only one category level, so the requested nested
--- VIP menu is represented by three adjacent armor categories plus one shared
--- weapon category. The core filters the armor products to the logged-in
+-- The stock 5.4.8 StoreUI supports only one category level and ten visible
+-- category buttons. All three armor ranks therefore share one VIP category,
+-- while weapons remain in a separate category. The VIP prefix in every entry
+-- keeps ranks distinct. The core filters armor products to the logged-in
 -- character's class. Every armor block has one discounted eight-piece bundle
 -- and all eight pieces available separately. Weapons are never bundled.
 --
@@ -41,10 +42,8 @@ DELETE FROM `battle_pay_product`
 
 DELETE FROM `battle_pay_group` WHERE `id` BETWEEN 20 AND 23;
 INSERT INTO `battle_pay_group` (`id`,`idx`,`name`,`icon`,`type`) VALUES
-    (20,15,'VIP1 SETS',940856,0),
-    (21,16,'VIP2 SETS',940856,0),
-    (22,17,'VIP3 SETS',940856,0),
-    (23,18,'VIP 1-3 WEAPONS',940868,0);
+    (20,9,'VIP 1-3 SETS',940856,0),
+    (23,10,'VIP 1-3 WEAPONS',940868,0);
 
 DELIMITER $$
 
@@ -71,7 +70,7 @@ BEGIN
 
     SET v_item_base = CASE p_rank WHEN 1 THEN 992000 WHEN 2 THEN 993000 ELSE 991000 END;
     SET v_product_base = CASE p_rank WHEN 1 THEN 910000 WHEN 2 THEN 920000 ELSE 930000 END;
-    SET v_group = 19 + p_rank;
+    SET v_group = 20;
     SET v_bundle_price = CASE p_rank WHEN 1 THEN 30 WHEN 2 THEN 60 ELSE 120 END;
     SET v_piece_price = CASE p_rank WHEN 1 THEN 5 WHEN 2 THEN 10 ELSE 20 END;
     SET v_full_product = v_product_base + (p_block * 10);
@@ -257,7 +256,7 @@ DELIMITER ;
 
 SET SQL_SAFE_UPDATES = @VIP_SHOP_OLD_SQL_SAFE_UPDATES;
 
--- Expected: 4 groups, 621 armor products/entries, 45 weapon
+-- Expected: 2 groups, 621 armor products/entries, 45 weapon
 -- products/entries and 1,149 product-item links (bundles included).
 SELECT COUNT(*) AS `vip_shop_groups`
   FROM `battle_pay_group` WHERE `id` BETWEEN 20 AND 23;
