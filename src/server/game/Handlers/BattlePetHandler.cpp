@@ -550,6 +550,20 @@ void WorldSession::HandlePetBattleFinalNotify(WorldPacket& recvData)
     recvData.rfinish();
 }
 
+void WorldSession::HandlePetBattleRequestUpdate(WorldPacket& recvData)
+{
+    // 5.4.8 sends this empty request when the client wants to recover the
+    // current pet-battle UI state (for example after another UI transition).
+    recvData.rfinish();
+
+    if (!_player)
+        return;
+
+    if (PetBattle* battle =
+            sPetBattleSystem->GetPlayerPetBattle(_player->GetGUID()))
+        battle->SendInitialUpdate(_player);
+}
+
 void WorldSession::HandlePetBattleInput(WorldPacket& recvData)
 {
     bool hasAbilityId = !recvData.ReadBit();

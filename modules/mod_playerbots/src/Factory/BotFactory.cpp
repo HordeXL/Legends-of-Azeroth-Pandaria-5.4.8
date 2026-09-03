@@ -1399,6 +1399,8 @@ void BotFactory::InitEquipmentInternal(bool incremental, bool second_chance,
         if (level < 20 && (slot == EQUIPMENT_SLOT_FINGER1 || slot == EQUIPMENT_SLOT_FINGER2))
             continue;
 
+        bool const weaponSlot = slot == EQUIPMENT_SLOT_MAINHAND ||
+            slot == EQUIPMENT_SLOT_OFFHAND;
         Item* oldItem = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
         // LFG preparation must repair an incomplete character without
         // replacing equipment the bot already owns. The older InitEquipment
@@ -1413,8 +1415,6 @@ void BotFactory::InitEquipmentInternal(bool incremental, bool second_chance,
                 (!specCompatible ||
                     sRandomItemMgr->IsItemValidForEquipmentSlot(
                         bot, EquipmentSlots(slot), oldItem->GetTemplate()));
-            bool const weaponSlot = slot == EQUIPMENT_SLOT_MAINHAND ||
-                slot == EQUIPMENT_SLOT_OFFHAND;
             uint32 const slotFloor = minimumItemLevel ? minimumItemLevel :
                 (weaponSlot ? weaponMinimumItemLevel : 0u);
             bool const underleveledItem = specCompatible && validForSpec &&
@@ -1516,8 +1516,6 @@ void BotFactory::InitEquipmentInternal(bool incremental, bool second_chance,
             if (!CanEquipUnseenItem(slot, dest, proto->ItemId))
                 continue;
 
-            bool const weaponSlot = slot == EQUIPMENT_SLOT_MAINHAND ||
-                slot == EQUIPMENT_SLOT_OFFHAND;
             if (specCompatible && weaponSlot &&
                 proto->ItemLevel < weaponMinimumItemLevel)
                 continue;
@@ -1548,7 +1546,8 @@ void BotFactory::InitEquipmentInternal(bool incremental, bool second_chance,
         // fillers must not become permanently ineligible because of that
         // random sampling. Fall back to a deterministic scan and choose the
         // closest genuine item at or above the requested floor.
-        if (bestItemForSlot == 0 && minimumItemLevel && specCompatible)
+        if (bestItemForSlot == 0 && specCompatible &&
+            (minimumItemLevel || weaponSlot))
         {
             bestItemForSlot = FindDeterministicManagedItem(
                 EquipmentSlots(slot), minimumItemLevel, genuineItemsOnly,

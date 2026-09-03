@@ -1135,6 +1135,7 @@ class TC_GAME_API WorldSession
 
         // Pet Battle
         void HandlePetBattleFinalNotify(WorldPacket& recvData);
+        void HandlePetBattleRequestUpdate(WorldPacket& recvData);
         void HandlePetBattleInput(WorldPacket& recvData);
         void HandlePetBattleRequestWild(WorldPacket& recvData);
         void HandlePetBattleSetFrontPet(WorldPacket& recvData);

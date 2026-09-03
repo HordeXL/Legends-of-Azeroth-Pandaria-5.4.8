@@ -708,12 +708,11 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
             if (PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot))
                 botAI->SetLfgAutoQueueControl(true, staged.RequesterGuid);
 
-            // The offline candidate query reads the saved specialization,
-            // while some bot sessions initially expose SPEC_NONE until the
-            // specialization handler has rebuilt runtime state. Restore the
-            // exact saved class tab before role eligibility is evaluated;
-            // otherwise a valid filler is needlessly blacklisted and replaced.
-            if (GetLfgRole(bot) == lfg::PLAYER_ROLE_NONE &&
+            // The queue may select an inactive saved specialization, or a
+            // class-compatible fallback specialization when the offline pool
+            // has no character already active in the missing role. Apply the
+            // selected class tab before role eligibility is evaluated.
+            if (GetLfgRole(bot) != staged.Role &&
                 staged.SpecializationTab < MAX_TALENT_TABS)
             {
                 WorldPacket specialization(CMSG_SET_PRIMARY_TALENT_TREE);
@@ -1378,24 +1377,51 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
                         uint8 activeSpec = fields[5].GetUInt8();
                         if (activeSpec >= MAX_TALENT_SPECS)
                             activeSpec = 0;
-                        Specializations selectedSpecialization =
-                            Specializations(specs[activeSpec]);
-                        if (GetLfgRole(selectedSpecialization) != role)
-                            continue;
-
-                        dbc::TalentTabs classSpecializations =
-                            dbc::GetClassSpecializations(fields[3].GetUInt8());
-                        auto specializationTab = std::find(
-                            classSpecializations.begin(),
-                            classSpecializations.end(),
-                            uint32(selectedSpecialization));
-                        if (specializationTab == classSpecializations.end())
-                            continue;
-
                         uint8 candidateClass = fields[3].GetUInt8();
-                        uint8 candidateSpecializationTab = uint8(
-                            std::distance(classSpecializations.begin(),
-                                specializationTab));
+                        dbc::TalentTabs classSpecializations =
+                            dbc::GetClassSpecializations(candidateClass);
+                        uint8 candidateSpecializationTab = MAX_TALENT_TABS;
+
+                        // Prefer the active saved build, then the secondary
+                        // saved build, before choosing a valid class fallback.
+                        for (uint8 pass = 0; pass < MAX_TALENT_SPECS; ++pass)
+                        {
+                            uint8 specSlot = pass == 0 ? activeSpec :
+                                uint8((activeSpec + pass) % MAX_TALENT_SPECS);
+                            Specializations savedSpecialization =
+                                Specializations(specs[specSlot]);
+                            if (GetLfgRole(savedSpecialization) != role)
+                                continue;
+
+                            auto specializationTab = std::find(
+                                classSpecializations.begin(),
+                                classSpecializations.end(),
+                                uint32(savedSpecialization));
+                            if (specializationTab == classSpecializations.end())
+                                continue;
+
+                            candidateSpecializationTab = uint8(std::distance(
+                                classSpecializations.begin(), specializationTab));
+                            break;
+                        }
+
+                        if (candidateSpecializationTab >= MAX_TALENT_TABS)
+                        {
+                            for (uint8 tab = 0;
+                                 tab < classSpecializations.size() &&
+                                 tab < MAX_TALENT_TABS; ++tab)
+                            {
+                                if (GetLfgRole(Specializations(
+                                        classSpecializations[tab])) == role)
+                                {
+                                    candidateSpecializationTab = tab;
+                                    break;
+                                }
+                            }
+                        }
+
+                        if (candidateSpecializationTab >= MAX_TALENT_TABS)
+                            continue;
                         if (usedClasses->count(candidateClass))
                         {
                             // Fill each role with different classes first.
