@@ -27,12 +27,65 @@
 #include "BattlePetMgr.h"
 #include "DBCStores.h"
 #include "ItemSpec.h"
+#include "Mail.h"
 #include "Realm.h"
+
+#include <unordered_set>
 
 #pragma execution_character_set("UTF-8")
 
 namespace
 {
+bool IsManagedVipArmorProduct(uint32 productId)
+{
+    return (productId >= 910000 && productId <= 910228) ||
+           (productId >= 920000 && productId <= 920228) ||
+           (productId >= 930000 && productId <= 930228);
+}
+
+bool IsManagedVipWeaponProduct(uint32 productId)
+{
+    return productId >= 940000 && productId <= 940214;
+}
+
+bool IsManagedVipGroup(uint32 groupId)
+{
+    return groupId >= 20 && groupId <= 23;
+}
+
+bool IsBattlePayProductVisibleForSession(BattlePayProduct const* product,
+                                         BattlePayProductItemsVector const* items,
+                                         WorldSession const* session)
+{
+    if (!product || !session)
+        return false;
+
+    if (!IsManagedVipArmorProduct(product->Id) && !IsManagedVipWeaponProduct(product->Id))
+        return true;
+
+    // The custom VIP catalog is intentionally in-game only. A character is
+    // required so armor products can be filtered to the selected class.
+    Player const* player = session->GetPlayer();
+    if (!player)
+        return false;
+
+    if (IsManagedVipWeaponProduct(product->Id))
+        return true;
+
+    if (!items || items->empty())
+        return false;
+
+    uint32 classMask = 1u << (player->GetClass() - 1);
+    for (BattlePayProductItem const& productItem : *items)
+    {
+        ItemTemplate const* item = sObjectMgr->GetItemTemplate(productItem.ItemId);
+        if (item && item->AllowableClass != -1 && (uint32(item->AllowableClass) & classMask))
+            return true;
+    }
+
+    return false;
+}
+
 char const* GetBattlePayInventoryTypeName(uint32 inventoryType)
 {
     switch (inventoryType)
@@ -93,6 +146,34 @@ std::string BuildBattlePayItemDescription(BattlePayProductItemsVector const* ite
     bool wroteItem = false;
     LocaleConstant locale = session->GetSessionDbLocaleIndex();
     LocaleConstant dbcLocale = session->GetSessionDbcLocale();
+
+    // Multi-item products are armor bundles. Keep their tooltip compact: the
+    // normal single-item suitability text repeated eight times is too large
+    // for the 5.4.8 shop panel and obscures what the buyer receives.
+    if (items->size() > 1)
+    {
+        description << "You receive " << items->size() << " items: ";
+        bool wroteSlot = false;
+        for (BattlePayProductItem const& productItem : *items)
+        {
+            ItemTemplate const* item = sObjectMgr->GetItemTemplate(productItem.ItemId);
+            if (!item)
+                continue;
+
+            if (wroteSlot)
+                description << ", ";
+            wroteSlot = true;
+
+            if (char const* slot = GetBattlePayInventoryTypeName(item->InventoryType))
+                description << slot;
+            else
+                description << item->Name1;
+        }
+
+        if (!configuredDescription.empty())
+            description << ". " << configuredDescription;
+        return description.str();
+    }
 
     for (BattlePayProductItem const& productItem : *items)
     {
@@ -710,11 +791,33 @@ void BattlePayMgr::SendBattlePayProductList(WorldSession* session)
 {
     bool hasItemInfo = false, unkBit1 = false, unkBit2 = false, unkBit3 = false, unkBit4 = false, hasBattlePetResult = false, unkBit5 = false, unkBit6 = false, unkBit7 = false;
 
-    WorldPacket data(SMSG_BATTLE_PAY_GET_PRODUCT_LIST_RESPONSE);
-    data.WriteBits(m_shopEntryStore.size(), 19);
-    data.WriteBits(m_productStore.size(), 19);
+    std::vector<BattlePayProduct*> visibleProducts;
+    std::unordered_set<uint32> visibleProductIds;
+    for (BattlePayProduct* product : m_productStore)
+    {
+        BattlePayProductItemsVector const* items = GetItemsByProductId(product->Id);
+        if (!IsBattlePayProductVisibleForSession(product, items, session))
+            continue;
 
-    for (auto&& product : m_productStore)
+        visibleProducts.push_back(product);
+        visibleProductIds.insert(product->Id);
+    }
+
+    std::vector<BattlePayShopEntry*> visibleEntries;
+    for (BattlePayShopEntry* entry : m_shopEntryStore)
+        if (visibleProductIds.find(entry->ProductId) != visibleProductIds.end())
+            visibleEntries.push_back(entry);
+
+    std::vector<BattlePayGroup*> visibleGroups;
+    for (BattlePayGroup* group : m_groupStore)
+        if (!IsManagedVipGroup(group->Id) || session->GetPlayer())
+            visibleGroups.push_back(group);
+
+    WorldPacket data(SMSG_BATTLE_PAY_GET_PRODUCT_LIST_RESPONSE);
+    data.WriteBits(visibleEntries.size(), 19);
+    data.WriteBits(visibleProducts.size(), 19);
+
+    for (auto&& product : visibleProducts)
     {
         BattlePayProductItemsVector const* items = GetItemsByProductId(product->Id);
 
@@ -807,9 +910,9 @@ void BattlePayMgr::SendBattlePayProductList(WorldSession* session)
         }
     }
 
-    data.WriteBits(m_groupStore.size(), 20);
+    data.WriteBits(visibleGroups.size(), 20);
 
-    for (auto&& entry : m_shopEntryStore)
+    for (auto&& entry : visibleEntries)
     {
         std::string entryTitle = entry->Title;
         std::string entryDescription = entry->Description;
@@ -836,7 +939,7 @@ void BattlePayMgr::SendBattlePayProductList(WorldSession* session)
         }
     }
 
-    for (auto&& group : m_groupStore)
+    for (auto&& group : visibleGroups)
     {
         std::string groupName = group->Name;
         LocaleConstant localeConstant = session->GetSessionDbLocaleIndex();
@@ -849,7 +952,7 @@ void BattlePayMgr::SendBattlePayProductList(WorldSession* session)
 
     data.FlushBits();
 
-    for (auto&& group : m_groupStore)
+    for (auto&& group : visibleGroups)
     {
         std::string groupName = group->Name;
         LocaleConstant localeConstant = session->GetSessionDbLocaleIndex();
@@ -864,7 +967,7 @@ void BattlePayMgr::SendBattlePayProductList(WorldSession* session)
         data << uint32(group->Id);
     }
 
-    for (auto&& product : m_productStore)
+    for (auto&& product : visibleProducts)
     {
         BattlePayProductItemsVector const* items = GetItemsByProductId(product->Id);
 
@@ -925,7 +1028,7 @@ void BattlePayMgr::SendBattlePayProductList(WorldSession* session)
         data << uint64(currentPrice);
     }
 
-    for (auto&& entry : m_shopEntryStore)
+    for (auto&& entry : visibleEntries)
     {
         std::string entryTitle = entry->Title;
         std::string entryDescription = entry->Description;
@@ -1107,13 +1210,17 @@ void BattlePayMgr::SendBattlePayPurchaseUpdate(PurchaseInfo* purchase)
     {
         bool validPurchase = true;
         BattlePayProduct* product = GetProductId(purchase->ProductId);
-        if (product->Id == BATTLE_PAY_SERVICE_BOOST && purchase->GetSession()->HasBoost())
+        BattlePayProductItemsVector const* productItems = product ? GetItemsByProductId(product->Id) : nullptr;
+        if (!product || !productItems || productItems->empty() ||
+            !IsBattlePayProductVisibleForSession(product, productItems, purchase->GetSession()))
+            validPurchase = false;
+        else if (product->Id == BATTLE_PAY_SERVICE_BOOST && purchase->GetSession()->HasBoost())
             validPurchase = false;
 
         uint32 serverToken = irand(1, 999999); // temp solution
         
-        uint64 price = product->Price * BATTLE_PAY_CURRENCY_PRECISION;
-        float discount = float(product->Discount) / 100;
+        uint64 price = product ? product->Price * BATTLE_PAY_CURRENCY_PRECISION : 0;
+        float discount = product ? float(product->Discount) / 100 : 0.0f;
         uint64 currentPrice = price - (price * discount);
 
         data.Initialize(SMSG_BATTLE_PAY_CONFIRM_PURCHASE);
@@ -1124,7 +1231,7 @@ void BattlePayMgr::SendBattlePayPurchaseUpdate(PurchaseInfo* purchase)
 
         GetPurchaseInfo()->ServerToken = serverToken;
 
-        if(product->Flags == BATTLE_PAY_PRODUCT_DISABLES)
+        if (!product || product->Flags == BATTLE_PAY_PRODUCT_DISABLES)
             validPurchase = false;
         else
         {
@@ -1139,13 +1246,17 @@ void BattlePayMgr::SendBattlePayPurchaseUpdate(PurchaseInfo* purchase)
 
     if (purchase->PurchaseStatus == BATTLE_PAY_PURCHASE_STATUS_BUYING && !purchase->Buyed)
     {
-        data.Initialize(SMSG_BATTLE_PAY_DELIVERY_ENDED);
-        data.WriteBits(1, 22); // count
-        for (uint8 i = 0; i < 1; i++)
+        BattlePayProductItemsVector const* items = GetItemsByProductId(purchase->ProductId);
+        if (!items || items->empty())
         {
-            BattlePayProductItemsVector const* items = GetItemsByProductId(purchase->ProductId);
-            data << uint32(items->front().ItemId);
+            SendBattlePayPurchaseUpdate(new PurchaseInfo(purchase->GetSession(), purchase->SelectedPlayer, purchase->PurchaseId, purchase->ProductId, BATTLE_PAY_PURCHASE_STATUS_ALLOWED_TO_BUY, BATTLE_PAY_RESULT_SHOP_ERROR, purchase->ClientToken, 0, false));
+            return;
         }
+
+        data.Initialize(SMSG_BATTLE_PAY_DELIVERY_ENDED);
+        data.WriteBits(items->size(), 22);
+        for (BattlePayProductItem const& item : *items)
+            data << uint32(item.ItemId);
         data << uint64(0); // DistributionID
         purchase->GetSession()->SendPacket(&data);
 
@@ -1155,7 +1266,14 @@ void BattlePayMgr::SendBattlePayPurchaseUpdate(PurchaseInfo* purchase)
     if (purchase->PurchaseStatus == BATTLE_PAY_PURCHASE_STATUS_BUYING && purchase->Buyed)
     {
         BattlePayProduct* product = GetProductId(purchase->ProductId);
-        uint32 itemid = GetItemsByProductId(purchase->ProductId)->front().ItemId;
+        BattlePayProductItemsVector const* items = GetItemsByProductId(purchase->ProductId);
+        if (!product || !items || items->empty())
+        {
+            SendBattlePayPurchaseUpdate(new PurchaseInfo(purchase->GetSession(), purchase->SelectedPlayer, purchase->PurchaseId, purchase->ProductId, BATTLE_PAY_PURCHASE_STATUS_ALLOWED_TO_BUY, BATTLE_PAY_RESULT_SHOP_ERROR, purchase->ClientToken, 0, false));
+            return;
+        }
+
+        uint32 representativeItemId = items->front().ItemId;
 
         if (product->Type == BATTLE_PAY_PRODUCT_TYPE_SERVICE)
         {
@@ -1168,13 +1286,20 @@ void BattlePayMgr::SendBattlePayPurchaseUpdate(PurchaseInfo* purchase)
         }
         else if (product->Type == BATTLE_PAY_PRODUCT_TYPE_ITEM)
         {
-            if (!purchase->GetSession()->GetPlayer())
+            Player* player = purchase->GetSession()->GetPlayer();
+            std::vector<BattlePayProductItem> mailItems;
+
+            if (player)
             {
-                uint32 mailId = sObjectMgr->GenerateMailID();
+                for (BattlePayProductItem const& productItem : *items)
+                    if (!player->AddItem(productItem.ItemId, productItem.Count))
+                        mailItems.push_back(productItem);
+            }
+            else
+                mailItems.assign(items->begin(), items->end());
 
-                CharacterDatabaseTransaction trans = CharacterDatabase.BeginTransaction();
-
-                // not blizzlike, but who cares (temp solution)
+            if (!mailItems.empty())
+            {
                 std::string productTitle = product->Title;
                 std::string productDescription = product->Description;
                 LocaleConstant localeConstant = purchase->GetSession()->GetSessionDbLocaleIndex();
@@ -1185,42 +1310,28 @@ void BattlePayMgr::SendBattlePayPurchaseUpdate(PurchaseInfo* purchase)
                         ObjectMgr::GetLocaleString(locProd->Description, localeConstant, productDescription);
                     }
 
-                CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_INS_MAIL);
-                stmt->setUInt32(0, mailId);
-                stmt->setUInt8(1, MAIL_NORMAL);
-                stmt->setInt8(2, MAIL_STATIONERY_DEFAULT);
-                stmt->setUInt16(3, 0);
-                stmt->setUInt32(4, purchase->SelectedPlayer.GetCounter());
-                stmt->setUInt32(5, purchase->SelectedPlayer.GetCounter());
-                stmt->setString(6, productTitle);
-                stmt->setString(7, productDescription);
-                stmt->setBool(8, true);
-                stmt->setUInt64(9, time(NULL) + 180 * DAY);
-                stmt->setUInt64(10, time(NULL));
-                stmt->setUInt32(11, 0);
-                stmt->setUInt32(12, 0);
-                stmt->setUInt8(13, 0);
-                trans->Append(stmt);
+                CharacterDatabaseTransaction trans = CharacterDatabase.BeginTransaction();
+                MailDraft draft(productTitle, productDescription);
+                for (BattlePayProductItem const& productItem : mailItems)
+                    if (Item* item = Item::CreateItem(productItem.ItemId, productItem.Count, player))
+                    {
+                        item->SaveToDB(trans);
+                        draft.AddItem(item);
+                    }
 
-                if (Item* item = Item::CreateItem(itemid, 1, 0))
+                if (draft.HasItems())
                 {
-                    item->SaveToDB(trans);
-
-                    CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_INS_MAIL_ITEM);
-                    stmt->setUInt32(0, mailId);
-                    stmt->setUInt32(1, item->GetGUID().GetCounter());
-                    stmt->setUInt32(2, purchase->SelectedPlayer);
-                    trans->Append(stmt);
+                    uint32 receiverGuid = player ? player->GetGUID().GetCounter() : purchase->SelectedPlayer.GetCounter();
+                    draft.SendMailTo(trans,
+                        MailReceiver(player, receiverGuid),
+                        MailSender(MAIL_NORMAL, 0, MAIL_STATIONERY_GM),
+                        MAIL_CHECK_MASK_COPIED);
                 }
-
                 CharacterDatabase.CommitTransaction(trans);
             }
-            else
-            {
-                purchase->GetSession()->GetPlayer()->AddItem(itemid, 1);
-                // save PJ
-                purchase->GetSession()->GetPlayer()->SaveToDB();
-            }
+
+            if (player)
+                player->SaveToDB();
         }
 
         uint64 price = product->Price * BATTLE_PAY_CURRENCY_PRECISION;
@@ -1229,7 +1340,7 @@ void BattlePayMgr::SendBattlePayPurchaseUpdate(PurchaseInfo* purchase)
 
         UpdatePointsBalance(purchase->GetSession(), (currentPrice));
 
-        RegisterPurchase(purchase, itemid, currentPrice);
+        RegisterPurchase(purchase, representativeItemId, currentPrice);
         
         SendBattlePayPurchaseUpdate(new PurchaseInfo(purchase->GetSession(), purchase->SelectedPlayer, purchase->PurchaseId, purchase->ProductId, BATTLE_PAY_PURCHASE_STATUS_BUYED, BATTLE_PAY_RESULT_OK, purchase->ClientToken, purchase->ServerToken, true));
     }
