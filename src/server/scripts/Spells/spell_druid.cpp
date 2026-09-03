@@ -3668,7 +3668,7 @@ struct npc_force_of_nature_balance : public ScriptedAI
         DoCastVictim(SPELL_WRATH);
     }
 
-    void EnterEvadeMode() override { }
+    void EnterEvadeMode(EvadeReason why = EVADE_REASON_OTHER) override { }
 };
 
 // 54983

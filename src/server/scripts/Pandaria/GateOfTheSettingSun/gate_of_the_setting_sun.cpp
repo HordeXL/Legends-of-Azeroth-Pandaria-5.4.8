@@ -98,7 +98,7 @@ struct gss_trash_generic_baseAI : public ScriptedAI
         }
     }
 
-    void EnterEvadeMode() override
+    void EnterEvadeMode(EvadeReason why = EVADE_REASON_OTHER) override
     {
         ScriptedAI::EnterEvadeMode();
         me->GetThreatManager().resetAllAggro();
@@ -274,7 +274,7 @@ class npc_kirkthik_conscript : public CreatureScript
                 DoCast(me, SPELL_RESIN_RESIDUE, true);
             }
 
-            void EnterEvadeMode() override
+            void EnterEvadeMode(EvadeReason why = EVADE_REASON_OTHER) override
             {
                 ScriptedAI::EnterEvadeMode();
                 me->RemoveAllAuras();

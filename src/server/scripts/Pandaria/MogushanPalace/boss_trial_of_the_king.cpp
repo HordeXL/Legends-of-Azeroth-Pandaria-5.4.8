@@ -350,7 +350,7 @@ class boss_ming_the_cunning : public CreatureScript
                 me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_PULL_TOWARDS_DEST, true);
             }
 
-            void EnterEvadeMode() override
+            void EnterEvadeMode(EvadeReason why = EVADE_REASON_OTHER) override
             {
                 if (instance && instance->GetBossState(DATA_TRIAL_OF_THE_KING) == DONE)
                     return;
@@ -825,7 +825,7 @@ class boss_kuai_the_brute : public CreatureScript
                 me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_PULL_TOWARDS_DEST, true);
             }
 
-            void EnterEvadeMode() override
+            void EnterEvadeMode(EvadeReason why = EVADE_REASON_OTHER) override
             {
                 if (instance && instance->GetBossState(DATA_TRIAL_OF_THE_KING) == DONE)
                     return;
@@ -1129,7 +1129,7 @@ class boss_haiyan_the_unstoppable : public CreatureScript
                 events.ScheduleEvent(EVENT_METEOR, 40000);
             }
 
-            void EnterEvadeMode() override
+            void EnterEvadeMode(EvadeReason why = EVADE_REASON_OTHER) override
             {
                 if (instance && instance->GetBossState(DATA_TRIAL_OF_THE_KING) == DONE)
                     return;
@@ -1325,7 +1325,7 @@ class npc_glintrok_scout : public CreatureScript
                 if (n < 0)
                     return false;
 
-                if (Creature* pBat = me->SummonCreature(CREATURE_CAVE_BAT, apCaveBatPositions[n], TEMPSUMMON_TIMED_DESPAWN_OUT_OF_COMBAT, 25000))
+                if (Creature* pBat = me->SummonCreature(CREATURE_CAVE_BAT, apCaveBatPositions[n], TEMPSUMMON_TIMED_DESPAWN_OUT_OF_COMBAT, 25000ms))
                 {
                     pBat->SetCanFly(true);
                     pBat->CastSpell(pBat, SPELL_CAVEBAT_VISUAL, true);
