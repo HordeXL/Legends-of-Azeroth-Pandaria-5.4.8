@@ -78,9 +78,6 @@ FireMageStrategy::FireMageStrategy(PlayerbotAI* botAI)
 NextAction** FireMageStrategy::getDefaultActions()
 {
     return NextAction::array(0,
-        new NextAction("frostjaw", ACTION_DEFAULT + 0.10f),
-        new NextAction("combustion", ACTION_DEFAULT + 0.9f),
-        new NextAction("inferno blast", ACTION_DEFAULT + 0.8f), // cast during movement
         new NextAction("living bomb", ACTION_DEFAULT + 0.7f),
         new NextAction("fireball", ACTION_DEFAULT + 0.6f),
         new NextAction("scorch", ACTION_DEFAULT), nullptr);

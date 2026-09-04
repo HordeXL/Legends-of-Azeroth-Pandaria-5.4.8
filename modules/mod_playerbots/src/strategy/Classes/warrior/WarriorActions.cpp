@@ -3,6 +3,38 @@
 #include "PlayerbotSpec.h"
 #include "ServerFacade.h"
 
+namespace
+{
+bool IsPveInstanceTrash(Player* bot, Unit* target)
+{
+    if (!bot || !bot->GetMap() ||
+        (!bot->GetMap()->IsDungeon() && !bot->GetMap()->IsRaid()) ||
+        bot->InBattleground() || bot->InArena())
+        return false;
+
+    Creature* creature = target ? target->ToCreature() : nullptr;
+    return !creature || (!creature->IsDungeonBoss() && !creature->isWorldBoss());
+}
+}
+
+bool CastRecklessnessAction::isUseful()
+{
+    return !IsPveInstanceTrash(bot, AI_VALUE(Unit*, "current target")) &&
+        CastBuffSpellAction::isUseful();
+}
+
+bool CastDemoralizingBannerAction::isUseful()
+{
+    return !IsPveInstanceTrash(bot, AI_VALUE(Unit*, "current target")) &&
+        CastSpellAction::isUseful();
+}
+
+bool CastSkullBannerAction::isUseful()
+{
+    return !IsPveInstanceTrash(bot, AI_VALUE(Unit*, "current target")) &&
+        CastSpellAction::isUseful();
+}
+
 bool CastSunderArmorAction::isUseful()
 {
     Aura* aura = botAI->GetAura("sunder armor", GetTarget(), false, true);
@@ -131,5 +163,8 @@ bool CastVigilanceAction::Execute(Event event)
 
 bool CastMockingBannerAction::isUseful()
 {
-    return !botAI->HasAura(spell, bot);
+    // Mocking Banner is a tank threat tool. DPS warriors using it in the
+    // shared AoE strategy steal the entire pack from the actual tank.
+    return PlayerBotSpec::IsTank(bot, true) &&
+        CastSpellAction::isUseful() && !botAI->HasAura(spell, bot);
 }

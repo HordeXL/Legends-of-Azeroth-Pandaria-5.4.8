@@ -52,9 +52,5 @@ void AffliWarlockStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode("unstable affliction", NextAction::array(0, new NextAction("unstable affliction", 20.0f), nullptr)));
 
     triggers.push_back(new TriggerNode("target critical health", NextAction::array(0, new NextAction("drain soul", ACTION_HIGH + 20), nullptr)));
-    // cast during movement
-    triggers.push_back(new TriggerNode("high mana", NextAction::array(0, new NextAction("life tap", ACTION_DEFAULT + 0.1f), nullptr)));
-    triggers.push_back(new TriggerNode("life tap glyph buff", NextAction::array(0, new NextAction("life tap", 28.0f), nullptr)));
-    triggers.push_back(new TriggerNode("metamorphosis", NextAction::array(0, new NextAction("metamorphosis", 20.0f), nullptr)));
 }
 

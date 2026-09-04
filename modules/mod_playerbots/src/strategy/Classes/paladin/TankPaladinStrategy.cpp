@@ -60,11 +60,10 @@ TankPaladinStrategy::TankPaladinStrategy(PlayerbotAI* botAI) : GenericPaladinStr
 
 NextAction** TankPaladinStrategy::getDefaultActions()
 {
-    return NextAction::array(0, new NextAction("shield of righteousness", ACTION_DEFAULT + 0.6f),
-                             new NextAction("hammer of the righteous", ACTION_DEFAULT + 0.5f),
-                             new NextAction("judgement of wisdom", ACTION_DEFAULT + 0.4f),
-                             // new NextAction("avenger's shield", ACTION_NORMAL + 3),
-                             // new NextAction("consecration", ACTION_NORMAL + 2),
+    return NextAction::array(0, new NextAction("shield of righteousness", ACTION_DEFAULT + 0.8f),
+                             new NextAction("avenger's shield", ACTION_DEFAULT + 0.7f),
+                             new NextAction("crusader strike", ACTION_DEFAULT + 0.6f),
+                             new NextAction("judgement", ACTION_DEFAULT + 0.5f),
                              new NextAction("melee", ACTION_DEFAULT), NULL);
 }
 
@@ -74,8 +73,6 @@ void TankPaladinStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 
     triggers.push_back(
         new TriggerNode("seal", NextAction::array(0, new NextAction("seal of insight", ACTION_HIGH), nullptr)));
-    triggers.push_back(
-        new TriggerNode("low mana", NextAction::array(0, new NextAction("seal of wisdom", ACTION_HIGH + 9), nullptr)));
     // triggers.push_back(new TriggerNode("devotion aura", NextAction::array(0, new NextAction("devotion aura", 90.0f),
     // NULL)));
 

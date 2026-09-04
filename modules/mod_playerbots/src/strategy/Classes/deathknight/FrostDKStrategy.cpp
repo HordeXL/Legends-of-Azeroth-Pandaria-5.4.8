@@ -88,9 +88,10 @@ NextAction** FrostDKStrategy::getDefaultActions()
 {
     return NextAction::array(
         0, new NextAction("frost presence", ACTION_DEFAULT + 0.9f),
+        new NextAction("soul reaper", ACTION_DEFAULT + 0.8f),
         new NextAction("obliterate", ACTION_DEFAULT + 0.7f),
         new NextAction("frost strike", ACTION_DEFAULT + 0.4f),
-        new NextAction("empower rune weapon", ACTION_DEFAULT + 0.3f),
+        new NextAction("howling blast", ACTION_DEFAULT + 0.3f),
         new NextAction("horn of winter", ACTION_DEFAULT + 0.1f), new NextAction("melee", ACTION_DEFAULT), NULL);
 }
 
@@ -99,13 +100,7 @@ void FrostDKStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
     GenericDKStrategy::InitTriggers(triggers);
 
     triggers.push_back(new TriggerNode(
-        "unbreakable armor", NextAction::array(0, new NextAction("unbreakable armor", ACTION_DEFAULT + 0.6f), nullptr)));
-
-    triggers.push_back(new TriggerNode(
         "freezing fog", NextAction::array(0, new NextAction("howling blast", ACTION_DEFAULT + 0.5f), nullptr)));
-
-    triggers.push_back(new TriggerNode(
-        "high blood rune", NextAction::array(0, new NextAction("blood strike", ACTION_DEFAULT + 0.2f), nullptr)));
 
     triggers.push_back(new TriggerNode(
         "army of the dead", NextAction::array(0, new NextAction("army of the dead", ACTION_HIGH + 6), nullptr)));

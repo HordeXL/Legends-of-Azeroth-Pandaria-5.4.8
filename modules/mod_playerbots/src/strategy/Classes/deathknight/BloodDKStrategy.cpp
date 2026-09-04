@@ -83,8 +83,9 @@ NextAction** BloodDKStrategy::getDefaultActions()
 {
     return NextAction::array(
         0, new NextAction("blood presence", ACTION_DEFAULT + 0.9f),
+        new NextAction("death strike", ACTION_DEFAULT + 0.85f),
         new NextAction("rune strike", ACTION_DEFAULT + 0.8f), new NextAction("icy touch", ACTION_DEFAULT + 0.7f),
-        new NextAction("heart strike", ACTION_DEFAULT + 0.6f), new NextAction("blood strike", ACTION_DEFAULT + 0.5f),
+        new NextAction("heart strike", ACTION_DEFAULT + 0.6f), new NextAction("soul reaper", ACTION_DEFAULT + 0.5f),
         new NextAction("dancing rune weapon", ACTION_DEFAULT + 0.4f),
         new NextAction("death coil", ACTION_DEFAULT + 0.3f), new NextAction("plague strike", ACTION_DEFAULT + 0.2f),
         new NextAction("horn of winter", ACTION_DEFAULT + 0.1f), new NextAction("melee", ACTION_DEFAULT), NULL);
@@ -101,7 +102,7 @@ void BloodDKStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
     triggers.push_back(
         new TriggerNode("lose aggro", NextAction::array(0, new NextAction("dark command", ACTION_HIGH + 3), nullptr)));
     triggers.push_back(
-        new TriggerNode("low health", NextAction::array(0, new NextAction("army of the dead", ACTION_HIGH + 4),
+        new TriggerNode("low health", NextAction::array(0,
                                                         new NextAction("death strike", ACTION_HIGH + 3), nullptr)));
     triggers.push_back(
         new TriggerNode("critical health", NextAction::array(0, new NextAction("vampiric blood", ACTION_HIGH + 5), nullptr)));

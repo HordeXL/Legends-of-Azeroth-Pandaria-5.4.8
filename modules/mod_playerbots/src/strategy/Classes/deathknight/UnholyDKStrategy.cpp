@@ -79,9 +79,10 @@ NextAction** UnholyDKStrategy::getDefaultActions()
 {
     return NextAction::array(
         0, new NextAction("unholy presence", ACTION_DEFAULT + 0.9f),
-        new NextAction("death and decay", ACTION_HIGH + 5),
+        new NextAction("soul reaper", ACTION_DEFAULT + 0.8f),
         new NextAction("summon gargoyle", ACTION_DEFAULT + 0.6f),
         new NextAction("scourge strike", ACTION_DEFAULT + 0.5f),
+        new NextAction("festering strike", ACTION_DEFAULT + 0.45f),
         // new NextAction("empower rune weapon", ACTION_DEFAULT + 0.3f),
         new NextAction("death coil", ACTION_DEFAULT + 0.4f),
         new NextAction("horn of winter", ACTION_DEFAULT + 0.2f),
@@ -96,12 +97,9 @@ void UnholyDKStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
             new NextAction("ghoul frenzy", ACTION_DEFAULT + 0.9f),
             new NextAction("scourge strike", ACTION_DEFAULT + 0.8f),
             new NextAction("icy touch", ACTION_DEFAULT + 0.7f),
-            new NextAction("blood strike", ACTION_DEFAULT + 0.6f),
+            new NextAction("festering strike", ACTION_DEFAULT + 0.6f),
             new NextAction("plague strike", ACTION_DEFAULT + 0.5f),
             nullptr)));
-
-    triggers.push_back(new TriggerNode("dd cd and no desolation",
-                                       NextAction::array(0, new NextAction("blood strike", ACTION_DEFAULT + 0.75f), nullptr)));
 
     // triggers.push_back(
     //     new TriggerNode("icy touch", NextAction::array(0, new NextAction("icy touch", ACTION_HIGH + 2), nullptr)));
@@ -113,7 +111,7 @@ void UnholyDKStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
         new NextAction("icy touch", ACTION_NORMAL + 3), nullptr)));
 
     triggers.push_back(new TriggerNode(
-        "high blood rune", NextAction::array(0, new NextAction("blood strike", ACTION_NORMAL + 2), nullptr)));
+        "high blood rune", NextAction::array(0, new NextAction("festering strike", ACTION_NORMAL + 2), nullptr)));
 
     triggers.push_back(new TriggerNode(
         "high unholy rune", NextAction::array(0,

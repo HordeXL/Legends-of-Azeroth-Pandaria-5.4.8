@@ -191,6 +191,7 @@ public:
         creators["pyroblast"] = &MageAiObjectContextInternal::pyroblast;
         creators["scorch"] = &MageAiObjectContextInternal::scorch;
         creators["living bomb"] = &MageAiObjectContextInternal::living_bomb;
+        creators["living bomb on attackers"] = &MageAiObjectContextInternal::living_bomb_on_attackers;
         creators["flamestrike"] = &MageAiObjectContextInternal::flamestrike;
         
 
@@ -210,6 +211,7 @@ public:
         creators["arcane blast"] = &MageAiObjectContextInternal::arcane_blast;
         creators["slow"] = &MageAiObjectContextInternal::slow;
         creators["nether tempest"] = &MageAiObjectContextInternal::nether_tempest;
+        creators["nether tempest on attackers"] = &MageAiObjectContextInternal::nether_tempest_on_attackers;
     }
 
 private:
@@ -254,6 +256,7 @@ private:
     static Action* pyroblast(PlayerbotAI* botAI) { return new CastPyroblastAction(botAI); }
     static Action* scorch(PlayerbotAI* botAI) { return new CastScorchAction(botAI); }
     static Action* living_bomb(PlayerbotAI* botAI) { return new CastLivingBombAction(botAI); }
+    static Action* living_bomb_on_attackers(PlayerbotAI* botAI) { return new CastLivingBombOnAttackersAction(botAI); }
     static Action* flamestrike(PlayerbotAI* botAI) { return new CastFlamestrikeAction(botAI); }
 
 
@@ -266,6 +269,7 @@ private:
     static Action* arcane_barrage(PlayerbotAI* botAI) { return new CastArcaneBarrageAction(botAI); }
     static Action* slow(PlayerbotAI* botAI) { return new CastSlowAction(botAI); }
     static Action* nether_tempest(PlayerbotAI* botAI) { return new CastNetherTempestAction(botAI); }
+    static Action* nether_tempest_on_attackers(PlayerbotAI* botAI) { return new CastNetherTempestOnAttackersAction(botAI); }
 
     static Action* focus_magic_on_party(PlayerbotAI* botAI) { return new CastFocusMagicOnPartyAction(botAI); }
 };

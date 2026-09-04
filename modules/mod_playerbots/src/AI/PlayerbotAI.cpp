@@ -3013,28 +3013,39 @@ bool PlayerbotAI::CastSpell(uint32 spellId, Unit* target, Item* itemTarget)
     Pet* pet = bot->GetPet();
     SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
 
-    // Fear/turn effects make dungeon trash scatter out of the tank's control
-    // and may aggro neighbouring packs. Keep them for PvP, but suppress every
-    // playerbot implementation of such control in PvE instances. Doing this
-    // at the final cast boundary also covers class-specific actions which do
-    // not pass through GenericSpellActions.
+    // PvP displacement and control make dungeon trash scatter out of the
+    // tank's control and may aggro neighbouring packs. Keep those tools for
+    // PvP, but suppress them at the final cast boundary in PvE instances.
+    // Also prevent non-tanks from taunting merely because an old class
+    // strategy still contains a threat action.
     if (spellInfo && bot->GetMap() &&
         (bot->GetMap()->IsDungeon() || bot->GetMap()->IsRaid()) &&
         !bot->InBattleground() && !bot->InArena())
     {
         uint32 const scatterMechanics = (1u << MECHANIC_FEAR) |
-            (1u << MECHANIC_TURN);
+            (1u << MECHANIC_TURN) |
+            (1u << MECHANIC_HORROR) |
+            (1u << MECHANIC_DISORIENTED);
         bool scattersTarget =
             (spellInfo->GetAllEffectsMechanicMask() & scatterMechanics) != 0;
-        for (uint8 effect = 0; !scattersTarget && effect < MAX_SPELL_EFFECTS;
-             ++effect)
+        bool knocksTargetBack = false;
+        bool tauntsTarget = false;
+        for (uint8 effect = 0; effect < MAX_SPELL_EFFECTS; ++effect)
         {
             uint32 const aura = spellInfo->Effects[effect].ApplyAuraName;
-            scattersTarget = aura == SPELL_AURA_MOD_FEAR ||
-                aura == SPELL_AURA_MOD_FEAR_2;
+            uint32 const spellEffect = spellInfo->Effects[effect].Effect;
+            scattersTarget = scattersTarget || aura == SPELL_AURA_MOD_FEAR ||
+                aura == SPELL_AURA_MOD_FEAR_2 || aura == SPELL_AURA_MOD_CONFUSE;
+            knocksTargetBack = knocksTargetBack ||
+                spellEffect == SPELL_EFFECT_KNOCK_BACK ||
+                spellEffect == SPELL_EFFECT_KNOCK_BACK_DEST;
+            tauntsTarget = tauntsTarget || spellEffect == SPELL_EFFECT_ATTACK_ME ||
+                aura == SPELL_AURA_MOD_TAUNT;
         }
 
-        if (scattersTarget)
+        bool const hostileTarget = target != bot && bot->IsValidAttackTarget(target);
+        if (hostileTarget && (scattersTarget || knocksTargetBack ||
+            (tauntsTarget && !PlayerBotSpec::IsTank(bot, true))))
             return false;
     }
 
