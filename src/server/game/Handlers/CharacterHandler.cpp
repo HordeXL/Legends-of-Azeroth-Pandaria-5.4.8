@@ -890,9 +890,21 @@ void WorldSession::HandlePlayerLoginOpcode(WorldPackets::Character::PlayerLogin&
 
 void WorldSession::HandleLoadScreenOpcode(WorldPacket& recvPacket)
 {
-    TC_LOG_INFO("general", "WORLD: Recvd CMSG_LOAD_SCREEN");
     uint32 mapID = recvPacket.read<uint32>();
     bool loading = recvPacket.ReadBit();
+
+    // The client discards channel notifications received while it is still on
+    // the loading screen (chat UI not initialized yet), so channels joined at
+    // login never appear until a zone change re-triggers UpdateLocalChannels.
+    // Once the client reports the loading screen is gone, force a re-join of
+    // the built-in local channels so they show up immediately after login.
+    if (!loading && m_channelResyncPending)
+    {
+        m_channelResyncPending = false;
+        if (Player* player = GetPlayer())
+            if (player->IsInWorld() && !player->GetSession()->PlayerLoading())
+                player->RejoinConstantChannels();
+    }
 }
 
 void WorldSession::HandlePlayerLogin(LoginQueryHolder const& holder)
@@ -1207,6 +1219,11 @@ void WorldSession::HandlePlayerLogin(LoginQueryHolder const& holder)
     // Join system channels after loading is complete
     // Recent client versions do not send CMSG_JOIN_CHANNEL for built-in channels
     pCurrChar->UpdateLocalChannels(pCurrChar->GetZoneId());
+
+    // The client discards channel notifications while the loading screen is up,
+    // so mark that a forced re-join is needed once the client reports the
+    // loading screen is gone (see HandleLoadScreenOpcode).
+    m_channelResyncPending = true;
 
     // Handle Login-Achievements (should be handled after loading)
     _player->UpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_ON_LOGIN, 1);
