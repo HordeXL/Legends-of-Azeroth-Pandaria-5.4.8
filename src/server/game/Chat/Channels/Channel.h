@@ -161,8 +161,14 @@ class Channel
         uint32 GetNumPlayers() const { return playersStore.size(); }
         uint8 GetFlags() const { return _flags; }
         bool HasFlag(uint8 flag) const { return _flags & flag; }
+        // True when the player is a member of this channel.
+        bool IsOn(ObjectGuid who) const { return playersStore.find(who) != playersStore.end(); }
+        bool IsBanned(ObjectGuid guid) const { return bannedStore.find(guid) != bannedStore.end(); }
 
-        void JoinChannel(Player* player, std::string const& pass);
+        // announce = false is for server-side NPC joins (playerbots): the bot
+        // still becomes a member, it just does not announce itself to every
+        // player sitting in the channel.
+        void JoinChannel(Player* player, std::string const& pass, bool announce = true);
         void LeaveChannel(Player* player, bool send = true);
         void KickOrBan(Player const* player, std::string const& badname, bool ban);
         void Kick(Player const* player, std::string const& badname) { KickOrBan(player, badname, false); }
@@ -230,9 +236,6 @@ class Channel
         void SendToAll(WorldPacket* data, ObjectGuid guid = ObjectGuid::Empty);
         void SendToAllButOne(WorldPacket* data, ObjectGuid who);
         void SendToOne(WorldPacket* data, ObjectGuid who);
-
-        bool IsOn(ObjectGuid who) const { return playersStore.find(who) != playersStore.end(); }
-        bool IsBanned(ObjectGuid guid) const { return bannedStore.find(guid) != bannedStore.end(); }
 
         void UpdateChannelInDB() const;
         void UpdateChannelUseageInDB() const;
