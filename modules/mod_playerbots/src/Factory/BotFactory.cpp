@@ -1279,6 +1279,52 @@ void BotFactory::NormalizeManagedWeaponSet(uint32 minimumItemLevel,
                 "Managed loadout removed off-hand paired with a two-handed weapon for bot %s specialization %u",
                 bot->GetName().c_str(), uint32(bot->GetSpecialization()));
         }
+
+        mainHand = bot->GetItemByPos(INVENTORY_SLOT_BAG_0,
+            EQUIPMENT_SLOT_MAINHAND);
+        offHand = bot->GetItemByPos(INVENTORY_SLOT_BAG_0,
+            EQUIPMENT_SLOT_OFFHAND);
+        if (mainHand && !offHand &&
+            sRandomItemMgr->NeedsOffhandForSpec(bot))
+        {
+            uint32 const offHandId = FindDeterministicManagedItem(
+                EQUIPMENT_SLOT_OFFHAND, minimumItemLevel,
+                genuineItemsOnly, pveOnly);
+            uint16 destination = 0;
+            if (offHandId && CanEquipUnseenItem(EQUIPMENT_SLOT_OFFHAND,
+                    destination, offHandId) &&
+                bot->EquipNewItem(destination, offHandId, true))
+            {
+                TC_LOG_INFO("playerbots",
+                    "Managed loadout repaired required off-hand item %u for bot %s specialization %u",
+                    offHandId, bot->GetName().c_str(),
+                    uint32(bot->GetSpecialization()));
+            }
+        }
+
+        // If the client/core cannot equip any suitable off-hand, prefer a
+        // specialization-compatible two-hander over rejecting an otherwise
+        // complete healer/caster. This also permanently repairs the saved bot.
+        offHand = bot->GetItemByPos(INVENTORY_SLOT_BAG_0,
+            EQUIPMENT_SLOT_OFFHAND);
+        if (mainHand && !offHand &&
+            sRandomItemMgr->NeedsOffhandForSpec(bot))
+        {
+            uint32 const twoHandId = FindDeterministicManagedItem(
+                EQUIPMENT_SLOT_MAINHAND, minimumItemLevel,
+                genuineItemsOnly, pveOnly, true, false);
+            uint16 destination = 0;
+            if (twoHandId && CanEquipUnseenItem(EQUIPMENT_SLOT_MAINHAND,
+                    destination, twoHandId) &&
+                MoveEquippedItemToBag(EQUIPMENT_SLOT_MAINHAND) &&
+                bot->EquipNewItem(destination, twoHandId, true))
+            {
+                TC_LOG_WARN("playerbots",
+                    "Managed loadout replaced incomplete one-hand set with two-handed item %u for bot %s specialization %u",
+                    twoHandId, bot->GetName().c_str(),
+                    uint32(bot->GetSpecialization()));
+            }
+        }
         return;
     }
     bool const alreadyTwoHandedPair = mainHand && offHand &&

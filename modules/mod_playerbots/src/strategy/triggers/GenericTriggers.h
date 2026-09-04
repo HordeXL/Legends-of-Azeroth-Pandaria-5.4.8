@@ -524,6 +524,7 @@ class SnareTargetTrigger : public DebuffTrigger
 public:
     SnareTargetTrigger(PlayerbotAI* botAI, std::string const spell) : DebuffTrigger(botAI, spell) {}
 
+    bool IsActive() override;
     Value<Unit*>* GetTargetValue() override;
     std::string const getName() override { return spell + " on snare target"; }
 };

@@ -706,6 +706,19 @@ bool GiveWaterTrigger::IsActive()
     return AI_VALUE(Unit*, "party member without water") && AI_VALUE2(uint32, "item count", item);
 }
 
+bool SnareTargetTrigger::IsActive()
+{
+    // Snare-target selection is intended for PvP control. Request-driven LFG
+    // fillers do not have a supported autonomous snare target and must assist
+    // the real player's pull instead of trying to kite a separate creature.
+    if (botAI->IsLfgAutoQueueReserved() && bot->GetMap() &&
+        (bot->GetMap()->IsDungeon() || bot->GetMap()->IsRaid()) &&
+        !bot->InBattleground() && !bot->InArena())
+        return false;
+
+    return DebuffTrigger::IsActive();
+}
+
 Value<Unit*>* SnareTargetTrigger::GetTargetValue() { return context->GetValue<Unit*>("snare target", spell); }
 
 bool StayTimeTrigger::IsActive()
