@@ -76,7 +76,7 @@ bool PlayerBotSpec::IsRanged(Player* player, bool bySpec)
         case CLASS_ROGUE:
         case CLASS_MONK:
         {
-            return false;
+            return spec == Specializations::SPEC_MONK_MISTWEAVER;
         }
         case CLASS_DRUID:
         {
@@ -88,7 +88,7 @@ bool PlayerBotSpec::IsRanged(Player* player, bool bySpec)
         }
         case CLASS_PALADIN:
         {
-            if (spec != Specializations::SPEC_DEATH_KNIGHT_UNHOLY)
+            if (spec != Specializations::SPEC_PALADIN_HOLY)
             {
                 return false;
             }

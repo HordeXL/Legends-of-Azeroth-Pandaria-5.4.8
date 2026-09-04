@@ -38,7 +38,12 @@ public:
     void InitPet();
     void InitTalentsTree(bool reset);
     void InitGlyphs();
+    void InitManagedTalentsAndGlyphs(ManagedLoadoutMode mode);
 private:
+    void InitTalentsTreeForMode(bool reset,
+                                ManagedLoadoutMode mode,
+                                bool ignorePremadeProfile);
+    void InitGlyphsForMode(ManagedLoadoutMode mode);
     void InitEquipmentInternal(bool incremental, bool second_chance,
                                bool missingOnly, bool specCompatible,
                                uint32 minimumItemLevel = 0,

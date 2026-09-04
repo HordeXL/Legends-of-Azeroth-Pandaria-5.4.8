@@ -51,5 +51,7 @@ void TankFaceStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 
 NextAction** CombatFormationStrategy::getDefaultActions()
 {
-    return NextAction::array(0, new NextAction("combat formation move", ACTION_NORMAL), nullptr);
+    // Role positioning must happen before the normal damage rotation, while
+    // interrupts and scripted boss avoidance retain their higher priorities.
+    return NextAction::array(0, new NextAction("combat formation move", ACTION_MOVE + 5), nullptr);
 }

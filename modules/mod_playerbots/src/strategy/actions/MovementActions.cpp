@@ -1744,26 +1744,98 @@ bool CombatFormationMoveAction::isUseful()
     {
         return false;
     }
-    if (bot->GetCurrentSpell(CURRENT_CHANNELED_SPELL) != nullptr)
+
+    Map* map = bot->GetMap();
+    if (!map || (!map->IsDungeon() && !map->IsRaid()) ||
+        bot->InBattleground() || bot->InArena() || !bot->IsInCombat() ||
+        !PlayerBotSpec::IsRanged(bot, true))
     {
         return false;
     }
-    return true;
+
+    // Do not cancel a useful cast merely to improve positioning.
+    if (bot->IsNonMeleeSpellCasted(true, false, true))
+    {
+        return false;
+    }
+
+    Unit* target = AI_VALUE(Unit*, "current target");
+    if (!target || !target->IsInWorld() || !target->IsAlive() ||
+        target->GetMapId() != bot->GetMapId() || !bot->IsValidAttackTarget(target))
+    {
+        return false;
+    }
+
+    // Kiting an enemy that is already attacking this bot separates the pack
+    // from the tank and may pull more trash. Hold position until aggro is
+    // recovered; defensive actions remain available to the class strategy.
+    if (target->GetVictim() == bot)
+        return false;
+
+    float const edgeDistance = std::max(0.0f, bot->GetExactDist2d(target) -
+        bot->GetCombatReach() - target->GetCombatReach());
+    float const minimumRange = std::min(14.0f,
+        std::max(8.0f, sPlayerbotAIConfig->spellDistance - 10.0f));
+    return edgeDistance < minimumRange;
 }
 
-bool CombatFormationMoveAction::Execute(Event event)
+bool CombatFormationMoveAction::Execute(Event /*event*/)
 {
-    float dis = AI_VALUE(float, "disperse distance");
-    if (dis <= 0.0f)
+    if (bot->IsNonMeleeSpellCasted(true, false, true))
         return false;
-    Player* playerToLeave = NearestGroupMember(dis);
-    if (playerToLeave && bot->GetExactDist(playerToLeave) < dis)
+
+    Unit* target = AI_VALUE(Unit*, "current target");
+    if (!target || !target->IsInWorld() || !target->IsAlive() ||
+        target->GetMapId() != bot->GetMapId() || !bot->IsValidAttackTarget(target) ||
+        target->GetVictim() == bot || !PlayerBotSpec::IsRanged(bot, true))
     {
-        //if (FleePosition(playerToLeave->GetPosition(), dis))
+        return false;
+    }
+
+    float const desiredRange = std::min(24.0f,
+        std::max(16.0f, sPlayerbotAIConfig->spellDistance - 4.0f));
+    float const centerDistance = desiredRange + bot->GetCombatReach() + target->GetCombatReach();
+    float const initialAngle = target->GetAngle(bot);
+
+    // Preserve the side of the encounter the bot already occupies. This
+    // moves ranged characters away from the target without running through
+    // the boss/tank or selecting a random direction toward another pack.
+    static float const angleOffsets[] =
+    {
+        0.0f,
+        static_cast<float>(M_PI / 8.0),
+        static_cast<float>(-M_PI / 8.0),
+        static_cast<float>(M_PI / 4.0),
+        static_cast<float>(-M_PI / 4.0)
+    };
+
+    for (float const offset : angleOffsets)
+    {
+        float const angle = Position::NormalizeOrientation(initialAngle + offset);
+        float x = target->GetPositionX() + std::cos(angle) * centerDistance;
+        float y = target->GetPositionY() + std::sin(angle) * centerDistance;
+        float z = target->GetPositionZ();
+
+        if (!bot->GetMap()->CheckCollisionAndGetValidCoords(bot,
+                bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(), x, y, z, false))
         {
-            //lastMoveTimer = getMSTime();
+            continue;
+        }
+
+        // A ranged position is only useful if the target remains visible
+        // from it. Check both directions because some map objects have
+        // asymmetric collision data.
+        if (!target->IsWithinLOS(x, y, z) || !bot->IsWithinLOS(x, y, z))
+            continue;
+
+        if (MoveTo(bot->GetMapId(), x, y, z, false, false, true, false,
+                MovementPriority::MOVEMENT_COMBAT, true))
+        {
+            lastMoveTimer = getMSTime();
+            return true;
         }
     }
+
     return false;
 }
 
@@ -1796,7 +1868,12 @@ Position CombatFormationMoveAction::AverageGroupPos(float dis, bool ranged, bool
         averageX += member->GetPositionX();
         averageY += member->GetPositionY();
         averageZ += member->GetPositionZ();
+        ++cnt;
     }
+
+    if (!cnt)
+        return Position();
+
     averageX /= cnt;
     averageY /= cnt;
     averageZ /= cnt;
