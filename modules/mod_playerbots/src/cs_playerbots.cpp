@@ -6503,7 +6503,25 @@ bool HasAutomatedPvpBotLoadout(Specializations specialization)
 bool RestoreAutomatedPvpBotLoadout(Player* bot, char const* reason,
     uint32& restoredSlots, uint32& remainingSlots, std::string& error)
 {
-    return RestoreSoloArenaLoadout(bot, reason, restoredSlots, remainingSlots, error);
+    if (!RestoreSoloArenaLoadout(bot, reason, restoredSlots, remainingSlots,
+        error))
+        return false;
+
+    // Equipment restoration previously left the character using its arena/BG
+    // talents and glyphs in the open world or the next dungeon. Return every
+    // managed bot to its specialization-specific PvE build as one lifecycle.
+    if (bot)
+    {
+        BotFactory factory(bot, bot->GetLevel());
+        factory.InitManagedTalentsAndGlyphs(
+            BotFactory::ManagedLoadoutMode::Pve);
+        if (PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot))
+        {
+            botAI->GetAiObjectContext()->Reset();
+            botAI->ResetStrategies();
+        }
+    }
+    return true;
 }
 
 bool CastAutomatedPvpPreparationBuff(Player* bot)

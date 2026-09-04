@@ -3532,8 +3532,16 @@ bool Player::AddTalent(uint32 spellId, uint8 spec, bool learning)
             return true;
         }
     }
-    else
-        itr->second->state = PLAYERSPELL_UNCHANGED;
+    else if (itr->second->state == PLAYERSPELL_REMOVED)
+    {
+        // ResetTalents keeps the in-memory entry long enough for the database
+        // delete to be saved. Allow the same talent to be selected again in
+        // this session; otherwise managed PvE/PvP profile switches can only
+        // learn talents which were not present in the previous profile.
+        itr->second->state = learning ? PLAYERSPELL_NEW : PLAYERSPELL_UNCHANGED;
+        itr->second->spec = spec;
+        return true;
+    }
 
     return false;
 }
