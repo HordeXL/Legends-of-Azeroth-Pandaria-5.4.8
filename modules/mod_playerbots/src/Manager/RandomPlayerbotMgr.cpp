@@ -2900,6 +2900,16 @@ void RandomPlayerbotMgr::OnBotLoginInternal(Player* const bot)
     auto maxAllowed = sRandomPlayerbotMgr->GetMaxAllowedBotCount();
     TC_LOG_INFO("playerbots", "%u/%u Bot %s logged in - Active spec tab: %u Spec: %u", playerBots.size(), maxAllowed, bot->GetName().c_str(), (uint32)bot->GetActiveSpec(), (uint32)bot->GetSpecialization());
 
+    // Saved random bots can be dead when a request-driven login selects them.
+    // Item usability rejects every otherwise valid candidate while dead, so
+    // revive before repairing equipment instead of falsely blacklisting the
+    // bot for a missing or specialization-incompatible weapon.
+    if (!bot->IsAlive())
+    {
+        bot->ResurrectPlayer(1.0f);
+        bot->SpawnCorpseBones();
+    }
+
     // AddPlayerBot finishes on the world/session update before the bot begins
     // normal open-world AI. Mark request-driven LFG logins immediately so
     // they cannot acquire a target while waiting for the observer's next

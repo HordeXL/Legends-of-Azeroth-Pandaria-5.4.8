@@ -1156,6 +1156,10 @@ void BotFactory::InitEquipmentForSpec()
     // so a second cheap pass completes dependent offhand combinations.
     InitEquipmentInternal(true, false, true, true);
     InitEquipmentInternal(true, false, true, true);
+    // The random cache can have no specialization-compatible weapon at low
+    // levels, or can repeatedly return the same invalid legacy weapon. Finish
+    // with the deterministic path so every logged-in bot has a usable set.
+    NormalizeManagedWeaponSet(0, false, false);
 }
 
 void BotFactory::InitManagedEquipmentForSpec(uint32 minimumItemLevel,
@@ -1442,7 +1446,7 @@ uint32 BotFactory::GetWeaponReferenceItemLevel() const
                     levels.push_back(itemTemplate->ItemLevel);
 
     if (levels.empty())
-        return bot->GetLevel() >= 90 ? 450 : 0;
+        return bot->GetLevel() >= 90 ? 450 : bot->GetLevel();
 
     std::sort(levels.begin(), levels.end());
     uint32 reference = levels[levels.size() / 2];
@@ -1461,13 +1465,16 @@ uint32 BotFactory::FindDeterministicManagedItem(EquipmentSlots slot,
 {
     bool const weaponSlot = slot == EQUIPMENT_SLOT_MAINHAND ||
         slot == EQUIPMENT_SLOT_OFFHAND;
+    uint32 const equipmentReferenceItemLevel = GetWeaponReferenceItemLevel();
     uint32 const weaponReferenceItemLevel = weaponSlot ?
-        GetWeaponReferenceItemLevel() : 0;
+        equipmentReferenceItemLevel : 0;
     uint32 const weaponMinimumItemLevel = weaponReferenceItemLevel > 35 ?
         weaponReferenceItemLevel - 35 : weaponReferenceItemLevel;
-    uint32 const targetItemLevel = weaponSlot ?
-        std::max(weaponReferenceItemLevel, minimumItemLevel) :
-        minimumItemLevel;
+    uint32 const targetItemLevel =
+        std::max(equipmentReferenceItemLevel, minimumItemLevel);
+    ItemQualities const minimumQuality = level >= 80 ? ITEM_QUALITY_EPIC :
+        (level >= 35 ? ITEM_QUALITY_RARE :
+            (level >= 10 ? ITEM_QUALITY_UNCOMMON : ITEM_QUALITY_NORMAL));
     uint32 bestItem = 0;
     uint32 bestDistance = UINT32_MAX;
     uint32 bestItemLevel = 0;
@@ -1479,27 +1486,28 @@ uint32 BotFactory::FindDeterministicManagedItem(EquipmentSlots slot,
     for (auto const& pair : *itemTemplates)
     {
         ItemTemplate const* proto = &pair.second;
-        if (genuineItemsOnly && sRandomItemMgr->IsCustomServerItem(proto->ItemId))
+        if ((genuineItemsOnly &&
+                sRandomItemMgr->IsCustomServerItem(proto->ItemId)) ||
+            (pveOnly && IsManagedPvpItem(proto)) ||
+            sRandomItemMgr->IsTestItem(proto->ItemId))
             continue;
-        if (pveOnly && IsManagedPvpItem(proto))
-            continue;
-        if (sRandomItemMgr->IsTestItem(proto->ItemId) ||
-            proto->Quality < ITEM_QUALITY_EPIC ||
+        if (proto->Quality < minimumQuality ||
             proto->ItemLevel < minimumItemLevel ||
             proto->RequiredLevel > level)
             continue;
         if ((proto->AllowableClass & bot->GetClassMask()) == 0 ||
             (proto->AllowableRace & bot->GetRaceMask()) == 0)
             continue;
-        if (requireTwoHanded && proto->InventoryType != INVTYPE_2HWEAPON)
+        if ((requireTwoHanded &&
+                proto->InventoryType != INVTYPE_2HWEAPON) ||
+            (requireOneHanded &&
+                proto->InventoryType != INVTYPE_WEAPON &&
+                proto->InventoryType != INVTYPE_WEAPONMAINHAND &&
+                proto->InventoryType != INVTYPE_WEAPONOFFHAND))
             continue;
-        if (requireOneHanded &&
-            proto->InventoryType != INVTYPE_WEAPON &&
-            proto->InventoryType != INVTYPE_WEAPONMAINHAND &&
-            proto->InventoryType != INVTYPE_WEAPONOFFHAND)
+        if (!CanEquipItem(proto))
             continue;
-        if (!CanEquipItem(proto) ||
-            !sRandomItemMgr->IsItemValidForEquipmentSlot(bot, slot, proto))
+        if (!sRandomItemMgr->IsItemValidForEquipmentSlot(bot, slot, proto))
             continue;
         if (weaponSlot && proto->ItemLevel < weaponMinimumItemLevel)
             continue;
@@ -1532,6 +1540,46 @@ void BotFactory::NormalizeManagedWeaponSet(uint32 minimumItemLevel,
         EQUIPMENT_SLOT_MAINHAND);
     Item* offHand = bot->GetItemByPos(INVENTORY_SLOT_BAG_0,
         EQUIPMENT_SLOT_OFFHAND);
+
+    bool const missingOrInvalidMainHand = !mainHand ||
+        !sRandomItemMgr->IsItemValidForEquipmentSlot(bot,
+            EQUIPMENT_SLOT_MAINHAND, mainHand->GetTemplate());
+    if (missingOrInvalidMainHand)
+    {
+        uint32 const previousItem = mainHand ? mainHand->GetEntry() : 0;
+        if (mainHand && !MoveEquippedItemToBag(EQUIPMENT_SLOT_MAINHAND))
+        {
+            TC_LOG_ERROR("playerbots",
+                "Cannot preserve invalid main-hand item %u for bot %s specialization %u",
+                previousItem, bot->GetName().c_str(),
+                uint32(bot->GetSpecialization()));
+            return;
+        }
+
+        uint32 const mainHandId = FindDeterministicManagedItem(
+            EQUIPMENT_SLOT_MAINHAND, minimumItemLevel, genuineItemsOnly,
+            pveOnly);
+        uint16 destination = 0;
+        if (!mainHandId || !CanEquipUnseenItem(EQUIPMENT_SLOT_MAINHAND,
+                destination, mainHandId) ||
+            !bot->EquipNewItem(destination, mainHandId, true))
+        {
+            TC_LOG_ERROR("playerbots",
+                "Deterministic weapon repair found no usable main hand for bot %s level %u specialization %u previous-item=%u",
+                bot->GetName().c_str(), uint32(bot->GetLevel()),
+                uint32(bot->GetSpecialization()), previousItem);
+            return;
+        }
+
+        TC_LOG_INFO("playerbots",
+            "Deterministic weapon repair equipped main-hand item %u for bot %s level %u specialization %u previous-item=%u",
+            mainHandId, bot->GetName().c_str(), uint32(bot->GetLevel()),
+            uint32(bot->GetSpecialization()), previousItem);
+        mainHand = bot->GetItemByPos(INVENTORY_SLOT_BAG_0,
+            EQUIPMENT_SLOT_MAINHAND);
+        offHand = bot->GetItemByPos(INVENTORY_SLOT_BAG_0,
+            EQUIPMENT_SLOT_OFFHAND);
+    }
 
     // Frost death knights, caster/healer specs and non-healer monks can use
     // either a two-hander or a one-hander with an off-hand. Never retain a
@@ -1756,7 +1804,7 @@ void BotFactory::InitEquipmentInternal(bool incremental, bool second_chance,
         }
 
         if (specCompatible && slot == EQUIPMENT_SLOT_OFFHAND &&
-            !sRandomItemMgr->SupportsOffhandForSpec(bot))
+            !sRandomItemMgr->NeedsOffhandForSpec(bot))
         {
             if (oldItem)
             {
@@ -1860,8 +1908,7 @@ void BotFactory::InitEquipmentInternal(bool incremental, bool second_chance,
         // fillers must not become permanently ineligible because of that
         // random sampling. Fall back to a deterministic scan and choose the
         // closest genuine item at or above the requested floor.
-        if (bestItemForSlot == 0 && specCompatible &&
-            (minimumItemLevel || weaponSlot))
+        if (bestItemForSlot == 0 && specCompatible)
         {
             bestItemForSlot = FindDeterministicManagedItem(
                 EquipmentSlots(slot), minimumItemLevel, genuineItemsOnly,
