@@ -54,11 +54,25 @@ void WorldSession::HandleJoinChannel(WorldPacket& recvPacket)
     {
         ChatChannelsEntry const* channel = sChatChannelsStore.LookupEntry(channelId);
         if (!channel)
+        {
+            TC_LOG_ERROR("chat.system", "CMSG_JOIN_CHANNEL: Channel ID %u not found in ChatChannels.dbc (store has %u rows). Player: %s Zone: %u",
+                channelId, sChatChannelsStore.GetNumRows(), GetPlayerInfo().c_str(), GetPlayer()->GetZoneId());
             return;
+        }
 
         AreaTableEntry const* zone = sAreaTableStore.LookupEntry(GetPlayer()->GetZoneId());
-        if (!zone || !GetPlayer()->CanJoinConstantChannelInZone(channel, zone))
+        if (!zone)
+        {
+            TC_LOG_ERROR("chat.system", "CMSG_JOIN_CHANNEL: Zone %u not found in AreaTable.dbc. Player: %s",
+                GetPlayer()->GetZoneId(), GetPlayerInfo().c_str());
             return;
+        }
+        if (!GetPlayer()->CanJoinConstantChannelInZone(channel, zone))
+        {
+            TC_LOG_DEBUG("chat.system", "CMSG_JOIN_CHANNEL: Cannot join channel %u in zone %u (flags=0x%08X, zoneFlags=0x%08X). Player: %s",
+                channelId, GetPlayer()->GetZoneId(), channel->flags, zone->Flags, GetPlayerInfo().c_str());
+            return;
+        }
 
         if (!(channel->flags & CHANNEL_DBC_FLAG_GLOBAL))
         {

@@ -5651,7 +5651,6 @@ void Player::UpdateLocalChannels(uint32 newZone)
         if (ChatChannelsEntry const* channel = sChatChannelsStore.LookupEntry(i))
         {
             Channel* usedChannel = nullptr;
-
             for (JoinedChannelsList::iterator itr = m_channels.begin(); itr != m_channels.end(); ++itr)
             {
                 if ((*itr)->GetChannelId() == i)

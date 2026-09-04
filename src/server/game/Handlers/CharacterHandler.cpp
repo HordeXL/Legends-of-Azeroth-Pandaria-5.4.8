@@ -1204,6 +1204,10 @@ void WorldSession::HandlePlayerLogin(LoginQueryHolder const& holder)
 
     m_playerLoading = false;
 
+    // Join system channels after loading is complete
+    // Recent client versions do not send CMSG_JOIN_CHANNEL for built-in channels
+    pCurrChar->UpdateLocalChannels(pCurrChar->GetZoneId());
+
     // Handle Login-Achievements (should be handled after loading)
     _player->UpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_ON_LOGIN, 1);
     _player->UpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_REACH_LEVEL);
