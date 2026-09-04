@@ -60,6 +60,14 @@ Value<Unit*>* CastScareBeastCcAction::GetTargetValue() { return context->GetValu
 
 bool CastScareBeastCcAction::Execute(Event event) { return botAI->CastSpell("scare beast", GetTarget()); }
 
-bool CastWingClipAction::isUseful() { return CastSpellAction::isUseful() && !botAI->HasAura(spell, GetTarget()); }
+bool CastWingClipAction::isUseful()
+{
+    if (bot->GetMap() &&
+        (bot->GetMap()->IsDungeon() || bot->GetMap()->IsRaid()) &&
+        !bot->InBattleground() && !bot->InArena())
+        return false;
+
+    return CastSpellAction::isUseful() && !botAI->HasAura(spell, GetTarget());
+}
 
 NextAction** CastWingClipAction::getPrerequisites() { return nullptr; }

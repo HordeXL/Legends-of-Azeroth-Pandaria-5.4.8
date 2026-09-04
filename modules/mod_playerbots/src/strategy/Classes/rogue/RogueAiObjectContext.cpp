@@ -100,6 +100,7 @@ public:
         creators["sap"] = &RogueAiObjectContextInternal::sap;
         creators["check stealth"] = &RogueAiObjectContextInternal::check_stealth;
         creators["envenom"] = &RogueAiObjectContextInternal::envenom;
+        creators["dispatch"] = &RogueAiObjectContextInternal::dispatch;
         creators["tricks of the trade on main tank"] = &RogueAiObjectContextInternal::tricks_of_the_trade_on_main_tank;
         creators["fan of knives"] = &RogueAiObjectContextInternal::fan_of_knives;
         creators["killing spree"] = &RogueAiObjectContextInternal::killing_spree;
@@ -135,6 +136,7 @@ private:
     static Action* sap(PlayerbotAI* botAI) { return new CastSapAction(botAI); }
     static Action* unstealth(PlayerbotAI* botAI) { return new UnstealthAction(botAI); }
     static Action* envenom(PlayerbotAI* ai) { return new EnvenomAction(ai); }
+    static Action* dispatch(PlayerbotAI* ai) { return new CastDispatchAction(ai); }
     static Action* tricks_of_the_trade_on_main_tank(PlayerbotAI* ai)
     {
         return new CastTricksOfTheTradeOnMainTankAction(ai);

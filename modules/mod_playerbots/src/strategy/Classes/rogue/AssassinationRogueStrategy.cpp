@@ -36,7 +36,8 @@ AssassinationRogueStrategy::AssassinationRogueStrategy(PlayerbotAI* ai) : MeleeC
 
 NextAction** AssassinationRogueStrategy::getDefaultActions()
 {
-    return NextAction::array(0, new NextAction("mutilate", ACTION_DEFAULT + 0.2f),
+    return NextAction::array(0, new NextAction("dispatch", ACTION_DEFAULT + 0.3f),
+                             new NextAction("mutilate", ACTION_DEFAULT + 0.2f),
                              new NextAction("melee", ACTION_DEFAULT), NULL);
 }
 
@@ -54,8 +55,9 @@ void AssassinationRogueStrategy::InitTriggers(std::vector<TriggerNode*>& trigger
     triggers.push_back(new TriggerNode("slice and dice",
                                        NextAction::array(0, new NextAction("slice and dice", ACTION_HIGH + 5), NULL)));
 
-    triggers.push_back(new TriggerNode("combo points 3 available",
-                                       NextAction::array(0, new NextAction("envenom", ACTION_HIGH + 4), NULL)));
+    triggers.push_back(new TriggerNode("combo points available",
+                                       NextAction::array(0, new NextAction("rupture", ACTION_HIGH + 5),
+                                                         new NextAction("envenom", ACTION_HIGH + 4), NULL)));
 
     triggers.push_back(
         new TriggerNode("expose armor", NextAction::array(0, new NextAction("expose armor", ACTION_HIGH + 3), NULL)));

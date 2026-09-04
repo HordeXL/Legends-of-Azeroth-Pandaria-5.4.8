@@ -35,7 +35,7 @@ void GenericPaladinStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
                         NextAction::array(0, new NextAction("lay on hands on party", ACTION_EMERGENCY + 1), nullptr)));
     triggers.push_back(new TriggerNode(
         "protect party member",
-        NextAction::array(0, new NextAction("blessing of protection on party", ACTION_EMERGENCY + 2), nullptr)));
+        NextAction::array(0, new NextAction("hand of protection", ACTION_EMERGENCY + 2), nullptr)));
     triggers.push_back(
         new TriggerNode("high mana", NextAction::array(0, new NextAction("divine plea", ACTION_HIGH), NULL)));
 }
@@ -81,7 +81,7 @@ void PaladinHealerDpsStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
                             new NextAction("hammer of wrath", ACTION_DEFAULT + 0.6f),
                             new NextAction("holy shock", ACTION_DEFAULT + 0.5f),
                             new NextAction("shield of righteousness", ACTION_DEFAULT + 0.4f),
-                            new NextAction("judgement of light", ACTION_DEFAULT + 0.3f),
+                            new NextAction("judgement", ACTION_DEFAULT + 0.3f),
                             new NextAction("consecration", ACTION_DEFAULT + 0.2f),
                             new NextAction("exorcism", ACTION_DEFAULT + 0.1f),
                             new NextAction("melee", ACTION_DEFAULT),

@@ -90,8 +90,6 @@ void GenericHunterStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
                                        NextAction::array(0, new NextAction("mend pet", ACTION_HIGH + 2), nullptr)));
     // triggers.push_back(new TriggerNode("no ammo", NextAction::array(0, new NextAction("switch to melee", ACTION_HIGH
     // + 1), new NextAction("say::no ammo", ACTION_HIGH), nullptr)));
-    triggers.push_back(new TriggerNode("aspect of the viper",
-                                       NextAction::array(0, new NextAction("aspect of the viper", ACTION_HIGH), NULL)));
     triggers.push_back(new TriggerNode("enemy too close for auto shot",
                                        NextAction::array(0, new NextAction("flee", ACTION_MOVE + 9), nullptr)));
     triggers.push_back(

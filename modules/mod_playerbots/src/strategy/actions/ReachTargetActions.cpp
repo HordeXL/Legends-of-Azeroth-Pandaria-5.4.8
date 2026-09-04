@@ -39,6 +39,14 @@ CastReachTargetSpellAction::CastReachTargetSpellAction(PlayerbotAI* botAI, std::
 }
 bool CastReachTargetSpellAction::isUseful()
 {
+    // Charge-style movement is useful in PvP, but in a dungeon/raid it moves
+    // a follower through the tank's line and can wake the next trash pack.
+    // PvE followers should reach the already pulled target by normal movement.
+    if (bot->GetMap() &&
+        (bot->GetMap()->IsDungeon() || bot->GetMap()->IsRaid()) &&
+        !bot->InBattleground() && !bot->InArena())
+        return false;
+
     return sServerFacade->IsDistanceGreaterThan(AI_VALUE2(float, "distance", "current target"), (distance + sPlayerbotAIConfig->contactDistance));
 }
 

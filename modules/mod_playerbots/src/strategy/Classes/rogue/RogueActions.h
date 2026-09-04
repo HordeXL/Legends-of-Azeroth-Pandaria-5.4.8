@@ -132,6 +132,11 @@ public:
     EnvenomAction(PlayerbotAI* ai) : CastMeleeSpellAction(ai, "envenom") {}
 };
 
+// MoP Assassination execute. CanCastSpell handles the target-health
+// requirement, so keeping it high in the default list is inexpensive above
+// 35% and makes the specialization use its strongest execute below it.
+MELEE_ACTION(CastDispatchAction, "dispatch");
+
 class CastTricksOfTheTradeOnMainTankAction : public BuffOnMainTankAction
 {
 public:

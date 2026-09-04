@@ -29,9 +29,7 @@ HolyPriestStrategy::HolyPriestStrategy(PlayerbotAI* botAI) : HealPriestStrategy(
 
 NextAction** HolyPriestStrategy::getDefaultActions()
 {
-    return NextAction::array(0, new NextAction("smite", ACTION_DEFAULT + 0.2f),
-                             new NextAction("mana burn", ACTION_DEFAULT + 0.1f),
-                             new NextAction("starshards", ACTION_DEFAULT), nullptr);
+    return NextAction::array(0, new NextAction("smite", ACTION_DEFAULT + 0.2f), nullptr);
 }
 
 void HolyPriestStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
@@ -44,8 +42,6 @@ void HolyPriestStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
         new TriggerNode("shadowfiend", NextAction::array(0, new NextAction("shadowfiend", ACTION_HIGH), nullptr)));
     triggers.push_back(
         new TriggerNode("medium mana", NextAction::array(0, new NextAction("shadowfiend", ACTION_HIGH), nullptr)));
-    triggers.push_back(
-        new TriggerNode("low mana", NextAction::array(0, new NextAction("mana burn", ACTION_HIGH), nullptr)));
 }
 
 HolyHealPriestStrategy::HolyHealPriestStrategy(PlayerbotAI* botAI) : GenericPriestStrategy(botAI)

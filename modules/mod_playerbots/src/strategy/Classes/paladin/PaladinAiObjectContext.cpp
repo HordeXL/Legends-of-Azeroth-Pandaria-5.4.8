@@ -112,6 +112,8 @@ public:
 
         creators["blessing of might"] = &PaladinAiObjectContextInternal::blessing_of_might;
         creators["blessing of kings"] = &PaladinAiObjectContextInternal::blessing_of_kings;
+        creators["blessing of might on party"] = &PaladinAiObjectContextInternal::blessing_of_might_on_party;
+        creators["blessing of kings on party"] = &PaladinAiObjectContextInternal::blessing_of_kings_on_party;
 
         creators["divine storm"] = &PaladinAiObjectContextInternal::divine_storm;
         creators["templar's verdict"] = &PaladinAiObjectContextInternal::templars_verdict;
@@ -142,6 +144,7 @@ public:
         creators["divine shield"] = &PaladinAiObjectContextInternal::divine_shield;
         creators["divine protection"] = &PaladinAiObjectContextInternal::divine_protection;
         creators["divine protection on party"] = &PaladinAiObjectContextInternal::divine_protection_on_party;
+        creators["hand of protection"] = &PaladinAiObjectContextInternal::hand_of_protection;
         creators["hammer of justice"] = &PaladinAiObjectContextInternal::hammer_of_justice;
         creators["flash of light on party"] = &PaladinAiObjectContextInternal::flash_of_light_on_party;
         creators["divine light on party"] = &PaladinAiObjectContextInternal::divine_light_on_party;
@@ -226,6 +229,10 @@ private:
     static Action* divine_protection_on_party(PlayerbotAI* botAI)
     {
         return new CastDivineProtectionOnPartyAction(botAI);
+    }
+    static Action* hand_of_protection(PlayerbotAI* botAI)
+    {
+        return new CastHandOfProtectionProtectAction(botAI);
     }
     static Action* hammer_of_justice(PlayerbotAI* botAI) { return new CastHammerOfJusticeAction(botAI); }
     static Action* flash_of_light_on_party(PlayerbotAI* botAI) { return new CastFlashOfLightOnPartyAction(botAI); }
