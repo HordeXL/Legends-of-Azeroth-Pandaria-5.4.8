@@ -3451,6 +3451,32 @@ bool PlayerbotAI::CastSpell(uint32 spellId, Unit* target, Item* itemTarget)
 
     Pet* pet = bot->GetPet();
     SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
+
+    // Fear/turn effects make dungeon trash scatter out of the tank's control
+    // and may aggro neighbouring packs. Keep them for PvP, but suppress every
+    // playerbot implementation of such control in PvE instances. Doing this
+    // at the final cast boundary also covers class-specific actions which do
+    // not pass through GenericSpellActions.
+    if (spellInfo && bot->GetMap() &&
+        (bot->GetMap()->IsDungeon() || bot->GetMap()->IsRaid()) &&
+        !bot->InBattleground() && !bot->InArena())
+    {
+        uint32 const scatterMechanics = (1u << MECHANIC_FEAR) |
+            (1u << MECHANIC_TURN);
+        bool scattersTarget =
+            (spellInfo->GetAllEffectsMechanicMask() & scatterMechanics) != 0;
+        for (uint8 effect = 0; !scattersTarget && effect < MAX_SPELL_EFFECTS;
+             ++effect)
+        {
+            uint32 const aura = spellInfo->Effects[effect].ApplyAuraName;
+            scattersTarget = aura == SPELL_AURA_MOD_FEAR ||
+                aura == SPELL_AURA_MOD_FEAR_2;
+        }
+
+        if (scattersTarget)
+            return false;
+    }
+
     if (pet && pet->HasSpell(spellId))
     {
         bool autocast = false;

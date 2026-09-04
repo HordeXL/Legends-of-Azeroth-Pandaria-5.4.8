@@ -11,7 +11,14 @@ bool CastSunderArmorAction::isUseful()
 
 bool CastHeroicLeapAction::isUseful()
 {
-    Unit* target = AI_VALUE(Unit*, "current target");
+    // Do not leap ahead of the tank in PvE instances. Normal reach/follow
+    // movement keeps the raid together; the mobility skill remains available
+    // in battlegrounds and arenas.
+    if (bot->GetMap() &&
+        (bot->GetMap()->IsDungeon() || bot->GetMap()->IsRaid()) &&
+        !bot->InBattleground() && !bot->InArena())
+        return false;
+
     return sServerFacade->IsDistanceGreaterOrEqualThan(AI_VALUE2(float, "distance", GetTargetName()), 15.f);
 }
 

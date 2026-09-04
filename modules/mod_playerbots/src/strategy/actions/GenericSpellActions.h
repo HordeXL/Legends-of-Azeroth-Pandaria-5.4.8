@@ -299,6 +299,7 @@ class CastSnareSpellAction : public CastDebuffSpellAction
 public:
     CastSnareSpellAction(PlayerbotAI* botAI, std::string const spell) : CastDebuffSpellAction(botAI, spell) {}
 
+    bool isUseful() override;
     Value<Unit*>* GetTargetValue() override;
     std::string const getName() override { return spell + " on snare target"; }
     ActionThreatType getThreatType() override { return ActionThreatType::None; }
