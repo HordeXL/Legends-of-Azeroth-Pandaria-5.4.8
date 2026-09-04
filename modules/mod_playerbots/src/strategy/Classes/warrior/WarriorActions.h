@@ -50,7 +50,12 @@ BUFF_ACTION(CastBloodbathAction, "bloodbath");
 BUFF_ACTION(CastBerserkerRageAction, "berserker rage");
 BUFF_ACTION(CastRallyingCryAction, "rallying cry");
 BUFF_ACTION(CastShieldWallAction, "shield wall");
-BUFF_ACTION(CastRecklessnessAction, "recklessness");
+class CastRecklessnessAction : public CastBuffSpellAction
+{
+public:
+    CastRecklessnessAction(PlayerbotAI* botAI) : CastBuffSpellAction(botAI, "recklessness") {}
+    bool isUseful() override;
+};
 BUFF_ACTION(CastDieByTheSwordAction, "die by the sword");
 
 MELEE_ACTION(CastColossusSmashAction, "colossus smash");
@@ -85,6 +90,7 @@ class CastDemoralizingBannerAction : public CastSpellAction
 public:
     CastDemoralizingBannerAction(PlayerbotAI* botAI) : CastSpellAction(botAI, "demoralizing banner") {}
     ActionThreatType getThreatType() override { return ActionThreatType::Aoe; }
+    bool isUseful() override;
 };
 
 // -- FURY
@@ -96,6 +102,7 @@ class CastSkullBannerAction : public CastSpellAction
 public:
     CastSkullBannerAction(PlayerbotAI* botAI) : CastSpellAction(botAI, "skull banner") {}
     ActionThreatType getThreatType() override { return ActionThreatType::Aoe; }
+    bool isUseful() override;
 };
 
 // -- PROT

@@ -272,8 +272,9 @@ bool CastSnareSpellAction::isUseful()
 {
     // Some class strategies can enqueue this action from a generic aggro
     // trigger as well as from SnareTargetTrigger. Stop before GetTarget() is
-    // evaluated so managed PvE fillers neither kite nor log a missing value.
-    if (botAI->IsLfgAutoQueueReserved() && bot->GetMap() &&
+    // evaluated so PvE bots neither kite a controlled pack nor log a missing
+    // target value. Snares remain available in world content and PvP.
+    if (bot->GetMap() &&
         (bot->GetMap()->IsDungeon() || bot->GetMap()->IsRaid()) &&
         !bot->InBattleground() && !bot->InArena())
         return false;

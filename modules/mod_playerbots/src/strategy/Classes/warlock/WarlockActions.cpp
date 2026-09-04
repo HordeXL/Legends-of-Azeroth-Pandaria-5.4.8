@@ -15,6 +15,35 @@ bool IsPvPControlTarget(Player* bot, Unit* target)
     return bot && target && (bot->InBattleground() || bot->InArena()) &&
         target->GetCharmerOrOwnerPlayerOrPlayerItself();
 }
+
+bool IsPveInstanceTrash(Player* bot, Unit* target)
+{
+    if (!bot || !bot->GetMap() ||
+        (!bot->GetMap()->IsDungeon() && !bot->GetMap()->IsRaid()) ||
+        bot->InBattleground() || bot->InArena())
+        return false;
+
+    Creature* creature = target ? target->ToCreature() : nullptr;
+    return !creature || (!creature->IsDungeonBoss() && !creature->isWorldBoss());
+}
+}
+
+bool CastDarkSoulMiseryAction::isUseful()
+{
+    return !IsPveInstanceTrash(bot, AI_VALUE(Unit*, "current target")) &&
+        CastBuffSpellAction::isUseful();
+}
+
+bool CastDarkSoulKnowledgeAction::isUseful()
+{
+    return !IsPveInstanceTrash(bot, AI_VALUE(Unit*, "current target")) &&
+        CastBuffSpellAction::isUseful();
+}
+
+bool CastDarkSoulInstabilityAction::isUseful()
+{
+    return !IsPveInstanceTrash(bot, AI_VALUE(Unit*, "current target")) &&
+        CastBuffSpellAction::isUseful();
 }
 
 bool CastDrainSoulAction::isUseful() { /*return AI_VALUE2(uint32, "item count", "soul shard") < 10;*/ return std::rand() % 5 < 2; }

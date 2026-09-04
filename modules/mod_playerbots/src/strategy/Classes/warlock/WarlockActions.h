@@ -145,7 +145,12 @@ public:
 
 // -- Affliction
 SPELL_ACTION(CastSoulBurnAction, "soul burn");
-SPELL_ACTION(CastDarkSoulMiseryAction, "dark soul: misery");
+class CastDarkSoulMiseryAction : public CastBuffSpellAction
+{
+public:
+    CastDarkSoulMiseryAction(PlayerbotAI* botAI) : CastBuffSpellAction(botAI, "dark soul: misery") {}
+    bool isUseful() override;
+};
 SPELL_ACTION(CastMaleficGraspAction, "malefic grasp");
 class CastCurseOfAgonyAction : public CastDebuffSpellAction
 {
@@ -235,7 +240,12 @@ public:
 };
 
 // -- Demono
-SPELL_ACTION(CastDarkSoulKnowledgeAction, "dark soul: knowledge");
+class CastDarkSoulKnowledgeAction : public CastBuffSpellAction
+{
+public:
+    CastDarkSoulKnowledgeAction(PlayerbotAI* botAI) : CastBuffSpellAction(botAI, "dark soul: knowledge") {}
+    bool isUseful() override;
+};
 class CastHellfireAction : public CastMeleeSpellAction
 {
 public:
@@ -268,7 +278,12 @@ SPELL_ACTION(CastMetaVoidRayAction, "void ray");
 
 
 // -- Destru
-SPELL_ACTION(CastDarkSoulInstabilityAction, "dark soul: instability");
+class CastDarkSoulInstabilityAction : public CastBuffSpellAction
+{
+public:
+    CastDarkSoulInstabilityAction(PlayerbotAI* botAI) : CastBuffSpellAction(botAI, "dark soul: instability") {}
+    bool isUseful() override;
+};
 SPELL_ACTION(CastFireAndBrimeStoneAction, "fire and brimstone");
 SPELL_ACTION(CastFlamesOfXorothAction, "flames of xoroth");
 SPELL_ACTION(CastShadowBurnAction, "shadowburn");

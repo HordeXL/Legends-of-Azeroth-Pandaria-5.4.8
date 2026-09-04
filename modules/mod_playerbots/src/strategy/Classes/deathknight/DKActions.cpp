@@ -11,6 +11,38 @@
 #include "SpellInfo.h"
 #include "SpellMgr.h"
 
+namespace
+{
+bool IsPveInstanceTrash(Player* bot, Unit* target)
+{
+    if (!bot || !bot->GetMap() ||
+        (!bot->GetMap()->IsDungeon() && !bot->GetMap()->IsRaid()) ||
+        bot->InBattleground() || bot->InArena())
+        return false;
+
+    Creature* creature = target ? target->ToCreature() : nullptr;
+    return !creature || (!creature->IsDungeonBoss() && !creature->isWorldBoss());
+}
+}
+
+bool CastArmyOfTheDeadAction::isUseful()
+{
+    return !IsPveInstanceTrash(bot, AI_VALUE(Unit*, "current target")) &&
+        CastBuffSpellAction::isUseful();
+}
+
+bool CastSummonGargoyleAction::isUseful()
+{
+    return !IsPveInstanceTrash(bot, AI_VALUE(Unit*, "current target")) &&
+        CastSpellAction::isUseful();
+}
+
+bool CastEmpowerRuneWeaponAction::isUseful()
+{
+    return !IsPveInstanceTrash(bot, AI_VALUE(Unit*, "current target")) &&
+        CastBuffSpellAction::isUseful();
+}
+
 NextAction** CastDeathchillAction::getPrerequisites()
 {
     return NextAction::merge(NextAction::array(0, new NextAction("frost presence"), nullptr),

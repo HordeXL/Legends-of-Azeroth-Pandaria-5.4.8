@@ -60,7 +60,6 @@ ArcaneMageStrategy::ArcaneMageStrategy(PlayerbotAI* botAI) : GenericMageStrategy
 NextAction** ArcaneMageStrategy::getDefaultActions()
 {
     return NextAction::array(0,
-        new NextAction("frostjaw", ACTION_DEFAULT + 0.10f),
         new NextAction("nether tempest", ACTION_DEFAULT + 0.3f),
         new NextAction("arcane blast", ACTION_DEFAULT + 0.3f),
         new NextAction("fire blast", ACTION_DEFAULT + 0.1f), // cast during movement
