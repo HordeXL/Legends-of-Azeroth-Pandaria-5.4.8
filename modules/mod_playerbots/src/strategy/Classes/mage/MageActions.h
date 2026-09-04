@@ -50,6 +50,7 @@ class CastFrostjawAction : public CastSpellAction
 {
 public:
     CastFrostjawAction(PlayerbotAI* botAI) : CastSpellAction(botAI, "frostjaw") {}
+    bool isUseful() override;
 };
 
 class CastArcaneBarrageAction : public CastSpellAction
@@ -173,6 +174,7 @@ class CastIcyVeinsAction : public CastBuffSpellAction
 {
 public:
     CastIcyVeinsAction(PlayerbotAI* botAI) : CastBuffSpellAction(botAI, "icy veins") {}
+    bool isUseful() override;
 };
 
 class CastFingersOfFrostAction : public CastBuffSpellAction
@@ -199,10 +201,11 @@ public:
     CastSummonWaterElementalAction(PlayerbotAI* botAI) : CastBuffSpellAction(botAI, "summon water elemental") {}
 };
 
-class CastCombustionAction : public CastBuffSpellAction
+class CastCombustionAction : public CastDebuffSpellAction
 {
 public:
-    CastCombustionAction(PlayerbotAI* botAI) : CastBuffSpellAction(botAI, "combustion") {}
+    CastCombustionAction(PlayerbotAI* botAI) : CastDebuffSpellAction(botAI, "combustion", true) {}
+    bool isUseful() override;
 };
 
 BEGIN_SPELL_ACTION(CastCounterspellAction, "counterspell")
@@ -356,6 +359,7 @@ class CastArcanePowerAction : public CastBuffSpellAction
 {
 public:
     CastArcanePowerAction(PlayerbotAI* botAI) : CastBuffSpellAction(botAI, "arcane power") {}
+    bool isUseful() override;
 };
 
 class CastPresenceOfMindAction : public CastBuffSpellAction
@@ -375,6 +379,13 @@ class CastFocusMagicOnPartyAction : public CastSpellAction
 public:
     CastFocusMagicOnPartyAction(PlayerbotAI* botAI) : CastSpellAction(botAI, "focus magic") {}
     Unit* GetTarget() override;
+};
+
+class CastNetherTempestOnAttackersAction : public CastDebuffSpellOnAttackerAction
+{
+public:
+    CastNetherTempestOnAttackersAction(PlayerbotAI* botAI)
+        : CastDebuffSpellOnAttackerAction(botAI, "nether tempest", true) {}
 };
 
 class CastTimeWarpAction : public CastBuffSpellAction

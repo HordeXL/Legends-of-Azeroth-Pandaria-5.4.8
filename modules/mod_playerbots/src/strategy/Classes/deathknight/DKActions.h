@@ -160,6 +160,7 @@ class CastSummonGargoyleAction : public CastSpellAction
 {
 public:
     CastSummonGargoyleAction(PlayerbotAI* botAI) : CastSpellAction(botAI, "summon gargoyle") {}
+    bool isUseful() override;
 };
 
 class CastGhoulFrenzyAction : public CastBuffSpellAction
@@ -200,6 +201,18 @@ class CastBloodStrikeAction : public CastMeleeSpellAction
 {
 public:
     CastBloodStrikeAction(PlayerbotAI* botAI) : CastMeleeSpellAction(botAI, "blood strike") {}
+};
+
+class CastFesteringStrikeAction : public CastMeleeSpellAction
+{
+public:
+    CastFesteringStrikeAction(PlayerbotAI* botAI) : CastMeleeSpellAction(botAI, "festering strike") {}
+};
+
+class CastSoulReaperAction : public CastMeleeSpellAction
+{
+public:
+    CastSoulReaperAction(PlayerbotAI* botAI) : CastMeleeSpellAction(botAI, "soul reaper") {}
 };
 
 class CastFrostStrikeAction : public CastMeleeSpellAction
@@ -285,12 +298,14 @@ class CastEmpowerRuneWeaponAction : public CastBuffSpellAction
 {
 public:
     CastEmpowerRuneWeaponAction(PlayerbotAI* botAI) : CastBuffSpellAction(botAI, "empower rune weapon") {}
+    bool isUseful() override;
 };
 
 class CastArmyOfTheDeadAction : public CastBuffSpellAction
 {
 public:
     CastArmyOfTheDeadAction(PlayerbotAI* botAI) : CastBuffSpellAction(botAI, "army of the dead") {}
+    bool isUseful() override;
 };
 
 class CastRaiseDeadAction : public CastBuffSpellAction

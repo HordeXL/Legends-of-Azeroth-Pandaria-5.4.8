@@ -268,6 +268,20 @@ Value<Unit*>* CastSpellOnEnemyHealerAction::GetTargetValue()
     return context->GetValue<Unit*>("enemy healer target", spell);
 }
 
+bool CastSnareSpellAction::isUseful()
+{
+    // Some class strategies can enqueue this action from a generic aggro
+    // trigger as well as from SnareTargetTrigger. Stop before GetTarget() is
+    // evaluated so PvE bots neither kite a controlled pack nor log a missing
+    // target value. Snares remain available in world content and PvP.
+    if (bot->GetMap() &&
+        (bot->GetMap()->IsDungeon() || bot->GetMap()->IsRaid()) &&
+        !bot->InBattleground() && !bot->InArena())
+        return false;
+
+    return CastDebuffSpellAction::isUseful();
+}
+
 Value<Unit*>* CastSnareSpellAction::GetTargetValue() { return context->GetValue<Unit*>("snare target", spell); }
 
 Value<Unit*>* CastCrowdControlSpellAction::GetTargetValue() { return context->GetValue<Unit*>("cc target", getName()); }

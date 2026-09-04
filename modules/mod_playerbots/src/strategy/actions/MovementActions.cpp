@@ -1723,6 +1723,14 @@ bool FleeAction::Execute(Event event)
 
 bool FleeAction::isUseful()
 {
+    // Generic flee is a PvP kiting action: it pulls mobs away from the tank
+    // and can drag the raid into another pack. Scripted boss avoidance uses
+    // BossMechanicsAction and is intentionally not affected by this guard.
+    if (bot->GetMap() &&
+        (bot->GetMap()->IsDungeon() || bot->GetMap()->IsRaid()) &&
+        !bot->InBattleground() && !bot->InArena())
+        return false;
+
     if (bot->GetCurrentSpell(CURRENT_CHANNELED_SPELL) != nullptr)
     {
         return false;

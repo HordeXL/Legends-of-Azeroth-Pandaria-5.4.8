@@ -46,7 +46,6 @@ NextAction** DpsHunterStrategy::getDefaultActions()
         new NextAction("kill shot", ACTION_DEFAULT + 0.8f),
         new NextAction("chimera shot", ACTION_DEFAULT + 0.6f),
         new NextAction("aimed shot", ACTION_DEFAULT + 0.5f),
-        new NextAction("silencing shot", ACTION_DEFAULT + 0.4f),
         new NextAction("kill command", ACTION_DEFAULT + 0.3f),
         new NextAction("arcane shot", ACTION_DEFAULT + 0.2f),
         new NextAction("steady shot", ACTION_DEFAULT + 0.1f),
@@ -59,8 +58,6 @@ void DpsHunterStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 
     triggers.push_back(
         new TriggerNode("black arrow", NextAction::array(0, new NextAction("black arrow", 19.0f), nullptr)));
-    triggers.push_back(
-        new TriggerNode("low mana", NextAction::array(0, new NextAction("viper sting", 23.0f), nullptr)));
     triggers.push_back(
         new TriggerNode("hunter's mark", NextAction::array(0, new NextAction("hunter's mark", 31.0f), nullptr)));
     triggers.push_back(new TriggerNode("concussive shot on snare target",

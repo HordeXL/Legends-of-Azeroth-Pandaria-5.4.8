@@ -85,14 +85,14 @@ public:
         // -- talents
         creators["cleave"] = &WarriorAoeStrategyActionNodeFactory::cleave;
         creators["bladestorm"] = &WarriorAoeStrategyActionNodeFactory::bladestorm;
-        creators["dragon roar"] = &WarriorAoeStrategyActionNodeFactory::dragon_roar;
+        creators["dragonroar"] = &WarriorAoeStrategyActionNodeFactory::dragon_roar;
         creators["shockwave"] = &WarriorAoeStrategyActionNodeFactory::shockwave;
     }
 
 private:
     ACTION_NODE_A(cleave, "cleave", "melee");
     ACTION_NODE_A(bladestorm, "bladestorm", "melee");
-    ACTION_NODE_A(dragon_roar, "dragon_roar", "melee");
+    ACTION_NODE_A(dragon_roar, "dragonroar", "melee");
     ACTION_NODE_A(shockwave, "shockwave", "melee");
 };
 
@@ -107,7 +107,7 @@ void WarriorAoeStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
         new NextAction("mocking banner", ACTION_DEFAULT + 5.0f),
         new NextAction("bloodbath", 25.0f),
         new NextAction("bladestorm", 25.0f),
-        new NextAction("dragon_roar", 25.0f),
+        new NextAction("dragonroar", 25.0f),
         new NextAction("shockwave", 25.0f),
         new NextAction("demoralizing shout", 21.0f),
         new NextAction("sweeping strikes", ACTION_HIGH + 7),
@@ -119,7 +119,7 @@ void WarriorAoeStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
         new NextAction("mocking banner", ACTION_DEFAULT + 2.0f),
         new NextAction("bloodbath", 25.0f),
         new NextAction("bladestorm", 25.0f),
-        new NextAction("dragon_roar", 25.0f),
+        new NextAction("dragonroar", 25.0f),
         new NextAction("shockwave", 25.0f),
         new NextAction("sweeping strikes", ACTION_HIGH + 7),
         new NextAction("thunder clap", ACTION_HIGH + 5),

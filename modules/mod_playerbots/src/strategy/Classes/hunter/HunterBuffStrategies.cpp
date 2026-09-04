@@ -17,7 +17,7 @@ private:
     {
         return new ActionNode("aspect of the hawk",
                               /*P*/ nullptr,
-                              /*A*/ NextAction::array(0, new NextAction("aspect of the monkey"), nullptr),
+                              /*A*/ nullptr,
                               /*C*/ nullptr);
     }
 };
@@ -48,6 +48,5 @@ void HunterBuffSpeedStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 
 void HunterBuffManaStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 {
-    triggers.push_back(new TriggerNode("aspect of the viper",
-                                       NextAction::array(0, new NextAction("aspect of the viper", 20.0f), nullptr)));
+    // Hunters use focus in MoP; Aspect of the Viper no longer exists.
 }

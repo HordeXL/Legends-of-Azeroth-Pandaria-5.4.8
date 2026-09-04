@@ -118,6 +118,8 @@ public:
         creators["improved icy talons"] = &DeathKnightAiObjectContextInternal::improved_icy_talons;
         // blood
         creators["blood strike"] = &DeathKnightAiObjectContextInternal::blood_strike;
+        creators["festering strike"] = &DeathKnightAiObjectContextInternal::festering_strike;
+        creators["soul reaper"] = &DeathKnightAiObjectContextInternal::soul_reaper;
         creators["blood tap"] = &DeathKnightAiObjectContextInternal::blood_tap;
         creators["pestilence"] = &DeathKnightAiObjectContextInternal::pestilence;
         creators["strangulate"] = &DeathKnightAiObjectContextInternal::strangulate;
@@ -175,6 +177,8 @@ private:
     static Action* improved_icy_talons(PlayerbotAI* botAI) { return new CastImprovedIcyTalonsAction(botAI); }
     // blood
     static Action* blood_strike(PlayerbotAI* botAI) { return new CastBloodStrikeAction(botAI); }
+    static Action* festering_strike(PlayerbotAI* botAI) { return new CastFesteringStrikeAction(botAI); }
+    static Action* soul_reaper(PlayerbotAI* botAI) { return new CastSoulReaperAction(botAI); }
     static Action* blood_tap(PlayerbotAI* botAI) { return new CastBloodTapAction(botAI); }
     static Action* pestilence(PlayerbotAI* botAI) { return new CastPestilenceAction(botAI); }
     static Action* strangulate(PlayerbotAI* botAI) { return new CastStrangulateAction(botAI); }

@@ -13,22 +13,73 @@
 
 Value<Unit*>* CastPolymorphAction::GetTargetValue() { return context->GetValue<Unit*>("cc target", getName()); }
 
+namespace
+{
+bool IsPveInstance(Player* bot)
+{
+    return bot && bot->GetMap() &&
+        (bot->GetMap()->IsDungeon() || bot->GetMap()->IsRaid()) &&
+        !bot->InBattleground() && !bot->InArena();
+}
+
+bool IsPveInstanceTrash(Player* bot, Unit* target)
+{
+    if (!IsPveInstance(bot))
+        return false;
+
+    Creature* creature = target ? target->ToCreature() : nullptr;
+    return !creature || (!creature->IsDungeonBoss() && !creature->isWorldBoss());
+}
+}
+
+bool CastIcyVeinsAction::isUseful()
+{
+    return !IsPveInstanceTrash(bot, AI_VALUE(Unit*, "current target")) &&
+        CastBuffSpellAction::isUseful();
+}
+
+bool CastCombustionAction::isUseful()
+{
+    return !IsPveInstanceTrash(bot, GetTarget()) &&
+        CastDebuffSpellAction::isUseful();
+}
+
+bool CastArcanePowerAction::isUseful()
+{
+    return !IsPveInstanceTrash(bot, AI_VALUE(Unit*, "current target")) &&
+        CastBuffSpellAction::isUseful();
+}
+
 bool CastFrostNovaAction::isUseful()
 {
+    if (IsPveInstance(bot))
+        return false;
+
     Unit* target = AI_VALUE(Unit*, "current target");
     return sServerFacade->IsDistanceLessOrEqualThan(AI_VALUE2(float, "distance", GetTargetName()), 10.f);
 }
 
 bool CastBlinkAction::isUseful()
 {
+    if (IsPveInstance(bot))
+        return false;
+
     Unit* target = AI_VALUE(Unit*, "current target");
     return sServerFacade->IsDistanceLessOrEqualThan(AI_VALUE2(float, "distance", GetTargetName()), 5.0f);
 }
 
 bool CastSlowAction::isUseful()
 {
+    if (IsPveInstance(bot))
+        return false;
+
     Unit* target = AI_VALUE(Unit*, "current target");
     return sServerFacade->IsDistanceLessOrEqualThan(AI_VALUE2(float, "distance", GetTargetName()), 25.0f);
+}
+
+bool CastFrostjawAction::isUseful()
+{
+    return !IsPveInstance(bot) && CastSpellAction::isUseful();
 }
 bool CastDeepFreezeAction::isUseful()
 {

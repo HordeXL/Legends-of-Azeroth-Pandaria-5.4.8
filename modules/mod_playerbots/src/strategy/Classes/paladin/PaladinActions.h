@@ -335,7 +335,7 @@ public:
     Value<Unit*>* GetTargetValue() override;
 };
 
-PROTECT_ACTION(CastBlessingOfProtectionProtectAction, "blessing of protection");
+PROTECT_ACTION(CastHandOfProtectionProtectAction, "hand of protection");
 
 class CastDivinePleaAction : public CastBuffSpellAction
 {

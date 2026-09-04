@@ -89,7 +89,6 @@ FrostMageStrategy::FrostMageStrategy(PlayerbotAI* botAI) : GenericMageStrategy(b
 NextAction** FrostMageStrategy::getDefaultActions()
 {
     return NextAction::array(0,
-        new NextAction("frostjaw", ACTION_DEFAULT + 0.10f),
         new NextAction("frostbolt", ACTION_DEFAULT + 0.9f),
         new NextAction("frost bomb", ACTION_DEFAULT + 0.8f),
         new NextAction("frostfire bolt", ACTION_DEFAULT + 0.7f),
@@ -119,12 +118,12 @@ void FrostMageStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 void FrostMageAoeStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 {
     triggers.push_back(new TriggerNode("medium aoe", NextAction::array(0,
-        new NextAction("frost bomb on attackers", 24.0f),
+        new NextAction("frost bomb", 24.0f),
         new NextAction("frozen orb", 23.0f),
         new NextAction("blizzard", 22.0f), nullptr)));
 
     triggers.push_back(new TriggerNode("light aoe", NextAction::array(0,
-        new NextAction("frost bomb on attackers", 24.0f),
+        new NextAction("frost bomb", 24.0f),
         new NextAction("cone of cold", 23.0f),
         new NextAction("frozen orb", 22.0f), nullptr)));
 }
