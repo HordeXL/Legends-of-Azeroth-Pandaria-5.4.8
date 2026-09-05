@@ -13,11 +13,9 @@
 
 namespace
 {
-bool IsPveInstanceTrash(Player* bot, Unit* target)
+bool IsGroupPveTrash(PlayerbotAI* botAI, Unit* target)
 {
-    if (!bot || !bot->GetMap() ||
-        (!bot->GetMap()->IsDungeon() && !bot->GetMap()->IsRaid()) ||
-        bot->InBattleground() || bot->InArena())
+    if (!botAI || !botAI->IsGroupPveActivity())
         return false;
 
     Creature* creature = target ? target->ToCreature() : nullptr;
@@ -27,19 +25,19 @@ bool IsPveInstanceTrash(Player* bot, Unit* target)
 
 bool CastArmyOfTheDeadAction::isUseful()
 {
-    return !IsPveInstanceTrash(bot, AI_VALUE(Unit*, "current target")) &&
+    return !IsGroupPveTrash(botAI, AI_VALUE(Unit*, "current target")) &&
         CastBuffSpellAction::isUseful();
 }
 
 bool CastSummonGargoyleAction::isUseful()
 {
-    return !IsPveInstanceTrash(bot, AI_VALUE(Unit*, "current target")) &&
+    return !IsGroupPveTrash(botAI, AI_VALUE(Unit*, "current target")) &&
         CastSpellAction::isUseful();
 }
 
 bool CastEmpowerRuneWeaponAction::isUseful()
 {
-    return !IsPveInstanceTrash(bot, AI_VALUE(Unit*, "current target")) &&
+    return !IsGroupPveTrash(botAI, AI_VALUE(Unit*, "current target")) &&
         CastBuffSpellAction::isUseful();
 }
 

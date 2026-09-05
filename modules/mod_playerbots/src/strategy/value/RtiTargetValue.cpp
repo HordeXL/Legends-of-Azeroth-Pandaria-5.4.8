@@ -29,7 +29,9 @@ int32 RtiTargetValue::GetRtiIndex(std::string const rti)
 
 Unit* RtiTargetValue::Calculate()
 {
-    Group* group = bot->GetGroup();
+    Group* group = bot->GetGroup(GroupSlot::Instance);
+    if (!group)
+        group = bot->GetGroup();
     if (!group)
         return nullptr;
 

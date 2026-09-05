@@ -49,7 +49,7 @@ bool HasPetTrigger::IsActive()
 bool PetAttackTrigger::IsActive()
 {
     Guardian* pet = bot->GetGuardianPet();
-    if (!pet)
+    if (!pet || !pet->GetCharmInfo())
     {
         return false;
     }

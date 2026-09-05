@@ -104,7 +104,10 @@ namespace
 
     std::map<uint32, LfgAutoQueueStagedLogin> LfgAutoQueueStagedLogins;
     std::map<uint32, LfgAutoQueueManagedBot> LfgAutoQueueManagedBots;
-    std::set<uint32> LfgAutoQueueIneligibleBots;
+    // Rejections can be transient (stale group/map state, a teleport, or a
+    // build repaired on the next login). A process-lifetime blacklist slowly
+    // exhausted the filler pool until WorldServer was restarted.
+    std::map<uint32, uint32> LfgAutoQueueIneligibleBots;
     std::set<uint32> LfgAutoQueueOrphanCleanupChecked;
 
     void CleanupOrphanedLfgBotGroups(uint32 requesterGuid)
@@ -310,7 +313,7 @@ namespace
     // Do not repeatedly wake the same character after it failed the runtime
     // eligibility check. The set is intentionally process-local: a clean
     // restart retries the character after any transient state has cleared.
-    std::set<uint32> BgAutoQueueIneligibleBots;
+    std::map<uint32, uint32> BgAutoQueueIneligibleBots;
 
     bool IsBgHealerSpecialization(Specializations specialization)
     {
@@ -522,6 +525,22 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
         return;
 
     _autoQueueElapsed = 0;
+
+    // Let a rejected character be reconsidered after one minute. The normal
+    // eligibility and managed-loadout validation still run in full on every
+    // retry, so a genuinely unsuitable bot remains safe without poisoning the
+    // candidate pool for the rest of the server process.
+    uint32 const now = getMSTime();
+    auto expireIneligible = [now](std::map<uint32, uint32>& bots)
+    {
+        for (auto itr = bots.begin(); itr != bots.end();)
+            if (getMSTimeDiff(itr->second, now) >= 60000)
+                itr = bots.erase(itr);
+            else
+                ++itr;
+    };
+    expireIneligible(LfgAutoQueueIneligibleBots);
+    expireIneligible(BgAutoQueueIneligibleBots);
 
     uint32 realLfg = 0;
     uint32 botLfg = 0;
@@ -891,7 +910,7 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
                         continue;
                     }
 
-                    LfgAutoQueueIneligibleBots.insert(botGuid);
+                    LfgAutoQueueIneligibleBots[botGuid] = getMSTime();
                     TC_LOG_INFO("server",
                         "AutoQueue LFG staged bot ineligible name=%s guid=%u role=%u reason=%s",
                         bot->GetName().c_str(), botGuid, uint32(staged.Role),
@@ -925,7 +944,7 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
                     BotFactory::ManagedLoadoutMode::Pve,
                     staged.MinimumItemLevel, &managedLoadoutFailure))
             {
-                LfgAutoQueueIneligibleBots.insert(botGuid);
+                LfgAutoQueueIneligibleBots[botGuid] = getMSTime();
                 TC_LOG_ERROR("server",
                     "AutoQueue LFG managed loadout rejected name=%s guid=%u role=%u reason=%s avg-ilvl=%u floor=%u",
                     bot->GetName().c_str(), botGuid, uint32(staged.Role),
@@ -978,7 +997,7 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
                         "incomplete-glyphs" : nullptr));
             if (buildFailure)
             {
-                LfgAutoQueueIneligibleBots.insert(botGuid);
+                LfgAutoQueueIneligibleBots[botGuid] = getMSTime();
                 TC_LOG_ERROR("server",
                     "AutoQueue LFG build rejected name=%s guid=%u role=%u reason=%s talents=%u/%u glyphs=%u/%u",
                     bot->GetName().c_str(), botGuid, uint32(staged.Role),
@@ -1045,7 +1064,7 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
                     }
                 }
                 sLFGMgr->SetProposalAutoAccept(bot->GetGUID(), false);
-                LfgAutoQueueIneligibleBots.insert(botGuid);
+                LfgAutoQueueIneligibleBots[botGuid] = getMSTime();
                 std::string lockSummary = lockDetails.str();
                 TC_LOG_ERROR("server",
                     "AutoQueue LFG join refused name=%s guid=%u role=%u requester=%u active-queue=%u group=%u avg-ilvl=%u locks=%s",
@@ -1772,7 +1791,7 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
                 }
                 else
                 {
-                    BgAutoQueueIneligibleBots.insert(botGuid);
+                    BgAutoQueueIneligibleBots[botGuid] = getMSTime();
                     TC_LOG_WARN("server",
                         "AutoQueue BG staged bot became ineligible name=%s guid=%u type=%u reason=%s team=%u expected-team=%u spec=%u level=%u map=%u",
                         bot->GetName().c_str(), botGuid, uint32(staged.Type),
@@ -2822,6 +2841,19 @@ bool RandomPlayerbotMgr::IsLfgAutoQueueManagedBot(
     ObjectGuid::LowType bot) const
 {
     return LfgAutoQueueManagedBots.count(bot) != 0;
+}
+
+RandomPlayerbotMgr::AutoQueueAuditSnapshot
+RandomPlayerbotMgr::GetAutoQueueAuditSnapshot() const
+{
+    AutoQueueAuditSnapshot snapshot;
+    snapshot.LfgPending = uint32(LfgAutoQueueStagedLogins.size());
+    snapshot.LfgManaged = uint32(LfgAutoQueueManagedBots.size());
+    snapshot.LfgIneligible = uint32(LfgAutoQueueIneligibleBots.size());
+    snapshot.BgPending = uint32(BgAutoQueueStagedLogins.size());
+    snapshot.BgManaged = uint32(BgAutoQueueManagedBots.size());
+    snapshot.BgIneligible = uint32(BgAutoQueueIneligibleBots.size());
+    return snapshot;
 }
 
 uint32 RandomPlayerbotMgr::GetValue(Player* bot, std::string const type)

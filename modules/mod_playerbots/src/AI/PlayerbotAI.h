@@ -31,6 +31,19 @@ enum BotRoles : uint8
     BOT_ROLE_DPS = 0x04
 };
 
+// A single environment classification used by combat actions.  Keeping this
+// decision in PlayerbotAI prevents individual class rotations from treating
+// an outdoor managed raid as open-world/PvP-style combat.
+enum class BotActivityMode : uint8
+{
+    OpenWorldPve,
+    DungeonPve,
+    RaidPve,
+    WorldBossPve,
+    BattlegroundPvp,
+    ArenaPvp
+};
+
 enum ActivityType
 {
     GRIND_ACTIVITY = 1,
@@ -174,6 +187,9 @@ public:
     // Checks if the bot is summoned as alt of a player
     bool IsAlt();
     bool IsInVehicle(bool canControl = false, bool canCast = false, bool canAttack = false, bool canTurn = false, bool fixed = false);
+    BotActivityMode GetActivityMode() const;
+    bool IsGroupPveActivity() const;
+    bool IsPvpActivity() const;
 
     bool HasStrategy(std::string const name, BotState type);
     bool ContainsStrategy(StrategyType type);
@@ -189,7 +205,7 @@ public:
 
     uint32 GetReactDelay();
     void InterruptSpell();
-    bool TryLfgCoordinatedInterrupt();
+    bool TryGroupPveCoordinatedInterrupt();
     virtual bool IsInterruptableSpellCasting(Unit* player, std::string const spell);
     bool canDispel(SpellInfo const* spellInfo, uint32 dispelType);
     virtual bool HasAuraToDispel(Unit* player, uint32 dispelType);

@@ -2853,6 +2853,7 @@ public:
         {
             { "npcbot",         SEC_ADMINISTRATOR,          true,           &HandlePlayerbotCommand},
             { "pmon",           SEC_GAMEMASTER,             true,           &HandlePerfMonCommand},
+            { "playerbotaudit", SEC_ADMINISTRATOR,          true,           &HandlePlayerbotAuditCommand},
             { "soloarena",      SEC_ADMINISTRATOR,          false,          &HandleSoloArenaCommand},
             { "worldbossbots",  SEC_ADMINISTRATOR,          false,          &HandleWorldBossBotsCommand},
         };
@@ -2862,6 +2863,102 @@ public:
     static bool HandlePlayerbotCommand(ChatHandler* handler, char const* args)
     {
         return PlayerbotMgr::HandlePlayerbotMgrCommand(handler, args);
+    }
+
+    static bool HandlePlayerbotAuditCommand(ChatHandler* handler, char const*)
+    {
+        RandomPlayerbotMgr::AutoQueueAuditSnapshot const queue =
+            sRandomPlayerbotMgr->GetAutoQueueAuditSnapshot();
+
+        uint32 online = 0;
+        uint32 grouped = 0;
+        uint32 instance = 0;
+        uint32 usingLfg = 0;
+        uint32 usingPvp = 0;
+        uint32 brokenBots = 0;
+        uint32 incompleteLoadouts = 0;
+        std::ostringstream failures;
+
+        for (auto const& pair : sRandomPlayerbotMgr->GetAllBots())
+        {
+            Player* bot = pair.second;
+            if (!bot || !bot->IsInWorld())
+                continue;
+
+            ++online;
+            grouped += bot->GetGroup() ? 1 : 0;
+            instance += bot->GetMap() && bot->GetMap()->Instanceable() ? 1 : 0;
+            usingLfg += bot->IsUsingLfg() ? 1 : 0;
+            usingPvp += bot->InBattleground() || bot->InBattlegroundQueue() ? 1 : 0;
+
+            bool broken = false;
+            for (uint8 slot = EQUIPMENT_SLOT_START;
+                 slot < EQUIPMENT_SLOT_END; ++slot)
+            {
+                Item* item = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
+                if (item && item->GetUInt32Value(ITEM_FIELD_MAX_DURABILITY) &&
+                    !item->GetUInt32Value(ITEM_FIELD_DURABILITY))
+                {
+                    broken = true;
+                    break;
+                }
+            }
+            brokenBots += broken ? 1 : 0;
+
+            std::string loadoutReason;
+            if (bot->GetSpecialization() != SPEC_NONE &&
+                !BotFactory(bot, bot->GetLevel()).HasRequiredEquipmentForSpec(
+                    &loadoutReason))
+            {
+                ++incompleteLoadouts;
+                if (incompleteLoadouts <= 5)
+                    failures << (failures.tellp() > 0 ? ", " : "")
+                             << bot->GetName() << ':' << loadoutReason;
+            }
+        }
+
+        uint32 orphanGroups = 0;
+        if (!sPlayerbotAIConfig->randomBotAccounts.empty())
+        {
+            uint32 const minAccount =
+                sPlayerbotAIConfig->randomBotAccounts.front();
+            uint32 const maxAccount =
+                sPlayerbotAIConfig->randomBotAccounts.back();
+            QueryResult result = CharacterDatabase.PQuery(
+                "SELECT COUNT(*) FROM groups g WHERE (g.groupType & %u)<>0 "
+                "AND NOT EXISTS (SELECT 1 FROM group_member gm "
+                "JOIN characters c ON c.guid=gm.memberGuid "
+                "WHERE gm.guid=g.guid AND (c.account<%u OR c.account>%u))",
+                uint32(GROUPTYPE_LFG), minAccount, maxAccount);
+            if (result)
+                orphanGroups = (*result)[0].GetUInt32();
+        }
+
+        uint32 const recoveryRows = GetSoloArenaLoadoutBackupCount();
+        uint32 const unexpectedRuntime =
+            queue.LfgPending + queue.LfgManaged + queue.BgPending +
+            queue.BgManaged + uint32(WorldBossStagedBots.size()) +
+            uint32(SoloArenaStagedBots.size());
+        bool const pass = !unexpectedRuntime && !orphanGroups &&
+            !recoveryRows && !instance && !usingLfg && !usingPvp &&
+            !brokenBots && !incompleteLoadouts;
+
+        handler->PSendSysMessage(
+            "Playerbot audit %s: online=%u grouped=%u instance=%u lfg=%u pvp=%u broken=%u incomplete-loadout=%u.",
+            pass ? "PASS" : "FAIL", online, grouped, instance, usingLfg,
+            usingPvp, brokenBots, incompleteLoadouts);
+        handler->PSendSysMessage(
+            "Managed state: LFG pending/managed/ineligible=%u/%u/%u, BG pending/managed/ineligible=%u/%u/%u, world-boss=%u, solo-arena=%u, recovery-rows=%u, bot-only-LFG-groups=%u.",
+            queue.LfgPending, queue.LfgManaged, queue.LfgIneligible,
+            queue.BgPending, queue.BgManaged, queue.BgIneligible,
+            uint32(WorldBossStagedBots.size()),
+            uint32(SoloArenaStagedBots.size()), recoveryRows, orphanGroups);
+        if (incompleteLoadouts)
+            handler->PSendSysMessage("First incomplete loadouts: %s%s",
+                failures.str().c_str(), incompleteLoadouts > 5 ? ", ..." : "");
+        handler->SendSysMessage(
+            "PASS is expected only while no managed LFG/LFR, BG, arena, or world-boss run is active.");
+        return true;
     }
 
     static bool HandleWorldBossBotsCommand(ChatHandler* handler, char const* args)

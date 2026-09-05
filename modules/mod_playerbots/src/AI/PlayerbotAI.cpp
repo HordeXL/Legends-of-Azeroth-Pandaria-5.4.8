@@ -194,6 +194,47 @@ bool PlayerbotAI::IsLfgAutoQueueReserved() const
     return _lfgAutoQueueReserved.load();
 }
 
+BotActivityMode PlayerbotAI::GetActivityMode() const
+{
+    if (!bot)
+        return BotActivityMode::OpenWorldPve;
+
+    // Arenas are battleground maps too, so the more specific check must win.
+    if (bot->InArena())
+        return BotActivityMode::ArenaPvp;
+    if (bot->InBattleground())
+        return BotActivityMode::BattlegroundPvp;
+
+    // Boss Caller raids are deliberately staged in the outdoor world.  The
+    // access flag has exactly the same lifecycle as that managed raid and is
+    // therefore a stronger signal than the map type.
+    if (bot->HasWorldBossStagingAccess())
+        return BotActivityMode::WorldBossPve;
+
+    Map* map = bot->GetMap();
+    if (map && map->IsRaid())
+        return BotActivityMode::RaidPve;
+    if (map && map->IsDungeon())
+        return BotActivityMode::DungeonPve;
+
+    return BotActivityMode::OpenWorldPve;
+}
+
+bool PlayerbotAI::IsGroupPveActivity() const
+{
+    BotActivityMode const mode = GetActivityMode();
+    return mode == BotActivityMode::DungeonPve ||
+        mode == BotActivityMode::RaidPve ||
+        mode == BotActivityMode::WorldBossPve;
+}
+
+bool PlayerbotAI::IsPvpActivity() const
+{
+    BotActivityMode const mode = GetActivityMode();
+    return mode == BotActivityMode::BattlegroundPvp ||
+        mode == BotActivityMode::ArenaPvp;
+}
+
 bool PlayerbotAI::CanLfgAutoQueueEngage(Unit const* target) const
 {
     uint32 requesterGuid = _lfgAutoQueueRequesterGuid.load();
@@ -320,25 +361,28 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
     if (Guardian* pet = bot->GetGuardianPet())
     {
         pet->SetReactState(REACT_PASSIVE);
-        if (Unit* petTarget = pet->GetVictim())
+        Unit* petTarget = pet->GetVictim();
+        CharmInfo* charmInfo = pet->GetCharmInfo();
+        bool const ownerStillEngaged = petTarget &&
+            HasEngagedTarget(petTarget);
+        bool const staleAttackCommand = charmInfo &&
+            charmInfo->IsCommandAttack() && !ownerStillEngaged;
+        if ((petTarget && !ownerStillEngaged) || staleAttackCommand)
         {
-            if (!HasEngagedTarget(petTarget))
+            pet->AttackStop();
+            pet->SetTarget(ObjectGuid::Empty);
+            if (charmInfo)
             {
-                pet->AttackStop();
-                pet->SetTarget(ObjectGuid::Empty);
-                if (CharmInfo* charmInfo = pet->GetCharmInfo())
-                {
-                    charmInfo->SetIsCommandAttack(false);
-                    charmInfo->SetIsAtStay(false);
-                    charmInfo->SetIsFollowing(false);
-                    charmInfo->SetIsCommandFollow(true);
-                    charmInfo->SetIsReturning(true);
-                    charmInfo->SetCommandState(COMMAND_FOLLOW);
-                }
-                pet->GetMotionMaster()->Clear();
-                pet->GetMotionMaster()->MoveFollow(
-                    bot, PET_FOLLOW_DIST, pet->GetFollowAngle());
+                charmInfo->SetIsCommandAttack(false);
+                charmInfo->SetIsAtStay(false);
+                charmInfo->SetIsFollowing(false);
+                charmInfo->SetIsCommandFollow(true);
+                charmInfo->SetIsReturning(true);
+                charmInfo->SetCommandState(COMMAND_FOLLOW);
             }
+            pet->GetMotionMaster()->Clear();
+            pet->GetMotionMaster()->MoveFollow(
+                bot, PET_FOLLOW_DIST, pet->GetFollowAngle());
         }
     }
 
@@ -568,7 +612,7 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
     // Interrupts are checked before the ordinary "wait for current cast"
     // path. This lets the one bot selected by the LFG group coordinator stop
     // its own heal/damage cast and answer a short enemy cast immediately.
-    if (TryLfgCoordinatedInterrupt())
+    if (TryGroupPveCoordinatedInterrupt())
     {
         YieldThread(GetReactDelay());
         return;
@@ -2219,10 +2263,10 @@ bool PlayerbotAI::IsInterruptableSpellCasting(Unit* target, std::string const sp
 
 namespace
 {
-std::mutex LfgInterruptReservationMutex;
-std::unordered_map<uint64, uint32> LfgInterruptReservations;
+std::mutex GroupPveInterruptReservationMutex;
+std::unordered_map<uint64, uint32> GroupPveInterruptReservations;
 
-uint64 GetLfgInterruptReservationKey(Unit* target)
+uint64 GetGroupPveInterruptReservationKey(Unit* target)
 {
     if (!target)
         return 0;
@@ -2230,41 +2274,41 @@ uint64 GetLfgInterruptReservationKey(Unit* target)
         target->GetGUID().GetCounter();
 }
 
-bool IsLfgInterruptReserved(Unit* target)
+bool IsGroupPveInterruptReserved(Unit* target)
 {
-    uint64 key = GetLfgInterruptReservationKey(target);
+    uint64 key = GetGroupPveInterruptReservationKey(target);
     if (!key)
         return false;
 
-    std::lock_guard<std::mutex> lock(LfgInterruptReservationMutex);
-    auto itr = LfgInterruptReservations.find(key);
-    if (itr == LfgInterruptReservations.end())
+    std::lock_guard<std::mutex> lock(GroupPveInterruptReservationMutex);
+    auto itr = GroupPveInterruptReservations.find(key);
+    if (itr == GroupPveInterruptReservations.end())
         return false;
     if (int32(itr->second - getMSTime()) > 0)
         return true;
-    LfgInterruptReservations.erase(itr);
+    GroupPveInterruptReservations.erase(itr);
     return false;
 }
 
-void ReserveLfgInterrupt(Unit* target)
+void ReserveGroupPveInterrupt(Unit* target)
 {
-    uint64 key = GetLfgInterruptReservationKey(target);
+    uint64 key = GetGroupPveInterruptReservationKey(target);
     if (!key)
         return;
 
     // Keep projectile/destination stuns from prompting another bot to spend
     // its cooldown before the first effect reaches the trash caster.
-    std::lock_guard<std::mutex> lock(LfgInterruptReservationMutex);
+    std::lock_guard<std::mutex> lock(GroupPveInterruptReservationMutex);
     uint32 now = getMSTime();
-    for (auto itr = LfgInterruptReservations.begin();
-         itr != LfgInterruptReservations.end();)
+    for (auto itr = GroupPveInterruptReservations.begin();
+         itr != GroupPveInterruptReservations.end();)
     {
         if (int32(itr->second - now) <= 0)
-            itr = LfgInterruptReservations.erase(itr);
+            itr = GroupPveInterruptReservations.erase(itr);
         else
             ++itr;
     }
-    LfgInterruptReservations[key] = now + 750;
+    GroupPveInterruptReservations[key] = now + 750;
 }
 
 std::vector<char const*> GetLfgInterruptActions(Player* player)
@@ -2418,11 +2462,15 @@ bool CanStunLfgTrash(Unit* target, SpellInfo const* spellInfo)
 }
 }
 
-bool PlayerbotAI::TryLfgCoordinatedInterrupt()
+bool PlayerbotAI::TryGroupPveCoordinatedInterrupt()
 {
     uint32 requesterGuid = _lfgAutoQueueRequesterGuid.load();
-    if (!requesterGuid || !bot || !bot->IsAlive() ||
-        !bot->GetMap() || !bot->GetMap()->Instanceable())
+    if (!bot || !bot->IsAlive() || !IsGroupPveActivity())
+        return false;
+
+    bool const worldBossRaid =
+        GetActivityMode() == BotActivityMode::WorldBossPve;
+    if (!requesterGuid && !worldBossRaid)
         return false;
 
     Group* group = bot->GetGroup(GroupSlot::Instance);
@@ -2431,8 +2479,11 @@ bool PlayerbotAI::TryLfgCoordinatedInterrupt()
     if (!group)
         return false;
 
-    Player* requester = ObjectAccessor::FindConnectedPlayer(
-        ObjectGuid::Create<HighGuid::Player>(requesterGuid));
+    Player* requester = requesterGuid ? ObjectAccessor::FindConnectedPlayer(
+        ObjectGuid::Create<HighGuid::Player>(requesterGuid)) :
+        ObjectAccessor::FindConnectedPlayer(group->GetLeaderGUID());
+    if (!requesterGuid && requester)
+        requesterGuid = requester->GetGUID().GetCounter();
     Group* requesterGroup = requester ?
         requester->GetGroup(GroupSlot::Instance) : nullptr;
     if (requester && !requesterGroup)
@@ -2504,7 +2555,7 @@ bool PlayerbotAI::TryLfgCoordinatedInterrupt()
 
     for (Unit* target : castingTargets)
     {
-        if (IsLfgInterruptReserved(target))
+        if (IsGroupPveInterruptReserved(target))
             continue;
 
         InterruptChoice best;
@@ -2518,8 +2569,16 @@ bool PlayerbotAI::TryLfgCoordinatedInterrupt()
                 GET_PLAYERBOT_AI(candidate) : nullptr;
             if (!candidate || !candidateAI || candidateAI->IsRealPlayer() ||
                 !candidate->IsAlive() || candidate->GetMap() != bot->GetMap() ||
-                candidateAI->_lfgAutoQueueRequesterGuid.load() != requesterGuid ||
                 candidate->HasUnitState(UNIT_STATE_LOST_CONTROL))
+                continue;
+
+            if (worldBossRaid)
+            {
+                if (!candidate->HasWorldBossStagingAccess())
+                    continue;
+            }
+            else if (candidateAI->_lfgAutoQueueRequesterGuid.load() !=
+                requesterGuid)
                 continue;
 
             std::vector<std::pair<char const*, bool>> actions;
@@ -2628,10 +2687,11 @@ bool PlayerbotAI::TryLfgCoordinatedInterrupt()
 
         if (success)
         {
-            ReserveLfgInterrupt(target);
+            ReserveGroupPveInterrupt(target);
             Spell const* enemySpell = GetInterruptibleCurrentSpell(target);
             TC_LOG_INFO("server",
-                "AutoQueue LFG coordinated interrupt bot=%s guid=%u role=%u action=%s spell=%u fallback=%s target=%s target-guid=%u enemy-spell=%u",
+                "Managed PvE coordinated interrupt mode=%u bot=%s guid=%u role=%u action=%s spell=%u fallback=%s target=%s target-guid=%u enemy-spell=%u",
+                uint32(GetActivityMode()),
                 bot->GetName().c_str(), bot->GetGUID().GetCounter(),
                 uint32(GetInterruptRolePriority(bot)), best.action,
                 best.spellId, best.stunFallback ? "stun" : "none",

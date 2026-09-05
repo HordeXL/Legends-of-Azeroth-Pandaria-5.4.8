@@ -4,6 +4,59 @@
 #include "Playerbots.h"
 #include "PlayerbotSpec.h"
 
+namespace
+{
+Group* GetActiveGroup(Player* bot)
+{
+    Group* group = bot ? bot->GetGroup(GroupSlot::Instance) : nullptr;
+    return group ? group : (bot ? bot->GetGroup() : nullptr);
+}
+
+Unit* GetGroupPveTankFocus(PlayerbotAI* botAI)
+{
+    Player* bot = botAI ? botAI->GetBot() : nullptr;
+    Group* group = GetActiveGroup(bot);
+    if (!bot || !group || !botAI->IsGroupPveActivity())
+        return nullptr;
+
+    GuidVector const attackers = botAI->GetAiObjectContext()
+        ->GetValue<GuidVector>("attackers")->Get();
+    auto isEngagedTarget = [&](Unit* target)
+    {
+        return target && target->IsAlive() && target->GetMap() == bot->GetMap() &&
+            bot->IsValidAttackTarget(target) &&
+            !target->HasBreakableByDamageCrowdControlAura() &&
+            std::find(attackers.begin(), attackers.end(), target->GetGUID()) !=
+                attackers.end();
+    };
+
+    // Prefer the real player's tank target. If the player is not the tank,
+    // use the first living tank's active target. Only already-engaged enemies
+    // qualify, so this cannot start a pull by itself.
+    for (uint8 pass = 0; pass < 2; ++pass)
+    {
+        for (GroupReference* ref = group->GetFirstMember(); ref;
+             ref = ref->next())
+        {
+            Player* member = ref->GetSource();
+            PlayerbotAI* memberAI = member ? GET_PLAYERBOT_AI(member) : nullptr;
+            if (!member || !member->IsAlive() || member->GetMap() != bot->GetMap() ||
+                !PlayerBotSpec::IsTank(member, true) ||
+                (pass == 0) != (memberAI == nullptr))
+                continue;
+
+            Unit* target = memberAI ? memberAI->GetAiObjectContext()
+                ->GetValue<Unit*>("current target")->Get() :
+                member->GetSelectedUnit();
+            if (isEngagedTarget(target))
+                return target;
+        }
+    }
+
+    return nullptr;
+}
+}
+
 class FindMaxThreatGapTargetStrategy : public FindTargetStrategy
 {
 public:
@@ -51,7 +104,7 @@ public:
 
     void CheckAttacker(Unit* attacker, ThreatManager* threatMgr) override
     {
-        if (Group* group = botAI->GetBot()->GetGroup())
+        if (Group* group = GetActiveGroup(botAI->GetBot()))
         {
             ObjectGuid guid = group->GetTargetIcon(4);
             if (guid && attacker->GetGUID() == guid)
@@ -142,7 +195,7 @@ public:
 
     void CheckAttacker(Unit* attacker, ThreatManager* threatMgr) override
     {
-        if (Group* group = botAI->GetBot()->GetGroup())
+        if (Group* group = GetActiveGroup(botAI->GetBot()))
         {
             ObjectGuid guid = group->GetTargetIcon(4);
             if (guid && attacker->GetGUID() == guid)
@@ -217,7 +270,7 @@ public:
 
     void CheckAttacker(Unit* attacker, ThreatManager* threatMgr) override
     {
-        if (Group* group = botAI->GetBot()->GetGroup())
+        if (Group* group = GetActiveGroup(botAI->GetBot()))
         {
             ObjectGuid guid = group->GetTargetIcon(4);
             if (guid && attacker->GetGUID() == guid)
@@ -293,8 +346,11 @@ Unit* DpsTargetValue::Calculate()
     if (rti)
         return rti;
 
+    if (Unit* tankFocus = GetGroupPveTankFocus(botAI))
+        return tankFocus;
+
     // FindLeastHpTargetStrategy strategy(botAI);
-    Group* group = bot->GetGroup();
+    Group* group = GetActiveGroup(bot);
     float dps = AI_VALUE(float, "estimated group dps");
     if (group && PlayerBotSpec::IsCaster(bot))
     {
@@ -317,7 +373,7 @@ public:
 
     void CheckAttacker(Unit* attacker, ThreatManager* threatMgr) override
     {
-        if (Group* group = botAI->GetBot()->GetGroup())
+        if (Group* group = GetActiveGroup(botAI->GetBot()))
         {
             ObjectGuid guid = group->GetTargetIcon(4);
             if (guid && attacker->GetGUID() == guid)

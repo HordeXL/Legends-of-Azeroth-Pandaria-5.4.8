@@ -5,6 +5,15 @@
 #include "PlayerbotAI.h"
 #include "Player.h"
 
+namespace
+{
+Group* GetActiveGroup(Player* player)
+{
+    Group* group = player ? player->GetGroup(GroupSlot::Instance) : nullptr;
+    return group ? group : (player ? player->GetGroup() : nullptr);
+}
+}
+
 unsigned int PlayerBotSpec::GetSpectab(Player* player)
 {
     const Specializations& spec = player->GetSpecialization();
@@ -166,12 +175,12 @@ bool PlayerBotSpec::IsDps(Player* player, bool bySpec)
     if (!bySpec && botAi)
         return botAi->ContainsStrategy(STRATEGY_TYPE_DPS);
 
-    return (!IsTank(player) && !IsHeal(player));
+    return !IsTank(player, bySpec) && !IsHeal(player, bySpec);
 }
 
 uint32 PlayerBotSpec::GetGroupTankNum(Player* player)
 {
-    Group* group = player->GetGroup();
+    Group* group = GetActiveGroup(player);
     if (!group)
     {
         return 0;
@@ -190,7 +199,7 @@ uint32 PlayerBotSpec::GetGroupTankNum(Player* player)
 
 bool PlayerBotSpec::IsMainTank(Player* player)
 {
-    Group* group = player->GetGroup();
+    Group* group = GetActiveGroup(player);
     if (!group)
     {
         return false;
@@ -223,7 +232,7 @@ bool PlayerBotSpec::IsAssistTank(Player* player) { return IsTank(player) && !IsM
 
 bool PlayerBotSpec::IsAssistTankOfIndex(Player* bot, Player* player, int index)
 {
-    Group* group = bot->GetGroup();
+    Group* group = GetActiveGroup(bot);
     if (!group)
     {
         return false;

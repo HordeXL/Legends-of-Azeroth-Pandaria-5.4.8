@@ -62,9 +62,7 @@ bool CastScareBeastCcAction::Execute(Event event) { return botAI->CastSpell("sca
 
 bool CastWingClipAction::isUseful()
 {
-    if (bot->GetMap() &&
-        (bot->GetMap()->IsDungeon() || bot->GetMap()->IsRaid()) &&
-        !bot->InBattleground() && !bot->InArena())
+    if (botAI->IsGroupPveActivity())
         return false;
 
     return CastSpellAction::isUseful() && !botAI->HasAura(spell, GetTarget());

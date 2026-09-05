@@ -644,6 +644,85 @@ int32 GetPlayerbotEnvironmentSpellScore(Player* bot, SpellInfo const* spellInfo,
     return score;
 }
 
+uint8 GetManagedTalentProfileColumn(Player* bot, uint8 row,
+    BotFactory::ManagedLoadoutMode mode)
+{
+    if (!bot || row >= 6)
+        return 0;
+
+    bool const pvp = mode == BotFactory::ManagedLoadoutMode::Pvp;
+    bool const healer = PlayerBotSpec::IsHeal(bot, true);
+    bool const tank = PlayerBotSpec::IsTank(bot, true);
+    std::array<uint8, 6> profile{};
+
+    // MoP talent rows are class-wide.  These profiles intentionally provide
+    // only a stable role/environment preference: registered rotation support
+    // and the spell's actual mechanics retain the much larger score and can
+    // override a profile choice which this core cannot execute.
+    switch (bot->GetClass())
+    {
+        case CLASS_WARRIOR:
+            profile = pvp ? std::array<uint8, 6>{ 2, 1, 1, 1, 1, 2 } :
+                (tank ? std::array<uint8, 6>{ 1, 2, 1, 1, 2, 1 } :
+                        std::array<uint8, 6>{ 1, 2, 1, 2, 2, 1 });
+            break;
+        case CLASS_PALADIN:
+            profile = pvp ? std::array<uint8, 6>{ 0, 1, 2, 2, 1, 0 } :
+                (healer ? std::array<uint8, 6>{ 2, 1, 1, 2, 1, 0 } :
+                 tank ? std::array<uint8, 6>{ 2, 2, 2, 1, 2, 1 } :
+                        std::array<uint8, 6>{ 1, 2, 2, 1, 2, 2 });
+            break;
+        case CLASS_HUNTER:
+            profile = pvp ? std::array<uint8, 6>{ 1, 2, 0, 2, 1, 2 } :
+                            std::array<uint8, 6>{ 2, 1, 1, 2, 0, 0 };
+            break;
+        case CLASS_ROGUE:
+            profile = pvp ? std::array<uint8, 6>{ 1, 2, 0, 1, 0, 1 } :
+                            std::array<uint8, 6>{ 2, 1, 1, 1, 1, 2 };
+            break;
+        case CLASS_PRIEST:
+            profile = pvp ? std::array<uint8, 6>{ 1, 2, 1, 1, 1, 1 } :
+                (healer ? std::array<uint8, 6>{ 2, 1, 0, 2, 2, 1 } :
+                          std::array<uint8, 6>{ 2, 1, 2, 2, 0, 2 });
+            break;
+        case CLASS_DEATH_KNIGHT:
+            profile = pvp ? std::array<uint8, 6>{ 2, 1, 2, 1, 0, 2 } :
+                (tank ? std::array<uint8, 6>{ 0, 2, 1, 0, 1, 1 } :
+                        std::array<uint8, 6>{ 1, 1, 1, 0, 2, 1 });
+            break;
+        case CLASS_SHAMAN:
+            profile = pvp ? std::array<uint8, 6>{ 2, 2, 2, 0, 1, 1 } :
+                (healer ? std::array<uint8, 6>{ 2, 2, 1, 1, 0, 1 } :
+                          std::array<uint8, 6>{ 2, 2, 1, 0, 1, 2 });
+            break;
+        case CLASS_MAGE:
+            profile = pvp ? std::array<uint8, 6>{ 2, 2, 2, 0, 1, 2 } :
+                            std::array<uint8, 6>{ 1, 1, 1, 1, 0, 0 };
+            break;
+        case CLASS_WARLOCK:
+            profile = pvp ? std::array<uint8, 6>{ 2, 1, 2, 2, 1, 0 } :
+                            std::array<uint8, 6>{ 1, 1, 1, 1, 0, 1 };
+            break;
+        case CLASS_MONK:
+            profile = pvp ? std::array<uint8, 6>{ 1, 0, 2, 0, 2, 1 } :
+                (healer ? std::array<uint8, 6>{ 1, 0, 1, 0, 0, 0 } :
+                 tank ? std::array<uint8, 6>{ 2, 0, 1, 2, 1, 1 } :
+                        std::array<uint8, 6>{ 1, 0, 1, 2, 1, 1 });
+            break;
+        case CLASS_DRUID:
+            profile = pvp ? std::array<uint8, 6>{ 1, 1, 0, 2, 2, 0 } :
+                (healer ? std::array<uint8, 6>{ 1, 2, 1, 0, 1, 1 } :
+                 tank ? std::array<uint8, 6>{ 2, 2, 1, 0, 1, 0 } :
+                        std::array<uint8, 6>{ 2, 1, 1, 0, 1, 2 });
+            break;
+        default:
+            profile = { 0, 0, 0, 0, 0, 0 };
+            break;
+    }
+
+    return profile[row];
+}
+
 int32 GetPlayerbotTalentScore(Player* bot, TalentEntry const* talent,
     BotFactory::ManagedLoadoutMode mode)
 {
@@ -659,13 +738,10 @@ int32 GetPlayerbotTalentScore(Player* bot, TalentEntry const* talent,
     score += int32(GetPlayerbotRotationSpellScore(bot, talentSpell) * 500);
     score += GetPlayerbotEnvironmentSpellScore(bot, talentSpell, mode);
 
-    // Neutral rows remain deterministic, while PvE and PvP deliberately use
-    // different fallbacks so a bot never silently keeps one shared build.
-    uint32 const modeOffset = mode == BotFactory::ManagedLoadoutMode::Pvp ? 1 : 0;
-    uint32 preferredColumn =
-        (uint32(bot->GetSpecialization()) + talent->Row + modeOffset) % 3;
-    score += talent->Col == preferredColumn ? 3 :
-        ((talent->Col + 1) % 3 == preferredColumn ? 2 : 1);
+    uint8 const preferredColumn = GetManagedTalentProfileColumn(bot,
+        talent->Row, mode);
+    score += talent->Col == preferredColumn ? 300 :
+        ((talent->Col + 1) % 3 == preferredColumn ? 200 : 100);
     return score;
 }
 }

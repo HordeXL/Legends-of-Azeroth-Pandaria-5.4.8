@@ -14,7 +14,10 @@ void TotemsShamanStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
     GenericShamanStrategy::InitTriggers(triggers);
 
     triggers.push_back(
-        new TriggerNode("no air totem", NextAction::array(0, new NextAction("wrath of air totem", 8.0f), nullptr)));
+        new TriggerNode("no air totem", NextAction::array(0,
+            new NextAction("wrath of air totem", 8.0f),
+            new NextAction("windfury totem", 7.9f),
+            new NextAction("grace of air totem", 7.8f), nullptr)));
 
     triggers.push_back(
         new TriggerNode("no water totem", NextAction::array(0, new NextAction("mana spring totem", 7.0f),
