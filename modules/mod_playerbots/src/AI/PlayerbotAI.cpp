@@ -2149,12 +2149,6 @@ bool PlayerbotAI::TalkRandom()
             for (Channel* channel : worldChannels)
                 channel->Say(bot->GetGUID(), text, LANG_UNIVERSAL);
 
-            // At most one bot wins the ambient slot per window, so this log
-            // line stays rare enough to read.
-            TC_LOG_INFO("playerbots",
-                "Bot %s spoke in the \"%s\" chat channel: %s",
-                bot->GetName().c_str(), BOT_WORLD_CHANNEL_NAME, text.c_str());
-
             // Hand the slot to someone else: UpdateRandomSpeech keeps a bot
             // that just spoke off the next windows.
             _lastAmbientSpeechSec = time(nullptr);
