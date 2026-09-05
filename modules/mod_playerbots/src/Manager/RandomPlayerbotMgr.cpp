@@ -2910,6 +2910,11 @@ void RandomPlayerbotMgr::OnBotLoginInternal(Player* const bot)
         bot->SpawnCorpseBones();
     }
 
+    // Alive bots can also have damaged or broken equipment from an earlier
+    // world/instance session.  They do not reliably visit repair vendors, so
+    // make every login a clean durability boundary.
+    bot->DurabilityRepairAll(false, 1.0f, false);
+
     // AddPlayerBot finishes on the world/session update before the bot begins
     // normal open-world AI. Mark request-driven LFG logins immediately so
     // they cannot acquire a target while waiting for the observer's next

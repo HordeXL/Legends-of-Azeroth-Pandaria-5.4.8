@@ -489,6 +489,7 @@ void PrepareSoloArenaBotForLogout(Player* bot, char const* context)
         bot->ResurrectPlayer(1.0f, false);
         bot->SpawnCorpseBones();
     }
+    bot->DurabilityRepairAll(false, 1.0f, false);
     bot->SetFullHealth();
 
     TC_LOG_INFO("server",
@@ -5148,6 +5149,7 @@ void PrepareWorldBossBotForSummon(Player* bot)
         bot->ResurrectPlayer(1.0f, false);
         bot->SpawnCorpseBones();
     }
+    bot->DurabilityRepairAll(false, 1.0f, false);
     bot->SetFullHealth();
     bot->ResetAllPowers();
 }

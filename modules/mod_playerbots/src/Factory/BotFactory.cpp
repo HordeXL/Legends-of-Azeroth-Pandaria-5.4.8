@@ -1358,6 +1358,10 @@ bool BotFactory::PrepareManagedLoadout(ManagedLoadoutMode mode,
                                        uint32 minimumItemLevel,
                                        std::string* reason)
 {
+    // Managed groups can select an already-online bot which has accumulated
+    // durability loss since login.  Repair before validating or replacing its
+    // loadout so LFG/LFR, Caller and PvP never stage a bot with inactive gear.
+    bot->DurabilityRepairAll(false, 1.0f, false);
     InitBags();
     InitManagedEquipmentForSpec(minimumItemLevel, mode);
     InitManagedTalentsAndGlyphs(mode);
