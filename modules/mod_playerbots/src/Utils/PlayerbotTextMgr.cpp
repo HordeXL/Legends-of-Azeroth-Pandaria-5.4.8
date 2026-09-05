@@ -5,6 +5,7 @@
 
 #include "PlayerbotTextMgr.h"
 
+#include <algorithm>
 #include <bitset>
 #include <functional>
 #include <sstream>
@@ -246,12 +247,33 @@ std::string PlayerbotTextMgr::Format(std::string text, Player* bot, Unit* target
             ReplaceAll(text, "%my_role", role);
         }
 
-        // %instance_name - the bot's current map/instance name (dungeon suggestions)
+        // %instance_name - the bot's current map/instance name (dungeon suggestions).
+        // The name must come from a real party dungeon (Map.dbc map_type == 1,
+        // MAP_INSTANCE): raids, battlegrounds, arenas, scenarios and world maps
+        // are excluded. If the bot is not inside such a map, a random dungeon
+        // name from Map.dbc is used instead.
         if (text.find("%instance_name") != std::string::npos)
         {
             std::string instName;
             if (MapEntry const* mapEntry = sMapStore.LookupEntry(bot->GetMapId()))
-                instName = mapEntry->name[0] ? mapEntry->name[0] : "";
+                if (mapEntry->IsNonRaidDungeon() && mapEntry->name[0])
+                    instName = mapEntry->name[0];
+
+            if (instName.empty())
+            {
+                std::vector<std::string> dungeons;
+                for (uint32 i = 0; i < sMapStore.GetNumRows(); ++i)
+                {
+                    MapEntry const* dungeon = sMapStore.LookupEntry(i);
+                    if (!dungeon || !dungeon->IsNonRaidDungeon() || !dungeon->name[0])
+                        continue;
+                    if (std::find(dungeons.begin(), dungeons.end(), dungeon->name[0]) == dungeons.end())
+                        dungeons.push_back(dungeon->name[0]);
+                }
+                if (!dungeons.empty())
+                    instName = dungeons[urand(0, dungeons.size() - 1)];
+            }
+
             ReplaceAll(text, "%instance_name", instName.empty() ? "instance" : instName);
         }
     }
