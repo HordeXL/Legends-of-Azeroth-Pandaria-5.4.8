@@ -4,10 +4,12 @@
 #include <cctype>
 #include <random>
 #include <set>
+#include <sstream>
 #include <utility>
 #include <vector>
  
 #include "AccountMgr.h"
+#include "AiObjectContext.h"
 #include "AiFactory.h"
 #include "ArenaTeam.h"
 #include "Bag.h"
@@ -471,19 +473,197 @@ uint32 GetPlayerbotBuildSpellScore(Player* bot, SpellInfo const* modifier)
     return score;
 }
 
-uint32 GetPlayerbotTalentScore(Player* bot, TalentEntry const* talent)
+std::string GetPlayerbotActionSpellName(SpellInfo const* spellInfo)
+{
+    if (!spellInfo || !spellInfo->SpellName[0])
+        return std::string();
+
+    std::string name = spellInfo->SpellName[0];
+    std::transform(name.begin(), name.end(), name.begin(),
+        [](unsigned char character) { return char(std::tolower(character)); });
+    return name;
+}
+
+uint32 GetPlayerbotRotationSpellScore(Player* bot, SpellInfo const* modifier)
+{
+    PlayerbotAI* botAI = bot ? GET_PLAYERBOT_AI(bot) : nullptr;
+    if (!botAI || !modifier)
+        return 0;
+
+    std::set<std::string> const supported =
+        botAI->GetAiObjectContext()->GetSupportedActions();
+    uint32 score = supported.count(GetPlayerbotActionSpellName(modifier)) ? 4 : 0;
+
+    // Passive talents and glyphs usually modify another class spell rather
+    // than expose their own cast action. Reward them when that affected spell
+    // is part of this class's registered rotation.
+    for (SpellEffectInfo const& effect : modifier->Effects)
+    {
+        if (!effect.SpellClassMask)
+            continue;
+
+        for (auto const& knownSpell : bot->GetSpellMap())
+        {
+            if (!bot->HasSpell(knownSpell.first))
+                continue;
+            SpellInfo const* known = sSpellMgr->GetSpellInfo(knownSpell.first);
+            if (!known || known->SpellFamilyName != modifier->SpellFamilyName ||
+                !(effect.SpellClassMask & known->SpellFamilyFlags))
+                continue;
+            if (supported.count(GetPlayerbotActionSpellName(known)))
+                ++score;
+        }
+    }
+    return score;
+}
+
+int32 GetPlayerbotEnvironmentSpellScore(Player* bot, SpellInfo const* spellInfo,
+    BotFactory::ManagedLoadoutMode mode)
+{
+    if (!bot || !spellInfo)
+        return 0;
+
+    bool const pvp = mode == BotFactory::ManagedLoadoutMode::Pvp;
+    bool const healer = PlayerBotSpec::IsHeal(bot, true);
+    bool const tank = PlayerBotSpec::IsTank(bot, true);
+    bool const dps = !healer && !tank;
+    int32 score = 0;
+
+    uint32 const hardControlMask = (1u << MECHANIC_CHARM) |
+        (1u << MECHANIC_DISORIENTED) | (1u << MECHANIC_DISARM) |
+        (1u << MECHANIC_FEAR) | (1u << MECHANIC_ROOT) |
+        (1u << MECHANIC_SILENCE) | (1u << MECHANIC_SLEEP) |
+        (1u << MECHANIC_SNARE) | (1u << MECHANIC_STUN) |
+        (1u << MECHANIC_FREEZE) | (1u << MECHANIC_KNOCKOUT) |
+        (1u << MECHANIC_POLYMORPH) | (1u << MECHANIC_BANISH) |
+        (1u << MECHANIC_SHACKLE) | (1u << MECHANIC_TURN) |
+        (1u << MECHANIC_HORROR) | (1u << MECHANIC_INTERRUPT) |
+        (1u << MECHANIC_SAPPED);
+    uint32 const scatterMask = (1u << MECHANIC_CHARM) |
+        (1u << MECHANIC_DISORIENTED) | (1u << MECHANIC_FEAR) |
+        (1u << MECHANIC_SLEEP) | (1u << MECHANIC_POLYMORPH) |
+        (1u << MECHANIC_TURN) | (1u << MECHANIC_HORROR);
+    uint32 const mechanics = spellInfo->GetAllEffectsMechanicMask();
+    if (mechanics & hardControlMask)
+        score += pvp ? 1400 : 100;
+    if (!pvp && (mechanics & scatterMask))
+        score -= 1800;
+
+    for (SpellEffectInfo const& effect : spellInfo->Effects)
+    {
+        switch (effect.Effect)
+        {
+            case SPELL_EFFECT_SCHOOL_DAMAGE:
+            case SPELL_EFFECT_WEAPON_DAMAGE_NOSCHOOL:
+            case SPELL_EFFECT_WEAPON_DAMAGE:
+            case SPELL_EFFECT_WEAPON_PERCENT_DAMAGE:
+            case SPELL_EFFECT_NORMALIZED_WEAPON_DMG:
+            case SPELL_EFFECT_HEALTH_LEECH:
+                score += dps ? (pvp ? 450 : 900) : 150;
+                break;
+            case SPELL_EFFECT_HEAL:
+            case SPELL_EFFECT_HEAL_MAX_HEALTH:
+            case SPELL_EFFECT_HEAL_MECHANICAL:
+            case SPELL_EFFECT_HEAL_PCT:
+                score += healer ? (pvp ? 900 : 1300) : 350;
+                break;
+            case SPELL_EFFECT_ENERGIZE:
+            case SPELL_EFFECT_ENERGIZE_PCT:
+                score += healer ? 700 : 350;
+                break;
+            case SPELL_EFFECT_DISPEL:
+            case SPELL_EFFECT_DISPEL_MECHANIC:
+                score += pvp ? 1000 : (healer ? 1100 : 500);
+                break;
+            case SPELL_EFFECT_INTERRUPT_CAST:
+                score += pvp ? 1700 : 1400;
+                break;
+            case SPELL_EFFECT_CHARGE:
+            case SPELL_EFFECT_CHARGE_DEST:
+            case SPELL_EFFECT_LEAP:
+            case SPELL_EFFECT_LEAP_BACK:
+                score += pvp ? 900 : (tank ? 350 : 100);
+                break;
+            case SPELL_EFFECT_KNOCK_BACK:
+            case SPELL_EFFECT_KNOCK_BACK_DEST:
+                score += pvp ? 800 : -1800;
+                break;
+            default:
+                break;
+        }
+
+        switch (effect.ApplyAuraName)
+        {
+            case SPELL_AURA_PERIODIC_DAMAGE:
+            case SPELL_AURA_MOD_DAMAGE_DONE:
+            case SPELL_AURA_MOD_DAMAGE_PERCENT_DONE:
+            case SPELL_AURA_PROC_TRIGGER_DAMAGE:
+                score += dps ? (pvp ? 350 : 750) : 100;
+                break;
+            case SPELL_AURA_PERIODIC_HEAL:
+            case SPELL_AURA_MOD_HEALING:
+            case SPELL_AURA_MOD_HEALING_PCT:
+            case SPELL_AURA_MOD_HEALING_DONE:
+            case SPELL_AURA_MOD_HEALING_DONE_PERCENT:
+                score += healer ? (pvp ? 700 : 1050) : 250;
+                break;
+            case SPELL_AURA_SCHOOL_ABSORB:
+            case SPELL_AURA_MANA_SHIELD:
+            case SPELL_AURA_DAMAGE_IMMUNITY:
+            case SPELL_AURA_SCHOOL_IMMUNITY:
+            case SPELL_AURA_MECHANIC_IMMUNITY:
+                score += tank ? 1000 : (pvp ? 850 : 500);
+                break;
+            case SPELL_AURA_MOD_INCREASE_HEALTH:
+            case SPELL_AURA_MOD_INCREASE_HEALTH_PERCENT:
+            case SPELL_AURA_MOD_PARRY_PERCENT:
+            case SPELL_AURA_MOD_DODGE_PERCENT:
+            case SPELL_AURA_MOD_BLOCK_PERCENT:
+                score += tank ? 900 : (pvp ? 500 : 250);
+                break;
+            case SPELL_AURA_MOD_INCREASE_SPEED:
+            case SPELL_AURA_MOD_SPEED_ALWAYS:
+                score += pvp ? 700 : 150;
+                break;
+            case SPELL_AURA_MOD_DECREASE_SPEED:
+            case SPELL_AURA_MOD_ROOT:
+            case SPELL_AURA_MOD_STUN:
+            case SPELL_AURA_MOD_SILENCE:
+                score += pvp ? 900 : 100;
+                break;
+            case SPELL_AURA_MOD_CONFUSE:
+            case SPELL_AURA_MOD_FEAR:
+            case SPELL_AURA_MOD_FEAR_2:
+                score += pvp ? 1000 : -1800;
+                break;
+            default:
+                break;
+        }
+    }
+
+    return score;
+}
+
+int32 GetPlayerbotTalentScore(Player* bot, TalentEntry const* talent,
+    BotFactory::ManagedLoadoutMode mode)
 {
     if (!bot || !talent)
         return 0;
 
-    uint32 score = 0;
+    int32 score = 50000;
     if (talent->ReplacesSpell && bot->HasSpell(talent->ReplacesSpell))
         score += 10000;
 
-    score += GetPlayerbotBuildSpellScore(bot, sSpellMgr->GetSpellInfo(talent->SpellId)) * 100;
+    SpellInfo const* talentSpell = sSpellMgr->GetSpellInfo(talent->SpellId);
+    score += int32(GetPlayerbotBuildSpellScore(bot, talentSpell) * 100);
+    score += int32(GetPlayerbotRotationSpellScore(bot, talentSpell) * 500);
+    score += GetPlayerbotEnvironmentSpellScore(bot, talentSpell, mode);
 
-    // DBC-valid ties remain deterministic but differ by active specialization.
-    uint32 preferredColumn = (uint32(bot->GetSpecialization()) + talent->Row) % 3;
+    // Neutral rows remain deterministic, while PvE and PvP deliberately use
+    // different fallbacks so a bot never silently keeps one shared build.
+    uint32 const modeOffset = mode == BotFactory::ManagedLoadoutMode::Pvp ? 1 : 0;
+    uint32 preferredColumn =
+        (uint32(bot->GetSpecialization()) + talent->Row + modeOffset) % 3;
     score += talent->Col == preferredColumn ? 3 :
         ((talent->Col + 1) % 3 == preferredColumn ? 2 : 1);
     return score;
@@ -491,6 +671,12 @@ uint32 GetPlayerbotTalentScore(Player* bot, TalentEntry const* talent)
 }
 
 void BotFactory::InitTalentsTree(bool reset)
+{
+    InitTalentsTreeForMode(reset, ManagedLoadoutMode::Pve, false);
+}
+
+void BotFactory::InitTalentsTreeForMode(bool reset, ManagedLoadoutMode mode,
+    bool ignorePremadeProfile)
 {
     /*std::map<uint32, std::list<const TalentEntry*>> talents_dbc;
     for (auto entry = sTalentStore.begin(); entry != sTalentStore.end(); ++entry)
@@ -556,7 +742,7 @@ void BotFactory::InitTalentsTree(bool reset)
     if (!availablepoints || spec_tab == 99) return;
 
     const std::vector<uint16>& talents = sPlayerbotAIConfig->premadeSpecLink[bot->GetClass()][spec_tab];
-    if (talents.empty())
+    if (ignorePremadeProfile || talents.empty())
     {
         // The inherited premade links are WotLK-style and are intentionally not
         // treated as MoP talent IDs. Build a valid 5.4.8 baseline directly from
@@ -565,7 +751,7 @@ void BotFactory::InitTalentsTree(bool reset)
         {
             bool rowAlreadySelected = false;
             TalentEntry const* selected = nullptr;
-            uint32 selectedScore = 0;
+            int32 selectedScore = 0;
             for (uint32 talentId = 0; talentId < sTalentStore.GetNumRows(); ++talentId)
             {
                 TalentEntry const* talent = sTalentStore.LookupEntry(talentId);
@@ -577,7 +763,7 @@ void BotFactory::InitTalentsTree(bool reset)
                     break;
                 }
 
-                uint32 score = GetPlayerbotTalentScore(bot, talent);
+                int32 score = GetPlayerbotTalentScore(bot, talent, mode);
                 if (!selected || score > selectedScore ||
                     (score == selectedScore && talent->TalentID < selected->TalentID))
                 {
@@ -616,6 +802,11 @@ void BotFactory::InitTalentsTree(bool reset)
 
 void BotFactory::InitGlyphs()
 {
+    InitGlyphsForMode(ManagedLoadoutMode::Pve);
+}
+
+void BotFactory::InitGlyphsForMode(ManagedLoadoutMode mode)
+{
     if (!bot || bot->GetLevel() < 25 || bot->GetSpecialization() == SPEC_NONE)
         return;
 
@@ -624,12 +815,20 @@ void BotFactory::InitGlyphs()
         return;
 
     std::set<uint32> usedGlyphs;
+    uint32 const enabledGlyphSlots =
+        bot->GetUInt32Value(PLAYER_FIELD_GLYPH_SLOTS_ENABLED);
     for (uint8 slot = 0; slot < MAX_GLYPH_SLOT_INDEX; ++slot)
-        if (uint32 glyph = bot->GetGlyph(bot->GetActiveSpec(), slot))
+        if ((enabledGlyphSlots & (1u << slot)) &&
+            bot->GetGlyph(bot->GetActiveSpec(), slot))
+        {
+            uint32 const glyph = bot->GetGlyph(bot->GetActiveSpec(), slot);
             usedGlyphs.insert(glyph);
+        }
 
     for (uint8 slot = 0; slot < MAX_GLYPH_SLOT_INDEX; ++slot)
     {
+        if (!(enabledGlyphSlots & (1u << slot)))
+            continue;
         if (bot->GetGlyph(bot->GetActiveSpec(), slot))
             continue;
 
@@ -638,7 +837,7 @@ void BotFactory::InitGlyphs()
             continue;
 
         uint32 selectedGlyph = 0;
-        uint32 selectedScore = 0;
+        int32 selectedScore = 0;
         for (uint32 glyphSpellId : *glyphSpells)
         {
             SpellInfo const* glyphCast = sSpellMgr->GetSpellInfo(glyphSpellId);
@@ -655,11 +854,21 @@ void BotFactory::InitGlyphs()
                 if (!glyph || glyph->TypeFlags != glyphSlot->TypeFlags || usedGlyphs.count(glyphId))
                     continue;
 
-                uint32 score = GetPlayerbotBuildSpellScore(
-                    bot, sSpellMgr->GetSpellInfo(glyph->SpellId)) * 100;
-                // Specialization-sensitive deterministic tie-breaker. This is a
-                // valid baseline, not a claim of a hand-tuned tournament build.
-                score += 99 - ((glyphId + uint32(bot->GetSpecialization()) * 17 + slot * 7) % 100);
+                SpellInfo const* glyphEffect =
+                    sSpellMgr->GetSpellInfo(glyph->SpellId);
+                int32 score = 50000 + int32(GetPlayerbotBuildSpellScore(
+                    bot, glyphEffect) * 100);
+                score += int32(GetPlayerbotRotationSpellScore(
+                    bot, glyphEffect) * 500);
+                score += GetPlayerbotEnvironmentSpellScore(bot, glyphEffect,
+                    mode);
+                // The mode salt gives neutral glyph choices separate stable
+                // PvE/PvP profiles while preserving specialization affinity.
+                uint32 const modeSalt =
+                    mode == ManagedLoadoutMode::Pvp ? 43 : 0;
+                score += 99 - int32((glyphId +
+                    uint32(bot->GetSpecialization()) * 17 + slot * 7 +
+                    modeSalt) % 100);
                 if (!selectedGlyph || score > selectedScore ||
                     (score == selectedScore && glyphId < selectedGlyph))
                 {
@@ -677,6 +886,56 @@ void BotFactory::InitGlyphs()
     }
 
     bot->SendTalentsInfoData();
+}
+
+void BotFactory::InitManagedTalentsAndGlyphs(ManagedLoadoutMode mode)
+{
+    if (!bot || bot->GetSpecialization() == SPEC_NONE)
+        return;
+
+    // Managed activity profiles own the six talent rows and active glyph
+    // page, but never change the role specialization selected by LFG/BG.
+    bot->ResetTalents(true, true, false);
+    for (uint8 slot = 0; slot < MAX_GLYPH_SLOT_INDEX; ++slot)
+        if (bot->GetGlyph(bot->GetActiveSpec(), slot))
+            bot->SetGlyph(slot, 0);
+
+    InitTalentsTreeForMode(false, mode, true);
+    InitGlyphsForMode(mode);
+
+    std::ostringstream talents;
+    std::ostringstream glyphs;
+    for (uint32 row = 0; row < 6; ++row)
+    {
+        for (uint32 talentId = 0; talentId < sTalentStore.GetNumRows();
+            ++talentId)
+        {
+            TalentEntry const* talent = sTalentStore.LookupEntry(talentId);
+            if (talent && talent->PlayerClass == bot->GetClass() &&
+                talent->Row == row && bot->HasSpell(talent->SpellId))
+            {
+                if (talents.tellp() > 0)
+                    talents << ',';
+                talents << talent->SpellId;
+                break;
+            }
+        }
+    }
+    for (uint8 slot = 0; slot < MAX_GLYPH_SLOT_INDEX; ++slot)
+    {
+        uint32 const glyph = bot->GetGlyph(bot->GetActiveSpec(), slot);
+        if (!glyph)
+            continue;
+        if (glyphs.tellp() > 0)
+            glyphs << ',';
+        glyphs << glyph;
+    }
+    TC_LOG_INFO("playerbots",
+        "Managed %s build selected bot=%s guid=%u specialization=%u talents=[%s] glyphs=[%s]",
+        mode == ManagedLoadoutMode::Pvp ? "PvP" : "PvE",
+        bot->GetName().c_str(), bot->GetGUID().GetCounter(),
+        uint32(bot->GetSpecialization()), talents.str().c_str(),
+        glyphs.str().c_str());
 }
 
 void BotFactory::ClearEverything()
@@ -897,6 +1156,10 @@ void BotFactory::InitEquipmentForSpec()
     // so a second cheap pass completes dependent offhand combinations.
     InitEquipmentInternal(true, false, true, true);
     InitEquipmentInternal(true, false, true, true);
+    // The random cache can have no specialization-compatible weapon at low
+    // levels, or can repeatedly return the same invalid legacy weapon. Finish
+    // with the deterministic path so every logged-in bot has a usable set.
+    NormalizeManagedWeaponSet(0, false, false);
 }
 
 void BotFactory::InitManagedEquipmentForSpec(uint32 minimumItemLevel,
@@ -1097,8 +1360,7 @@ bool BotFactory::PrepareManagedLoadout(ManagedLoadoutMode mode,
 {
     InitBags();
     InitManagedEquipmentForSpec(minimumItemLevel, mode);
-    InitTalentsTree(false);
-    InitGlyphs();
+    InitManagedTalentsAndGlyphs(mode);
     InitPet();
     uint32 const enhancements = InitManagedEnhancements(mode);
 
@@ -1147,6 +1409,16 @@ bool BotFactory::PrepareManagedLoadout(ManagedLoadoutMode mode,
         bot->GetName().c_str(), bot->GetGUID().GetCounter(),
         uint32(bot->GetSpecialization()), uint32(bot->GetAverageItemLevel()),
         minimumItemLevel, enhancements);
+
+    // Spell-id values are cached by the action context. Rebuild both those
+    // values and the class/spec strategy list immediately after a managed
+    // profile switch, otherwise the previous mode's talent actions can linger
+    // until their cache expires.
+    if (botAI)
+    {
+        botAI->GetAiObjectContext()->Reset();
+        botAI->ResetStrategies();
+    }
     if (reason)
         reason->clear();
     return true;
@@ -1174,7 +1446,7 @@ uint32 BotFactory::GetWeaponReferenceItemLevel() const
                     levels.push_back(itemTemplate->ItemLevel);
 
     if (levels.empty())
-        return bot->GetLevel() >= 90 ? 450 : 0;
+        return bot->GetLevel() >= 90 ? 450 : bot->GetLevel();
 
     std::sort(levels.begin(), levels.end());
     uint32 reference = levels[levels.size() / 2];
@@ -1193,13 +1465,16 @@ uint32 BotFactory::FindDeterministicManagedItem(EquipmentSlots slot,
 {
     bool const weaponSlot = slot == EQUIPMENT_SLOT_MAINHAND ||
         slot == EQUIPMENT_SLOT_OFFHAND;
+    uint32 const equipmentReferenceItemLevel = GetWeaponReferenceItemLevel();
     uint32 const weaponReferenceItemLevel = weaponSlot ?
-        GetWeaponReferenceItemLevel() : 0;
+        equipmentReferenceItemLevel : 0;
     uint32 const weaponMinimumItemLevel = weaponReferenceItemLevel > 35 ?
         weaponReferenceItemLevel - 35 : weaponReferenceItemLevel;
-    uint32 const targetItemLevel = weaponSlot ?
-        std::max(weaponReferenceItemLevel, minimumItemLevel) :
-        minimumItemLevel;
+    uint32 const targetItemLevel =
+        std::max(equipmentReferenceItemLevel, minimumItemLevel);
+    ItemQualities const minimumQuality = level >= 80 ? ITEM_QUALITY_EPIC :
+        (level >= 35 ? ITEM_QUALITY_RARE :
+            (level >= 10 ? ITEM_QUALITY_UNCOMMON : ITEM_QUALITY_NORMAL));
     uint32 bestItem = 0;
     uint32 bestDistance = UINT32_MAX;
     uint32 bestItemLevel = 0;
@@ -1211,27 +1486,28 @@ uint32 BotFactory::FindDeterministicManagedItem(EquipmentSlots slot,
     for (auto const& pair : *itemTemplates)
     {
         ItemTemplate const* proto = &pair.second;
-        if (genuineItemsOnly && sRandomItemMgr->IsCustomServerItem(proto->ItemId))
+        if ((genuineItemsOnly &&
+                sRandomItemMgr->IsCustomServerItem(proto->ItemId)) ||
+            (pveOnly && IsManagedPvpItem(proto)) ||
+            sRandomItemMgr->IsTestItem(proto->ItemId))
             continue;
-        if (pveOnly && IsManagedPvpItem(proto))
-            continue;
-        if (sRandomItemMgr->IsTestItem(proto->ItemId) ||
-            proto->Quality < ITEM_QUALITY_EPIC ||
+        if (proto->Quality < minimumQuality ||
             proto->ItemLevel < minimumItemLevel ||
             proto->RequiredLevel > level)
             continue;
         if ((proto->AllowableClass & bot->GetClassMask()) == 0 ||
             (proto->AllowableRace & bot->GetRaceMask()) == 0)
             continue;
-        if (requireTwoHanded && proto->InventoryType != INVTYPE_2HWEAPON)
+        if ((requireTwoHanded &&
+                proto->InventoryType != INVTYPE_2HWEAPON) ||
+            (requireOneHanded &&
+                proto->InventoryType != INVTYPE_WEAPON &&
+                proto->InventoryType != INVTYPE_WEAPONMAINHAND &&
+                proto->InventoryType != INVTYPE_WEAPONOFFHAND))
             continue;
-        if (requireOneHanded &&
-            proto->InventoryType != INVTYPE_WEAPON &&
-            proto->InventoryType != INVTYPE_WEAPONMAINHAND &&
-            proto->InventoryType != INVTYPE_WEAPONOFFHAND)
+        if (!CanEquipItem(proto))
             continue;
-        if (!CanEquipItem(proto) ||
-            !sRandomItemMgr->IsItemValidForEquipmentSlot(bot, slot, proto))
+        if (!sRandomItemMgr->IsItemValidForEquipmentSlot(bot, slot, proto))
             continue;
         if (weaponSlot && proto->ItemLevel < weaponMinimumItemLevel)
             continue;
@@ -1264,6 +1540,46 @@ void BotFactory::NormalizeManagedWeaponSet(uint32 minimumItemLevel,
         EQUIPMENT_SLOT_MAINHAND);
     Item* offHand = bot->GetItemByPos(INVENTORY_SLOT_BAG_0,
         EQUIPMENT_SLOT_OFFHAND);
+
+    bool const missingOrInvalidMainHand = !mainHand ||
+        !sRandomItemMgr->IsItemValidForEquipmentSlot(bot,
+            EQUIPMENT_SLOT_MAINHAND, mainHand->GetTemplate());
+    if (missingOrInvalidMainHand)
+    {
+        uint32 const previousItem = mainHand ? mainHand->GetEntry() : 0;
+        if (mainHand && !MoveEquippedItemToBag(EQUIPMENT_SLOT_MAINHAND))
+        {
+            TC_LOG_ERROR("playerbots",
+                "Cannot preserve invalid main-hand item %u for bot %s specialization %u",
+                previousItem, bot->GetName().c_str(),
+                uint32(bot->GetSpecialization()));
+            return;
+        }
+
+        uint32 const mainHandId = FindDeterministicManagedItem(
+            EQUIPMENT_SLOT_MAINHAND, minimumItemLevel, genuineItemsOnly,
+            pveOnly);
+        uint16 destination = 0;
+        if (!mainHandId || !CanEquipUnseenItem(EQUIPMENT_SLOT_MAINHAND,
+                destination, mainHandId) ||
+            !bot->EquipNewItem(destination, mainHandId, true))
+        {
+            TC_LOG_ERROR("playerbots",
+                "Deterministic weapon repair found no usable main hand for bot %s level %u specialization %u previous-item=%u",
+                bot->GetName().c_str(), uint32(bot->GetLevel()),
+                uint32(bot->GetSpecialization()), previousItem);
+            return;
+        }
+
+        TC_LOG_INFO("playerbots",
+            "Deterministic weapon repair equipped main-hand item %u for bot %s level %u specialization %u previous-item=%u",
+            mainHandId, bot->GetName().c_str(), uint32(bot->GetLevel()),
+            uint32(bot->GetSpecialization()), previousItem);
+        mainHand = bot->GetItemByPos(INVENTORY_SLOT_BAG_0,
+            EQUIPMENT_SLOT_MAINHAND);
+        offHand = bot->GetItemByPos(INVENTORY_SLOT_BAG_0,
+            EQUIPMENT_SLOT_OFFHAND);
+    }
 
     // Frost death knights, caster/healer specs and non-healer monks can use
     // either a two-hander or a one-hander with an off-hand. Never retain a
@@ -1488,7 +1804,7 @@ void BotFactory::InitEquipmentInternal(bool incremental, bool second_chance,
         }
 
         if (specCompatible && slot == EQUIPMENT_SLOT_OFFHAND &&
-            !sRandomItemMgr->SupportsOffhandForSpec(bot))
+            !sRandomItemMgr->NeedsOffhandForSpec(bot))
         {
             if (oldItem)
             {
@@ -1592,8 +1908,7 @@ void BotFactory::InitEquipmentInternal(bool incremental, bool second_chance,
         // fillers must not become permanently ineligible because of that
         // random sampling. Fall back to a deterministic scan and choose the
         // closest genuine item at or above the requested floor.
-        if (bestItemForSlot == 0 && specCompatible &&
-            (minimumItemLevel || weaponSlot))
+        if (bestItemForSlot == 0 && specCompatible)
         {
             bestItemForSlot = FindDeterministicManagedItem(
                 EquipmentSlots(slot), minimumItemLevel, genuineItemsOnly,

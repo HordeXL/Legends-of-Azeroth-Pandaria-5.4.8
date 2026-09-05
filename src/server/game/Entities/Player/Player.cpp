@@ -3532,8 +3532,16 @@ bool Player::AddTalent(uint32 spellId, uint8 spec, bool learning)
             return true;
         }
     }
-    else
-        itr->second->state = PLAYERSPELL_UNCHANGED;
+    else if (itr->second->state == PLAYERSPELL_REMOVED)
+    {
+        // ResetTalents keeps the in-memory entry long enough for the database
+        // delete to be saved. Allow the same talent to be selected again in
+        // this session; otherwise managed PvE/PvP profile switches can only
+        // learn talents which were not present in the previous profile.
+        itr->second->state = learning ? PLAYERSPELL_NEW : PLAYERSPELL_UNCHANGED;
+        itr->second->spec = spec;
+        return true;
+    }
 
     return false;
 }
@@ -5633,6 +5641,39 @@ void Player::CleanupChannels()
     TC_LOG_DEBUG("chat.system", "Player %s: channels cleaned up!", GetName().c_str());
 }
 
+void Player::RejoinConstantChannels()
+{
+    // The client discards channel notifications received while it is still on
+    // the loading screen (chat UI not initialized yet), so channels joined at
+    // login never appear until a zone change re-triggers UpdateLocalChannels.
+    // Once the client has finished loading, silently leave and re-join every
+    // constant (built-in) channel so fresh join notifications reach the client.
+    ChannelMgr* cMgr = ChannelMgr::forTeam(GetTeam());
+    if (!cMgr)
+        return;
+
+    while (true)
+    {
+        bool found = false;
+        for (JoinedChannelsList::iterator itr = m_channels.begin(); itr != m_channels.end(); ++itr)
+        {
+            if ((*itr)->IsConstant())
+            {
+                Channel* ch = *itr;
+                ch->LeaveChannel(this, false);      // no "left" packets to client
+                LeftChannel(ch);                    // remove from player channel list
+                cMgr->LeftChannel(ch->GetName());   // delete channel if empty
+                found = true;
+                break;
+            }
+        }
+        if (!found)
+            break;
+    }
+
+    UpdateLocalChannels(GetZoneId());
+}
+
 void Player::UpdateLocalChannels(uint32 newZone)
 {
     if (GetSession()->PlayerLoading() && !IsBeingTeleportedFar())
@@ -5651,7 +5692,6 @@ void Player::UpdateLocalChannels(uint32 newZone)
         if (ChatChannelsEntry const* channel = sChatChannelsStore.LookupEntry(i))
         {
             Channel* usedChannel = nullptr;
-
             for (JoinedChannelsList::iterator itr = m_channels.begin(); itr != m_channels.end(); ++itr)
             {
                 if ((*itr)->GetChannelId() == i)

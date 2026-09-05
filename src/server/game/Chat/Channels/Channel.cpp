@@ -146,7 +146,7 @@ void Channel::CleanOldChannelsInDB()
     }
 }
 
-void Channel::JoinChannel(Player* player, std::string const& pass)
+void Channel::JoinChannel(Player* player, std::string const& pass, bool announce)
 {
     ObjectGuid guid = player->GetGUID();
     if (IsOn(guid))
@@ -190,7 +190,7 @@ void Channel::JoinChannel(Player* player, std::string const& pass)
 
     player->JoinedChannel(this);
 
-    if (_announce && (player->GetSession()->GetSecurity() < SEC_GAMEMASTER || !sWorld->getBoolConfig(CONFIG_SILENTLY_GM_JOIN_TO_CHANNEL)))
+    if (announce && _announce && (player->GetSession()->GetSecurity() < SEC_GAMEMASTER || !sWorld->getBoolConfig(CONFIG_SILENTLY_GM_JOIN_TO_CHANNEL)))
     {
         WorldPacket data;
         MakeJoined(&data, guid);

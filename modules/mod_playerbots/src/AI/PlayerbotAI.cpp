@@ -18,6 +18,7 @@
 #include "PlayerbotAI.h"
 
 #include <algorithm>
+#include <atomic>
 #include <array>
 #include <cctype>
 #include <cmath>
@@ -83,6 +84,37 @@ static bool HasUnresolvedPlaceholders(std::string const& text)
     }
     return false;
 }
+
+namespace
+{
+// The custom chat channel the ambient chatter is posted to. Bots join it
+// automatically when they log in (JoinBotToWorldChannel in PlayerbotMgr.cpp).
+char const* const BOT_WORLD_CHANNEL_NAME = "World";
+// How often one bot may roll for the server-wide ambient speech slot (the
+// custom "World" chat channel). TalkRandom also has to win the global
+// TryReserveAmbientSpeech CAS, so in practice only one bot speaks per window.
+constexpr uint32 AMBIENT_SPEECH_INTERVAL_SEC = 20;
+// Extra random delay (0..AMBIENT_SPEECH_JITTER_SEC) added to the per-bot
+// timer. A fixed interval makes every bot wake up on the same second, so the
+// bot that just used the slot wakes up exactly when it reopens and wins it
+// again -- the same few bots would speak in World forever.
+// A random offset spreads the wake-ups across the window.
+constexpr uint32 AMBIENT_SPEECH_JITTER_SEC = 20;
+// A bot that has already used the slot has to wait this long before it may
+// take it again, which rotates the chatter over the whole bot population.
+// It must exceed AMBIENT_SPEECH_INTERVAL_SEC so that after a bot speaks there
+// is still at least one eligible bot left while the slot is locked.
+constexpr uint32 AMBIENT_SPEECH_COOLDOWN_SEC = 40;
+// Every eligible bot first draws a random moment inside this window and only
+// competes for the slot once that moment has passed. The bot with the shortest
+// drawn delay is the one that reaches the global TryReserveAmbientSpeech CAS,
+// so the winner is a uniformly random member of the eligible set instead of
+// the bot whose AI tick happens to run first.
+// Milliseconds are used on purpose: time_t only resolves whole seconds, so at
+// that resolution several bots would draw the same instant and the tie would
+// be decided by update order again.
+constexpr uint32 AMBIENT_SPEECH_RACE_MS = 3000;
+} // namespace
 
 PlayerbotChatHandler::PlayerbotChatHandler(Player* pMasterPlayer) : ChatHandler(pMasterPlayer->GetSession())
 {
@@ -2049,9 +2081,9 @@ bool PlayerbotAI::TalkRandom()
         locale = bot->GetSession()->GetSessionDbcLocale();
 
     // Server-wide ambient speech slot: no matter how many bots are online,
-    // only one wins a slot per ~20s, so the World channel never floods with
+    // only one wins a slot per window, so the World channel never floods with
     // simultaneous bot chatter.
-    if (!sPlayerbotTextMgr->TryReserveAmbientSpeech(20))
+    if (!sPlayerbotTextMgr->TryReserveAmbientSpeech(AMBIENT_SPEECH_INTERVAL_SEC))
         return false;
 
     // Pick a random text from the whole table. Some rows are templates whose
@@ -2063,27 +2095,85 @@ bool PlayerbotAI::TalkRandom()
         uint32 sayType = 0;
         std::string text = sPlayerbotTextMgr->GetRandomText(locale, &sayType);
         if (text.empty())
+        {
+            // An empty text pool means ambient chat can never produce anything,
+            // so the World channel would go silent with no trace left. Report
+            // it once instead of every time a bot tries.
+            static std::atomic<bool> emptyTextPoolWarned{false};
+            bool expected = false;
+            if (emptyTextPoolWarned.compare_exchange_strong(expected, true))
+                TC_LOG_WARN("playerbots",
+                    "Bot %s cannot speak in the \"%s\" channel: the ai_playerbot_texts table is empty, so ambient chatter is disabled",
+                    bot->GetName().c_str(), BOT_WORLD_CHANNEL_NAME);
             return false;
+        }
 
         text = sPlayerbotTextMgr->Format(std::move(text), bot);
         if (HasUnresolvedPlaceholders(text))
             continue;
 
         // Prefer speaking in the World channel (the bot joins it at login so
-        // other players can see the ambient chatter). Fall back to a local
-        // say/yell if the channel is unavailable.
-        if (ChannelMgr* cMgr = ChannelMgr::forTeam(bot->GetTeamId()))
+        // other players can see the ambient chatter).
+        //
+        // With AllowTwoSide.Interaction.Channel disabled (the default) there is
+        // one ChannelMgr per faction, so the same channel name lives in two
+        // separate pools; with it enabled both calls return the same ChannelMgr
+        // and the duplicate is skipped. The message is then sent to every
+        // distinct channel the bot is in, so players of both factions hear the
+        // chatter instead of only their own bots.
+        //
+        // Membership is only ever *read* here, never created or refreshed.
+        // Channel creation (GetJoinChannel) and a real join (JoinChannel) both
+        // read or write the character database when PreserveCustomChannels is on,
+        // and this function runs on a map worker thread -- the world thread owns
+        // that connection. So creation and joining stay in JoinBotToWorldChannel,
+        // which runs from OnBotLogin on the world thread. A custom channel is
+        // only deleted once it runs empty, so with bots in it the entry is
+        // stable for the whole uptime.
+        std::vector<Channel*> worldChannels;
+        ChannelMgr* seenChannelMgr = nullptr;
+        for (uint32 faction : { ALLIANCE, HORDE })
         {
-            Channel* channel = cMgr->GetChannel("World", bot, false);
-            if (!channel)
-                channel = cMgr->GetJoinChannel("World", 0);
-            if (channel)
-            {
-                channel->JoinChannel(bot, "");
-                channel->Say(bot->GetGUID(), text, LANG_UNIVERSAL);
-                return true;
-            }
+            ChannelMgr* cMgr = ChannelMgr::forTeam(faction);
+            if (!cMgr || cMgr == seenChannelMgr)
+                continue;
+            seenChannelMgr = cMgr;
+
+            Channel* channel = cMgr->GetChannel(BOT_WORLD_CHANNEL_NAME, bot, false);
+            if (channel && channel->IsOn(bot->GetGUID()))
+                worldChannels.push_back(channel);
         }
+
+        if (!worldChannels.empty())
+        {
+            for (Channel* channel : worldChannels)
+                channel->Say(bot->GetGUID(), text, LANG_UNIVERSAL);
+
+            // At most one bot wins the ambient slot per window, so this log
+            // line stays rare enough to read.
+            TC_LOG_INFO("playerbots",
+                "Bot %s spoke in the \"%s\" chat channel: %s",
+                bot->GetName().c_str(), BOT_WORLD_CHANNEL_NAME, text.c_str());
+
+            // Hand the slot to someone else: UpdateRandomSpeech keeps a bot
+            // that just spoke off the next windows.
+            _lastAmbientSpeechSec = time(nullptr);
+            return true;
+        }
+
+        // The bot is not a member of the World channel in any pool, so the
+        // message would reach no player in it. Speak locally instead, and say so
+        // once a minute -- this distinguishes "no text data" from "bots have
+        // text but are not in the channel" (e.g. the channel has a password).
+        static std::atomic<time_t> lastNoMembershipWarn{0};
+        time_t nowWarn = time(nullptr);
+        time_t expected = lastNoMembershipWarn.load(std::memory_order_relaxed);
+        if (nowWarn - expected >= 60 &&
+            lastNoMembershipWarn.compare_exchange_strong(expected, nowWarn,
+                std::memory_order_relaxed, std::memory_order_relaxed))
+            TC_LOG_WARN("playerbots",
+                "Bot %s could not speak in the \"%s\" channel: it is not a member, so the text was said locally instead. Check that the channel has no password and is not banning bots",
+                bot->GetName().c_str(), BOT_WORLD_CHANNEL_NAME);
 
         if (sayType == 1)
             return Yell(text);
@@ -2184,7 +2274,7 @@ bool PlayerbotAI::Broadcast(std::string const name, Unit* target, ItemTemplate c
             candidates.push_back({ 25, channelName(25, cityName), sPlayerbotAIConfig->broadcastToGuildRecruitmentGlobalChance });
         }
         candidates.push_back({ 26, channelName(26, ""), sPlayerbotAIConfig->broadcastToLFGGlobalChance });
-        candidates.push_back({ 0, "World", sPlayerbotAIConfig->broadcastToWorldGlobalChance });
+        candidates.push_back({ 0, BOT_WORLD_CHANNEL_NAME, sPlayerbotAIConfig->broadcastToWorldGlobalChance });
 
         for (auto const& candidate : candidates)
         {
@@ -2200,8 +2290,18 @@ bool PlayerbotAI::Broadcast(std::string const name, Unit* target, ItemTemplate c
                 continue;
 
             // JoinChannel is a no-op for players that are already members.
-            channel->JoinChannel(bot, "");
+            // Bots are server-side NPCs, so the join must stay silent.
+            channel->JoinChannel(bot, "", false);
+            if (!channel->IsOn(bot->GetGUID()))
+                continue;                 // Say() would silently drop the text
+
             channel->Say(bot->GetGUID(), text, LANG_UNIVERSAL);
+
+            // A World-channel broadcast counts as ambient chatter, so this bot
+            // yields the next windows to other World channel members.
+            if (candidate.id == 0)
+                _lastAmbientSpeechSec = time(nullptr);
+
             return true;
         }
     }
@@ -2228,12 +2328,39 @@ void PlayerbotAI::UpdateRandomSpeech(uint32 /*elapsed*/)
     if (!sPlayerbotAIConfig->randomBotTalk)
         return;
 
+    // Resolve the ambient speech race. The instant is drawn on the 20-40 s
+    // check cadence further down, but the deadline itself has to be polled on
+    // every AI tick -- UpdateRandomSpeech() is called from UpdateAIInternal()
+    // -- otherwise the random delay would never shift the moment of the
+    // attempt and the bot with the fastest tick would still win the slot.
+    if (_ambientRaceDeadlineMs)
+    {
+        // Plain unsigned comparison. Do NOT use getMSTimeDiff(now, deadline)
+        // here: once the deadline has passed, getMSTimeDiff treats now as a
+        // uint32 wrap-around of the deadline and returns a huge positive
+        // number, so the check below would stay true forever and TalkRandom()
+        // would never run -- no bot would ever speak again.
+        if (getMSTime() < _ambientRaceDeadlineMs)
+            return;                  // the drawn instant has not arrived yet
+
+        _ambientRaceDeadlineMs = 0;
+        TalkRandom();
+        return;
+    }
+
     time_t now = time(nullptr);
     if (now < _speechCheckTimer)
         return;
 
-    // anti-spam: at most one ambient speech check every 20 seconds
-    _speechCheckTimer = now + 20;
+    // Anti-spam: a bot checks the ambient slot at most once per window.
+    //
+    // The random offset is what keeps the whole population from locking onto a
+    // single speaker: with a fixed interval every bot wakes up on the same
+    // second, so the bot that just took the global slot wakes up exactly when
+    // the slot reopens and wins it again -- the same few bots would keep
+    // speaking in the World channel forever. The jitter spreads the wake-ups
+    // across the window, so a random bot is the one that reaches the slot.
+    _speechCheckTimer = now + AMBIENT_SPEECH_INTERVAL_SEC + urand(0, AMBIENT_SPEECH_JITTER_SEC);
 
     if (bot->IsInCombat())
     {
@@ -2286,11 +2413,27 @@ void PlayerbotAI::UpdateRandomSpeech(uint32 /*elapsed*/)
                 return;
             }
 
-            // general ambient chatter: one random text from the whole
-            // ai_playerbot_texts table, ignoring the name (category) field.
-            // TalkRandom() acquires a server-wide slot so that no matter how
-            // many bots are online only one bot speaks per ~20s window.
-            TalkRandom();
+            // Rotate the slot. TalkRandom() releases only one server-wide
+            // speech slot per window, so without this the bot that happens to
+            // wake up first would keep taking it and the World channel would
+            // be filled by the same few bots. A bot that already used a recent
+            // window stays silent and hands the slot to another member.
+            //
+            // A negative value means the wall clock moved backwards since this
+            // bot last spoke; treat that as "not recently spoken" so the bot
+            // can still talk instead of going silent for the rest of the uptime.
+            time_t const sinceLastSpeech = now - _lastAmbientSpeechSec;
+            if (sinceLastSpeech >= 0 && sinceLastSpeech < AMBIENT_SPEECH_COOLDOWN_SEC)
+                return;
+
+            // Pick the speaker by a randomized race instead of by update order:
+            // draw one instant inside the race window, and only compete for the
+            // global slot once that instant has passed (see the poll at the top
+            // of this function). The bot with the shortest drawn delay wins, so
+            // the speaker is a uniformly random member of the eligible set
+            // instead of the bot whose AI tick runs first.
+            _ambientRaceDeadlineMs = getMSTime() + urand(0, AMBIENT_SPEECH_RACE_MS);
+            return;                     // TalkRandom() fires once the instant passes
         }
     }
 }

@@ -290,6 +290,15 @@ protected:
     bool _allowActive[MAX_ACTIVITY_TYPE];
     time_t _allowActiveCheckTimer[MAX_ACTIVITY_TYPE];
     time_t _speechCheckTimer = 0;
+    // Wall-clock second of this bot's last speech in the custom "World" chat
+    // channel. A bot that filled the global ambient speech slot recently has to
+    // yield it to someone else, so the chatter rotates over the whole bot
+    // population instead of staying with the few bots that always happen to run
+    // their AI update first.
+    time_t _lastAmbientSpeechSec = 0;
+    // getMSTime() instant this bot may first try to take the ambient speech
+    // slot (0 = no draw pending). See AMBIENT_SPEECH_RACE_MS.
+    uint32 _ambientRaceDeadlineMs = 0;
     //bool inCombat = false;
     //BotCheatMask cheatMask = BotCheatMask::none;
     //Position jumpDestination = Position();

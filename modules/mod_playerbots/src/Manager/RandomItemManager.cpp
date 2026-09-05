@@ -1211,6 +1211,15 @@ bool RandomItemManager::IsPassiveTrinketValidForSpec(Player* bot,
 
     if (affinity.primaryMask && !(affinity.primaryMask & expectedPrimary))
         return false;
+
+    // Pre-MoP trinkets frequently combine a correct primary stat with a
+    // defensive secondary and have no cleaner second option in the database.
+    // They are still useful to a levelling bot. Keep the stricter role/proc
+    // affinity rules for level-80+ managed group content.
+    if (bot->GetLevel() < 80 &&
+        (affinity.primaryMask & expectedPrimary))
+        return true;
+
     if (expectedPrimary == TRINKET_PRIMARY_INTELLECT && affinity.physical &&
         !affinity.caster)
         return false;

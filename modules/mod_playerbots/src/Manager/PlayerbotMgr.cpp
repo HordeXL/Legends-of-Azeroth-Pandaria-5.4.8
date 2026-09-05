@@ -43,6 +43,70 @@
 #include "ChannelMgr.h"
 #include "Log.h"
 
+namespace
+{
+// The custom chat channel the bots use for server-wide ambient chatter.
+char const* const BOT_WORLD_CHANNEL_NAME = "World";
+
+// Joins a logged-in bot to the custom "World" chat channel so it can take part
+// in the server-wide chatter even when it has no real-player master.
+//
+// With AllowTwoSide.Interaction.Channel disabled (the default) there is one
+// ChannelMgr per faction, i.e. the same channel name lives in two separate
+// pools. Bots are server-side NPCs, so they join every pool: joining only their
+// own would keep an Alliance bot out of the Horde "World" channel and vice
+// versa, so half the bots would never reach the players that actually chat
+// there. With cross-faction interaction enabled both calls return the same
+// ChannelMgr and the duplicate is skipped.
+//
+// Returns true when the bot ended up as a member of at least one "World"
+// channel.
+bool JoinBotToWorldChannel(Player* bot)
+{
+    if (!bot || !bot->IsInWorld())
+        return false;
+
+    bool joined = false;
+    ChannelMgr* seenChannelMgr = nullptr;
+    uint32 const factions[] = { ALLIANCE, HORDE };
+
+    for (uint32 faction : factions)
+    {
+        ChannelMgr* cMgr = ChannelMgr::forTeam(faction);
+        if (!cMgr || cMgr == seenChannelMgr)
+            continue;
+        seenChannelMgr = cMgr;
+
+        Channel* world = cMgr->GetJoinChannel(BOT_WORLD_CHANNEL_NAME, 0);
+        if (!world)
+            continue;
+
+        // Bots are server-side NPCs, so the join must not announce itself with
+        // "X joined channel" to every player in the channel.
+        world->JoinChannel(bot, "", false);
+
+        if (world->IsOn(bot->GetGUID()))
+        {
+            joined = true;
+            continue;
+        }
+
+        // JoinChannel fails silently for banned players, channels that carry a
+        // password, and restricted LFG channels. Report it, otherwise a whole
+        // faction of bots would quietly miss the channel with no trace left.
+        TC_LOG_WARN("playerbots",
+            "Bot %s could not join the \"%s\" chat channel (faction %u): the channel may have a password, the bot may be banned from it, or it may be LFG restricted",
+            bot->GetName().c_str(), BOT_WORLD_CHANNEL_NAME, faction);
+    }
+
+    if (joined)
+        TC_LOG_INFO("playerbots",
+            "Bot %s joined the \"%s\" chat channel", bot->GetName().c_str(), BOT_WORLD_CHANNEL_NAME);
+
+    return joined;
+}
+} // namespace
+
 PlayerbotHolder::PlayerbotHolder() : PlayerbotAIBase(false) {}
 class PlayerbotLoginQueryHolder : public LoginQueryHolder
 {
@@ -476,23 +540,23 @@ void PlayerbotHolder::OnBotLogin(Player* const bot)
     playerBots[bot->GetGUID()] = bot;
     OnBotLoginInternal(bot);
 
+    // Make the bot join the custom "World" chat channel so it can take part in
+    // the server-wide chatter even when it has no real-player master. Standard
+    // channels (General/Trade/LocalDefense/LFG/WorldDefense) are handled by the
+    // core's Player::UpdateLocalChannels on zone change; a custom channel is
+    // not covered by that path, so join it explicitly here.
+    //
+    // This runs before the botAI check on purpose: channel membership must not
+    // depend on the AI being attached, otherwise a bot whose AI init failed
+    // would never be able to speak in World.
+    JoinBotToWorldChannel(bot);
+
     PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot);
     if (!botAI)
     {
         // Log a warning here to indicate that the botAI is null
         //TC_LOG_DEBUG("playerbots", "PlayerbotAI is null for bot with GUID: %u", bot->GetGUID());
         return;
-    }
-
-    // Make the bot join the world chat channel so it can participate in world
-    // chat even when it has no real-player master. Standard channels (General/
-    // Trade/LocalDefense/LFG/WorldDefense) are handled by the core's
-    // Player::UpdateLocalChannels on zone change; the custom "World" channel
-    // is not covered by that path, so join it explicitly here.
-    if (ChannelMgr* cMgr = ChannelMgr::forTeam(bot->GetTeamId()))
-    {
-        if (Channel* world = cMgr->GetJoinChannel("World", 0))
-            world->JoinChannel(bot, "");
     }
 
     Player* master = botAI->GetMaster();
