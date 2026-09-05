@@ -1491,41 +1491,45 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
                             dbc::GetClassSpecializations(candidateClass);
                         uint8 candidateSpecializationTab = MAX_TALENT_TABS;
 
-                        // Prefer the active saved build, then the secondary
-                        // saved build, before choosing a valid class fallback.
-                        for (uint8 pass = 0; pass < MAX_TALENT_SPECS; ++pass)
+                        // Choose the best PvE specialization of this class
+                        // for the missing role. The environment preference is
+                        // stronger than the saved-page bonus, while an active
+                        // or secondary saved build wins an otherwise exact
+                        // tie and avoids needless specialization changes.
+                        uint32 bestSpecializationScore = 0;
+                        for (uint8 tab = 0;
+                             tab < classSpecializations.size() &&
+                             tab < MAX_TALENT_TABS; ++tab)
                         {
-                            uint8 specSlot = pass == 0 ? activeSpec :
-                                uint8((activeSpec + pass) % MAX_TALENT_SPECS);
-                            Specializations savedSpecialization =
-                                Specializations(specs[specSlot]);
-                            if (GetLfgRole(savedSpecialization) != role)
+                            Specializations specialization = Specializations(
+                                classSpecializations[tab]);
+                            if (GetLfgRole(specialization) != role)
                                 continue;
 
-                            auto specializationTab = std::find(
-                                classSpecializations.begin(),
-                                classSpecializations.end(),
-                                uint32(savedSpecialization));
-                            if (specializationTab == classSpecializations.end())
-                                continue;
-
-                            candidateSpecializationTab = uint8(std::distance(
-                                classSpecializations.begin(), specializationTab));
-                            break;
-                        }
-
-                        if (candidateSpecializationTab >= MAX_TALENT_TABS)
-                        {
-                            for (uint8 tab = 0;
-                                 tab < classSpecializations.size() &&
-                                 tab < MAX_TALENT_TABS; ++tab)
+                            uint32 score = uint32(
+                                GetAutomatedBotSpecializationPriority(
+                                    specialization, false)) * 4;
+                            if (Specializations(specs[activeSpec]) ==
+                                specialization)
+                                score += 2;
+                            else
                             {
-                                if (GetLfgRole(Specializations(
-                                        classSpecializations[tab])) == role)
-                                {
-                                    candidateSpecializationTab = tab;
-                                    break;
-                                }
+                                for (uint8 specSlot = 0;
+                                     specSlot < MAX_TALENT_SPECS; ++specSlot)
+                                    if (Specializations(specs[specSlot]) ==
+                                        specialization)
+                                    {
+                                        ++score;
+                                        break;
+                                    }
+                            }
+
+                            if (candidateSpecializationTab >=
+                                    MAX_TALENT_TABS ||
+                                score > bestSpecializationScore)
+                            {
+                                candidateSpecializationTab = tab;
+                                bestSpecializationScore = score;
                             }
                         }
 
@@ -2084,9 +2088,11 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
                         uint32 selectedGuid = 0;
                         std::string selectedName;
                         bool selectedHealer = false;
+                        uint8 selectedPriority = 0;
                         uint32 fallbackGuid = 0;
                         std::string fallbackName;
                         bool fallbackHealer = false;
+                        uint8 fallbackPriority = 0;
                         do
                         {
                             Field* fields = candidates->Fetch();
@@ -2111,26 +2117,35 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
                             uint8 activeSpec = fields[5].GetUInt8();
                             if (activeSpec >= MAX_TALENT_SPECS)
                                 activeSpec = 0;
+                            Specializations specialization =
+                                Specializations(specs[activeSpec]);
                             bool healer = IsBgHealerSpecialization(
-                                Specializations(specs[activeSpec]));
-                            if (!HasAutomatedPvpBotLoadout(
-                                Specializations(specs[activeSpec])))
+                                specialization);
+                            if (!HasAutomatedPvpBotLoadout(specialization))
                                 continue;
+                            uint8 priority =
+                                GetAutomatedBotSpecializationPriority(
+                                    specialization, true);
                             if (needHealer && !healer)
                             {
-                                if (!fallbackGuid)
+                                if (!fallbackGuid ||
+                                    priority > fallbackPriority)
                                 {
                                     fallbackGuid = candidateGuid;
                                     fallbackName = fields[1].GetString();
                                     fallbackHealer = false;
+                                    fallbackPriority = priority;
                                 }
                                 continue;
                             }
 
-                            selectedGuid = candidateGuid;
-                            selectedName = fields[1].GetString();
-                            selectedHealer = healer;
-                            break;
+                            if (!selectedGuid || priority > selectedPriority)
+                            {
+                                selectedGuid = candidateGuid;
+                                selectedName = fields[1].GetString();
+                                selectedHealer = healer;
+                                selectedPriority = priority;
+                            }
                         }
                         while (candidates->NextRow());
 

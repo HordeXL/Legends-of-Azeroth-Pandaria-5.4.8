@@ -351,6 +351,7 @@ bool SelectWorldBossDiverseRole(
     while (selected.size() < wanted)
     {
         uint8 bestNewBuffs = 0;
+        uint8 bestSpecializationPriority = 0;
         uint32 bestPvpItems = std::numeric_limits<uint32>::max();
         uint32 bestItemLevel = 0;
         std::vector<uint32> tied;
@@ -362,20 +363,32 @@ bool SelectWorldBossDiverseRole(
             uint8 newBuffs = CountWorldBossRaidBuffs(uint8(
                 GetWorldBossRaidBuffMask(candidates[index].Specialization) &
                 ~coveredBuffs));
+            uint8 specializationPriority =
+                GetAutomatedBotSpecializationPriority(
+                    candidates[index].Specialization, false);
             if (tied.empty() || newBuffs > bestNewBuffs ||
                 (newBuffs == bestNewBuffs &&
+                    specializationPriority >
+                        bestSpecializationPriority) ||
+                (newBuffs == bestNewBuffs &&
+                    specializationPriority ==
+                        bestSpecializationPriority &&
                     candidates[index].PvpItems < bestPvpItems) ||
                 (newBuffs == bestNewBuffs &&
+                    specializationPriority ==
+                        bestSpecializationPriority &&
                     candidates[index].PvpItems == bestPvpItems &&
                     candidates[index].AverageItemLevel > bestItemLevel))
             {
                 bestNewBuffs = newBuffs;
+                bestSpecializationPriority = specializationPriority;
                 bestPvpItems = candidates[index].PvpItems;
                 bestItemLevel = candidates[index].AverageItemLevel;
                 tied.clear();
                 tied.push_back(index);
             }
             else if (newBuffs == bestNewBuffs &&
+                specializationPriority == bestSpecializationPriority &&
                 candidates[index].PvpItems == bestPvpItems &&
                 candidates[index].AverageItemLevel == bestItemLevel)
                 tied.push_back(index);
@@ -4770,6 +4783,14 @@ public:
         std::sort(candidates.begin(), candidates.end(),
             [](SoloArenaPreviewCandidate const& left, SoloArenaPreviewCandidate const& right)
             {
+                uint8 const leftPriority =
+                    GetAutomatedBotSpecializationPriority(
+                        left.Specialization, true);
+                uint8 const rightPriority =
+                    GetAutomatedBotSpecializationPriority(
+                        right.Specialization, true);
+                if (leftPriority != rightPriority)
+                    return leftPriority > rightPriority;
                 return left.GearScore() > right.GearScore();
             });
 
@@ -5116,6 +5137,12 @@ bool StartWorldBossStage(Player* requester, Creature* caller, Creature* boss,
     auto pveOrder = [](WorldBossStagedCandidate const& left,
         WorldBossStagedCandidate const& right)
     {
+        uint8 const leftPriority = GetAutomatedBotSpecializationPriority(
+            left.Specialization, false);
+        uint8 const rightPriority = GetAutomatedBotSpecializationPriority(
+            right.Specialization, false);
+        if (leftPriority != rightPriority)
+            return leftPriority > rightPriority;
         if (left.PvpItems != right.PvpItems)
             return left.PvpItems < right.PvpItems;
         if (left.AverageItemLevel != right.AverageItemLevel)
@@ -6558,6 +6585,106 @@ bool IsSoloArenaAutomationBusy()
         !SoloArenaStagedBots.empty() || SoloArenaRequesterGroup ||
         SoloArenaOpponentGroup || SoloArenaQueuesStaged ||
         SoloArenaEnteredInstance;
+}
+
+uint8 GetAutomatedBotSpecializationPriority(
+    Specializations specialization, bool pvp)
+{
+    // Priority is deliberately class-local. Role requirements and class
+    // diversity are evaluated first by the queue coordinators; this only
+    // decides which specialization of an otherwise suitable class is the
+    // better fit for its environment. A lower-ranked specialization remains
+    // a valid fallback so a queue can never stall solely because the preferred
+    // build is absent from the offline pool.
+    if (pvp)
+    {
+        switch (specialization)
+        {
+            case SPEC_WARRIOR_ARMS:
+            case SPEC_PALADIN_HOLY:
+            case SPEC_PALADIN_RETRIBUTION:
+            case SPEC_HUNTER_MARKSMANSHIP:
+            case SPEC_ROGUE_SUBTLETY:
+            case SPEC_PRIEST_DISCIPLINE:
+            case SPEC_PRIEST_SHADOW:
+            case SPEC_DEATH_KNIGHT_FROST:
+            case SPEC_SHAMAN_ELEMENTAL:
+            case SPEC_SHAMAN_RESTORATION:
+            case SPEC_MAGE_FROST:
+            case SPEC_WARLOCK_AFFLICTION:
+            case SPEC_MONK_MISTWEAVER:
+            case SPEC_MONK_WINDWALKER:
+            case SPEC_DRUID_FERAL:
+            case SPEC_DRUID_RESTORATION:
+                return 3;
+
+            case SPEC_WARRIOR_FURY:
+            case SPEC_HUNTER_SURVIVAL:
+            case SPEC_ROGUE_ASSASSINATION:
+            case SPEC_PRIEST_HOLY:
+            case SPEC_DEATH_KNIGHT_UNHOLY:
+            case SPEC_SHAMAN_ENHANCEMENT:
+            case SPEC_MAGE_FIRE:
+            case SPEC_WARLOCK_DESTRUCTION:
+            case SPEC_DRUID_BALANCE:
+                return 2;
+
+            case SPEC_HUNTER_BEAST_MASTERY:
+            case SPEC_ROGUE_COMBAT:
+            case SPEC_MAGE_ARCANE:
+            case SPEC_WARLOCK_DEMONOLOGY:
+                return 1;
+
+            default:
+                return 0;
+        }
+    }
+
+    switch (specialization)
+    {
+        case SPEC_WARRIOR_PROTECTION:
+        case SPEC_WARRIOR_FURY:
+        case SPEC_PALADIN_HOLY:
+        case SPEC_PALADIN_PROTECTION:
+        case SPEC_PALADIN_RETRIBUTION:
+        case SPEC_HUNTER_SURVIVAL:
+        case SPEC_ROGUE_COMBAT:
+        case SPEC_PRIEST_DISCIPLINE:
+        case SPEC_PRIEST_SHADOW:
+        case SPEC_DEATH_KNIGHT_BLOOD:
+        case SPEC_DEATH_KNIGHT_UNHOLY:
+        case SPEC_SHAMAN_ELEMENTAL:
+        case SPEC_SHAMAN_RESTORATION:
+        case SPEC_MAGE_FIRE:
+        case SPEC_WARLOCK_AFFLICTION:
+        case SPEC_MONK_BREWMASTER:
+        case SPEC_MONK_MISTWEAVER:
+        case SPEC_MONK_WINDWALKER:
+        case SPEC_DRUID_BALANCE:
+        case SPEC_DRUID_GUARDIAN:
+        case SPEC_DRUID_RESTORATION:
+            return 3;
+
+        case SPEC_WARRIOR_ARMS:
+        case SPEC_HUNTER_BEAST_MASTERY:
+        case SPEC_ROGUE_ASSASSINATION:
+        case SPEC_PRIEST_HOLY:
+        case SPEC_DEATH_KNIGHT_FROST:
+        case SPEC_SHAMAN_ENHANCEMENT:
+        case SPEC_MAGE_ARCANE:
+        case SPEC_WARLOCK_DESTRUCTION:
+        case SPEC_DRUID_FERAL:
+            return 2;
+
+        case SPEC_HUNTER_MARKSMANSHIP:
+        case SPEC_ROGUE_SUBTLETY:
+        case SPEC_MAGE_FROST:
+        case SPEC_WARLOCK_DEMONOLOGY:
+            return 1;
+
+        default:
+            return 0;
+    }
 }
 
 bool ApplyAutomatedPvpBotLoadout(Player* bot, uint32 requesterGuid,
