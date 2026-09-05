@@ -179,6 +179,7 @@ extern DBCStorage <ItemRandomSuffixEntry>        sItemRandomSuffixStore;
 extern DBCStorage <ItemSetEntry>                 sItemSetStore;
 extern DBCStorage <ItemSpecEntry>                sItemSpecStore;
 extern DBCStorage <ItemSpecOverrideEntry>        sItemSpecOverrideStore;
+extern DBCStorage <JournalInstanceEntry>         sJournalInstanceStore;
 extern DBCStorage <LFGDungeonEntry>              sLFGDungeonStore;
 extern DBCStorage <LiquidTypeEntry>              sLiquidTypeStore;
 extern DBCStorage <LockEntry>                    sLockStore;

@@ -1789,6 +1789,14 @@ struct MailTemplateEntry
     DbcStr    content;                                      // 2        m_body_lang
 };
 
+struct JournalInstanceEntry
+{
+    uint32      ID;                                         // 0        journal instance id, used by |Hjournal:0:ID:...|h chat links
+    uint32      MapID;                                      // 1        m_mapID
+    // uint32  AreaID                                      // 2
+    // uint32  ButtonFileDataID, BackgroundFileDataID, LoreFileDataID, Flags, OrderIndex // 3-7 unused
+};
+
 struct MapEntry
 {
     uint32  MapID;                                          // 0

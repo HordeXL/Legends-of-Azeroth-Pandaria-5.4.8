@@ -157,6 +157,8 @@ DBCStorage <ItemSetEntry> sItemSetStore(ItemSetEntryfmt);
 DBCStorage <ItemSpecEntry> sItemSpecStore(ItemSpecEntryfmt);
 DBCStorage <ItemSpecOverrideEntry> sItemSpecOverrideStore(ItemSpecOverrideEntryfmt);
 
+DBCStorage <JournalInstanceEntry> sJournalInstanceStore(JournalInstanceEntryfmt);
+
 DBCStorage <LFGDungeonEntry> sLFGDungeonStore(LFGDungeonEntryfmt);
 DBCStorage <LightEntry> sLightStore(LightEntryfmt);
 DBCStorage <LiquidTypeEntry> sLiquidTypeStore(LiquidTypefmt);
@@ -511,6 +513,8 @@ void LoadDBCStores(const std::string& dataPath, uint32& availableDbcLocales)
     for (uint32 i = 0; i < sItemSpecOverrideStore.GetNumRows(); ++i)
         if (auto entry = sItemSpecOverrideStore.LookupEntry(i))
             sItemSpecOverrideByItemId.emplace(entry->ItemId, entry->SpecId);
+
+    LoadDBC(availableDbcLocales, bad_dbc_files, sJournalInstanceStore,        dbcPath, "JournalInstance.dbc");//18414
 
     LoadDBC(availableDbcLocales, bad_dbc_files, sLFGDungeonStore,             dbcPath, "LfgDungeons.dbc");//15595
     LoadDBC(availableDbcLocales, bad_dbc_files, sLightStore,                  dbcPath, "Light.dbc"); // 18414

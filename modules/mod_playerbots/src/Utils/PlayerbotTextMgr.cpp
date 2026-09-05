@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <bitset>
+#include <unordered_map>
 #include <functional>
 #include <sstream>
 
@@ -247,34 +248,64 @@ std::string PlayerbotTextMgr::Format(std::string text, Player* bot, Unit* target
             ReplaceAll(text, "%my_role", role);
         }
 
-        // %instance_name - the bot's current map/instance name (dungeon suggestions).
-        // The name must come from a real party dungeon (Map.dbc map_type == 1,
-        // MAP_INSTANCE): raids, battlegrounds, arenas, scenarios and world maps
-        // are excluded. If the bot is not inside such a map, a random dungeon
-        // name from Map.dbc is used instead.
+        // %instance_name - a clickable Dungeon Journal link for a party dungeon
+        // (Map.dbc map_type == 1, MAP_INSTANCE). The bot's current map is used
+        // when it has a JournalInstance.dbc entry; otherwise a random journal-
+        // backed dungeon is picked. Raids, battlegrounds, arenas, scenarios and
+        // world maps never match.
         if (text.find("%instance_name") != std::string::npos)
         {
+            // Map.dbc map id -> Dungeon Journal instance id (JournalInstance.dbc)
+            static std::unordered_map<uint32, uint32> const journalInstanceByMap = []
+            {
+                std::unordered_map<uint32, uint32> byMap;
+                for (uint32 i = 0; i < sJournalInstanceStore.GetNumRows(); ++i)
+                    if (JournalInstanceEntry const* entry = sJournalInstanceStore.LookupEntry(i))
+                        byMap.emplace(entry->MapID, entry->ID);
+                return byMap;
+            }();
+
             std::string instName;
+            uint32 journalInstanceId = 0;
+            auto useMap = [&](MapEntry const* mapEntry)
+            {
+                auto itr = journalInstanceByMap.find(mapEntry->MapID);
+                if (itr == journalInstanceByMap.end())
+                    return;
+                journalInstanceId = itr->second;
+                instName = mapEntry->name[0];
+            };
+
             if (MapEntry const* mapEntry = sMapStore.LookupEntry(bot->GetMapId()))
                 if (mapEntry->IsNonRaidDungeon() && mapEntry->name[0])
-                    instName = mapEntry->name[0];
+                    useMap(mapEntry);
 
-            if (instName.empty())
+            if (!journalInstanceId)
             {
-                std::vector<std::string> dungeons;
+                std::vector<MapEntry const*> pool;
                 for (uint32 i = 0; i < sMapStore.GetNumRows(); ++i)
                 {
                     MapEntry const* dungeon = sMapStore.LookupEntry(i);
                     if (!dungeon || !dungeon->IsNonRaidDungeon() || !dungeon->name[0])
                         continue;
-                    if (std::find(dungeons.begin(), dungeons.end(), dungeon->name[0]) == dungeons.end())
-                        dungeons.push_back(dungeon->name[0]);
+                    if (!journalInstanceByMap.count(dungeon->MapID))
+                        continue;
+                    if (std::find_if(pool.begin(), pool.end(), [dungeon](MapEntry const* other)
+                        { return std::string(dungeon->name[0]) == other->name[0]; }) != pool.end())
+                        continue;
+                    pool.push_back(dungeon);
                 }
-                if (!dungeons.empty())
-                    instName = dungeons[urand(0, dungeons.size() - 1)];
+                if (!pool.empty())
+                    useMap(pool[urand(0, pool.size() - 1)]);
             }
 
-            ReplaceAll(text, "%instance_name", instName.empty() ? "instance" : instName);
+            // |Hjournal:0:<instanceID>:<difficulty>|h -- clicking opens the
+            // Dungeon Journal at that instance (difficulty 1 = normal).
+            if (journalInstanceId)
+                ReplaceAll(text, "%instance_name",
+                    "|cff66bbff|Hjournal:0:" + std::to_string(journalInstanceId) + ":1|h[" + instName + "]|h|r");
+            else
+                ReplaceAll(text, "%instance_name", instName.empty() ? "instance" : instName);
         }
     }
 
