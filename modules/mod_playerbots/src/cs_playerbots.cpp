@@ -2925,7 +2925,7 @@ public:
             uint32 const maxAccount =
                 sPlayerbotAIConfig->randomBotAccounts.back();
             QueryResult result = CharacterDatabase.PQuery(
-                "SELECT COUNT(*) FROM groups g WHERE (g.groupType & %u)<>0 "
+                "SELECT COUNT(*) FROM `groups` g WHERE (g.groupType & %u)<>0 "
                 "AND NOT EXISTS (SELECT 1 FROM group_member gm "
                 "JOIN characters c ON c.guid=gm.memberGuid "
                 "WHERE gm.guid=g.guid AND (c.account<%u OR c.account>%u))",

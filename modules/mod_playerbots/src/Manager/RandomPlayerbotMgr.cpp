@@ -121,7 +121,7 @@ namespace
         uint32 const maxAccount =
             sPlayerbotAIConfig->randomBotAccounts.back();
         QueryResult result = CharacterDatabase.PQuery(
-            "SELECT g.guid FROM groups g "
+            "SELECT g.guid FROM `groups` g "
             "WHERE g.leaderGuid=%u AND (g.groupType & %u)<>0 "
             "AND NOT EXISTS (SELECT 1 FROM group_member self "
             "WHERE self.guid=g.guid AND self.memberGuid=g.leaderGuid) "
