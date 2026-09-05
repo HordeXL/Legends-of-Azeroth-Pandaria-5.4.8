@@ -2468,7 +2468,6 @@ public:
     void LeftChannel(Channel* c);
     void CleanupChannels();
     void UpdateLocalChannels(uint32 newZone);
-    void RejoinConstantChannels();
     void LeaveLFGChannel();
 
     void SetSkill(uint16 id, uint16 step, uint16 currVal, uint16 maxVal);
