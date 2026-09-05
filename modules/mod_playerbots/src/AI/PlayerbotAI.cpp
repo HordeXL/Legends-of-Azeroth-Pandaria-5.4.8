@@ -2460,6 +2460,97 @@ bool CanStunLfgTrash(Unit* target, SpellInfo const* spellInfo)
         !target->IsImmunedToSpell(spellInfo,
             spellInfo->NegativeEffectMask);
 }
+
+bool ShouldDelayGroupPveAoe(PlayerbotAI* botAI, Player* bot,
+    Unit* spellTarget, SpellInfo const* spellInfo)
+{
+    if (!botAI || !bot || !spellTarget || !spellInfo ||
+        !botAI->IsGroupPveActivity() || PlayerBotSpec::IsTank(bot, true))
+        return false;
+
+    Group* group = bot->GetGroup(GroupSlot::Instance);
+    if (!group)
+        group = bot->GetGroup();
+    if (!group)
+        return false;
+
+    bool hasLivingTank = false;
+    for (GroupReference* ref = group->GetFirstMember(); ref;
+         ref = ref->next())
+    {
+        Player* member = ref->GetSource();
+        if (member && member->IsAlive() &&
+            member->GetMap() == bot->GetMap() &&
+            PlayerBotSpec::IsTank(member, true))
+        {
+            hasLivingTank = true;
+            break;
+        }
+    }
+    if (!hasLivingTank)
+        return false;
+
+    bool harmfulAreaEffect = false;
+    float effectRadius = 0.0f;
+    for (uint8 effectIndex = EFFECT_0;
+         effectIndex < MAX_SPELL_EFFECTS; ++effectIndex)
+    {
+        SpellEffectInfo const& effect = spellInfo->Effects[effectIndex];
+        if (!effect.IsEffect() || spellInfo->IsPositiveEffect(effectIndex))
+            continue;
+
+        bool const affectsSeveralTargets = effect.IsTargetingArea() ||
+            effect.IsAreaAuraEffect() || effect.ChainTarget > 1;
+        if (!affectsSeveralTargets)
+            continue;
+
+        harmfulAreaEffect = true;
+        effectRadius = std::max(effectRadius, effect.CalcRadius(bot));
+        if (effect.ChainTarget > 1)
+            effectRadius = std::max(effectRadius, 12.0f);
+    }
+    if (!harmfulAreaEffect)
+        return false;
+
+    // Client data leaves the radius empty for some cones, cleaves and
+    // triggered area effects. Eight yards matches the smallest AoE trigger.
+    effectRadius = std::max(effectRadius, 8.0f);
+
+    Unit* center = bot->IsValidAttackTarget(spellTarget) ? spellTarget :
+        botAI->GetAiObjectContext()->GetValue<Unit*>("current target")->Get();
+    if (!center)
+        return false;
+
+    uint32 affectedAttackers = 0;
+    bool packHeldByTank = true;
+    GuidVector const attackers = botAI->GetAiObjectContext()
+        ->GetValue<GuidVector>("attackers")->Get();
+    for (ObjectGuid const& guid : attackers)
+    {
+        Unit* unit = botAI->GetUnit(guid);
+        if (!unit || !unit->IsAlive() || unit->GetMap() != bot->GetMap() ||
+            !bot->IsValidAttackTarget(unit))
+            continue;
+
+        if (center->GetDistance2d(unit) > effectRadius &&
+            bot->GetDistance2d(unit) > effectRadius)
+            continue;
+
+        ++affectedAttackers;
+        Unit* victim = unit->GetVictim();
+        Player* victimPlayer = victim ?
+            victim->GetCharmerOrOwnerPlayerOrPlayerItself() : nullptr;
+        if (!victimPlayer || !victimPlayer->IsAlive() ||
+            victimPlayer->GetMap() != bot->GetMap() ||
+            !group->IsMember(victimPlayer->GetGUID()) ||
+            !PlayerBotSpec::IsTank(victimPlayer, true))
+            packHeldByTank = false;
+    }
+
+    // Single-target use of a spell with an area-capable effect remains valid.
+    // Once two or more engaged enemies can be hit, wait for tank ownership.
+    return affectedAttackers >= 2 && !packHeldByTank;
+}
 }
 
 bool PlayerbotAI::TryGroupPveCoordinatedInterrupt()
@@ -3108,6 +3199,12 @@ bool PlayerbotAI::CastSpell(uint32 spellId, Unit* target, Item* itemTarget)
             (tauntsTarget && !PlayerBotSpec::IsTank(bot, true))))
             return false;
     }
+
+    // Some rotations expose AoE as their default action instead of only
+    // through an "aoe" strategy trigger. Enforce tank ownership at the final
+    // cast boundary too, so those class-specific spells cannot open a pull.
+    if (ShouldDelayGroupPveAoe(this, bot, target, spellInfo))
+        return false;
 
     if (pet && pet->HasSpell(spellId))
     {
