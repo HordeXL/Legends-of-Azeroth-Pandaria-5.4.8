@@ -2130,14 +2130,15 @@ bool PlayerbotAI::TalkRandom()
     if (!sPlayerbotTextMgr->TryReserveAmbientSpeech(AMBIENT_SPEECH_INTERVAL_SEC))
         return false;
 
-    // Pick a random text from the whole table. Some rows are templates whose
-    // placeholders (e.g. %quest_link, %category, %faction) Format() cannot fill
-    // without extra context, so re-roll a few times until the formatted text is
-    // clean (no raw placeholders) before sending it to chat.
+    // Pick a random text by placeholder TYPE: a token is drawn uniformly at
+    // random from every token Format() can fill, then a random row using that
+    // token is chosen, so every placeholder type gets equal airtime. Rows whose
+    // placeholders this bot still cannot fill (no quests, empty bags, no
+    // target...) re-roll into another type before anything is sent.
     for (uint32 attempt = 0; attempt < 10; ++attempt)
     {
         uint32 sayType = 0;
-        std::string text = sPlayerbotTextMgr->GetRandomText(locale, &sayType);
+        std::string text = sPlayerbotTextMgr->GetRandomTextByType(locale, &sayType);
         if (text.empty())
         {
             // An empty text pool means ambient chat can never produce anything,

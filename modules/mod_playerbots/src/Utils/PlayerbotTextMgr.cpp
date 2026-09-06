@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <bitset>
+#include <cstring>
 #include <unordered_map>
 #include <functional>
 #include <sstream>
@@ -40,6 +41,37 @@ void ReplaceAll(std::string& str, std::string const& from, std::string const& to
         str.replace(pos, from.length(), to);
         pos += to.length();
     }
+}
+
+// Every placeholder token Format() can fill (38 of them). Ambient chat draws
+// one of these uniformly at random and then a random row containing it, so
+// each type gets equal airtime. Tokens with no sensible source (%s, %prefix,
+// %gameobject) are deliberately absent: their rows can never be formatted.
+char const* const FORMAT_TOKENS[] = {
+    "%zone_name", "%area_name", "%my_race", "%my_class", "%my_level", "%my_role",
+    "%instance_name", "%faction", "%category", "%rep_level", "%cost_gold", "%rnd",
+    "%amount", "%player", "%item_link", "%item", "%item_formatted_link",
+    "%item_formatted_links", "%formatted_item_links", "%random_inventory_item_link",
+    "%random_taken_quest_or_item_link", "%gem", "%thunderfury_link", "%quest_link",
+    "%quest_links", "%qu", "%quest", "%quest_obj_name", "%quest_obj_required",
+    "%quest_obj_available", "%quest_obj_missing", "%quest_obj_full_formatted",
+    "%rewards", "%spell", "%spells", "%victim_name", "%other_name", "%unit",
+};
+
+// True when the text contains the token as a standalone placeholder
+// ("%item" does not match inside "%item_link").
+bool ContainsToken(std::string const& text, char const* token)
+{
+    size_t const tokenLen = strlen(token);
+    size_t pos = 0;
+    while ((pos = text.find(token, pos)) != std::string::npos)
+    {
+        char const next = pos + tokenLen < text.size() ? text[pos + tokenLen] : '\0';
+        if (!std::isalpha(static_cast<unsigned char>(next)) && next != '_')
+            return true;
+        ++pos;
+    }
+    return false;
 }
 
 Item* GetRandomBagItem(Player* bot)
@@ -219,6 +251,21 @@ void PlayerbotTextMgr::Load()
         } while (results->NextRow());
     }
 
+    // Index rows by the placeholder tokens they contain for
+    // GetRandomTextByType(). _texts is final here, so the row pointers stay
+    // valid for the lifetime of the process.
+    _textsByToken.clear();
+    for (auto const& [name, entries] : _texts)
+        for (TextEntry const& entry : entries)
+            for (char const* token : FORMAT_TOKENS)
+            {
+                bool found = ContainsToken(entry.text, token);
+                for (uint8 i = 0; !found && i < 8; ++i)
+                    found = ContainsToken(entry.loc[i], token);
+                if (found)
+                    _textsByToken[token].push_back(&entry);
+            }
+
     _loaded = true;
     TC_LOG_INFO("server.loading", ">> Loaded %u playerbot texts, %u speech lines, %u chance entries in %u ms",
         textCount, speechCount, (uint32)_chances.size(), GetMSTimeDiffToNow(0));
@@ -294,6 +341,38 @@ std::string PlayerbotTextMgr::GetRandomText(LocaleConstant locale, uint32* sayTy
     }
 
     return "";
+}
+
+std::string PlayerbotTextMgr::GetRandomTextByType(LocaleConstant locale, uint32* sayTypeOut)
+{
+    // Uniformly random placeholder TYPE first, then a random row that uses it.
+    // This gives every token equal airtime instead of letting rows with
+    // always-fillable tokens dominate the flat pick + re-roll. If the picked
+    // bucket is empty (token unused in the table) try another token; if the
+    // whole index is empty fall back to the flat random pick.
+    for (uint32 attempt = 0; attempt < 10; ++attempt)
+    {
+        std::string const& token = FORMAT_TOKENS[urand(0, uint32(sizeof(FORMAT_TOKENS) / sizeof(FORMAT_TOKENS[0])) - 1)];
+        auto it = _textsByToken.find(token);
+        if (it == _textsByToken.end() || it->second.empty())
+            continue;
+
+        TextEntry const* entry = it->second[urand(0, uint32(it->second.size() - 1))];
+
+        if (sayTypeOut)
+            *sayTypeOut = entry->sayType;
+
+        if (locale > LOCALE_enUS && locale <= LOCALE_ruRU)
+        {
+            std::string const& localized = entry->loc[locale - 1];
+            if (!localized.empty())
+                return localized;
+        }
+
+        return entry->text;
+    }
+
+    return GetRandomText(locale, sayTypeOut);
 }
 
 bool PlayerbotTextMgr::TryReserveAmbientSpeech(uint32 intervalSec)
@@ -520,7 +599,41 @@ std::string PlayerbotTextMgr::Format(std::string text, Player* bot, Unit* target
         if (text.find("%quest") != std::string::npos && questContext)
             ReplaceAll(text, "%quest", BuildQuestLink(questContext, bot));
 
+        // Quest reward links (context quest, else a random active quest).
+        if (text.find("%rewards") != std::string::npos)
+        {
+            if (!questContext)
+                if (std::vector<Quest const*> picked = GetRandomActiveQuests(bot, 1); !picked.empty())
+                    questContext = picked[0];
+            if (questContext)
+            {
+                std::string joined;
+                for (uint32 i = 0; i < QUEST_REWARD_ITEM_COUNT; ++i)
+                    if (uint32 itemId = questContext->RewardItemId[i])
+                        if (ItemTemplate const* proto = sObjectMgr->GetItemTemplate(itemId))
+                        {
+                            if (!joined.empty())
+                                joined += ", ";
+                            joined += BuildItemLink(proto, bot);
+                        }
+                if (!joined.empty())
+                    ReplaceAll(text, "%rewards", joined);
+            }
+        }
+
         // Item links and names (longest token first, plain %item last).
+        // Coin flip: link a taken quest or an inventory item.
+        if (text.find("%random_taken_quest_or_item_link") != std::string::npos)
+        {
+            bool preferQuest = urand(0, 1) != 0;
+            if (preferQuest && !questContext)
+                if (std::vector<Quest const*> picked = GetRandomActiveQuests(bot, 1); !picked.empty())
+                    questContext = picked[0];
+            if (preferQuest && questContext)
+                ReplaceAll(text, "%random_taken_quest_or_item_link", BuildQuestLink(questContext, bot));
+            else if (Item* randomItem = getBagItem())
+                ReplaceAll(text, "%random_taken_quest_or_item_link", BuildItemLink(randomItem->GetTemplate(), bot));
+        }
         if (text.find("%random_inventory_item_link") != std::string::npos)
             if (Item* randomItem = getBagItem())
                 ReplaceAll(text, "%random_inventory_item_link", BuildItemLink(randomItem->GetTemplate(), bot));

@@ -55,6 +55,15 @@ public:
     // Returns an empty string when the table contains no entries.
     std::string GetRandomText(LocaleConstant locale = LOCALE_enUS, uint32* sayTypeOut = nullptr);
 
+    // Random text picked by placeholder TYPE: a token is drawn uniformly at
+    // random from every token Format() can fill, then a random row containing
+    // that token is chosen. Gives every placeholder type equal airtime in
+    // ambient chat instead of letting rows with always-fillable tokens dominate
+    // the flat pick + re-roll. Rows are indexed by token at Load(). Locale and
+    // sayTypeOut behave like GetText; falls back to GetRandomText when no
+    // token bucket has rows.
+    std::string GetRandomTextByType(LocaleConstant locale = LOCALE_enUS, uint32* sayTypeOut = nullptr);
+
     // Atomically reserves a single global ambient-speech slot. No matter how
     // many bots are online, only one caller wins a slot per intervalSec seconds
     // (measured from the previous win), so the World channel never floods with
@@ -91,6 +100,9 @@ private:
     std::unordered_map<std::string, std::vector<TextEntry>> _texts;
     std::unordered_map<std::string, std::vector<std::string>> _speech;
     std::unordered_map<std::string, uint32> _chances;
+    // Placeholder token -> rows containing it (built at Load()). Pointers stay
+    // valid because _texts is never modified after loading.
+    std::unordered_map<std::string, std::vector<TextEntry const*>> _textsByToken;
     // Unix time of the last granted global ambient-speech slot (0 = none yet).
     std::atomic<time_t> _lastAmbientSpeech{ 0 };
     bool _loaded = false;
