@@ -1532,7 +1532,7 @@ class spell_mage_nether_tempest_selector : public SpellScript
             if (target->GetTypeId() == TYPEID_PLAYER)
                 return false;
 
-            if (!target->ToUnit()->GetThreatManager().getThreat(GetCaster()))
+            if (!target->ToUnit()->GetThreatManager().GetThreat(GetCaster()))
                 return true;
             return false;
         });
@@ -2299,7 +2299,7 @@ class spell_mage_greater_invisibility: public spell_mage_invisibility
             }
         }
         target->CastSpell(target, SPELL_MAGE_GREATER_INVISIBILITY_LESS_DAMAGE, true);  // In sniffs it is not triggered, but it's broke aura =/
-        target->GetThreatManager().resetAllAggro();
+        target->GetThreatManager().ResetAllThreat();
     }
 
     void HandleRemove(AuraEffect const* eff, AuraEffectHandleModes mode)
@@ -2360,7 +2360,7 @@ class spell_mage_invisibility_threat_reduction: public SpellScript
         targets.remove_if([this](WorldObject* obj)
         {
             if (Unit* target = obj->ToUnit())
-                if (target->IsInCombat() && target->CanHaveThreatList() && target->GetThreatManager().getThreat(GetCaster()) > 0)
+                if (target->IsInCombat() && target->CanHaveThreatList() && target->GetThreatManager().GetThreat(GetCaster()) > 0)
                     return false;
 
             return true;
