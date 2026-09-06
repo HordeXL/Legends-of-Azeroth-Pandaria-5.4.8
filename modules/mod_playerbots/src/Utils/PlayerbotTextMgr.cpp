@@ -74,6 +74,22 @@ bool ContainsToken(std::string const& text, char const* token)
     return false;
 }
 
+// Bot chat is broadcast to the whole (Chinese) server, so every visible name
+// -- items, quests, DBC strings -- is resolved in one fixed locale. Bot
+// accounts default to enUS, so using the bot session locale yields English
+// names even though zhCN data is present (item_template_locale /
+// quest_template_locale rows and dbc/enCN strings). DBC strings fall back to
+// the enUS slot when no zhCN variant exists.
+LocaleConstant const CHAT_LOCALE = LOCALE_zhCN;
+
+std::string GetLocalizedDbcName(DbcStr const& str)
+{
+    char const* zh = str[CHAT_LOCALE];
+    if (zh && *zh)
+        return std::string(zh);
+    return std::string(str[LOCALE_enUS]);
+}
+
 Item* GetRandomBagItem(Player* bot)
 {
     if (!bot || !bot->IsInWorld())
@@ -129,22 +145,17 @@ uint32 GetRandomKnownSpellId(Player* bot)
     return spellIds.empty() ? 0 : spellIds[urand(0, uint32(spellIds.size() - 1))];
 }
 
-std::string GetLocalizedItemName(ItemTemplate const* proto, Player* bot)
+std::string GetLocalizedItemName(ItemTemplate const* proto)
 {
     std::string name = proto->Name1;
-    if (!name.empty() && bot)
-    {
-        LocaleConstant locale = bot->GetSession()->GetSessionDbLocaleIndex();
-        if (locale != LOCALE_enUS)
-            if (ItemLocale const* localeEntry = sObjectMgr->GetItemLocale(proto->ItemId))
-                ObjectMgr::GetLocaleString(localeEntry->Name, locale, name);
-    }
+    if (ItemLocale const* localeEntry = sObjectMgr->GetItemLocale(proto->ItemId))
+        ObjectMgr::GetLocaleString(localeEntry->Name, CHAT_LOCALE, name);
     return name;
 }
 
-std::string BuildItemLink(ItemTemplate const* proto, Player* bot)
+std::string BuildItemLink(ItemTemplate const* proto)
 {
-    std::string name = GetLocalizedItemName(proto, bot);
+    std::string name = GetLocalizedItemName(proto);
     if (name.empty())
         name = "item";
 
@@ -154,16 +165,11 @@ std::string BuildItemLink(ItemTemplate const* proto, Player* bot)
     return link.str();
 }
 
-std::string BuildQuestLink(Quest const* quest, Player* bot)
+std::string BuildQuestLink(Quest const* quest)
 {
     std::string title = quest->GetLogTitle();
-    if (!title.empty() && bot)
-    {
-        LocaleConstant locale = bot->GetSession()->GetSessionDbLocaleIndex();
-        if (locale != LOCALE_enUS)
-            if (QuestTemplateLocale const* localeEntry = sObjectMgr->GetQuestLocale(quest->GetQuestId()))
-                ObjectMgr::GetLocaleString(localeEntry->LogTitle, locale, title);
-    }
+    if (QuestTemplateLocale const* localeEntry = sObjectMgr->GetQuestLocale(quest->GetQuestId()))
+        ObjectMgr::GetLocaleString(localeEntry->LogTitle, CHAT_LOCALE, title);
     if (title.empty())
         title = "quest";
 
@@ -415,16 +421,16 @@ std::string PlayerbotTextMgr::Format(std::string text, Player* bot, Unit* target
     if (bot)
     {
         if (AreaTableEntry const* zone = sAreaTableStore.LookupEntry(bot->GetZoneId()))
-            ReplaceAll(text, "%zone_name", zone->area_name[0]);
+            ReplaceAll(text, "%zone_name", GetLocalizedDbcName(zone->area_name));
 
         if (AreaTableEntry const* area = sAreaTableStore.LookupEntry(bot->GetAreaId()))
-            ReplaceAll(text, "%area_name", area->area_name[0]);
+            ReplaceAll(text, "%area_name", GetLocalizedDbcName(area->area_name));
 
         if (ChrRacesEntry const* race = sChrRacesStore.LookupEntry(bot->GetRace()))
-            ReplaceAll(text, "%my_race", race->name[0]);
+            ReplaceAll(text, "%my_race", GetLocalizedDbcName(race->name));
 
         if (ChrClassesEntry const* cls = sChrClassesStore.LookupEntry(bot->GetClass()))
-            ReplaceAll(text, "%my_class", cls->name[0]);
+            ReplaceAll(text, "%my_class", GetLocalizedDbcName(cls->name));
 
         ReplaceAll(text, "%my_level", std::to_string(bot->GetLevel()));
 
@@ -467,7 +473,7 @@ std::string PlayerbotTextMgr::Format(std::string text, Player* bot, Unit* target
                 if (itr == journalInstanceByMap.end())
                     return;
                 journalInstanceId = itr->second;
-                instName = mapEntry->name[0];
+                instName = GetLocalizedDbcName(mapEntry->name);
             };
 
             if (MapEntry const* mapEntry = sMapStore.LookupEntry(bot->GetMapId()))
@@ -485,7 +491,7 @@ std::string PlayerbotTextMgr::Format(std::string text, Player* bot, Unit* target
                     if (!journalInstanceByMap.count(dungeon->MapID))
                         continue;
                     if (std::find_if(pool.begin(), pool.end(), [dungeon](MapEntry const* other)
-                        { return std::string(dungeon->name[0]) == other->name[0]; }) != pool.end())
+                        { return GetLocalizedDbcName(dungeon->name) == GetLocalizedDbcName(other->name); }) != pool.end())
                         continue;
                     pool.push_back(dungeon);
                 }
@@ -586,18 +592,18 @@ std::string PlayerbotTextMgr::Format(std::string text, Player* bot, Unit* target
             std::vector<Quest const*> picked = GetRandomActiveQuests(bot, 3);
             if (!picked.empty())
             {
-                std::string joined = BuildQuestLink(picked[0], bot);
+                std::string joined = BuildQuestLink(picked[0]);
                 for (size_t i = 1; i < picked.size(); ++i)
-                    joined += " and " + BuildQuestLink(picked[i], bot);
+                    joined += " and " + BuildQuestLink(picked[i]);
                 ReplaceAll(text, "%quest_links", joined);
             }
         }
         if (text.find("%quest_link") != std::string::npos && questContext)
-            ReplaceAll(text, "%quest_link", BuildQuestLink(questContext, bot));
+            ReplaceAll(text, "%quest_link", BuildQuestLink(questContext));
         if (text.find("%qu") != std::string::npos && questContext)
-            ReplaceAll(text, "%qu", BuildQuestLink(questContext, bot));
+            ReplaceAll(text, "%qu", BuildQuestLink(questContext));
         if (text.find("%quest") != std::string::npos && questContext)
-            ReplaceAll(text, "%quest", BuildQuestLink(questContext, bot));
+            ReplaceAll(text, "%quest", BuildQuestLink(questContext));
 
         // Quest reward links (context quest, else a random active quest).
         if (text.find("%rewards") != std::string::npos)
@@ -614,7 +620,7 @@ std::string PlayerbotTextMgr::Format(std::string text, Player* bot, Unit* target
                         {
                             if (!joined.empty())
                                 joined += ", ";
-                            joined += BuildItemLink(proto, bot);
+                            joined += BuildItemLink(proto);
                         }
                 if (!joined.empty())
                     ReplaceAll(text, "%rewards", joined);
@@ -630,13 +636,13 @@ std::string PlayerbotTextMgr::Format(std::string text, Player* bot, Unit* target
                 if (std::vector<Quest const*> picked = GetRandomActiveQuests(bot, 1); !picked.empty())
                     questContext = picked[0];
             if (preferQuest && questContext)
-                ReplaceAll(text, "%random_taken_quest_or_item_link", BuildQuestLink(questContext, bot));
+                ReplaceAll(text, "%random_taken_quest_or_item_link", BuildQuestLink(questContext));
             else if (Item* randomItem = getBagItem())
-                ReplaceAll(text, "%random_taken_quest_or_item_link", BuildItemLink(randomItem->GetTemplate(), bot));
+                ReplaceAll(text, "%random_taken_quest_or_item_link", BuildItemLink(randomItem->GetTemplate()));
         }
         if (text.find("%random_inventory_item_link") != std::string::npos)
             if (Item* randomItem = getBagItem())
-                ReplaceAll(text, "%random_inventory_item_link", BuildItemLink(randomItem->GetTemplate(), bot));
+                ReplaceAll(text, "%random_inventory_item_link", BuildItemLink(randomItem->GetTemplate()));
         if (text.find("%item_formatted_links") != std::string::npos || text.find("%formatted_item_links") != std::string::npos)
         {
             std::string joined;
@@ -646,7 +652,7 @@ std::string PlayerbotTextMgr::Format(std::string text, Player* bot, Unit* target
                 {
                     if (!joined.empty())
                         joined += ", ";
-                    joined += BuildItemLink(randomItem->GetTemplate(), bot);
+                    joined += BuildItemLink(randomItem->GetTemplate());
                 }
                 if (joined.empty() || urand(0, 1))
                     break;
@@ -659,28 +665,28 @@ std::string PlayerbotTextMgr::Format(std::string text, Player* bot, Unit* target
         }
         if (text.find("%item_formatted_link") != std::string::npos)
             if (Item* randomItem = getBagItem())
-                ReplaceAll(text, "%item_formatted_link", BuildItemLink(randomItem->GetTemplate(), bot));
+                ReplaceAll(text, "%item_formatted_link", BuildItemLink(randomItem->GetTemplate()));
         if (text.find("%thunderfury_link") != std::string::npos)
             if (ItemTemplate const* thunderfury = sObjectMgr->GetItemTemplate(19019))
-                ReplaceAll(text, "%thunderfury_link", BuildItemLink(thunderfury, bot));
+                ReplaceAll(text, "%thunderfury_link", BuildItemLink(thunderfury));
         if (text.find("%gem") != std::string::npos)
             if (Item* randomItem = getBagItem())
                 if (randomItem->GetTemplate()->Class == ITEM_CLASS_GEM)
-                    ReplaceAll(text, "%gem", BuildItemLink(randomItem->GetTemplate(), bot));
+                    ReplaceAll(text, "%gem", BuildItemLink(randomItem->GetTemplate()));
         if (text.find("%item_link") != std::string::npos)
         {
             if (item)
-                ReplaceAll(text, "%item_link", BuildItemLink(item, bot));
+                ReplaceAll(text, "%item_link", BuildItemLink(item));
             else if (Item* randomItem = getBagItem())
-                ReplaceAll(text, "%item_link", BuildItemLink(randomItem->GetTemplate(), bot));
+                ReplaceAll(text, "%item_link", BuildItemLink(randomItem->GetTemplate()));
         }
         if (text.find("%item") != std::string::npos)
         {
             std::string name;
             if (item)
-                name = GetLocalizedItemName(item, bot);
+                name = GetLocalizedItemName(item);
             else if (Item* randomItem = getBagItem())
-                name = GetLocalizedItemName(randomItem->GetTemplate(), bot);
+                name = GetLocalizedItemName(randomItem->GetTemplate());
             if (!name.empty())
                 ReplaceAll(text, "%item", name);
         }
