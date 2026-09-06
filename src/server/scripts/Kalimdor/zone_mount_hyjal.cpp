@@ -719,13 +719,38 @@ struct npc_hyjal_aronus : public CreatureAI
 {
     npc_hyjal_aronus(Creature* creature) : CreatureAI(creature)
     {
-        me->SetFlag(UNIT_FIELD_NPC_FLAGS, UNIT_NPC_FLAG_SPELLCLICK);
+        me->SetFlag(UNIT_FIELD_NPC_FLAGS, UNIT_NPC_FLAG_GOSSIP);
     }
 
-    void OnSpellClick(Unit* clicker, bool& /*result*/) override
+    // The quest has no kill/loot objective rows on this database, so a taken
+    // quest stays QUEST_STATUS_INCOMPLETE forever and the SPELLCLICK
+    // interaction (which required QUEST_STATUS_COMPLETE) never triggered on
+    // the client. Gossip replaces it: opening the dialog completes the
+    // "Speak with Aronus" objective (the core gossip handler does not credit
+    // scripted AI, so it is done here), and the option summons the ride
+    // (npc_hyjal_aronus_ride) that performs the flight to Mount Hyjal.
+    bool OnGossipHello(Player* player) override
     {
-        if (clicker && clicker->ToPlayer() && clicker->ToPlayer()->GetQuestStatus(QUEST_AS_HYJAL_BURNS) == QUEST_STATUS_COMPLETE)
-            clicker->CastSpell(clicker, SPELL_HYJAL_INTRO_FLIGHT_SUMM, true);
+        player->TalkedToCreature(me->GetEntry(), me->GetGUID());
+
+        QuestStatus status = player->GetQuestStatus(QUEST_AS_HYJAL_BURNS);
+        if (status == QUEST_STATUS_INCOMPLETE || status == QUEST_STATUS_COMPLETE)
+            AddGossipItemFor(player, GOSSIP_ICON_TAXI, "Fly me to Mount Hyjal.", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
+
+        player->SEND_GOSSIP_MENU(player->GetGossipTextId(me), me->GetGUID());
+        return true;
+    }
+
+    bool OnGossipSelect(Player* player, uint32 /*menuId*/, uint32 gossipListId) override
+    {
+        // Single option: the AI hook receives the selected list index (some
+        // paths pass the gossip action id instead); accept both.
+        if (gossipListId == 0 || gossipListId == GOSSIP_ACTION_INFO_DEF + 1)
+        {
+            player->PlayerTalkClass->SendCloseGossip();
+            player->CastSpell(player, SPELL_HYJAL_INTRO_FLIGHT_SUMM, true);
+        }
+        return true;
     }
 
     void UpdateAI(uint32 /*diff*/) override { }
