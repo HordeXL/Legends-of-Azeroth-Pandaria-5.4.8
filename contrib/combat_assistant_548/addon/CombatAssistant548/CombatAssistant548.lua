@@ -27,6 +27,7 @@ local reasonText = {
     CLEANSE = "Cleanse poison / disease",
     HEAL_ALLY = "Heal the lowest-health ally",
     DAMAGE = "Best available damage ability",
+    AOE = "Area rotation: clustered enemies",
     DOT = "Apply missing damage over time",
     BUFF = "Maintain Inquisition",
     TALENT = "Talent damage",

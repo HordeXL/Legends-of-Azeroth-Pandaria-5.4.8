@@ -69,7 +69,10 @@ void FindTargetStrategy::GetPlayerCount(Unit* creature, uint32* tankCount, uint3
 
 bool FindTargetStrategy::IsHighPriority(Unit* attacker)
 {
-    if (Group* group = botAI->GetBot()->GetGroup())
+    Group* group = botAI->GetBot()->GetGroup(GroupSlot::Instance);
+    if (!group)
+        group = botAI->GetBot()->GetGroup();
+    if (group)
     {
         ObjectGuid guid = group->GetTargetIcon(7);
         if (guid && attacker->GetGUID() == guid)
@@ -90,7 +93,10 @@ bool FindTargetStrategy::IsHighPriority(Unit* attacker)
 
 bool FindNonCcTargetStrategy::IsCcTarget(Unit* attacker)
 {
-    if (Group* group = botAI->GetBot()->GetGroup())
+    Group* group = botAI->GetBot()->GetGroup(GroupSlot::Instance);
+    if (!group)
+        group = botAI->GetBot()->GetGroup();
+    if (group)
     {
         Group::MemberSlotList const& groupSlot = group->GetMemberSlots();
         for (Group::member_citerator itr = groupSlot.begin(); itr != groupSlot.end(); itr++)

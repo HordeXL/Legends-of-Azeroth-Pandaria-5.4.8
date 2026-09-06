@@ -15,16 +15,14 @@ Value<Unit*>* CastPolymorphAction::GetTargetValue() { return context->GetValue<U
 
 namespace
 {
-bool IsPveInstance(Player* bot)
+bool IsGroupPve(PlayerbotAI* botAI)
 {
-    return bot && bot->GetMap() &&
-        (bot->GetMap()->IsDungeon() || bot->GetMap()->IsRaid()) &&
-        !bot->InBattleground() && !bot->InArena();
+    return botAI && botAI->IsGroupPveActivity();
 }
 
-bool IsPveInstanceTrash(Player* bot, Unit* target)
+bool IsGroupPveTrash(PlayerbotAI* botAI, Unit* target)
 {
-    if (!IsPveInstance(bot))
+    if (!IsGroupPve(botAI))
         return false;
 
     Creature* creature = target ? target->ToCreature() : nullptr;
@@ -34,25 +32,25 @@ bool IsPveInstanceTrash(Player* bot, Unit* target)
 
 bool CastIcyVeinsAction::isUseful()
 {
-    return !IsPveInstanceTrash(bot, AI_VALUE(Unit*, "current target")) &&
+    return !IsGroupPveTrash(botAI, AI_VALUE(Unit*, "current target")) &&
         CastBuffSpellAction::isUseful();
 }
 
 bool CastCombustionAction::isUseful()
 {
-    return !IsPveInstanceTrash(bot, GetTarget()) &&
+    return !IsGroupPveTrash(botAI, GetTarget()) &&
         CastDebuffSpellAction::isUseful();
 }
 
 bool CastArcanePowerAction::isUseful()
 {
-    return !IsPveInstanceTrash(bot, AI_VALUE(Unit*, "current target")) &&
+    return !IsGroupPveTrash(botAI, AI_VALUE(Unit*, "current target")) &&
         CastBuffSpellAction::isUseful();
 }
 
 bool CastFrostNovaAction::isUseful()
 {
-    if (IsPveInstance(bot))
+    if (IsGroupPve(botAI))
         return false;
 
     Unit* target = AI_VALUE(Unit*, "current target");
@@ -61,7 +59,7 @@ bool CastFrostNovaAction::isUseful()
 
 bool CastBlinkAction::isUseful()
 {
-    if (IsPveInstance(bot))
+    if (IsGroupPve(botAI))
         return false;
 
     Unit* target = AI_VALUE(Unit*, "current target");
@@ -70,7 +68,7 @@ bool CastBlinkAction::isUseful()
 
 bool CastSlowAction::isUseful()
 {
-    if (IsPveInstance(bot))
+    if (IsGroupPve(botAI))
         return false;
 
     Unit* target = AI_VALUE(Unit*, "current target");
@@ -79,7 +77,7 @@ bool CastSlowAction::isUseful()
 
 bool CastFrostjawAction::isUseful()
 {
-    return !IsPveInstance(bot) && CastSpellAction::isUseful();
+    return !IsGroupPve(botAI) && CastSpellAction::isUseful();
 }
 bool CastDeepFreezeAction::isUseful()
 {

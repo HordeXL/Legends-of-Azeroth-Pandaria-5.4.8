@@ -1726,9 +1726,7 @@ bool FleeAction::isUseful()
     // Generic flee is a PvP kiting action: it pulls mobs away from the tank
     // and can drag the raid into another pack. Scripted boss avoidance uses
     // BossMechanicsAction and is intentionally not affected by this guard.
-    if (bot->GetMap() &&
-        (bot->GetMap()->IsDungeon() || bot->GetMap()->IsRaid()) &&
-        !bot->InBattleground() && !bot->InArena())
+    if (botAI->IsGroupPveActivity())
         return false;
 
     if (bot->GetCurrentSpell(CURRENT_CHANNELED_SPELL) != nullptr)
@@ -1745,9 +1743,7 @@ bool CombatFormationMoveAction::isUseful()
         return false;
     }
 
-    Map* map = bot->GetMap();
-    if (!map || (!map->IsDungeon() && !map->IsRaid()) ||
-        bot->InBattleground() || bot->InArena() || !bot->IsInCombat() ||
+    if (!botAI->IsGroupPveActivity() || !bot->IsInCombat() ||
         !PlayerBotSpec::IsRanged(bot, true))
     {
         return false;
@@ -1800,11 +1796,20 @@ bool CombatFormationMoveAction::Execute(Event /*event*/)
     // Preserve the side of the encounter the bot already occupies. This
     // moves ranged characters away from the target without running through
     // the boss/tank or selecting a random direction toward another pack.
-    static float const angleOffsets[] =
+    // Bots often enter an instance on the same point. If every ranged bot
+    // tests the zero offset first they all select the same destination and
+    // remain vulnerable to one ground effect. Give each bot a stable sector
+    // within the current side of the encounter, then retain nearby fallbacks
+    // for narrow rooms and collision failures.
+    int32 const sector = int32(bot->GetGUID().GetCounter() % 7) - 3;
+    float const preferredOffset = float(sector) *
+        static_cast<float>(M_PI / 18.0);
+    float const angleOffsets[] =
     {
+        preferredOffset,
+        preferredOffset + static_cast<float>(M_PI / 8.0),
+        preferredOffset - static_cast<float>(M_PI / 8.0),
         0.0f,
-        static_cast<float>(M_PI / 8.0),
-        static_cast<float>(-M_PI / 8.0),
         static_cast<float>(M_PI / 4.0),
         static_cast<float>(-M_PI / 4.0)
     };

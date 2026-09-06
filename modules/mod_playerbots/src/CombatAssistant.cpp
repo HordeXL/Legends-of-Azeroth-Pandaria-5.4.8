@@ -9,8 +9,10 @@
 
 #include "Chat.h"
 #include "Group.h"
+#include "Map.h"
 #include "Player.h"
 #include "PlayerbotAIConfig.h"
+#include "PlayerbotSpec.h"
 #include "ScriptMgr.h"
 #include "Spell.h"
 #include "SpellAuraEffects.h"
@@ -18,6 +20,7 @@
 #include "SpellMgr.h"
 #include "WorldSession.h"
 
+#include <list>
 #include <sstream>
 #include <string>
 #include <unordered_map>
@@ -63,6 +66,12 @@ struct CombatRecommendation
     char const* Reason = "WAIT";
 
     explicit operator bool() const { return SpellId && Target; }
+};
+
+struct CombatAoeState
+{
+    uint32 EnemyCount = 0;
+    bool UseAoe = false;
 };
 
 struct CombatAssistantPlayerState
@@ -115,6 +124,8 @@ Spell* PrepareCheckedSpell(Player* player, uint32 spellId, Unit* target, bool ca
     {
         SpellCastTargets targets;
         targets.SetUnitTarget(target);
+        if (spellInfo->ExplicitTargetMask & TARGET_FLAG_DEST_LOCATION)
+            targets.SetDst(*target);
         spell->prepare(&targets);
         return nullptr;
     }
@@ -130,6 +141,91 @@ bool CanCast(Player* player, uint32 spellId, Unit* target)
 
     delete spell;
     return true;
+}
+
+Group* GetCombatAssistantGroup(Player* player)
+{
+    if (!player)
+        return nullptr;
+
+    Group* group = player->GetGroup(GroupSlot::Instance);
+    return group ? group : player->GetGroup();
+}
+
+bool IsEngagedWithPlayerOrGroup(Player* player, Unit* hostile, Group* group)
+{
+    if (!player || !hostile || !hostile->IsAlive() || !hostile->IsInCombat() ||
+        !player->IsValidAttackTarget(hostile))
+        return false;
+
+    Unit* victim = hostile->GetVictim();
+    Player* victimPlayer = victim ?
+        victim->GetCharmerOrOwnerPlayerOrPlayerItself() : nullptr;
+    if (!victimPlayer || !victimPlayer->IsAlive() ||
+        victimPlayer->GetMap() != player->GetMap())
+        return false;
+
+    return group ? group->IsMember(victimPlayer->GetGUID()) : victimPlayer == player;
+}
+
+CombatAoeState GetCombatAoeState(Player* player, Unit* selectedTarget)
+{
+    CombatAoeState state;
+    if (!player || !selectedTarget || !player->IsValidAttackTarget(selectedTarget))
+        return state;
+
+    Group* group = GetCombatAssistantGroup(player);
+    bool const playerIsTank = PlayerBotSpec::IsTank(player, true);
+    bool const groupPve = group && player->GetMap() &&
+        (player->GetMap()->IsDungeon() || player->GetMap()->IsRaid());
+
+    bool hasLivingTank = false;
+    if (groupPve && !playerIsTank)
+    {
+        for (GroupReference* reference = group->GetFirstMember(); reference;
+             reference = reference->next())
+        {
+            Player* member = reference->GetSource();
+            if (member && member->IsAlive() && member->GetMap() == player->GetMap() &&
+                PlayerBotSpec::IsTank(member, true))
+            {
+                hasLivingTank = true;
+                break;
+            }
+        }
+    }
+
+    bool packHeldByTank = true;
+    std::list<Unit*> nearbyHostiles;
+    // A ranged target can be roughly 40 yards away and its pack can extend
+    // another eight yards. Scan from the player, then cluster around the
+    // selected target so unrelated packs never enable the AoE rotation.
+    player->GetAttackableUnitListInRange(nearbyHostiles, 55.0f);
+    for (Unit* hostile : nearbyHostiles)
+    {
+        if (!IsEngagedWithPlayerOrGroup(player, hostile, group) ||
+            hostile->GetDistance(selectedTarget) > 8.0f)
+            continue;
+
+        ++state.EnemyCount;
+        if (groupPve && !playerIsTank && hasLivingTank)
+        {
+            Unit* victim = hostile->GetVictim();
+            Player* victimPlayer = victim ?
+                victim->GetCharmerOrOwnerPlayerOrPlayerItself() : nullptr;
+            if (!victimPlayer || !group->IsMember(victimPlayer->GetGUID()) ||
+                !PlayerBotSpec::IsTank(victimPlayer, true))
+                packHeldByTank = false;
+        }
+    }
+
+    // Tanks start consolidating threat at two clustered enemies. Damage
+    // specializations switch at three, and in group PvE only after every
+    // counted enemy is securely attacking a living tank.
+    uint32 const threshold = playerIsTank ? 2u : 3u;
+    state.UseAoe = state.EnemyCount >= threshold &&
+        (!groupPve || playerIsTank || !hasLivingTank || packHeldByTank);
+    return state;
 }
 
 bool HasHardLossOfControl(Player* player)
@@ -576,6 +672,85 @@ CombatRecommendation SelectKnownTalentDamage(Player* player, Unit* target)
     }
 }
 
+CombatRecommendation SelectAoeRotation(Player* player, Unit* target)
+{
+    Specializations const spec = Specializations(player->GetTalentSpecialization());
+    switch (spec)
+    {
+        case SPEC_WARRIOR_ARMS:
+            if (CombatRecommendation spell = RecommendNamed(player, player, "Sweeping Strikes", "AOE", true)) return spell;
+            if (CombatRecommendation spell = RecommendFirstNamed(player, player, { "Bladestorm", "Thunder Clap", "Whirlwind" }, "AOE")) return spell;
+            return RecommendFirstNamed(player, target, { "Dragon Roar", "Shockwave", "Cleave" }, "AOE");
+        case SPEC_WARRIOR_FURY:
+            if (CombatRecommendation spell = RecommendFirstNamed(player, player, { "Bladestorm", "Whirlwind", "Thunder Clap" }, "AOE")) return spell;
+            return RecommendFirstNamed(player, target, { "Dragon Roar", "Shockwave", "Cleave" }, "AOE");
+        case SPEC_WARRIOR_PROTECTION:
+            if (CombatRecommendation spell = RecommendNamed(player, player, "Thunder Clap", "AOE")) return spell;
+            return RecommendFirstNamed(player, target, { "Shockwave", "Dragon Roar", "Revenge", "Cleave" }, "AOE");
+        case SPEC_PALADIN_PROTECTION:
+            if (CombatRecommendation spell = RecommendNamed(player, player, "Consecration", "AOE")) return spell;
+            return RecommendFirstNamed(player, target, { "Hammer of the Righteous", "Avenger's Shield", "Shield of the Righteous" }, "AOE");
+        case SPEC_HUNTER_BEAST_MASTERY:
+        case SPEC_HUNTER_MARKSMANSHIP:
+        case SPEC_HUNTER_SURVIVAL:
+            return RecommendNamed(player, target, "Multi-Shot", "AOE");
+        case SPEC_ROGUE_COMBAT:
+            if (CombatRecommendation spell = RecommendNamed(player, player, "Blade Flurry", "AOE", true)) return spell;
+            return RecommendNamed(player, target, "Fan of Knives", "AOE");
+        case SPEC_ROGUE_ASSASSINATION:
+        case SPEC_ROGUE_SUBTLETY:
+            return RecommendNamed(player, target, "Fan of Knives", "AOE");
+        case SPEC_PRIEST_SHADOW:
+            return RecommendNamed(player, target, "Mind Sear", "AOE");
+        case SPEC_DEATH_KNIGHT_BLOOD:
+            if (CombatRecommendation spell = RecommendNamed(player, player, "Blood Boil", "AOE")) return spell;
+            return RecommendFirstNamed(player, target, { "Death and Decay", "Pestilence", "Heart Strike" }, "AOE");
+        case SPEC_DEATH_KNIGHT_FROST:
+            if (CombatRecommendation spell = RecommendNamed(player, target, "Howling Blast", "AOE")) return spell;
+            if (CombatRecommendation spell = RecommendNamed(player, player, "Blood Boil", "AOE")) return spell;
+            return RecommendFirstNamed(player, target, { "Death and Decay", "Pestilence" }, "AOE");
+        case SPEC_DEATH_KNIGHT_UNHOLY:
+            if (CombatRecommendation spell = RecommendNamed(player, target, "Pestilence", "AOE")) return spell;
+            if (CombatRecommendation spell = RecommendNamed(player, player, "Blood Boil", "AOE")) return spell;
+            return RecommendNamed(player, target, "Death and Decay", "AOE");
+        case SPEC_SHAMAN_ELEMENTAL:
+            return RecommendNamed(player, target, "Chain Lightning", "AOE");
+        case SPEC_SHAMAN_ENHANCEMENT:
+            if (CombatRecommendation spell = RecommendNamed(player, player, "Fire Nova", "AOE")) return spell;
+            return RecommendNamed(player, target, "Chain Lightning", "AOE");
+        case SPEC_MAGE_ARCANE:
+            if (CombatRecommendation spell = RecommendNamed(player, target, "Blizzard", "AOE")) return spell;
+            return RecommendNamed(player, player, "Arcane Explosion", "AOE");
+        case SPEC_MAGE_FIRE:
+            if (CombatRecommendation spell = RecommendNamed(player, target, "Flamestrike", "AOE")) return spell;
+            return RecommendNamed(player, target, "Blizzard", "AOE");
+        case SPEC_MAGE_FROST:
+            return RecommendFirstNamed(player, target, { "Frozen Orb", "Blizzard", "Frost Bomb" }, "AOE");
+        case SPEC_WARLOCK_AFFLICTION:
+            return RecommendNamed(player, target, "Seed of Corruption", "AOE");
+        case SPEC_WARLOCK_DEMONOLOGY:
+            if (CombatRecommendation spell = RecommendNamed(player, target, "Hand of Gul'dan", "AOE")) return spell;
+            return RecommendNamed(player, player, "Immolation Aura", "AOE");
+        case SPEC_WARLOCK_DESTRUCTION:
+            return RecommendNamed(player, target, "Rain of Fire", "AOE");
+        case SPEC_MONK_BREWMASTER:
+            if (CombatRecommendation spell = RecommendNamed(player, target, "Keg Smash", "AOE")) return spell;
+            return RecommendNamed(player, player, "Spinning Crane Kick", "AOE");
+        case SPEC_MONK_WINDWALKER:
+            return RecommendNamed(player, player, "Spinning Crane Kick", "AOE");
+        case SPEC_DRUID_BALANCE:
+            return RecommendNamed(player, target, "Hurricane", "AOE");
+        case SPEC_DRUID_FERAL:
+            if (CombatRecommendation spell = RecommendNamed(player, player, "Thrash", "AOE")) return spell;
+            return RecommendNamed(player, player, "Swipe", "AOE");
+        case SPEC_DRUID_GUARDIAN:
+            if (CombatRecommendation spell = RecommendNamed(player, player, "Thrash", "AOE")) return spell;
+            return RecommendNamed(player, player, "Swipe", "AOE");
+        default:
+            return {};
+    }
+}
+
 CombatRecommendation SelectGenericRotation(Player* player, Unit* target)
 {
     Specializations spec = Specializations(player->GetTalentSpecialization());
@@ -584,7 +759,7 @@ CombatRecommendation SelectGenericRotation(Player* player, Unit* target)
         case SPEC_WARRIOR_ARMS: return RecommendFirstNamed(player, target, { "Colossus Smash", "Mortal Strike", "Execute", "Overpower", "Slam" }, "DAMAGE");
         case SPEC_WARRIOR_FURY: return RecommendFirstNamed(player, target, { "Bloodthirst", "Raging Blow", "Execute", "Wild Strike", "Heroic Strike" }, "DAMAGE");
         case SPEC_WARRIOR_PROTECTION: return RecommendFirstNamed(player, target, { "Shield Slam", "Revenge", "Devastate", "Heroic Strike" }, "DAMAGE");
-        case SPEC_PALADIN_PROTECTION: return RecommendFirstNamed(player, target, { "Shield of the Righteous", "Judgment", "Hammer of the Righteous", "Crusader Strike", "Avenger's Shield" }, "DAMAGE");
+        case SPEC_PALADIN_PROTECTION: return RecommendFirstNamed(player, target, { "Shield of the Righteous", "Judgment", "Crusader Strike", "Avenger's Shield" }, "DAMAGE");
         case SPEC_HUNTER_BEAST_MASTERY: return RecommendFirstNamed(player, target, { "Kill Command", "Kill Shot", "Arcane Shot", "Cobra Shot" }, "DAMAGE");
         case SPEC_HUNTER_MARKSMANSHIP: return RecommendFirstNamed(player, target, { "Chimera Shot", "Kill Shot", "Aimed Shot", "Arcane Shot", "Steady Shot" }, "DAMAGE");
         case SPEC_HUNTER_SURVIVAL:
@@ -602,14 +777,14 @@ CombatRecommendation SelectGenericRotation(Player* player, Unit* target)
         case SPEC_PRIEST_SHADOW:
             if (CombatRecommendation dot = RecommendFirstNamed(player, target, { "Shadow Word: Pain", "Vampiric Touch" }, "DOT", true)) return dot;
             return RecommendFirstNamed(player, target, { "Devouring Plague", "Mind Blast", "Shadow Word: Death", "Mind Flay" }, "DAMAGE");
-        case SPEC_DEATH_KNIGHT_BLOOD: return RecommendFirstNamed(player, target, { "Death Strike", "Rune Strike", "Heart Strike", "Blood Boil" }, "DAMAGE");
+        case SPEC_DEATH_KNIGHT_BLOOD: return RecommendFirstNamed(player, target, { "Death Strike", "Rune Strike", "Heart Strike" }, "DAMAGE");
         case SPEC_DEATH_KNIGHT_FROST: return RecommendFirstNamed(player, target, { "Soul Reaper", "Obliterate", "Frost Strike", "Howling Blast" }, "DAMAGE");
         case SPEC_DEATH_KNIGHT_UNHOLY:
             if (CombatRecommendation dot = RecommendFirstNamed(player, target, { "Outbreak", "Plague Strike" }, "DOT", true)) return dot;
             return RecommendFirstNamed(player, target, { "Soul Reaper", "Scourge Strike", "Death Coil", "Festering Strike" }, "DAMAGE");
         case SPEC_SHAMAN_ELEMENTAL:
             if (CombatRecommendation dot = RecommendNamed(player, target, "Flame Shock", "DOT", true)) return dot;
-            return RecommendFirstNamed(player, target, { "Lava Burst", "Earth Shock", "Chain Lightning", "Lightning Bolt" }, "DAMAGE");
+            return RecommendFirstNamed(player, target, { "Lava Burst", "Earth Shock", "Lightning Bolt" }, "DAMAGE");
         case SPEC_SHAMAN_ENHANCEMENT:
             return RecommendFirstNamed(player, target, { "Stormstrike", "Lava Lash", "Earth Shock", "Lightning Bolt", "Primal Strike" }, "DAMAGE");
         case SPEC_MAGE_ARCANE: return RecommendFirstNamed(player, target, { "Arcane Missiles", "Arcane Barrage", "Arcane Blast" }, "DAMAGE");
@@ -684,6 +859,11 @@ CombatRecommendation SelectUniversalRecommendation(Player* player)
 
     if (!hostileTarget)
         return {};
+
+    CombatAoeState const aoe = GetCombatAoeState(player, target);
+    if (aoe.UseAoe)
+        if (CombatRecommendation recommendation = SelectAoeRotation(player, target))
+            return recommendation;
 
     if (CombatRecommendation talent = SelectKnownTalentDamage(player, target))
         return talent;
@@ -787,6 +967,17 @@ CombatRecommendation SelectRetributionRecommendation(Player* player)
     // Honor the flashing action-button proc before normal rotational fillers.
     if (player->HasAura(SPELL_DIVINE_CRUSADER) && CanCast(player, SPELL_DIVINE_STORM, target))
         return { SPELL_DIVINE_STORM, target, "PROC_AOE" };
+
+    CombatAoeState const aoe = GetCombatAoeState(player, target);
+    if (aoe.UseAoe)
+    {
+        if ((holyPower >= 3 || freeFinisher) && CanCast(player, SPELL_DIVINE_STORM, target))
+            return { SPELL_DIVINE_STORM, target, "AOE" };
+
+        if (CombatRecommendation builder = RecommendNamed(
+            player, target, "Hammer of the Righteous", "AOE"))
+            return builder;
+    }
 
     if (CanCast(player, SPELL_EXECUTION_SENTENCE, target))
         return { SPELL_EXECUTION_SENTENCE, target, "TALENT" };

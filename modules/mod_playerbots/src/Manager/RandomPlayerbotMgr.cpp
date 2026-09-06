@@ -104,7 +104,10 @@ namespace
 
     std::map<uint32, LfgAutoQueueStagedLogin> LfgAutoQueueStagedLogins;
     std::map<uint32, LfgAutoQueueManagedBot> LfgAutoQueueManagedBots;
-    std::set<uint32> LfgAutoQueueIneligibleBots;
+    // Rejections can be transient (stale group/map state, a teleport, or a
+    // build repaired on the next login). A process-lifetime blacklist slowly
+    // exhausted the filler pool until WorldServer was restarted.
+    std::map<uint32, uint32> LfgAutoQueueIneligibleBots;
     std::set<uint32> LfgAutoQueueOrphanCleanupChecked;
 
     void CleanupOrphanedLfgBotGroups(uint32 requesterGuid)
@@ -118,7 +121,7 @@ namespace
         uint32 const maxAccount =
             sPlayerbotAIConfig->randomBotAccounts.back();
         QueryResult result = CharacterDatabase.PQuery(
-            "SELECT g.guid FROM groups g "
+            "SELECT g.guid FROM `groups` g "
             "WHERE g.leaderGuid=%u AND (g.groupType & %u)<>0 "
             "AND NOT EXISTS (SELECT 1 FROM group_member self "
             "WHERE self.guid=g.guid AND self.memberGuid=g.leaderGuid) "
@@ -310,7 +313,7 @@ namespace
     // Do not repeatedly wake the same character after it failed the runtime
     // eligibility check. The set is intentionally process-local: a clean
     // restart retries the character after any transient state has cleared.
-    std::set<uint32> BgAutoQueueIneligibleBots;
+    std::map<uint32, uint32> BgAutoQueueIneligibleBots;
 
     bool IsBgHealerSpecialization(Specializations specialization)
     {
@@ -522,6 +525,22 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
         return;
 
     _autoQueueElapsed = 0;
+
+    // Let a rejected character be reconsidered after one minute. The normal
+    // eligibility and managed-loadout validation still run in full on every
+    // retry, so a genuinely unsuitable bot remains safe without poisoning the
+    // candidate pool for the rest of the server process.
+    uint32 const now = getMSTime();
+    auto expireIneligible = [now](std::map<uint32, uint32>& bots)
+    {
+        for (auto itr = bots.begin(); itr != bots.end();)
+            if (getMSTimeDiff(itr->second, now) >= 60000)
+                itr = bots.erase(itr);
+            else
+                ++itr;
+    };
+    expireIneligible(LfgAutoQueueIneligibleBots);
+    expireIneligible(BgAutoQueueIneligibleBots);
 
     uint32 realLfg = 0;
     uint32 botLfg = 0;
@@ -891,7 +910,7 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
                         continue;
                     }
 
-                    LfgAutoQueueIneligibleBots.insert(botGuid);
+                    LfgAutoQueueIneligibleBots[botGuid] = getMSTime();
                     TC_LOG_INFO("server",
                         "AutoQueue LFG staged bot ineligible name=%s guid=%u role=%u reason=%s",
                         bot->GetName().c_str(), botGuid, uint32(staged.Role),
@@ -925,7 +944,7 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
                     BotFactory::ManagedLoadoutMode::Pve,
                     staged.MinimumItemLevel, &managedLoadoutFailure))
             {
-                LfgAutoQueueIneligibleBots.insert(botGuid);
+                LfgAutoQueueIneligibleBots[botGuid] = getMSTime();
                 TC_LOG_ERROR("server",
                     "AutoQueue LFG managed loadout rejected name=%s guid=%u role=%u reason=%s avg-ilvl=%u floor=%u",
                     bot->GetName().c_str(), botGuid, uint32(staged.Role),
@@ -978,7 +997,7 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
                         "incomplete-glyphs" : nullptr));
             if (buildFailure)
             {
-                LfgAutoQueueIneligibleBots.insert(botGuid);
+                LfgAutoQueueIneligibleBots[botGuid] = getMSTime();
                 TC_LOG_ERROR("server",
                     "AutoQueue LFG build rejected name=%s guid=%u role=%u reason=%s talents=%u/%u glyphs=%u/%u",
                     bot->GetName().c_str(), botGuid, uint32(staged.Role),
@@ -1045,7 +1064,7 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
                     }
                 }
                 sLFGMgr->SetProposalAutoAccept(bot->GetGUID(), false);
-                LfgAutoQueueIneligibleBots.insert(botGuid);
+                LfgAutoQueueIneligibleBots[botGuid] = getMSTime();
                 std::string lockSummary = lockDetails.str();
                 TC_LOG_ERROR("server",
                     "AutoQueue LFG join refused name=%s guid=%u role=%u requester=%u active-queue=%u group=%u avg-ilvl=%u locks=%s",
@@ -1472,41 +1491,45 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
                             dbc::GetClassSpecializations(candidateClass);
                         uint8 candidateSpecializationTab = MAX_TALENT_TABS;
 
-                        // Prefer the active saved build, then the secondary
-                        // saved build, before choosing a valid class fallback.
-                        for (uint8 pass = 0; pass < MAX_TALENT_SPECS; ++pass)
+                        // Choose the best PvE specialization of this class
+                        // for the missing role. The environment preference is
+                        // stronger than the saved-page bonus, while an active
+                        // or secondary saved build wins an otherwise exact
+                        // tie and avoids needless specialization changes.
+                        uint32 bestSpecializationScore = 0;
+                        for (uint8 tab = 0;
+                             tab < classSpecializations.size() &&
+                             tab < MAX_TALENT_TABS; ++tab)
                         {
-                            uint8 specSlot = pass == 0 ? activeSpec :
-                                uint8((activeSpec + pass) % MAX_TALENT_SPECS);
-                            Specializations savedSpecialization =
-                                Specializations(specs[specSlot]);
-                            if (GetLfgRole(savedSpecialization) != role)
+                            Specializations specialization = Specializations(
+                                classSpecializations[tab]);
+                            if (GetLfgRole(specialization) != role)
                                 continue;
 
-                            auto specializationTab = std::find(
-                                classSpecializations.begin(),
-                                classSpecializations.end(),
-                                uint32(savedSpecialization));
-                            if (specializationTab == classSpecializations.end())
-                                continue;
-
-                            candidateSpecializationTab = uint8(std::distance(
-                                classSpecializations.begin(), specializationTab));
-                            break;
-                        }
-
-                        if (candidateSpecializationTab >= MAX_TALENT_TABS)
-                        {
-                            for (uint8 tab = 0;
-                                 tab < classSpecializations.size() &&
-                                 tab < MAX_TALENT_TABS; ++tab)
+                            uint32 score = uint32(
+                                GetAutomatedBotSpecializationPriority(
+                                    specialization, false)) * 4;
+                            if (Specializations(specs[activeSpec]) ==
+                                specialization)
+                                score += 2;
+                            else
                             {
-                                if (GetLfgRole(Specializations(
-                                        classSpecializations[tab])) == role)
-                                {
-                                    candidateSpecializationTab = tab;
-                                    break;
-                                }
+                                for (uint8 specSlot = 0;
+                                     specSlot < MAX_TALENT_SPECS; ++specSlot)
+                                    if (Specializations(specs[specSlot]) ==
+                                        specialization)
+                                    {
+                                        ++score;
+                                        break;
+                                    }
+                            }
+
+                            if (candidateSpecializationTab >=
+                                    MAX_TALENT_TABS ||
+                                score > bestSpecializationScore)
+                            {
+                                candidateSpecializationTab = tab;
+                                bestSpecializationScore = score;
                             }
                         }
 
@@ -1772,7 +1795,7 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
                 }
                 else
                 {
-                    BgAutoQueueIneligibleBots.insert(botGuid);
+                    BgAutoQueueIneligibleBots[botGuid] = getMSTime();
                     TC_LOG_WARN("server",
                         "AutoQueue BG staged bot became ineligible name=%s guid=%u type=%u reason=%s team=%u expected-team=%u spec=%u level=%u map=%u",
                         bot->GetName().c_str(), botGuid, uint32(staged.Type),
@@ -2065,9 +2088,11 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
                         uint32 selectedGuid = 0;
                         std::string selectedName;
                         bool selectedHealer = false;
+                        uint8 selectedPriority = 0;
                         uint32 fallbackGuid = 0;
                         std::string fallbackName;
                         bool fallbackHealer = false;
+                        uint8 fallbackPriority = 0;
                         do
                         {
                             Field* fields = candidates->Fetch();
@@ -2092,26 +2117,35 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
                             uint8 activeSpec = fields[5].GetUInt8();
                             if (activeSpec >= MAX_TALENT_SPECS)
                                 activeSpec = 0;
+                            Specializations specialization =
+                                Specializations(specs[activeSpec]);
                             bool healer = IsBgHealerSpecialization(
-                                Specializations(specs[activeSpec]));
-                            if (!HasAutomatedPvpBotLoadout(
-                                Specializations(specs[activeSpec])))
+                                specialization);
+                            if (!HasAutomatedPvpBotLoadout(specialization))
                                 continue;
+                            uint8 priority =
+                                GetAutomatedBotSpecializationPriority(
+                                    specialization, true);
                             if (needHealer && !healer)
                             {
-                                if (!fallbackGuid)
+                                if (!fallbackGuid ||
+                                    priority > fallbackPriority)
                                 {
                                     fallbackGuid = candidateGuid;
                                     fallbackName = fields[1].GetString();
                                     fallbackHealer = false;
+                                    fallbackPriority = priority;
                                 }
                                 continue;
                             }
 
-                            selectedGuid = candidateGuid;
-                            selectedName = fields[1].GetString();
-                            selectedHealer = healer;
-                            break;
+                            if (!selectedGuid || priority > selectedPriority)
+                            {
+                                selectedGuid = candidateGuid;
+                                selectedName = fields[1].GetString();
+                                selectedHealer = healer;
+                                selectedPriority = priority;
+                            }
                         }
                         while (candidates->NextRow());
 
@@ -2824,6 +2858,19 @@ bool RandomPlayerbotMgr::IsLfgAutoQueueManagedBot(
     return LfgAutoQueueManagedBots.count(bot) != 0;
 }
 
+RandomPlayerbotMgr::AutoQueueAuditSnapshot
+RandomPlayerbotMgr::GetAutoQueueAuditSnapshot() const
+{
+    AutoQueueAuditSnapshot snapshot;
+    snapshot.LfgPending = uint32(LfgAutoQueueStagedLogins.size());
+    snapshot.LfgManaged = uint32(LfgAutoQueueManagedBots.size());
+    snapshot.LfgIneligible = uint32(LfgAutoQueueIneligibleBots.size());
+    snapshot.BgPending = uint32(BgAutoQueueStagedLogins.size());
+    snapshot.BgManaged = uint32(BgAutoQueueManagedBots.size());
+    snapshot.BgIneligible = uint32(BgAutoQueueIneligibleBots.size());
+    return snapshot;
+}
+
 uint32 RandomPlayerbotMgr::GetValue(Player* bot, std::string const type)
 {
     return GetValue(bot->GetGUID().GetCounter(), type);
@@ -2909,6 +2956,11 @@ void RandomPlayerbotMgr::OnBotLoginInternal(Player* const bot)
         bot->ResurrectPlayer(1.0f);
         bot->SpawnCorpseBones();
     }
+
+    // Alive bots can also have damaged or broken equipment from an earlier
+    // world/instance session.  They do not reliably visit repair vendors, so
+    // make every login a clean durability boundary.
+    bot->DurabilityRepairAll(false, 1.0f, false);
 
     // AddPlayerBot finishes on the world/session update before the bot begins
     // normal open-world AI. Mark request-driven LFG logins immediately so

@@ -5,11 +5,9 @@
 
 namespace
 {
-bool IsPveInstanceTrash(Player* bot, Unit* target)
+bool IsGroupPveTrash(PlayerbotAI* botAI, Unit* target)
 {
-    if (!bot || !bot->GetMap() ||
-        (!bot->GetMap()->IsDungeon() && !bot->GetMap()->IsRaid()) ||
-        bot->InBattleground() || bot->InArena())
+    if (!botAI || !botAI->IsGroupPveActivity())
         return false;
 
     Creature* creature = target ? target->ToCreature() : nullptr;
@@ -19,19 +17,19 @@ bool IsPveInstanceTrash(Player* bot, Unit* target)
 
 bool CastRecklessnessAction::isUseful()
 {
-    return !IsPveInstanceTrash(bot, AI_VALUE(Unit*, "current target")) &&
+    return !IsGroupPveTrash(botAI, AI_VALUE(Unit*, "current target")) &&
         CastBuffSpellAction::isUseful();
 }
 
 bool CastDemoralizingBannerAction::isUseful()
 {
-    return !IsPveInstanceTrash(bot, AI_VALUE(Unit*, "current target")) &&
+    return !IsGroupPveTrash(botAI, AI_VALUE(Unit*, "current target")) &&
         CastSpellAction::isUseful();
 }
 
 bool CastSkullBannerAction::isUseful()
 {
-    return !IsPveInstanceTrash(bot, AI_VALUE(Unit*, "current target")) &&
+    return !IsGroupPveTrash(botAI, AI_VALUE(Unit*, "current target")) &&
         CastSpellAction::isUseful();
 }
 
@@ -46,9 +44,7 @@ bool CastHeroicLeapAction::isUseful()
     // Do not leap ahead of the tank in PvE instances. Normal reach/follow
     // movement keeps the raid together; the mobility skill remains available
     // in battlegrounds and arenas.
-    if (bot->GetMap() &&
-        (bot->GetMap()->IsDungeon() || bot->GetMap()->IsRaid()) &&
-        !bot->InBattleground() && !bot->InArena())
+    if (botAI->IsGroupPveActivity())
         return false;
 
     return sServerFacade->IsDistanceGreaterOrEqualThan(AI_VALUE2(float, "distance", GetTargetName()), 15.f);
@@ -56,19 +52,36 @@ bool CastHeroicLeapAction::isUseful()
 
 bool CastBattleStanceAction::isUseful()
 {
-    return botAI->GetBot() && botAI->GetBot()->GetGroup() &&
-        !PlayerBotSpec::IsTank(botAI->GetBot()) &&
+    Player* warrior = botAI->GetBot();
+    if (!warrior)
+        return false;
+
+    if (botAI->IsGroupPveActivity())
+        return !PlayerBotSpec::IsTank(warrior, true) &&
+            CastBuffSpellAction::isUseful();
+
+    return warrior->GetGroup() && !PlayerBotSpec::IsTank(warrior) &&
         CastBuffSpellAction::isUseful();
 }
 bool CastBerserkerStanceAction::isUseful()
 {
-    return botAI->GetBot() && !botAI->GetBot()->GetGroup() &&
-        !PlayerBotSpec::IsTank(botAI->GetBot()) &&
+    Player* warrior = botAI->GetBot();
+    if (!warrior || botAI->IsGroupPveActivity())
+        return false;
+
+    return !warrior->GetGroup() && !PlayerBotSpec::IsTank(warrior) &&
         CastBuffSpellAction::isUseful();
 }
 bool CastDefensiveStanceAction::isUseful()
 {
-    return PlayerBotSpec::IsTank(botAI->GetBot()) &&
+    Player* warrior = botAI->GetBot();
+    if (!warrior)
+        return false;
+
+    bool const isTank = botAI->IsGroupPveActivity() ?
+        PlayerBotSpec::IsTank(warrior, true) :
+        PlayerBotSpec::IsTank(warrior);
+    return isTank &&
         CastBuffSpellAction::isUseful();
 }
 

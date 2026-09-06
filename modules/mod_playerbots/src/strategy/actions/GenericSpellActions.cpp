@@ -7,12 +7,102 @@
 
 #include "Event.h"
 //#include "ItemTemplate.h"
+#include "Group.h"
 #include "ObjectDefines.h"
 #include "Opcodes.h"
 #include "Player.h"
 #include "Playerbots.h"
+#include "PlayerbotSpec.h"
 #include "ServerFacade.h"
 #include "WorldPacket.h"
+
+namespace
+{
+bool IsGroupPveTauntProtected(PlayerbotAI* botAI, Player* bot,
+    Unit* target, std::string const& spell)
+{
+    if (!botAI || !bot || !target || !botAI->IsGroupPveActivity())
+        return false;
+
+    bool const taunt = spell == "taunt" || spell == "growl" ||
+        spell == "dark command" || spell == "hand of reckoning" ||
+        spell == "provoke" || spell == "mocking banner" ||
+        spell == "distracting shot";
+    if (!taunt)
+        return false;
+
+    Unit* victim = target->GetVictim();
+    Player* victimPlayer = victim ?
+        victim->GetCharmerOrOwnerPlayerOrPlayerItself() : nullptr;
+    if (!victimPlayer || victimPlayer == bot || !victimPlayer->IsAlive() ||
+        !PlayerBotSpec::IsTank(victimPlayer, true))
+        return false;
+
+    Group* group = bot->GetGroup(GroupSlot::Instance);
+    if (!group)
+        group = bot->GetGroup();
+    return group && group->IsMember(victimPlayer->GetGUID());
+}
+
+bool WouldBreakGroupPveCrowdControl(PlayerbotAI* botAI, Player* bot,
+    Unit* spellTarget, std::string const& spell)
+{
+    if (!botAI || !bot || !spellTarget || !botAI->IsGroupPveActivity())
+        return false;
+
+    uint32 const spellId = botAI->GetAiObjectContext()
+        ->GetValue<uint32>("spell id", spell)->Get();
+    SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
+    if (!spellInfo)
+        return false;
+
+    bool harmfulAreaEffect = false;
+    float effectRadius = 0.0f;
+    for (uint8 effectIndex = EFFECT_0;
+         effectIndex < MAX_SPELL_EFFECTS; ++effectIndex)
+    {
+        SpellEffectInfo const& effect = spellInfo->Effects[effectIndex];
+        if (!effect.IsEffect() || spellInfo->IsPositiveEffect(effectIndex))
+            continue;
+
+        bool const affectsSeveralTargets = effect.IsTargetingArea() ||
+            effect.IsAreaAuraEffect() || effect.ChainTarget > 1;
+        if (!affectsSeveralTargets)
+            continue;
+
+        harmfulAreaEffect = true;
+        effectRadius = std::max(effectRadius, effect.CalcRadius(bot));
+        if (effect.ChainTarget > 1)
+            effectRadius = std::max(effectRadius, 12.0f);
+    }
+
+    if (!harmfulAreaEffect)
+        return false;
+
+    // Some melee cones and triggered cleaves have no radius in the client
+    // data. Eight yards is a deliberately small safety radius for them.
+    effectRadius = std::max(effectRadius, 8.0f);
+
+    GuidVector const possibleTargets = botAI->GetAiObjectContext()
+        ->GetValue<GuidVector>("possible targets")->Get();
+    for (ObjectGuid const& guid : possibleTargets)
+    {
+        Unit* unit = botAI->GetUnit(guid);
+        if (!unit || unit->GetMap() != bot->GetMap() || !unit->IsAlive() ||
+            !bot->IsValidAttackTarget(unit) ||
+            !unit->HasBreakableByDamageCrowdControlAura())
+            continue;
+
+        // Covers caster-centred/cone effects as well as target/destination
+        // effects without guessing the implicit target layout of every spell.
+        if (bot->GetDistance2d(unit) <= effectRadius ||
+            spellTarget->GetDistance2d(unit) <= effectRadius)
+            return true;
+    }
+
+    return false;
+}
+}
 
 CastSpellAction::CastSpellAction(PlayerbotAI* botAI, std::string const spell)
     : Action(botAI, spell), range(botAI->GetRange("spell")), spell(spell)
@@ -115,6 +205,18 @@ bool CastSpellAction::isUseful()
         return false;
 
     if (!spellTarget->IsInWorld() || spellTarget->GetMapId() != bot->GetMapId())
+        return false;
+
+    // Off-tanks still rescue healers/DPS, but must not ping-pong a target
+    // already held by another living tank. Encounter-specific scripted swaps
+    // can issue their own forced action when stack mechanics are implemented.
+    if (IsGroupPveTauntProtected(botAI, bot, spellTarget, spell))
+        return false;
+
+    // Preserve sap, polymorph, fear, freezing trap and similar breakable CC.
+    // Single-target rotations continue normally, while damaging area/chain
+    // spells wait until the controlled enemy is safely outside their radius.
+    if (WouldBreakGroupPveCrowdControl(botAI, bot, spellTarget, spell))
         return false;
 
     // float combatReach = bot->GetCombatReach() + spellTarget->GetCombatReach();
@@ -274,9 +376,7 @@ bool CastSnareSpellAction::isUseful()
     // trigger as well as from SnareTargetTrigger. Stop before GetTarget() is
     // evaluated so PvE bots neither kite a controlled pack nor log a missing
     // target value. Snares remain available in world content and PvP.
-    if (bot->GetMap() &&
-        (bot->GetMap()->IsDungeon() || bot->GetMap()->IsRaid()) &&
-        !bot->InBattleground() && !bot->InArena())
+    if (botAI->IsGroupPveActivity())
         return false;
 
     return CastDebuffSpellAction::isUseful();

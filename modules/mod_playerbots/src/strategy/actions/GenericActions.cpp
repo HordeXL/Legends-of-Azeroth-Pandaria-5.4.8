@@ -107,7 +107,7 @@ bool TogglePetSpellAutoCastAction::Execute(Event event)
 bool PetAttackAction::Execute(Event event)
 {
     Guardian* pet = bot->GetGuardianPet();
-    if (!pet)
+    if (!pet || !pet->GetCharmInfo() || !pet->ToCreature()->IsAIEnabled)
     {
         return false;
     }

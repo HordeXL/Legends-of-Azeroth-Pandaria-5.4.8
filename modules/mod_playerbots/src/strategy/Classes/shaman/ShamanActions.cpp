@@ -18,6 +18,15 @@ namespace
 {
 constexpr float CoordinatedTotemRadius = 80.0f;
 
+Group* GetTotemCoordinationGroup(Player* bot)
+{
+    if (!bot)
+        return nullptr;
+
+    Group* group = bot->GetGroup(GroupSlot::Instance);
+    return group ? group : bot->GetGroup();
+}
+
 std::vector<uint32> ResolveTotemSpells(PlayerbotAI* botAI,
     std::initializer_list<char const*> names)
 {
@@ -35,7 +44,7 @@ std::vector<uint32> ResolveTotemSpells(PlayerbotAI* botAI,
 bool HasActiveCoordinatedTotem(Player* bot,
     std::vector<uint32> const& spellIds)
 {
-    Group* group = bot ? bot->GetGroup() : nullptr;
+    Group* group = GetTotemCoordinationGroup(bot);
     if (!group || !bot->GetMap())
         return false;
 
@@ -70,7 +79,7 @@ bool HasActiveCoordinatedTotem(Player* bot,
 
 bool IsCoordinatedTotemCaster(Player* bot, uint32 spellId)
 {
-    Group* group = bot ? bot->GetGroup() : nullptr;
+    Group* group = GetTotemCoordinationGroup(bot);
     if (!group)
         return true;
 
@@ -106,10 +115,115 @@ bool IsCoordinatedTotemUseful(Player* bot, PlayerbotAI* botAI,
     return !HasActiveCoordinatedTotem(bot, activeSpellIds) &&
         IsCoordinatedTotemCaster(bot, ownSpellId);
 }
+
+std::string GetAssignedAirTotem(Player* bot)
+{
+    Group* group = GetTotemCoordinationGroup(bot);
+    if (!group)
+        return {};
+
+    std::vector<Player*> shamans;
+    for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+    {
+        Player* member = ref->GetSource();
+        PlayerbotAI* memberAI = member ? GET_PLAYERBOT_AI(member) : nullptr;
+        if (!member || !memberAI || memberAI->IsRealPlayer() ||
+            member->GetClass() != CLASS_SHAMAN || !member->IsAlive() ||
+            member->GetMap() != bot->GetMap() ||
+            bot->GetDistance(member) > CoordinatedTotemRadius)
+            continue;
+        shamans.push_back(member);
+    }
+    std::sort(shamans.begin(), shamans.end(), [](Player* left, Player* right)
+    {
+        return left->GetGUID() < right->GetGUID();
+    });
+
+    auto position = std::find(shamans.begin(), shamans.end(), bot);
+    if (position == shamans.end())
+        return {};
+
+    if (shamans.size() == 1)
+        return bot->GetSpecialization() == SPEC_SHAMAN_ENHANCEMENT ?
+            "windfury totem" : "wrath of air totem";
+
+    // Give the first caster/healer Wrath and the first Enhancement shaman
+    // Windfury. Remaining shamans add Grace before any effect is duplicated.
+    std::vector<std::string> assignment(shamans.size());
+    auto enhancement = std::find_if(shamans.begin(), shamans.end(),
+        [](Player* member)
+        {
+            return member->GetSpecialization() == SPEC_SHAMAN_ENHANCEMENT;
+        });
+    auto caster = std::find_if(shamans.begin(), shamans.end(),
+        [](Player* member)
+        {
+            return member->GetSpecialization() != SPEC_SHAMAN_ENHANCEMENT;
+        });
+    if (caster != shamans.end())
+        assignment[std::distance(shamans.begin(), caster)] =
+            "wrath of air totem";
+    if (enhancement != shamans.end())
+        assignment[std::distance(shamans.begin(), enhancement)] =
+            "windfury totem";
+
+    static char const* effects[] =
+    {
+        "wrath of air totem", "windfury totem", "grace of air totem"
+    };
+    for (std::string& selected : assignment)
+    {
+        if (!selected.empty())
+            continue;
+        for (char const* effect : effects)
+            if (std::find(assignment.begin(), assignment.end(), effect) ==
+                assignment.end())
+            {
+                selected = effect;
+                break;
+            }
+        if (selected.empty())
+            selected = effects[uint32(&selected - assignment.data()) % 3];
+    }
+
+    return assignment[std::distance(shamans.begin(), position)];
+}
+
+bool IsCoordinatedSustainedTotemUseful(Player* bot, PlayerbotAI* botAI,
+    std::string const& action)
+{
+    if (!botAI->IsGroupPveActivity())
+        return true;
+
+    bool const airTotem = action == "wrath of air totem" ||
+        action == "windfury totem" || action == "grace of air totem";
+    if (airTotem)
+    {
+        if (GetAssignedAirTotem(bot) != action)
+            return false;
+
+        std::vector<uint32> activeSpellIds = ResolveTotemSpells(
+            botAI, {action.c_str()});
+        return !activeSpellIds.empty() &&
+            !HasActiveCoordinatedTotem(bot, activeSpellIds);
+    }
+    if (action != "strength of earth totem" &&
+             action != "stoneskin totem" &&
+             action != "mana spring totem" &&
+             action != "flametongue totem" &&
+             action != "totem of wrath")
+        return true;
+
+    return IsCoordinatedTotemUseful(bot, botAI, action.c_str(),
+        {action.c_str()});
+}
 }
 
 bool CastTotemAction::isUseful()
 {
+    if (!IsCoordinatedSustainedTotemUseful(bot, botAI, name))
+        return false;
+
     if (needLifeTime > 0.1f && AI_VALUE(uint8, "attacker count") < 3)
     {
         Unit* target = AI_VALUE(Unit*, "current target");

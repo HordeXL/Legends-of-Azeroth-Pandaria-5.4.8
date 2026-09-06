@@ -31,6 +31,16 @@ class RandomPlayerbotMgr : public PlayerbotHolder
 {
 public:
 
+    struct AutoQueueAuditSnapshot
+    {
+        uint32 LfgPending = 0;
+        uint32 LfgManaged = 0;
+        uint32 LfgIneligible = 0;
+        uint32 BgPending = 0;
+        uint32 BgManaged = 0;
+        uint32 BgIneligible = 0;
+    };
+
     struct farm_spot
     {
         uint32 min_level;
@@ -88,6 +98,7 @@ public:
     bool IsRandomBot(Player* bot);
     bool IsRandomBot(ObjectGuid::LowType bot);
     bool IsLfgAutoQueueManagedBot(ObjectGuid::LowType bot) const;
+    AutoQueueAuditSnapshot GetAutoQueueAuditSnapshot() const;
 
     void TagForRandomize(Player* bot, uint32 level);
     void RandomizeFirst(Player* bot);

@@ -331,6 +331,7 @@ bool SpiritHealerAction::Execute(Event event)
                 //PlayerbotChatHandler ch(bot);
                 bot->ResurrectPlayer(0.5f);
                 bot->SpawnCorpseBones();
+                bot->DurabilityRepairAll(false, 1.0f, false);
                 context->GetValue<Unit*>("current target")->Set(nullptr);
                 bot->SetTarget(ObjectGuid::Empty);
                 botAI->TellMaster("Hello");

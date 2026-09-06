@@ -42,6 +42,13 @@ The common priority is:
 8. Continue the specialization's resource builder/spender, proc, DoT and core
    damage priority.
 
+Damage recommendations dynamically switch between single-target and area
+rotations. Tanks switch at two engaged enemies clustered within eight yards of
+the selected target so they can establish group threat. Damage dealers switch
+at three. In dungeon and raid groups, a damage dealer waits until every counted
+enemy is attacking a living tank; neutral or unrelated nearby packs are not
+counted. Ground-targeted area spells are placed on the selected enemy.
+
 Direct ally spells are cast on the server-selected ally without changing the
 player's selected hostile target. Normal range, line-of-sight, immunity,
 cooldown, resource, GCD and arena restrictions remain authoritative; the

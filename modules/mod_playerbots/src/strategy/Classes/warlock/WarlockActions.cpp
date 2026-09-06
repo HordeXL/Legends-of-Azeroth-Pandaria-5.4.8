@@ -10,17 +10,15 @@
 
 namespace
 {
-bool IsPvPControlTarget(Player* bot, Unit* target)
+bool IsPvPControlTarget(PlayerbotAI* botAI, Unit* target)
 {
-    return bot && target && (bot->InBattleground() || bot->InArena()) &&
+    return botAI && target && botAI->IsPvpActivity() &&
         target->GetCharmerOrOwnerPlayerOrPlayerItself();
 }
 
-bool IsPveInstanceTrash(Player* bot, Unit* target)
+bool IsGroupPveTrash(PlayerbotAI* botAI, Unit* target)
 {
-    if (!bot || !bot->GetMap() ||
-        (!bot->GetMap()->IsDungeon() && !bot->GetMap()->IsRaid()) ||
-        bot->InBattleground() || bot->InArena())
+    if (!botAI || !botAI->IsGroupPveActivity())
         return false;
 
     Creature* creature = target ? target->ToCreature() : nullptr;
@@ -30,23 +28,29 @@ bool IsPveInstanceTrash(Player* bot, Unit* target)
 
 bool CastDarkSoulMiseryAction::isUseful()
 {
-    return !IsPveInstanceTrash(bot, AI_VALUE(Unit*, "current target")) &&
+    return !IsGroupPveTrash(botAI, AI_VALUE(Unit*, "current target")) &&
         CastBuffSpellAction::isUseful();
 }
 
 bool CastDarkSoulKnowledgeAction::isUseful()
 {
-    return !IsPveInstanceTrash(bot, AI_VALUE(Unit*, "current target")) &&
+    return !IsGroupPveTrash(botAI, AI_VALUE(Unit*, "current target")) &&
         CastBuffSpellAction::isUseful();
 }
 
 bool CastDarkSoulInstabilityAction::isUseful()
 {
-    return !IsPveInstanceTrash(bot, AI_VALUE(Unit*, "current target")) &&
+    return !IsGroupPveTrash(botAI, AI_VALUE(Unit*, "current target")) &&
         CastBuffSpellAction::isUseful();
 }
 
-bool CastDrainSoulAction::isUseful() { /*return AI_VALUE2(uint32, "item count", "soul shard") < 10;*/ return std::rand() % 5 < 2; }
+bool CastDrainSoulAction::isUseful()
+{
+    // Affliction already schedules Drain Soul only through the execute-health
+    // trigger.  A random 40% gate made otherwise identical bots alternate
+    // between a proper execute and idle/filler casts, producing unstable DPS.
+    return CastSpellAction::isUseful();
+}
 
 Value<Unit*>* CastBanishAction::GetTargetValue() { return context->GetValue<Unit*>("cc target", "banish"); }
 
@@ -58,31 +62,31 @@ bool CastFearOnCcAction::Execute(Event event) { return botAI->CastSpell("fear", 
 
 bool CastFearOnCcAction::isPossible()
 {
-    return IsPvPControlTarget(bot, GetTarget()) &&
+    return IsPvPControlTarget(botAI, GetTarget()) &&
         CastBuffSpellAction::isPossible();
 }
 
 bool CastFearOnCcAction::isUseful()
 {
-    return IsPvPControlTarget(bot, GetTarget()) &&
+    return IsPvPControlTarget(botAI, GetTarget()) &&
         CastBuffSpellAction::isUseful();
 }
 
 bool CastFearAction::isUseful()
 {
-    return IsPvPControlTarget(bot, GetTarget()) &&
+    return IsPvPControlTarget(botAI, GetTarget()) &&
         CastDebuffSpellAction::isUseful();
 }
 
 bool CastMortalCoilAction::isUseful()
 {
-    return IsPvPControlTarget(bot, GetTarget()) &&
+    return IsPvPControlTarget(botAI, GetTarget()) &&
         CastSpellAction::isUseful();
 }
 
 bool CastBloodHorrorAction::isUseful()
 {
-    return IsPvPControlTarget(bot, GetTarget()) &&
+    return IsPvPControlTarget(botAI, GetTarget()) &&
         CastSpellAction::isUseful();
 }
 
