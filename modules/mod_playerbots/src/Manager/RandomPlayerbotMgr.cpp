@@ -2903,6 +2903,35 @@ void RandomPlayerbotMgr::OnPlayerLogout(Player* player)
     // from entering bot AI while its master is being deleted.
     uint32 const requesterGuid = player->GetGUID().GetCounter();
     uint32 const cleanupStarted = getMSTime();
+    Group* requesterGroup = player->GetGroup(GroupSlot::Instance);
+    if (!requesterGroup)
+        requesterGroup = player->GetGroup();
+
+    // Do not pull a real player out of a normal or mixed-human party.
+    // Check member slots, including offline members, against actual managed
+    // ownership rather than assuming every other group member is a bot.
+    bool requesterHasBotTeam = false;
+    if (!player->GetSession()->IsBot() && requesterGroup && requesterGroup->isLFGGroup() &&
+        player->GetMap() && player->GetMap()->IsDungeon())
+    {
+        bool onlyOwnedBots = true;
+        for (auto const& member : requesterGroup->GetMemberSlots())
+        {
+            if (member.guid == player->GetGUID())
+                continue;
+            auto managed = LfgAutoQueueManagedBots.find(member.guid.GetCounter());
+            if (managed == LfgAutoQueueManagedBots.end() || managed->second.RequesterGuid != requesterGuid)
+            {
+                onlyOwnedBots = false;
+                break;
+            }
+            requesterHasBotTeam = true;
+        }
+        requesterHasBotTeam = requesterHasBotTeam && onlyOwnedBots;
+    }
+    if (requesterHasBotTeam)
+        player->GetSession()->ScheduleBotLfgReturnOnLogout();
+
     for (auto& managedPair : LfgAutoQueueManagedBots)
     {
         LfgAutoQueueManagedBot& managed = managedPair.second;
