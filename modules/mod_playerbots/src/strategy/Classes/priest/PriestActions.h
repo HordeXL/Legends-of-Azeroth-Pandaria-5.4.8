@@ -112,8 +112,20 @@ ENEMY_HEALER_ACTION(CastSilenceOnEnemyHealerAction, "silence");
 // shadow talents 2.4.3
 DEBUFF_CHECKISOWNER_ACTION(CastVampiricTouchAction, "vampiric touch");
 DEBUFF_ENEMY_ACTION(CastVampiricTouchOnAttackerAction, "vampiric touch");
+class CastDevouringPlagueAction : public CastDebuffSpellAction
+{
+public:
+    CastDevouringPlagueAction(PlayerbotAI* ai)
+        : CastDebuffSpellAction(ai, "devouring plague", true, 0.0f) {}
+
+    bool isUseful() override
+    {
+        // Recheck at execution selection too: an action may have been queued
+        // before another ability consumed the orbs.
+        return bot->GetPower(POWER_SHADOW_ORBS) >= 3 && CastDebuffSpellAction::isUseful();
+    }
+};
 // racials
-DEBUFF_CHECKISOWNER_ACTION(CastDevouringPlagueAction, "devouring plague");
 BUFF_ACTION(CastTouchOfWeaknessAction, "touch of weakness");
 DEBUFF_ACTION(CastHexOfWeaknessAction, "hex of weakness");
 BUFF_ACTION(CastShadowguardAction, "shadowguard");
