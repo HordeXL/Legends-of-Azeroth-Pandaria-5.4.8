@@ -199,6 +199,7 @@ public:
         bool initializeInDungeon = false);
     void RequestLfgPreparationBuff() { _lfgPreparationBuffPending.store(true); }
     bool IsLfgAutoQueueReserved() const;
+    bool IsLfgAutoQueueControlled() const { return _lfgAutoQueueRequesterGuid.load() != 0; }
     bool CanLfgAutoQueueEngage(Unit const* target) const;
 
     bool CanMove();

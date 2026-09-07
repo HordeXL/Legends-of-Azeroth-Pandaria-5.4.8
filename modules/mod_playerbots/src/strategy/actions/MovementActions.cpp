@@ -63,6 +63,35 @@
 #include "BattlegroundWS.h"
 #include "ObjectAccessor.h"
 
+namespace
+{
+// Temporary, targeted pre-pull tracing. Record the action that actually
+// submitted movement, rather than inferring it from a combat flag or class.
+void TraceManagedPveMovement(PlayerbotAI* ai, char const* action,
+    char const* motion, float x, float y, float z)
+{
+    if (!ai->IsLfgAutoQueueControlled() || !ai->IsGroupPveActivity())
+        return;
+    Player* bot = ai->GetBot();
+    Player* master = ai->GetMaster();
+    if (!master || !master->IsInWorld() || master->GetMap() != bot->GetMap() ||
+        master->GetVictim())
+        return;
+
+    Unit* target = ai->GetAiObjectContext()->GetValue<Unit*>("current target")->Get();
+    TC_LOG_INFO("server",
+        "AutoQueue LFG prepull movement bot=%s guid=%u action=%s motion=%s state=%u combat=%u map=%u from=(%.2f,%.2f,%.2f) to=(%.2f,%.2f,%.2f) master=%s master-pos=(%.2f,%.2f,%.2f) master-combat=%u target=%s target-entry=%u target-guid=%u",
+        bot->GetName().c_str(), bot->GetGUID().GetCounter(), action, motion,
+        uint32(ai->GetState()), bot->IsInCombat() ? 1u : 0u, bot->GetMapId(),
+        bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(), x, y, z,
+        master->GetName().c_str(), master->GetPositionX(), master->GetPositionY(),
+        master->GetPositionZ(), master->IsInCombat() ? 1u : 0u,
+        target ? target->GetName().c_str() : "<none>",
+        target ? target->GetEntry() : 0u,
+        target ? target->GetGUID().GetCounter() : 0u);
+}
+}
+
 MovementAction::MovementAction(PlayerbotAI* botAI, std::string const name) : Action(botAI, name)
 {
     bot = botAI->GetBot();
@@ -127,16 +156,22 @@ bool MovementAction::WaitForTankPull(WorldObject* object)
 {
     // Being on the tank's threat list is not the same as having reached the
     // tank. Do not meet a ranged pull halfway and body-pull the next pack.
-    // Friendly healing/resurrection movement, tank movement and PvP remain
-    // independent of this offensive movement guard.
-    if (!object || !botAI->IsGroupPveActivity() ||
-        PlayerBotSpec::IsTank(bot, true))
+    // Friendly healing/resurrection movement and PvP remain independent.
+    // Tank bots may approach once the requester has authorized the fight.
+    if (!object || !botAI->IsGroupPveActivity())
         return false;
 
     Unit* target = object->ToUnit();
     if (!target || !target->IsInWorld() || !target->IsAlive() ||
         target->GetMap() != bot->GetMap() || target->IsPlayer() ||
         !bot->IsValidAttackTarget(target))
+        return false;
+
+    // Block the pre-pull case too, including tank bots: selecting/marking an
+    // idle enemy is not permission to walk into its aggro radius.
+    if (!botAI->CanLfgAutoQueueEngage(target))
+        return true;
+    if (PlayerBotSpec::IsTank(bot, true))
         return false;
 
     Unit* victim = target->GetVictim();
@@ -162,7 +197,7 @@ bool MovementAction::ChaseTo(WorldObject* obj, float distance, float angle)
     if (WaitForTankPull(obj))
         return false;
 
-    if (!IsMovingAllowed())
+    if (!IsMovingAllowed(obj))
     {
         return false;
     }
@@ -190,6 +225,8 @@ bool MovementAction::ChaseTo(WorldObject* obj, float distance, float angle)
     }
 
     bot->GetMotionMaster()->MoveChase((Unit*)obj, distance);
+    TraceManagedPveMovement(botAI, getName().c_str(), "chase",
+        obj->GetPositionX(), obj->GetPositionY(), obj->GetPositionZ());
 
     // TODO shouldnt this use "last movement" value?
     WaitForReach(bot->GetExactDist2d(obj) - distance);
@@ -371,6 +408,7 @@ bool MovementAction::MoveTo(uint32 mapId, float x, float y, float z, bool idle, 
             delay = std::max(.0f, delay);
             delay = std::min((float)sPlayerbotAIConfig->maxWaitForMove, delay);
             AI_VALUE(LastMovement&, "last movement").Set(mapId, x, y, z, bot->GetOrientation(), delay, priority);
+            TraceManagedPveMovement(botAI, getName().c_str(), "vehicle-point", x, y, z);
             return true;
         }
     }
@@ -400,6 +438,7 @@ bool MovementAction::MoveTo(uint32 mapId, float x, float y, float z, bool idle, 
             delay = std::max(.0f, delay);
             delay = std::min((float)sPlayerbotAIConfig->maxWaitForMove, delay);
             AI_VALUE(LastMovement&, "last movement").Set(mapId, x, y, z, bot->GetOrientation(), delay, priority);
+            TraceManagedPveMovement(botAI, getName().c_str(), "point", x, y, z);
             return true;
         }
     }
@@ -440,6 +479,7 @@ bool MovementAction::MoveTo(uint32 mapId, float x, float y, float z, bool idle, 
             delay = std::min((float)sPlayerbotAIConfig->maxWaitForMove, delay);
             AI_VALUE(LastMovement&, "last movement").Set(mapId, endP.x, endP.y,
                 endP.z, bot->GetOrientation(), delay, priority);
+            TraceManagedPveMovement(botAI, getName().c_str(), "path-point", endP.x, endP.y, endP.z);
             return true;
         }
     }
@@ -448,6 +488,9 @@ bool MovementAction::MoveTo(uint32 mapId, float x, float y, float z, bool idle, 
 
 bool MoveRandomAction::Execute(Event event)
 {
+    if (botAI->IsLfgAutoQueueControlled())
+        return false;
+
     float distance = sPlayerbotAIConfig->tooCloseDistance + urand(10, 30);
     const float x = bot->GetPositionX();
     const float y = bot->GetPositionY();
@@ -483,6 +526,10 @@ bool MovementAction::MoveNear(uint32 mapId, float x, float y, float z, float dis
 
 bool MovementAction::MoveNear(WorldObject* target, float distance, MovementPriority priority)
 {
+    if (!IsMovingAllowed(target) ||
+        (priority != MovementPriority::MOVEMENT_FORCED && WaitForTankPull(target)))
+        return false;
+
     if (!target)
         return false;
 
@@ -536,7 +583,7 @@ float MovementAction::GetFollowAngle()
 
 bool MoveRandomAction::isUseful()
 {
-    return true;
+    return !botAI->IsLfgAutoQueueControlled();
 }
 
 bool MovementAction::IsMovingAllowed(WorldObject* target)
@@ -546,6 +593,11 @@ bool MovementAction::IsMovingAllowed(WorldObject* target)
 
     if (bot->GetMapId() != target->GetMapId())
         return false;
+
+    if (Unit* unit = target->ToUnit())
+        if (bot->IsValidAttackTarget(unit) &&
+            !botAI->CanLfgAutoQueueEngage(unit))
+            return false;
 
     return IsMovingAllowed();
 }
@@ -704,6 +756,8 @@ bool MovementAction::Follow(Unit* target, float distance, float angle)
         bot->GetMotionMaster()->Clear();
 
     bot->GetMotionMaster()->MoveFollow(target, distance, angle);
+    TraceManagedPveMovement(botAI, getName().c_str(), "follow",
+        target->GetPositionX(), target->GetPositionY(), target->GetPositionZ());
     return true;
 }
 

@@ -48,8 +48,12 @@ GuidVector AttackersValue::Calculate()
         }
     }
 
+    // Zone combat, a skull marker or a saved priority target does not by
+    // itself authorize a managed filler to pull. Filter before target
+    // selection can schedule movement, not only when Attack/Spell executes.
     for (Unit* unit : targets)
-        result.push_back(unit->GetGUID());
+        if (botAI->CanLfgAutoQueueEngage(unit))
+            result.push_back(unit->GetGUID());
 
     if (bot->duel && bot->duel->opponent)
         result.push_back(bot->duel->opponent->GetGUID());
