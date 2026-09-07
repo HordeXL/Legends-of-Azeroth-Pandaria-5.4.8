@@ -59,10 +59,24 @@ bool IcyVeinsTrigger::IsActive()
 
 bool FingersOfFrostSingleTrigger::IsActive()
 {
-    // Fingers of Frost "stack" count is always 1.
-    // The value is instead stored in the charges.
-    Aura* aura = botAI->GetAura("fingers of frost", bot, false, true, -1);
-    return (aura && aura->GetCharges() == 1);
+    // The MoP Ice Lance/Deep Freeze scripts consume stacks of aura 44544,
+    // not proc charges. Use the actual proc aura rather than its visuals.
+    Aura* aura = bot->GetAura(44544);
+    return aura && aura->GetStackAmount() == 1;
+}
+
+bool FingersOfFrostDoubleTrigger::IsActive()
+{
+    Aura* aura = bot->GetAura(44544);
+    return aura && aura->GetStackAmount() >= 2;
+}
+
+bool FingersOfFrostPveTrigger::IsActive()
+{
+    // Evaluate the activity at runtime: bots may be prepared outside the
+    // instance before the same strategy starts running inside it.
+    Aura* aura = bot->GetAura(44544);
+    return botAI->IsGroupPveActivity() && aura && aura->GetStackAmount() > 0;
 }
 
 bool SlowNotOnTargetTrigger::IsActive()

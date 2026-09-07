@@ -105,8 +105,14 @@ void FrostMageStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode("has pet", NextAction::array(0, new NextAction("toggle pet spell", ACTION_HIGH + 1), nullptr)));
     triggers.push_back(new TriggerNode("brain freeze", NextAction::array(0, new NextAction("frostfire bolt", ACTION_NORMAL + 3), nullptr)));
     triggers.push_back(new TriggerNode("medium health", NextAction::array(0, new NextAction("ice barrier", ACTION_NORMAL), nullptr)));
-    // Combo cast the last charge of fingers of frost for double crits.
-    // Should only do this on the final charge of FoF.
+    // Spend capped stacks before another proc is wasted. In group PvE use
+    // Ice Lance for damage instead of spending the last stack on Deep Freeze.
+    // These outrank the filler/AoE actions, but not interrupts or movement.
+    triggers.push_back(new TriggerNode("fingers of frost double",
+        NextAction::array(0, new NextAction("ice lance", ACTION_HIGH + 6), nullptr)));
+    triggers.push_back(new TriggerNode("fingers of frost pve",
+        NextAction::array(0, new NextAction("ice lance", ACTION_HIGH + 5), nullptr)));
+    // Preserve the existing last-stack crowd-control choice outside group PvE.
     triggers.push_back(new TriggerNode("fingers of frost single",
         NextAction::array(0, new NextAction("deep freeze", ACTION_NORMAL + 2),
         new NextAction("ice lance", ACTION_NORMAL + 1), nullptr)));
