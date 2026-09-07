@@ -123,8 +123,45 @@ void MovementAction::UpdateMovementState()
     }
 }
 
+bool MovementAction::WaitForTankPull(WorldObject* object)
+{
+    // Being on the tank's threat list is not the same as having reached the
+    // tank. Do not meet a ranged pull halfway and body-pull the next pack.
+    // Friendly healing/resurrection movement, tank movement and PvP remain
+    // independent of this offensive movement guard.
+    if (!object || !botAI->IsGroupPveActivity() ||
+        PlayerBotSpec::IsTank(bot, true))
+        return false;
+
+    Unit* target = object->ToUnit();
+    if (!target || !target->IsInWorld() || !target->IsAlive() ||
+        target->GetMap() != bot->GetMap() || target->IsPlayer() ||
+        !bot->IsValidAttackTarget(target))
+        return false;
+
+    Unit* victim = target->GetVictim();
+    Player* tank = victim ? victim->ToPlayer() : nullptr;
+    Group* group = bot->GetGroup(GroupSlot::Instance);
+    if (!group)
+        group = bot->GetGroup();
+    if (!tank || !tank->IsInWorld() || !tank->IsAlive() ||
+        tank->GetMap() != bot->GetMap() || !group ||
+        !group->IsMember(tank->GetGUID()) ||
+        !PlayerBotSpec::IsTank(tank, true) ||
+        tank->IsWithinMeleeRange(target))
+        return false;
+
+    // Refuse offensive approach actions, not all movement. In particular,
+    // do not clear the motion generator here: it can belong to healing,
+    // following the moving tank, or escaping a ground effect.
+    return true;
+}
+
 bool MovementAction::ChaseTo(WorldObject* obj, float distance, float angle)
 {
+    if (WaitForTankPull(obj))
+        return false;
+
     if (!IsMovingAllowed())
     {
         return false;
@@ -161,6 +198,9 @@ bool MovementAction::ChaseTo(WorldObject* obj, float distance, float angle)
 
 bool MovementAction::ReachCombatTo(Unit* target, float distance)
 {
+    if (WaitForTankPull(target))
+        return false;
+
     if (!IsMovingAllowed(target))
         return false;
 
@@ -243,6 +283,10 @@ float MovementAction::MoveDelay(float distance, bool backwards)
 
 bool MovementAction::MoveTo(WorldObject* target, float distance, MovementPriority priority)
 {
+    if (priority != MovementPriority::MOVEMENT_FORCED &&
+        WaitForTankPull(target))
+        return false;
+
     if (!IsMovingAllowed(target))
         return false;
 
