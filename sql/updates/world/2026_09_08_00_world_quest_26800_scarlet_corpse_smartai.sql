@@ -1,0 +1,21 @@
+-- 修复部落任务"清扫战场"(26800 / Recruitment)：右键点击血色十字军尸体(49340)无法完成任务计数、随从达内尔(49337)无反应。
+-- Fix quest 26800 "Recruitment": right-clicking a Scarlet Corpse (49340) still did not count / Darnell (49337) showed no reaction.
+--
+-- 前置: 2026_09_07_00_world_quest_26800_scarlet_corpse_credit.sql 已为 49340 写入 smart_scripts
+--       (On SpellClick -> KILL_CREDIT 49340 + Cast 46598 on Darnell + Despawn)，
+--       但点击依然无效、随从无任何反应。根因不在 smart_scripts，而在 creature_template：
+--
+--   1) AIName 为空字符串，ScriptName = 'npc_scarlet_corpse'，而该 C++ 脚本在核心源码中不存在
+--      (src/ 与 modules/ 均无注册，grep 0 命中)。
+--   2) 核心 AI 选择 (src/server/game/AI/CreatureAISelector.cpp, FactorySelector::selectAI):
+--      脚本名未注册 -> 回退 AIName(空) -> 按 npcflag 回退: 持有 UNIT_NPC_FLAG_SPELLCLICK 的单位
+--      直接得到 NullCreatureAI（空 AI，什么都不做）。
+--   3) 因此 smart_scripts 永远不会被执行：不给击杀计数（任务目标 quest_objective 265872,
+--      type=0 MONSTER, objectId=49340, amount=6 只通过 Player::KilledMonsterCredit(49340) 推进），
+--      也不对达内尔施放 46598（达内尔 49337 依赖 "On Spell Hit 46598 -> Cast 91935 Self" 做出拾取反应）。
+--
+-- 修复: 让 49340 使用 SmartAI（并清掉悬空脚本名），smart_scripts 随即生效。
+-- 验证: UPDATE 后 .reload creature_template，再把已刷出的尸体 删除/重新生成 (或重启世界服务器)，
+--       使已存在实例重新走 InitializeAI；点击尸体 -> 任务计数 +1 -> 达内尔(20码内)拾取动画 -> 尸体1秒后消失，60秒重生。
+
+UPDATE `creature_template` SET `AIName` = 'SmartAI', `ScriptName` = '' WHERE `entry` = 49340;
