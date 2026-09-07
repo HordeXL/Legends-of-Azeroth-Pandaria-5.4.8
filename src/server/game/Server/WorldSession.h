@@ -354,6 +354,7 @@ class TC_GAME_API WorldSession
         }
 
         void LogoutPlayer(bool save);
+        void ScheduleBotLfgReturnOnLogout() { m_botLfgReturnOnLogout = true; }
         void KickPlayerOP(std::string const & reason);
         void KickPlayer();
         bool forceExit;
@@ -1280,6 +1281,7 @@ class TC_GAME_API WorldSession
         bool m_playerLogout;                                // code processed in LogoutPlayer
         bool m_playerRecentlyLogout;
         bool m_playerSave;
+        bool m_botLfgReturnOnLogout = false;
         LocaleConstant m_sessionDbcLocale;
         LocaleConstant m_sessionDbLocaleIndex;
         uint32 m_latency;

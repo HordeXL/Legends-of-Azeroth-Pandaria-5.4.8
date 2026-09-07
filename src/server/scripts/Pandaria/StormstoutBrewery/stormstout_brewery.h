@@ -25,6 +25,8 @@
 
 #define SBScriptName "instance_stormstout_brewery"
 
+uint32 const HOZEN_KILLS_REQUIRED = 40;
+
 const Position bublingAlementalPath[4]
 {
     { -701.38f, 1176.61f, 139.64f, 6.21f },

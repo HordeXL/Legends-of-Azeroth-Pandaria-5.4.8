@@ -72,6 +72,14 @@ class FingersOfFrostDoubleTrigger : public HasAuraStackTrigger
 {
 public:
     FingersOfFrostDoubleTrigger(PlayerbotAI* ai) : HasAuraStackTrigger(ai, "fingers of frost", 2, 1) {}
+    bool IsActive() override;
+};
+
+class FingersOfFrostPveTrigger : public HasAuraStackTrigger
+{
+public:
+    FingersOfFrostPveTrigger(PlayerbotAI* ai) : HasAuraStackTrigger(ai, "fingers of frost", 1, 1) {}
+    bool IsActive() override;
 };
 
 class ArcanePowerTrigger : public BuffTrigger

@@ -486,7 +486,10 @@ class npc_spm_void_sha : public CreatureScript
 
             void Reset() override
             {
-                DoZoneInCombat();
+                // Static Void Sha also initialize through Reset, before any
+                // player has pulled them. Zone combat here both logs an empty
+                // threat list and can start a fight merely on grid loading.
+                events.Reset();
             }
 
             void JustEngagedWith(Unit* /*who*/) override
@@ -496,6 +499,9 @@ class npc_spm_void_sha : public CreatureScript
 
             void UpdateAI(uint32 diff) override
             {
+                if (!UpdateVictim())
+                    return;
+
                 events.Update(diff);
 
                 if (events.ExecuteEvent() == EVENT_VOID_ENERGY)

@@ -585,8 +585,12 @@ void AiFactory::AddDefaultNonCombatStrategies(Player* player, PlayerbotAI* const
     }
     if (!player->InBattleground())
     {
-        nonCombatEngine->addStrategiesNoInit("nc", "food", "chat", "follow", "default", "quest", "loot", "gather", "duel",
+        nonCombatEngine->addStrategiesNoInit("nc", "food", "chat", "follow", "default",
             "buff", "mount", "emote", nullptr);
+        // Temporary dungeon/raid fillers accompany their requester; they do
+        // not leave formation to loot, gather, visit quest NPCs or duel.
+        if (!facade->IsLfgAutoQueueControlled())
+            nonCombatEngine->addStrategiesNoInit("quest", "loot", "gather", "duel", nullptr);
     }
     else if (player->GetBattleground() && !player->GetBattleground()->IsArena())
     {

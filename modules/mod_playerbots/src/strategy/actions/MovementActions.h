@@ -34,6 +34,7 @@ public:
     bool ReachCombatTo(Unit* target, float distance = 0.0f);
 
 protected:
+    bool WaitForTankPull(WorldObject* target);
     void UpdateMovementState();
     void ClearIdleState();
 

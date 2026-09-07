@@ -12,6 +12,24 @@
 
 bool FollowAction::Execute(Event event)
 {
+    if (botAI->IsLfgAutoQueueControlled() && botAI->IsGroupPveActivity())
+    {
+        Player* master = GetMaster();
+        if (!master || !master->IsInWorld() ||
+            master->GetMap() != bot->GetMap() || !CanDeadFollow(master))
+            return false;
+
+        // No Chaos/Circle/Arrow offsets in a managed instance. A stationary
+        // requester must not make followers rotate into an untouched pack.
+        // Stay in a small follow radius, behind the player when catching up.
+        float const followRadius = botAI->GetState() == BOT_STATE_COMBAT ?
+            35.0f : 4.0f;
+        if (bot->GetDistance(master) <= followRadius ||
+            bot->IsNonMeleeSpellCasted(true, false, true))
+            return false;
+        return Follow(master, 2.0f, static_cast<float>(M_PI));
+    }
+
     Formation* formation = AI_VALUE(Formation*, "formation");
     std::string const target = formation->GetTargetName();
 
@@ -41,6 +59,20 @@ bool FollowAction::Execute(Event event)
 
 bool FollowAction::isUseful()
 {
+    if (botAI->IsLfgAutoQueueControlled() && botAI->IsGroupPveActivity())
+    {
+        Player* master = GetMaster();
+        // Combat positioning/healing owns normal in-fight movement. Do not
+        // oscillate between ranged formation and a two-yard follow point.
+        float const followRadius = botAI->GetState() == BOT_STATE_COMBAT ?
+            35.0f : 4.0f;
+        return master && master != bot && master->IsInWorld() &&
+            master->GetMap() == bot->GetMap() && CanDeadFollow(master) &&
+            !master->HasUnitState(UNIT_STATE_IN_FLIGHT) &&
+            !bot->IsNonMeleeSpellCasted(true, false, true) &&
+            bot->GetDistance(master) > followRadius;
+    }
+
     // move from group takes priority over follow as it's added and removed automatically
     // (without removing/adding follow)
     if (botAI->HasStrategy("move from group", BOT_STATE_COMBAT) ||

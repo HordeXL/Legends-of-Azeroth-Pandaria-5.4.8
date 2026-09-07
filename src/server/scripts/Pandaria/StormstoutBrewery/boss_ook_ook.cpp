@@ -114,7 +114,7 @@ class boss_ook_ook : public CreatureScript
             void InitializeAI() override
             {
                 me->setActive(true);
-                me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE);
+                me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_IMMUNE_TO_NPC);
                 me->SetReactState(REACT_PASSIVE);
                 introDone = false;
                 initializedBarrels = false;
@@ -145,10 +145,13 @@ class boss_ook_ook : public CreatureScript
 
             void StartIntro()
             {
+                if (introDone || !instance || instance->GetData(DATA_HOZEN_SLAIN) < HOZEN_KILLS_REQUIRED)
+                    return;
+
                 introDone = true;
                 events.CancelEvent(EVENT_INTROCHECK);
 
-                me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE);
+                me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_IMMUNE_TO_NPC);
                 me->SetReactState(REACT_AGGRESSIVE);
 
                 DoAction(1);
@@ -159,8 +162,39 @@ class boss_ook_ook : public CreatureScript
                 me->SetHomePosition(ookJumpPos);
             }
 
+            bool IsEncounterUnlocked() const
+            {
+                return introDone && instance && instance->GetData(DATA_HOZEN_SLAIN) >= HOZEN_KILLS_REQUIRED;
+            }
+
+            bool CanAIAttack(Unit const* target) const override
+            {
+                return IsEncounterUnlocked() && BossAI::CanAIAttack(target);
+            }
+
+            void AttackStart(Unit* target) override
+            {
+                if (IsEncounterUnlocked())
+                    BossAI::AttackStart(target);
+            }
+
+            void DamageTaken(Unit* /*attacker*/, uint32& damage) override
+            {
+                if (!IsEncounterUnlocked())
+                    damage = 0;
+            }
+
             void JustEngagedWith(Unit* /*who*/) override
             {
+                // Scripted barrel damage can reach this hook without a normal player pull.
+                // Do not start boss events or zone combat before the Hozen event is complete.
+                if (!IsEncounterUnlocked())
+                {
+                    me->CombatStop(true);
+                    me->DeleteThreatList();
+                    return;
+                }
+
                 _JustEngagedWith();
 
                 Talk(TALK_AGGRO);
@@ -509,7 +543,21 @@ class spell_barrel_hostile : public SpellScriptLoader
 
             void SelectTargets(std::list<WorldObject*>& targets)
             {
-                targets.remove_if([=](WorldObject* obj) { return obj && (obj->ToPlayer() || obj->GetEntry() == NPC_BARREL_TOSS_BUNNY); });
+                targets.remove_if([](WorldObject* obj)
+                {
+                    if (!obj || obj->ToPlayer() || obj->GetEntry() == NPC_BARREL_TOSS_BUNNY)
+                        return true;
+
+                    if (Creature* creature = obj->ToCreature())
+                        if (creature->GetEntry() == NPC_OOK_OOK)
+                        {
+                            InstanceScript* instance = creature->GetInstanceScript();
+                            return !instance || instance->GetData(DATA_HOZEN_SLAIN) < HOZEN_KILLS_REQUIRED ||
+                                creature->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE);
+                        }
+
+                    return false;
+                });
             }
 
             void Register() override

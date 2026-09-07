@@ -103,6 +103,7 @@ public:
         creators["icy veins"] = &MageTriggerFactoryInternal::icy_veins;
         creators["fingers of frost single"] = &MageTriggerFactoryInternal::fingers_of_frost_single;
         creators["fingers of frost double"] = &MageTriggerFactoryInternal::fingers_of_frost_double;
+        creators["fingers of frost pve"] = &MageTriggerFactoryInternal::fingers_of_frost_pve;
         creators["brain freeze"] = &MageTriggerFactoryInternal::brain_freeze;
         creators["frost bomb"] = &MageTriggerFactoryInternal::frost_bomb;
 
@@ -136,6 +137,7 @@ private:
     static Trigger* icy_veins(PlayerbotAI* botAI) { return new IcyVeinsTrigger(botAI); }
     static Trigger* fingers_of_frost_single(PlayerbotAI* botAI) { return new FingersOfFrostSingleTrigger(botAI); }
     static Trigger* fingers_of_frost_double(PlayerbotAI* botAI) { return new FingersOfFrostDoubleTrigger(botAI); }
+    static Trigger* fingers_of_frost_pve(PlayerbotAI* botAI) { return new FingersOfFrostPveTrigger(botAI); }
     static Trigger* brain_freeze(PlayerbotAI* botAI) { return new BrainFreezeTrigger(botAI); }
     static Trigger* frost_bomb(PlayerbotAI* botAI) { return new FrostBombTrigger(botAI); }
 

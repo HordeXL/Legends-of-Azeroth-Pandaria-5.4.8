@@ -47,8 +47,7 @@ class boss_gu_cloudstrike : public CreatureScript
             TALK_INTRO_2      = 6,
             TALK_PHASE_2      = 7,
             TALK_SLAY         = 8,
-            TALK_PHASE_3      = 9,
-            TALK_SERPENT      = 10
+            TALK_PHASE_3      = 9
         };
 
         enum eEvents
@@ -229,7 +228,6 @@ class boss_gu_cloudstrike : public CreatureScript
                             events.ScheduleEvent(EVENT_INVOKE_LIGHTNING, urand(5 * IN_MILLISECONDS, 10 * IN_MILLISECONDS));
                             break;
                         case EVENT_TALK_CALLDRAGON:
-                            Talk(TALK_SERPENT);
                             Talk(TALK_SERPENT_COME);
                             me->SummonCreature(NPC_AZURE_SERPENT, AzureSerpntSpawnPos);
                             break;
@@ -292,7 +290,6 @@ class npc_azure_serpent : public CreatureScript
 
         enum eTalks
         {
-            TALK_PHASE_2        = 1,
             TALK_MAGNETIC       = 2,
             TALK_HALF_HEALTH    = 3,
             TALK_QUARTER_HEALTH = 4
@@ -369,7 +366,8 @@ class npc_azure_serpent : public CreatureScript
                 if (actionId == ACTION_AZURE_SERPENT_P_2)
                 {
                     events.Reset();
-                    Talk(TALK_PHASE_2);
+                    // Gu has already announced the transition. The serpent
+                    // has no corresponding phase-two dialogue group.
                     Movement::MoveSplineInit init(me);
                     init.MoveTo(AzureSerpntWPPath[3][0], AzureSerpntWPPath[3][1], AzureSerpntWPPath[3][2]);
                     init.SetSmooth();

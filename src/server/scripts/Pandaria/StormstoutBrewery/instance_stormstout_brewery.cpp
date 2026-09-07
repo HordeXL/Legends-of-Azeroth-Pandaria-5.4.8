@@ -102,19 +102,21 @@ class instance_stormstout_brewery : public InstanceMapScript
                 if (instance->IsChallengeDungeon())
                     SendChallengeInfo(player, SCENARIO_ID);
 
-                if (GetData(DATA_HOZEN_SLAIN) >= 40)
+                if (GetData(DATA_HOZEN_SLAIN) >= HOZEN_KILLS_REQUIRED)
+                {
+                    player->RemoveAurasDueToSpell(SPELL_BANANA_BAR);
                     return;
+                }
 
                 if (!player->HasAura(SPELL_BANANA_BAR))
-                    player->CastSpell(player, SPELL_BANANA_BAR, false);
+                    player->CastSpell(player, SPELL_BANANA_BAR, true);
                 else // if we had server crash, then need remove old bar
                 {
                     player->RemoveAurasDueToSpell(SPELL_BANANA_BAR);
-                    player->CastSpell(player, SPELL_BANANA_BAR, false);
+                    player->CastSpell(player, SPELL_BANANA_BAR, true);
                 }
 
-                if (hozenSlain > 0)
-                    player->SetPower(POWER_ALTERNATE_POWER, hozenSlain);
+                player->SetPower(POWER_ALTERNATE_POWER, hozenSlain);
             }
 
             bool InitializeYanzhuAdds(int n)
@@ -220,14 +222,8 @@ class instance_stormstout_brewery : public InstanceMapScript
                         case NPC_HOZEN_PARTY_ANIMAL:
                         case NPC_HOZEN_PARTY_ANIMAL2:
                         case NPC_HOZEN_PARTY_ANIMAL3:
-                            hozenSlain++;
-                            SetData(DATA_HOZEN_SLAIN, hozenSlain);
-                            payersInList.clear();
-                            GetPlayerListInGrid(payersInList, unit, 200.0f);
-
-                            for (auto&& itr : payersInList)
-                                if (itr->HasAura(SPELL_BANANA_BAR) && itr->GetPower(POWER_ALTERNATE_POWER) + 1 < 40)
-                                    itr->SetPower(POWER_ALTERNATE_POWER, itr->GetPower(POWER_ALTERNATE_POWER) + 1);
+                            if (hozenSlain < HOZEN_KILLS_REQUIRED)
+                                SetData(DATA_HOZEN_SLAIN, hozenSlain + 1);
                             break;
                     }
                 }
@@ -276,13 +272,14 @@ class instance_stormstout_brewery : public InstanceMapScript
                         {
                             events.ScheduleEvent(1, 7000);
 
-                            if (hozenSlain >= 40 && GetBossState(DATA_OOK_OOK) != DONE)
+                            if (hozenSlain >= HOZEN_KILLS_REQUIRED && GetBossState(DATA_OOK_OOK) != DONE)
                             {
                                 events.CancelEvent(1);
 
                                 if (Creature* ookOok = instance->GetCreature(GetGuidData(DATA_OOK_OOK)))
                                 {
-                                    SetBossState(DATA_OOK_OOK, SPECIAL);
+                                    if (GetBossState(DATA_OOK_OOK) != IN_PROGRESS)
+                                        SetBossState(DATA_OOK_OOK, SPECIAL);
                                     ookOok->AI()->DoAction(0);
 
                                     for (auto&& itr : hozenGuidsVector)
@@ -350,7 +347,13 @@ class instance_stormstout_brewery : public InstanceMapScript
                 switch (type)
                 {
                     case DATA_HOZEN_SLAIN:
-                        hozenSlain = data;
+                        hozenSlain = std::min(data, HOZEN_KILLS_REQUIRED);
+                        // The unlock is instance-wide, so the displayed progress must be too.
+                        // Incrementing nearby players separately left their bars behind (or at 39).
+                        for (auto&& itr : instance->GetPlayers())
+                            if (Player* player = itr.GetSource())
+                                if (player->HasAura(SPELL_BANANA_BAR))
+                                    player->SetPower(POWER_ALTERNATE_POWER, hozenSlain);
                         SaveToDB();
                         break;
                 }

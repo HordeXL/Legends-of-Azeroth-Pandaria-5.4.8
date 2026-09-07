@@ -299,7 +299,13 @@ bool PlayerbotAI::CanLfgAutoQueueEngage(Unit const* target) const
     if (!requester || !requester->IsInWorld())
         return false;
 
-    if (!target || target->GetMap() != requester->GetMap())
+    Group* group = bot->GetGroup(GroupSlot::Instance);
+    if (!group)
+        group = bot->GetGroup();
+    if (!group || !group->IsMember(requester->GetGUID()) ||
+        !target || !target->IsInWorld() || !target->IsAlive() ||
+        target->GetMap() != bot->GetMap() ||
+        target->GetMap() != requester->GetMap())
         return false;
 
     // The old check allowed every hostile target as soon as the requester was
@@ -319,7 +325,7 @@ bool PlayerbotAI::CanLfgAutoQueueEngage(Unit const* target) const
             victim->GetCharmerOrOwnerPlayerOrPlayerItself())
         {
             if (victimOwner == requester ||
-                requester->IsInSameGroupWith(victimOwner))
+                group->IsMember(victimOwner->GetGUID()))
                 return true;
         }
     }
@@ -651,7 +657,16 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
             currentTargetValue->Set(nullptr);
             bot->AttackStop();
             bot->SetTarget(ObjectGuid::Empty);
-            bot->StopMoving();
+            // StopMoving alone leaves a chase/point generator able to resume
+            // the rejected approach. Preserve forced encounter avoidance.
+            LastMovement& movement = _aiObjectContext
+                ->GetValue<LastMovement&>("last movement")->Get();
+            if (movement.priority <= MovementPriority::MOVEMENT_COMBAT)
+            {
+                bot->GetMotionMaster()->Clear(false);
+                bot->StopMoving();
+                movement.clear();
+            }
             if (Pet* pet = bot->GetPet())
                 pet->AttackStop();
         }

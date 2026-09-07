@@ -70,9 +70,35 @@ class PriestTriggerFactoryInternal : public NamedObjectContext<Trigger>
 public:
     PriestTriggerFactoryInternal()
     {
+        creators["shadowform"] = &PriestTriggerFactoryInternal::shadowform;
+        creators["shadow word: pain"] = &PriestTriggerFactoryInternal::shadow_word_pain;
+        creators["vampiric touch"] = &PriestTriggerFactoryInternal::vampiric_touch;
+        creators["devouring plague"] = &PriestTriggerFactoryInternal::devouring_plague;
+        creators["shadow word: pain on attacker"] = &PriestTriggerFactoryInternal::shadow_word_pain_on_attacker;
+        creators["vampiric touch on attacker"] = &PriestTriggerFactoryInternal::vampiric_touch_on_attacker;
     }
 
 private:
+    static Trigger* shadowform(PlayerbotAI* ai) { return new BuffTrigger(ai, "shadowform"); }
+    // Require enough time for a tick, not the generic eight-second lifetime
+    // gate. Check the caster's own DoT so another priest cannot suppress it.
+    static Trigger* shadow_word_pain(PlayerbotAI* ai)
+    {
+        return new DebuffTrigger(ai, "shadow word: pain", 1, true, 3.0f);
+    }
+    static Trigger* vampiric_touch(PlayerbotAI* ai)
+    {
+        return new DebuffTrigger(ai, "vampiric touch", 1, true, 3.0f);
+    }
+    static Trigger* devouring_plague(PlayerbotAI* ai) { return new DevouringPlagueTrigger(ai); }
+    static Trigger* shadow_word_pain_on_attacker(PlayerbotAI* ai)
+    {
+        return new DebuffOnAttackerTrigger(ai, "shadow word: pain", true);
+    }
+    static Trigger* vampiric_touch_on_attacker(PlayerbotAI* ai)
+    {
+        return new DebuffOnAttackerTrigger(ai, "vampiric touch", true);
+    }
 };
 
 class PriestAiObjectContextInternal : public NamedObjectContext<Action>

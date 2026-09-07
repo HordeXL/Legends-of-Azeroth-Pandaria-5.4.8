@@ -595,8 +595,31 @@ void WorldSession::LogoutPlayer(bool save)
         if (Battleground* bg = _player->GetBattleground())
             bg->EventPlayerLoggedOut(_player);
 
+        // A managed bot-only LFG team is dismissed on requester logout.
+        // Return the requester too, after normal combat/death handling but
+        // before draining transfers and saving the character's position.
+        bool const returnFromBotLfg = m_botLfgReturnOnLogout;
+        m_botLfgReturnOnLogout = false;
+        if (returnFromBotLfg && !IsBot())
+        {
+            WorldLocation const& entry = _player->GetBattlegroundEntryPoint();
+            MapEntry const* entryMap = sMapStore.LookupEntry(entry.GetMapId());
+            bool returned = entryMap && !entryMap->Instanceable() &&
+                MapManager::IsValidMapCoord(entry) && _player->TeleportTo(entry);
+            if (!returned)
+                returned = _player->TeleportTo(_player->m_homebindMapId,
+                    _player->m_homebindX, _player->m_homebindY,
+                    _player->m_homebindZ, _player->GetOrientation());
+
+            if (returned)
+                TC_LOG_INFO("server", "AutoQueue LFG requester return scheduled before logout save player=%s guid=%u",
+                    _player->GetName().c_str(), _player->GetGUID().GetCounter());
+            else
+                TC_LOG_ERROR("server", "AutoQueue LFG requester return failed player=%s guid=%u",
+                    _player->GetName().c_str(), _player->GetGUID().GetCounter());
+        }
         ///- Teleport to home if the player is in an invalid instance
-        if (!_player->m_InstanceValid && !_player->IsGameMaster())
+        else if (!_player->m_InstanceValid && !_player->IsGameMaster())
             _player->TeleportTo(_player->m_homebindMapId, _player->m_homebindX, _player->m_homebindY, _player->m_homebindZ, _player->GetOrientation());
 
         sOutdoorPvPMgr->HandlePlayerLeaveZone(_player, _player->GetZoneId());

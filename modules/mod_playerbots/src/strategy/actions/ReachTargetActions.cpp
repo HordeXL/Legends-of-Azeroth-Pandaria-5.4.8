@@ -25,6 +25,9 @@ bool ReachTargetAction::isUseful()
         return false;
     }
     Unit* target = GetTarget();
+    if (WaitForTankPull(target))
+        return false;
+
     // float dis = distance + CONTACT_DISTANCE;
     return target &&
         !bot->IsWithinCombatRange(target, distance);  // sServerFacade->IsDistanceGreaterThan(AI_VALUE2(float,
