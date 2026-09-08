@@ -16,3 +16,5 @@ vmap4assembler.exe
 vmap4extractor.exe
 /.codex-remote-attachments/
 /.codex/
+/bin-clang
+/bin
