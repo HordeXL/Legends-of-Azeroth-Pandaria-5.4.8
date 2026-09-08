@@ -10,6 +10,25 @@
 
 class PlayerbotAI;
 
+enum class RoguePveAbility { Poison, ShadowDance, Ambush, Premeditation, BurstOfSpeed };
+
+class RoguePveAoeTrigger : public MediumAoeTrigger
+{
+public:
+    RoguePveAoeTrigger(PlayerbotAI* ai) : MediumAoeTrigger(ai) { }
+    bool IsActive() override;
+};
+
+class RoguePveAbilityTrigger : public Trigger
+{
+public:
+    RoguePveAbilityTrigger(PlayerbotAI* ai, std::string const& name, RoguePveAbility ability)
+        : Trigger(ai, name, 1), ability(ability) { }
+    bool IsActive() override;
+private:
+    RoguePveAbility ability;
+};
+
 class RogueComboPointsTrigger : public Trigger
 {
 public:

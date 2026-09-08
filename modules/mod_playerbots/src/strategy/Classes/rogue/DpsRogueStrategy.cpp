@@ -89,6 +89,17 @@ void DpsRogueStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 {
     MeleeCombatStrategy::InitTriggers(triggers);
 
+    triggers.push_back(new TriggerNode("pve deadly poison",
+        NextAction::array(0, new NextAction("deadly poison", ACTION_HIGH + 10), nullptr)));
+    triggers.push_back(new TriggerNode("pve shadow dance",
+        NextAction::array(0, new NextAction("shadow dance", ACTION_HIGH + 8), nullptr)));
+    triggers.push_back(new TriggerNode("pve premeditation",
+        NextAction::array(0, new NextAction("premeditation", ACTION_HIGH + 9), nullptr)));
+    triggers.push_back(new TriggerNode("pve dance ambush",
+        NextAction::array(0, new NextAction("ambush", ACTION_NORMAL + 8), nullptr)));
+    triggers.push_back(new TriggerNode("pve burst of speed",
+        NextAction::array(0, new NextAction("burst of speed", ACTION_HIGH + 1.5f), nullptr)));
+
     triggers.push_back(new TriggerNode("subtlety builder",
         NextAction::array(0, new NextAction("backstab", ACTION_NORMAL + 5),
             new NextAction("hemorrhage", ACTION_NORMAL + 4), nullptr)));
@@ -249,6 +260,8 @@ void StealthStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 
 void RogueAoeStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 {
+    triggers.push_back(new TriggerNode("pve rogue aoe",
+        NextAction::array(0, new NextAction("fan of knives", ACTION_NORMAL + 6), nullptr)));
     triggers.push_back(
         new TriggerNode("light aoe", NextAction::array(0, new NextAction("blade flurry", ACTION_HIGH), nullptr)));
     triggers.push_back(new TriggerNode(

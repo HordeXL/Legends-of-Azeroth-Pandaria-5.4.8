@@ -484,14 +484,18 @@ std::string GetPlayerbotActionSpellName(SpellInfo const* spellInfo)
     return name;
 }
 
-uint32 GetPlayerbotRotationSpellScore(Player* bot, SpellInfo const* modifier)
+uint32 GetPlayerbotRotationSpellScore(Player* bot, SpellInfo const* modifier,
+    BotFactory::ManagedLoadoutMode mode)
 {
     PlayerbotAI* botAI = bot ? GET_PLAYERBOT_AI(bot) : nullptr;
     if (!botAI || !modifier)
         return 0;
 
-    std::set<std::string> const supported =
+    std::set<std::string> supported =
         botAI->GetAiObjectContext()->GetSupportedActions();
+    if (bot->GetClass() == CLASS_ROGUE && mode == BotFactory::ManagedLoadoutMode::Pvp)
+        for (char const* pveAction : { "deadly poison", "shadow dance", "premeditation", "burst of speed" })
+            supported.erase(pveAction);
     uint32 score = supported.count(GetPlayerbotActionSpellName(modifier)) ? 4 : 0;
 
     // Passive talents and glyphs usually modify another class spell rather
@@ -678,7 +682,10 @@ uint8 GetManagedTalentProfileColumn(Player* bot, uint8 row,
             break;
         case CLASS_ROGUE:
             profile = pvp ? std::array<uint8, 6>{ 1, 2, 0, 1, 0, 1 } :
-                            std::array<uint8, 6>{ 2, 1, 1, 1, 1, 2 };
+                            std::array<uint8, 6>{ 2, 1, 0, 2, 0, 2 };
+            // PvE: Shadow Focus, Nerve Strike, Cheat Death, Burst of Speed,
+            // Prey on the Weak, Anticipation. No automatic opener teleport
+            // from Cloak and Dagger, nor unused ranged Shuriken Toss.
             break;
         case CLASS_PRIEST:
             profile = pvp ? std::array<uint8, 6>{ 1, 2, 1, 1, 1, 1 } :
@@ -735,13 +742,20 @@ int32 GetPlayerbotTalentScore(Player* bot, TalentEntry const* talent,
 
     SpellInfo const* talentSpell = sSpellMgr->GetSpellInfo(talent->SpellId);
     score += int32(GetPlayerbotBuildSpellScore(bot, talentSpell) * 100);
-    score += int32(GetPlayerbotRotationSpellScore(bot, talentSpell) * 500);
+    score += int32(GetPlayerbotRotationSpellScore(bot, talentSpell, mode) * 500);
     score += GetPlayerbotEnvironmentSpellScore(bot, talentSpell, mode);
 
     uint8 const preferredColumn = GetManagedTalentProfileColumn(bot,
         talent->Row, mode);
     score += talent->Col == preferredColumn ? 300 :
         ((talent->Col + 1) % 3 == preferredColumn ? 200 : 100);
+    // Rogue's generic effect score used to favour unused ranged/control
+    // talents over its supported PvE profile (notably Throw replacement's
+    // +10000 score). Make this audited profile authoritative for PvE only.
+    if (bot->GetClass() == CLASS_ROGUE &&
+        mode == BotFactory::ManagedLoadoutMode::Pve &&
+        talent->Col == preferredColumn)
+        score += 1000000;
     return score;
 }
 }
@@ -932,10 +946,23 @@ void BotFactory::InitGlyphsForMode(ManagedLoadoutMode mode)
 
                 SpellInfo const* glyphEffect =
                     sSpellMgr->GetSpellInfo(glyph->SpellId);
+                if (bot->GetClass() == CLASS_ROGUE && mode == ManagedLoadoutMode::Pve)
+                {
+                    // Major: Feint, Cloak of Shadows, Sprint. Minor: Safe
+                    // Fall, Poisons, Blurred Speed. These modify abilities the
+                    // bot actually uses, without Hemorrhage's bleed restriction
+                    // or a dependence on landing killing blows in a raid.
+                    static uint32 const pveRogueGlyphSpells[] =
+                        { 56804, 63269, 56811, 58033, 58038, 58039 };
+                    if (std::find(std::begin(pveRogueGlyphSpells),
+                            std::end(pveRogueGlyphSpells), glyph->SpellId) ==
+                        std::end(pveRogueGlyphSpells))
+                        continue;
+                }
                 int32 score = 50000 + int32(GetPlayerbotBuildSpellScore(
                     bot, glyphEffect) * 100);
                 score += int32(GetPlayerbotRotationSpellScore(
-                    bot, glyphEffect) * 500);
+                    bot, glyphEffect, mode) * 500);
                 score += GetPlayerbotEnvironmentSpellScore(bot, glyphEffect,
                     mode);
                 // The mode salt gives neutral glyph choices separate stable
