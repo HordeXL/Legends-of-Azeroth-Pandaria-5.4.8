@@ -4,6 +4,7 @@
  */
 
 #include "GenericTriggers.h"
+#include "GroupPveCombat.h"
 
 #include <string>
 
@@ -219,67 +220,17 @@ bool LowTankThreatTrigger::IsActive()
 
 bool AoeTrigger::IsActive()
 {
-    Unit* current_target = AI_VALUE(Unit*, "current target");
-    if (!current_target)
-    {
-        return false;
-    }
-    GuidVector attackers = context->GetValue<GuidVector>("attackers")->Get();
-    int attackers_count = 0;
-    bool packHeldByTank = true;
-    Group* group = bot->GetGroup(GroupSlot::Instance);
-    if (!group)
-        group = bot->GetGroup();
-
-    bool const protectTankPull = botAI->IsGroupPveActivity() && group &&
-        !PlayerBotSpec::IsTank(bot, true);
-    bool hasLivingTank = false;
-    if (protectTankPull)
-    {
-        for (GroupReference* ref = group->GetFirstMember(); ref;
-             ref = ref->next())
-        {
-            Player* member = ref->GetSource();
-            if (member && member->IsAlive() &&
-                member->GetMap() == bot->GetMap() &&
-                PlayerBotSpec::IsTank(member, true))
-            {
-                hasLivingTank = true;
-                break;
-            }
-        }
-    }
-
-    for (ObjectGuid const guid : attackers)
-    {
-        Unit* unit = botAI->GetUnit(guid);
-        if (!unit || !unit->IsAlive())
-            continue;
-
-        if (unit->GetDistance(current_target->GetPosition()) <= range)
-        {
-            attackers_count++;
-            if (protectTankPull && hasLivingTank)
-            {
-                Unit* victim = unit->GetVictim();
-                Player* victimPlayer = victim ?
-                    victim->GetCharmerOrOwnerPlayerOrPlayerItself() : nullptr;
-                if (!victimPlayer || !victimPlayer->IsAlive() ||
-                    victimPlayer->GetMap() != bot->GetMap() ||
-                    !group->IsMember(victimPlayer->GetGUID()) ||
-                    !PlayerBotSpec::IsTank(victimPlayer, true))
-                    packHeldByTank = false;
-            }
-        }
-    }
-
-    if (attackers_count < amount)
-        return false;
-
-    // In group PvE, DPS/healers switch to their AoE strategy only after a
-    // living tank is the active victim of every mob in the clustered pack.
-    // Without a tank (open compositions/testing), keep the legacy behaviour.
-    return !protectTankPull || !hasLivingTank || packHeldByTank;
+    Unit* target = AI_VALUE(Unit*, "current target");
+    if (!target) return false;
+    bool const pve = botAI->IsGroupPveActivity();
+    if (pve && !GroupPveCombat::AoeReady(bot, target)) return false;
+    int count = 0;
+    for (ObjectGuid const guid : context->GetValue<GuidVector>("attackers")->Get())
+        if (Unit* unit = botAI->GetUnit(guid))
+            if (unit->IsAlive() && unit->GetDistance(target->GetPosition()) <= range &&
+                (!pve || (GroupPveCombat::IsEngaged(bot, unit) &&
+                    (PlayerBotSpec::IsTank(bot, true) || GroupPveCombat::IsCollected(bot, unit))))) ++count;
+    return count >= amount;
 }
 
 bool NoFoodTrigger::IsActive()

@@ -181,10 +181,12 @@ bool CastSpellAction::isUseful()
     if (!spellTarget->IsInWorld() || spellTarget->GetMapId() != bot->GetMapId())
         return false;
 
-    // The diamond-marked living tank owns taunts, including mass taunts.
+    // Both tanks may rescue non-tanks; avoid taunt wars on tank-held enemies.
     // Check during selection as well as at PlayerbotAI's final cast boundary.
     uint32 const tauntSpellId = AI_VALUE2(uint32, "spell id", spell);
     if (!botAI->IsGroupPveTauntAllowed(sSpellMgr->GetSpellInfo(tauntSpellId), spellTarget))
+        return false;
+    if (!botAI->IsGroupPveOpeningSpellAllowed(sSpellMgr->GetSpellInfo(tauntSpellId), spellTarget))
         return false;
 
     // Preserve sap, polymorph, fear, freezing trap and similar breakable CC.

@@ -3,6 +3,7 @@
 #include "PlayerbotAIConfig.h"
 #include "Playerbots.h"
 #include "PlayerbotSpec.h"
+#include "GroupPveCombat.h"
 
 namespace
 {
@@ -342,6 +343,9 @@ protected:
 
 Unit* DpsTargetValue::Calculate()
 {
+    if (botAI->IsGroupPveActivity())
+        if (Unit* opening = GroupPveCombat::OpeningTarget(bot))
+            return opening;
     Unit* rti = RtiTargetValue::Calculate();
     if (rti)
         return rti;

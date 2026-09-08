@@ -16,6 +16,7 @@
 */
 
 #include "PlayerbotAI.h"
+#include "GroupPveCombat.h"
 #include "PvePetSpellSafety.h"
 
 #include <algorithm>
@@ -263,7 +264,7 @@ bool PlayerbotAI::CanLfgAutoQueueEngage(Unit const* target) const
     // in combat. That let a filler chain-pull unrelated packs while the real
     // player was still fighting the first one. LFG fillers may now engage only
     // the requester's actual target or an enemy already attacking the party.
-    if (requester->GetVictim() == target)
+    if (requester->GetVictim() == target && target->IsInCombat())
         return true;
 
     for (Unit* attacker : requester->getAttackers())
@@ -281,7 +282,9 @@ bool PlayerbotAI::CanLfgAutoQueueEngage(Unit const* target) const
         }
     }
 
-    return false;
+    // Caster DPS pulls may have no melee victim. Positive party threat on an
+    // active enemy also authorizes the tanks to collect it immediately.
+    return GroupPveCombat::IsEngaged(bot, const_cast<Unit*>(target));
 }
 
 uint32 PlayerbotAI::GetReactDelay()
@@ -415,9 +418,6 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
                 bot, PET_FOLLOW_DIST, pet->GetFollowAngle());
         }
     }
-    else
-        _pvePetPullGate.Reset();
-
     // Playerbot sessions are not driven through WorldSession's normal socket
     // receive queue. Process synthetic time-sync replies here, after the login
     // callback and the outgoing SendPacket stack have completely returned.
@@ -645,10 +645,32 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
         }
     }
 
+    if (IsGroupPveActivity())
+    {
+        Unit* opening = GroupPveCombat::OpeningTarget(bot);
+        if (opening && !PlayerBotSpec::IsTank(bot, true) && !PlayerBotSpec::IsHeal(bot, true))
+        {
+            Unit* current = _aiObjectContext->GetValue<Unit*>("current target")->Get();
+            if (current != opening)
+            {
+                bot->AttackStop();
+                if (Pet* pet = bot->GetPet()) pet->AttackStop();
+                _aiObjectContext->GetValue<Unit*>("current target")->Set(opening);
+                bot->SetTarget(opening->GetGUID());
+            }
+        }
+    }
+
     AllowActivity();
 
     if (!CanUpdateAI())
         return;
+
+    if (TryGroupPveTankRescue())
+    {
+        YieldThread(GetReactDelay());
+        return;
+    }
 
     // Interrupts are checked before the ordinary "wait for current cast"
     // path. This lets the one bot selected by the LFG group coordinator stop
@@ -2589,7 +2611,7 @@ bool ShouldDelayGroupPveAoe(PlayerbotAI* botAI, Player* bot,
 
     uint32 affectedAttackers = 0;
     bool const guidedStarfall = spellInfo->Id == 48505 && bot->HasAura(146655);
-    bool packHeldByTank = true;
+    bool packCollected = true;
     // Do not use the cached "attackers" value: it deliberately excludes the
     // idle enemies that an area spell could accidentally pull. Visit the live
     // neighbourhood, including neutral attackable NPCs and extended radii
@@ -2639,18 +2661,13 @@ bool ShouldDelayGroupPveAoe(PlayerbotAI* botAI, Player* bot,
             return true;
 
         ++affectedAttackers;
-        if (!victimPlayer || !victimPlayer->IsAlive() ||
-            victimPlayer->GetMap() != bot->GetMap() ||
-            !group->IsMember(victimPlayer->GetGUID()) ||
-            !PlayerBotSpec::IsTank(victimPlayer, true) ||
-            !victimPlayer->IsWithinMeleeRange(unit))
-            packHeldByTank = false;
+        if (!GroupPveCombat::IsCollected(bot, unit)) packCollected = false;
     }
 
-    // Single-target use of a spell with an area-capable effect remains valid.
-    // Once two or more engaged enemies can be hit, wait for tank ownership.
+    // Keep CC and unpulled-pack checks above. Aggro bouncing to a DPS does
+    // not disable damage on a pack already gathered at either tank.
     return hasLivingTank && !PlayerBotSpec::IsTank(bot, true) &&
-        affectedAttackers >= 2 && !packHeldByTank;
+        affectedAttackers >= 2 && (!packCollected || !GroupPveCombat::AoeReady(bot, center));
 }
 }
 
@@ -2686,33 +2703,47 @@ bool IsTauntSpell(SpellInfo const* spellInfo, uint8 depth = 0)
 
 bool PlayerbotAI::IsGroupPveTauntAllowed(SpellInfo const* spellInfo, Unit* target)
 {
-    if (!bot || !IsGroupPveActivity() || !IsTauntSpell(spellInfo))
-        return true;
+    if (!bot || !IsGroupPveActivity() || !IsTauntSpell(spellInfo)) return true;
+    if (!PlayerBotSpec::IsTank(bot, true)) return false;
+    // Rescue with a single-target taunt. Automatic mass taunts and taunts on
+    // another tank's enemy would override ownership of unrelated boss targets.
+    return target && bot->IsValidAttackTarget(target) &&
+        GroupPveCombat::RescueTank(bot, target) == bot;
+}
 
-    if (!PlayerBotSpec::IsTank(bot, true))
-        return false;
+bool PlayerbotAI::IsGroupPveOpeningSpellAllowed(SpellInfo const* info, Unit* target)
+{
+    if (!IsGroupPveActivity() || !info || !target || !bot->IsValidAttackTarget(target) ||
+        PlayerBotSpec::IsTank(bot, true)) return true;
+    // Interrupts/dispel/control are not damage-rotation target changes.
+    for (uint8 i = 0; i < MAX_SPELL_EFFECTS; ++i)
+        if (info->Effects[i].Effect == SPELL_EFFECT_INTERRUPT_CAST ||
+            info->Effects[i].Effect == SPELL_EFFECT_DISPEL ||
+            info->Effects[i].ApplyAuraName == SPELL_AURA_MOD_STUN) return true;
+    return GroupPveCombat::DamageAllowed(bot, target);
+}
 
-    if (Player* mainTank = PlayerBotSpec::GetGroupPvePullTank(bot))
-    {
-        // Re-evaluate every cast: death permits takeover immediately and
-        // resurrection/remarking restores the designated tank's ownership.
-        // This also covers self/destination-targeted mass taunts.
-        return !mainTank->IsAlive() || mainTank == bot;
-    }
-
-    // No valid diamond: keep the normal rescue policy, without stealing an
-    // individual enemy which is already attacking another living tank.
-    Unit* victim = target ? target->GetVictim() : nullptr;
-    Player* victimPlayer = victim ?
-        victim->GetCharmerOrOwnerPlayerOrPlayerItself() : nullptr;
-    if (!victimPlayer || victimPlayer == bot || !victimPlayer->IsAlive() ||
-        !PlayerBotSpec::IsTank(victimPlayer, true))
-        return true;
-
+bool PlayerbotAI::TryGroupPveTankRescue()
+{
+    if (!IsGroupPveActivity() || !bot->IsAlive() || !PlayerBotSpec::IsTank(bot, true)) return false;
     Group* group = bot->GetGroup(GroupSlot::Instance);
-    if (!group)
-        group = bot->GetGroup();
-    return !group || !group->IsMember(victimPlayer->GetGUID());
+    if (!group) group = bot->GetGroup();
+    if (!group) return false;
+    std::vector<Unit*> targets;
+    for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+        if (Player* member = ref->GetSource())
+            if (member->IsAlive() && member->IsInWorld() && member->GetMap() == bot->GetMap())
+                for (Unit* attacker : member->getAttackers())
+                    if (GroupPveCombat::NeedsRescue(bot, attacker) &&
+                        std::find(targets.begin(), targets.end(), attacker) == targets.end()) targets.push_back(attacker);
+    std::sort(targets.begin(), targets.end(), [](Unit* a, Unit* b) { return a->GetGUID() < b->GetGUID(); });
+    for (Unit* target : targets)
+        if (CanLfgAutoQueueEngage(target) && GroupPveCombat::RescueTank(bot, target) == bot)
+        {
+            uint32 spell = GroupPveCombat::TauntSpell(bot);
+            if (CastSpell(spell, target)) return true;
+        }
+    return false;
 }
 
 bool PlayerbotAI::IsGroupPveAreaSpellSafe(SpellInfo const* spellInfo, Unit* target)
@@ -3332,6 +3363,8 @@ bool PlayerbotAI::CastSpell(uint32 spellId, Unit* target, Item* itemTarget)
     SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
 
     if (!IsGroupPveTauntAllowed(spellInfo, target))
+        return false;
+    if (!IsGroupPveOpeningSpellAllowed(spellInfo, target))
         return false;
 
     // PvP displacement and control make dungeon trash scatter out of the
@@ -4182,30 +4215,12 @@ bool PlayerbotAI::HasAggro(Unit* unit)
 
 bool PlayerbotAI::CanPetEngageTarget(Unit* target)
 {
-    if (!IsGroupPveActivity())
-    {
-        _pvePetPullGate.Reset();
-        return HasEngagedTarget(target); // Preserve PvP and solo behaviour.
-    }
-
+    if (!IsGroupPveActivity()) return HasEngagedTarget(target);
     Guardian* pet = bot->GetGuardianPet();
-    if (!pet || !pet->IsAlive() || !bot->IsAlive() || !bot->IsInCombat() ||
-        !target || !target->IsAlive() || !target->IsInWorld() ||
-        target->GetMap() != bot->GetMap() || !CanLfgAutoQueueEngage(target))
-    {
-        _pvePetPullGate.Reset();
-        return false;
-    }
-
-    Group* group = bot->GetGroup(GroupSlot::Instance);
-    if (!group) group = bot->GetGroup();
-    // A pet or another DPS taking threat is not proof that the pull is ready.
-    Player* tank = target->GetVictim() ? target->GetVictim()->ToPlayer() : nullptr;
-    bool const collected = group && tank && tank->IsAlive() && tank->IsInWorld() &&
-        tank->GetMap() == bot->GetMap() && group->IsMember(tank->GetGUID()) &&
-        PlayerBotSpec::IsTank(tank, true) && tank->IsWithinMeleeRange(target);
-    return _pvePetPullGate.Ready(getMSTime(), target->GetGUID(), pet->GetGUID(),
-        HasEngagedTarget(target), collected);
+    return pet && pet->IsAlive() && bot->IsAlive() && bot->IsInCombat() &&
+        target && target->IsAlive() && target->IsInWorld() && target->GetMap() == bot->GetMap() &&
+        CanLfgAutoQueueEngage(target) && HasEngagedTarget(target) &&
+        GroupPveCombat::AoeReady(bot, target);
 }
 
 bool PlayerbotAI::HasEngagedTarget(Unit* target) const

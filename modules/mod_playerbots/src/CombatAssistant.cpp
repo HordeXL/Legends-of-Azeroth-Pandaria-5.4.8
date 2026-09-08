@@ -6,6 +6,7 @@
  */
 
 #include "CombatAssistant.h"
+#include "GroupPveCombat.h"
 
 #include "Chat.h"
 #include "Group.h"
@@ -19,6 +20,7 @@
 #include "SpellAuras.h"
 #include "SpellMgr.h"
 #include "WorldSession.h"
+#include "DynamicObject.h"
 
 #include <list>
 #include <sstream>
@@ -195,7 +197,7 @@ CombatAoeState GetCombatAoeState(Player* player, Unit* selectedTarget)
         }
     }
 
-    bool packHeldByTank = true;
+    bool packCollected = true;
     std::list<Unit*> nearbyHostiles;
     // A ranged target can be roughly 40 yards away and its pack can extend
     // another eight yards. Scan from the player, then cluster around the
@@ -210,21 +212,16 @@ CombatAoeState GetCombatAoeState(Player* player, Unit* selectedTarget)
         ++state.EnemyCount;
         if (groupPve && !playerIsTank && hasLivingTank)
         {
-            Unit* victim = hostile->GetVictim();
-            Player* victimPlayer = victim ?
-                victim->GetCharmerOrOwnerPlayerOrPlayerItself() : nullptr;
-            if (!victimPlayer || !group->IsMember(victimPlayer->GetGUID()) ||
-                !PlayerBotSpec::IsTank(victimPlayer, true))
-                packHeldByTank = false;
+            if (!GroupPveCombat::IsCollected(player, hostile)) packCollected = false;
         }
     }
 
     // Tanks start consolidating threat at two clustered enemies. Damage
-    // specializations switch at three, and in group PvE only after every
-    // counted enemy is securely attacking a living tank.
+    // specializations switch at three after the shared opening and collection.
     uint32 const threshold = playerIsTank ? 2u : 3u;
     state.UseAoe = state.EnemyCount >= threshold &&
-        (!groupPve || playerIsTank || !hasLivingTank || packHeldByTank);
+        (!groupPve || playerIsTank || !hasLivingTank ||
+            (packCollected && GroupPveCombat::AoeReady(player, selectedTarget)));
     return state;
 }
 
@@ -814,6 +811,66 @@ CombatRecommendation SelectGenericRotation(Player* player, Unit* target)
 
 bool TargetIsCasting(Unit* target);
 
+CombatRecommendation SelectProtectionRecommendation(Player* player)
+{
+    if (HasHardLossOfControl(player))
+        if (CombatRecommendation escape = RecommendNamed(player, player, "Every Man for Himself", "RACIAL_ESCAPE"))
+            return escape;
+    if (player->GetHealthPct() < 20.0f)
+        if (CombatRecommendation heal = RecommendFirstNamed(player, player, { "Lay on Hands", "Word of Glory" }, "EMERGENCY_HEAL"))
+            return heal;
+    if (IsTakingBurstDamage(player) || player->GetHealthPct() <= 40.0f)
+        if (CombatRecommendation defense = RecommendFirstNamed(player, player,
+            { "Ardent Defender", "Guardian of Ancient Kings", "Divine Protection" }, "BURST_DEFENSE", true))
+            return defense;
+    if (!player->HasAura(25780))
+        if (CombatRecommendation fury = RecommendNamed(player, player, "Righteous Fury", "TANK_BUFF")) return fury;
+
+    Group* group = GetCombatAssistantGroup(player);
+    bool const groupPve = group && !player->InBattleground() && !player->InArena();
+    if (groupPve)
+    {
+        // Recomputed on the button press too; never taunt a mob already on a tank.
+        std::list<Unit*> nearby;
+        player->GetAttackableUnitListInRange(nearby, 30.0f);
+        nearby.sort([](Unit* a, Unit* b) { return a->GetGUID() < b->GetGUID(); });
+        for (Unit* hostile : nearby)
+            if (GroupPveCombat::NeedsRescue(player, hostile) && CanCast(player, 62124, hostile))
+                return { 62124, hostile, "TANK_RESCUE" };
+    }
+    Unit* target = player->GetSelectedUnit();
+    if (target && player->IsValidAttackTarget(target) && TargetIsCasting(target))
+        if (CombatRecommendation interrupt = RecommendNamed(player, target, "Rebuke", "INTERRUPT")) return interrupt;
+    if (player->IsInCombat())
+    {
+        if (!player->HasAura(20925))
+            if (CombatRecommendation shield = RecommendNamed(player, player, "Sacred Shield", "ABSORB_DEFENSE")) return shield;
+        if (!player->HasAura(20165))
+            if (CombatRecommendation seal = RecommendNamed(player, player, "Seal of Insight", "TANK_BUFF")) return seal;
+    }
+    if (!target || !player->IsValidAttackTarget(target)) return {};
+    unsigned power = player->GetPower(POWER_HOLY_POWER);
+    bool incoming = !player->getAttackers().empty();
+    if ((power >= 5 || (incoming && !player->HasAura(132403))) &&
+        CanCast(player, 53600, target)) return { 53600, target, "TANK_MITIGATION" };
+    CombatAoeState aoe = GetCombatAoeState(player, target);
+    if (aoe.UseAoe)
+    {
+        if (CombatRecommendation builder = RecommendNamed(player, target, "Hammer of the Righteous", "BUILD")) return builder;
+        if (CombatRecommendation shield = RecommendNamed(player, target, "Avenger's Shield", "AOE")) return shield;
+        std::list<DynamicObject*> areas;
+        player->GetDynObjectList(areas, 26573);
+        bool covered = false;
+        for (DynamicObject* area : areas)
+            if (area && area->IsWithinDistInMap(target, 8.0f)) covered = true;
+        if (!covered)
+            if (CombatRecommendation ground = RecommendNamed(player, player, "Consecration", "AOE")) return ground;
+    }
+    if (CombatRecommendation builder = RecommendFirstNamed(player, target,
+        { "Crusader Strike", "Judgment", "Avenger's Shield", "Hammer of Wrath" }, "BUILD")) return builder;
+    return {};
+}
+
 CombatRecommendation SelectUniversalRecommendation(Player* player)
 {
     if (HasHardLossOfControl(player))
@@ -1011,6 +1068,10 @@ CombatRecommendation SelectRecommendation(Player* player)
     if (player->GetClass() == CLASS_PALADIN &&
         player->GetTalentSpecialization() == SPEC_PALADIN_RETRIBUTION)
         return SelectRetributionRecommendation(player);
+
+    if (player->GetClass() == CLASS_PALADIN &&
+        player->GetTalentSpecialization() == SPEC_PALADIN_PROTECTION)
+        return SelectProtectionRecommendation(player);
 
     return SelectUniversalRecommendation(player);
 }

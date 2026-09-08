@@ -15,6 +15,9 @@ local defaults = {
 }
 
 local reasonText = {
+    TANK_BUFF = "Maintain tank buff",
+    TANK_RESCUE = "Taunt an enemy attacking a non-tank ally",
+    TANK_MITIGATION = "Spend Holy Power on active mitigation",
     RACIAL_ESCAPE = "Human racial: break crowd control",
     ESCAPE_CC = "Break crowd control",
     ESCAPE_MOVEMENT = "Break root / slow",

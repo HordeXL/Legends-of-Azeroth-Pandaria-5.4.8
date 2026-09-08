@@ -56,6 +56,10 @@ struct PlayerBotSpec {
  static Player* GetDiamondMarkedTank(Player* p){return p->group?p->group->marked:nullptr;}
  static Player* GetGroupPvePullTank(Player*);
 };
+struct GroupPveCombat {
+ static bool NeedsRescue(Player*,Unit* u){return u->victim && u->victim->ToPlayer() && !u->victim->ToPlayer()->tank;}
+ static bool IsCollected(Player* p,Unit* u){for(auto& r:p->group->refs)if(r.player->alive && r.player->tank && r.player->map==p->map && (r.player->melee || r.player->distance<=8))return true;return false;}
+};
 struct MovementAction { AI* botAI; Player* bot; bool WaitForTankPull(WorldObject*); };
 struct CastSpellAction {bool base=true;bool isUseful(){return base;}};
 struct CastAuraSpellAction:CastSpellAction {};
@@ -80,7 +84,13 @@ Player* PlayerBotSpec::GetGroupPvePullTank(Player* player)
             if (member->GetGUID() == group->GetLeaderGUID() && member->IsInWorld() &&
                 member->GetMap() == player->GetMap() && IsTank(member, true))
                 return member;
-    return nullptr;
+    Player* fallback = nullptr;
+    for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+        if (Player* member = ref->GetSource())
+            if (member->IsAlive() && member->IsInWorld() && member->GetMap() == player->GetMap() &&
+                IsTank(member, true) && (!fallback || member->GetGUID() < fallback->GetGUID()))
+                fallback = member;
+    return fallback;
 }
 bool MovementAction::WaitForTankPull(WorldObject* object)
 {
@@ -107,7 +117,8 @@ bool MovementAction::WaitForTankPull(WorldObject* object)
         if (!mainTank || mainTank == bot || !mainTank->IsAlive()) return false;
         // Local self-defence is allowed, but does not authorize a chase.
         if (target->GetVictim() == bot && bot->IsWithinMeleeRange(target)) return false;
-        return !mainTank->IsWithinMeleeRange(target);
+        if (GroupPveCombat::NeedsRescue(bot, target)) return false;
+        return !GroupPveCombat::IsCollected(bot, target);
     }
 
     Unit* victim = target->GetVictim();
@@ -173,13 +184,14 @@ int main(){
  main.alive=false;check(!move.WaitForTankPull(&enemy),"offtank may take over dead main");main.alive=true;
  enemy.victim=&off;off.melee=true;check(!move.WaitForTankPull(&enemy),"local self defence");
  off.melee=false;check(move.WaitForTankPull(&enemy),"self threat does not permit chase");enemy.victim=nullptr;
+ enemy.victim=&other;check(!move.WaitForTankPull(&enemy),"DPS pull lets off-tank rescue immediately");enemy.victim=nullptr;
  group.marked=&off;check(PlayerBotSpec::GetGroupPvePullTank(&off)==&off,"diamond overrides real tank");
  check(!move.WaitForTankPull(&enemy),"designated tank may approach");
  group.marked=&main;ai.allowed=false;check(move.WaitForTankPull(&enemy),"even tank needs pull permission");ai.allowed=true;
  group.marked=nullptr;ai.master=nullptr;check(PlayerBotSpec::GetGroupPvePullTank(&off)==&main,"leader fallback");
  main.alive=false;check(PlayerBotSpec::GetGroupPvePullTank(&off)==&main,"dead anchor retained");main.alive=true;
- main.map=2;check(PlayerBotSpec::GetGroupPvePullTank(&off)==nullptr,"wrong map rejected");main.map=1;
- group.leader=other.id;check(PlayerBotSpec::GetGroupPvePullTank(&off)==nullptr,"DPS leader is not tank");group.leader=main.id;
+ main.map=2;check(PlayerBotSpec::GetGroupPvePullTank(&off)==&off,"wrong-map tank rejected; local tank fallback");main.map=1;
+ group.leader=other.id;check(PlayerBotSpec::GetGroupPvePullTank(&off)==&main,"DPS leader gets stable bot tank fallback");group.leader=main.id;
  ai.pve=false;check(!move.WaitForTankPull(&enemy),"PvP movement unchanged");ai.pve=true;
  off.pvp=true;check(PlayerBotSpec::GetGroupPvePullTank(&off)==nullptr,"PvP anchor disabled");off.pvp=false;
  check(!move.WaitForTankPull(nullptr),"null movement object");
@@ -188,7 +200,7 @@ int main(){
  check(!kill.isUseful(),"Kill Command cannot launch idle pet");
  pet.victim=&enemy;check(!kill.isUseful(),"Kill Command waits until pet reaches enemy");
  pet.melee=true;check(kill.isUseful(),"Kill Command uses engaged melee pet");
- ai.petReady=false;check(!kill.isUseful(),"Kill Command preserves four-second pull gate");ai.petReady=true;
+ ai.petReady=false;check(!kill.isUseful(),"Kill Command preserves shared three-second pull gate");ai.petReady=true;
  pet.alive=false;check(!kill.isUseful(),"dead pet");pet.alive=true;
  kill.base=false;check(!kill.isUseful(),"base safety guard");kill.base=true;
  kill.target=nullptr;check(!kill.isUseful(),"no enemy");

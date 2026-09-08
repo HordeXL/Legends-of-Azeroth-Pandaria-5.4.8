@@ -4,6 +4,7 @@
  */
 
 #include "MovementActions.h"
+#include "GroupPveCombat.h"
 
 #include <cfloat>
 #include <cmath>
@@ -177,7 +178,8 @@ bool MovementAction::WaitForTankPull(WorldObject* object)
         if (!mainTank || mainTank == bot || !mainTank->IsAlive()) return false;
         // Local self-defence is allowed, but does not authorize a chase.
         if (target->GetVictim() == bot && bot->IsWithinMeleeRange(target)) return false;
-        return !mainTank->IsWithinMeleeRange(target);
+        if (GroupPveCombat::NeedsRescue(bot, target)) return false;
+        return !GroupPveCombat::IsCollected(bot, target);
     }
 
     Unit* victim = target->GetVictim();

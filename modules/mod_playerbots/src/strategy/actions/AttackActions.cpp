@@ -11,6 +11,7 @@
 #include "PlayerbotAI.h"
 #include "Playerbots.h"
 #include "PlayerbotSpec.h"
+#include "GroupPveCombat.h"
 #include "ServerFacade.h"
 #include "SharedDefines.h"
 #include "Unit.h"
@@ -53,6 +54,8 @@ bool AttackMyTargetAction::Execute(Event event)
 
 bool AttackAction::Attack(Unit* target, bool with_pet /*true*/)
 {
+    if (botAI->IsGroupPveActivity() && !PlayerBotSpec::IsTank(bot, true))
+        if (Unit* opening = GroupPveCombat::OpeningTarget(bot)) target = opening;
     // Request-driven LFG bots assist the real player; they never initiate a
     // dungeon pull merely because their autonomous target scan saw an NPC.
     if (!botAI->CanLfgAutoQueueEngage(target))

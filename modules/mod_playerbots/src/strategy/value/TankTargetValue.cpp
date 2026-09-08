@@ -5,6 +5,7 @@
 #include "PlayerbotAIConfig.h"
 #include "Playerbots.h"
 #include "PlayerbotSpec.h"
+#include "GroupPveCombat.h"
 
 class FindTargetForTankStrategy : public FindNonCcTargetStrategy
 {
@@ -70,6 +71,12 @@ public:
     bool IsBetter(Unit* new_unit, Unit* old_unit)
     {
         Player* bot = botAI->GetBot();
+        if (botAI->IsGroupPveActivity())
+        {
+            bool newRescue = GroupPveCombat::NeedsRescue(bot, new_unit);
+            bool oldRescue = GroupPveCombat::NeedsRescue(bot, old_unit);
+            if (newRescue != oldRescue) return newRescue;
+        }
         // if group has multiple tanks, main tank just focus on the current target
         Unit* currentTarget = botAI->GetAiObjectContext()->GetValue<Unit*>("current target")->Get();
         if (currentTarget && PlayerBotSpec::IsMainTank(bot) && PlayerBotSpec::GetGroupTankNum(bot) > 1)
