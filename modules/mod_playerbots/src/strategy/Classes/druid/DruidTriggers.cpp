@@ -7,3 +7,12 @@
 
 #include "Playerbots.h"
 
+bool PveMoonkinFormTrigger::IsActive()
+{
+    return botAI->IsGroupPveActivity() && bot->IsAlive() && bot->IsInWorld() &&
+        bot->GetSpecialization() == SPEC_DRUID_BALANCE && bot->HasSpell(24858) &&
+        !bot->HasAura(24858) && !bot->IsMounted() && !bot->IsInFlight() &&
+        !bot->IsBeingTeleported() && !bot->isSwimming() &&
+        !bot->IsNonMeleeSpellCasted(false);
+}
+

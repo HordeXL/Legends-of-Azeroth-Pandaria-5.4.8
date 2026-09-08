@@ -75,6 +75,7 @@ class DruidTriggerFactoryInternal : public NamedObjectContext<Trigger>
 public:
     DruidTriggerFactoryInternal()
     {
+        creators["pve moonkin form"] = [](PlayerbotAI* ai) -> Trigger* { return new PveMoonkinFormTrigger(ai); };
     }
 
 private:
