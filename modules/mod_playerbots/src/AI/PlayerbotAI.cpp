@@ -362,6 +362,12 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
         bot->IsDuringRemoveFromWorld())
         return;
 
+    // A banner placed during emergency takeover must stop taunting when the
+    // marked main tank revives or the diamond is moved to another live tank.
+    if (bot->HasAura(114192) &&
+        !IsGroupPveTauntAllowed(sSpellMgr->GetSpellInfo(114192), bot))
+        bot->RemoveAurasDueToSpell(114192);
+
     // Playerbot-controlled pets must never acquire targets on their own. This
     // covers regular pets (hunter/warlock), permanent guardians (DK ghoul,
     // water elemental) and any other class guardian exposed through the same
@@ -2607,6 +2613,67 @@ bool ShouldDelayGroupPveAoe(PlayerbotAI* botAI, Player* bot,
 }
 }
 
+namespace
+{
+bool IsTauntSpell(SpellInfo const* spellInfo, uint8 depth = 0)
+{
+    if (!spellInfo)
+        return false;
+
+    // These taunts are issued by scripts, not TriggerSpell DBC: the banner
+    // periodically casts 114198, Death Grip's OnHit casts 49560, and
+    // Provoke's OnHit casts 118635 (also for the Black Ox Statue).
+    if (spellInfo->Id == 114192 || spellInfo->Id == 49576 ||
+        spellInfo->Id == 115546)
+        return true;
+
+    for (uint8 index = 0; index < MAX_SPELL_EFFECTS; ++index)
+    {
+        SpellEffectInfo const& effect = spellInfo->Effects[index];
+        if (!effect.IsEffect())
+            continue;
+        if (effect.Effect == SPELL_EFFECT_ATTACK_ME ||
+            effect.ApplyAuraName == SPELL_AURA_MOD_TAUNT)
+            return true;
+        if (depth < 2 && effect.TriggerSpell &&
+            IsTauntSpell(sSpellMgr->GetSpellInfo(effect.TriggerSpell), depth + 1))
+            return true;
+    }
+    return false;
+}
+}
+
+bool PlayerbotAI::IsGroupPveTauntAllowed(SpellInfo const* spellInfo, Unit* target)
+{
+    if (!bot || !IsGroupPveActivity() || !IsTauntSpell(spellInfo))
+        return true;
+
+    if (!PlayerBotSpec::IsTank(bot, true))
+        return false;
+
+    if (Player* mainTank = PlayerBotSpec::GetDiamondMarkedTank(bot))
+    {
+        // Re-evaluate every cast: death permits takeover immediately and
+        // resurrection/remarking restores the designated tank's ownership.
+        // This also covers self/destination-targeted mass taunts.
+        return !mainTank->IsAlive() || mainTank == bot;
+    }
+
+    // No valid diamond: keep the normal rescue policy, without stealing an
+    // individual enemy which is already attacking another living tank.
+    Unit* victim = target ? target->GetVictim() : nullptr;
+    Player* victimPlayer = victim ?
+        victim->GetCharmerOrOwnerPlayerOrPlayerItself() : nullptr;
+    if (!victimPlayer || victimPlayer == bot || !victimPlayer->IsAlive() ||
+        !PlayerBotSpec::IsTank(victimPlayer, true))
+        return true;
+
+    Group* group = bot->GetGroup(GroupSlot::Instance);
+    if (!group)
+        group = bot->GetGroup();
+    return !group || !group->IsMember(victimPlayer->GetGUID());
+}
+
 bool PlayerbotAI::IsGroupPveAreaSpellSafe(SpellInfo const* spellInfo, Unit* target)
 {
     return !ShouldDelayGroupPveAoe(this, bot, target, spellInfo);
@@ -3223,6 +3290,9 @@ bool PlayerbotAI::CastSpell(uint32 spellId, Unit* target, Item* itemTarget)
     Pet* pet = bot->GetPet();
     SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
 
+    if (!IsGroupPveTauntAllowed(spellInfo, target))
+        return false;
+
     // PvP displacement and control make dungeon trash scatter out of the
     // tank's control and may aggro neighbouring packs. Keep those tools for
     // PvP, but suppress them at the final cast boundary in PvE instances.
@@ -3407,6 +3477,8 @@ bool PlayerbotAI::CastSpell(uint32 spellId, float x, float y, float z, Item* ite
     Pet* pet = bot->GetPet();
     SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
     Position const destination = { x, y, z, 0.0f };
+    if (!IsGroupPveTauntAllowed(spellInfo, bot))
+        return false;
     if (ShouldDelayGroupPveAoe(this, bot, bot, spellInfo, &destination))
         return false;
     if (pet && pet->HasSpell(spellId))

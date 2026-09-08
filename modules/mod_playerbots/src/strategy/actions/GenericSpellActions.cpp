@@ -18,32 +18,6 @@
 
 namespace
 {
-bool IsGroupPveTauntProtected(PlayerbotAI* botAI, Player* bot,
-    Unit* target, std::string const& spell)
-{
-    if (!botAI || !bot || !target || !botAI->IsGroupPveActivity())
-        return false;
-
-    bool const taunt = spell == "taunt" || spell == "growl" ||
-        spell == "dark command" || spell == "hand of reckoning" ||
-        spell == "provoke" || spell == "mocking banner" ||
-        spell == "distracting shot";
-    if (!taunt)
-        return false;
-
-    Unit* victim = target->GetVictim();
-    Player* victimPlayer = victim ?
-        victim->GetCharmerOrOwnerPlayerOrPlayerItself() : nullptr;
-    if (!victimPlayer || victimPlayer == bot || !victimPlayer->IsAlive() ||
-        !PlayerBotSpec::IsTank(victimPlayer, true))
-        return false;
-
-    Group* group = bot->GetGroup(GroupSlot::Instance);
-    if (!group)
-        group = bot->GetGroup();
-    return group && group->IsMember(victimPlayer->GetGUID());
-}
-
 bool WouldBreakGroupPveCrowdControl(PlayerbotAI* botAI, Player* bot,
     Unit* spellTarget, std::string const& spell)
 {
@@ -207,10 +181,10 @@ bool CastSpellAction::isUseful()
     if (!spellTarget->IsInWorld() || spellTarget->GetMapId() != bot->GetMapId())
         return false;
 
-    // Off-tanks still rescue healers/DPS, but must not ping-pong a target
-    // already held by another living tank. Encounter-specific scripted swaps
-    // can issue their own forced action when stack mechanics are implemented.
-    if (IsGroupPveTauntProtected(botAI, bot, spellTarget, spell))
+    // The diamond-marked living tank owns taunts, including mass taunts.
+    // Check during selection as well as at PlayerbotAI's final cast boundary.
+    uint32 const tauntSpellId = AI_VALUE2(uint32, "spell id", spell);
+    if (!botAI->IsGroupPveTauntAllowed(sSpellMgr->GetSpellInfo(tauntSpellId), spellTarget))
         return false;
 
     // Preserve sap, polymorph, fear, freezing trap and similar breakable CC.

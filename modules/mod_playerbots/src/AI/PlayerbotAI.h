@@ -202,6 +202,7 @@ public:
     bool IsLfgAutoQueueControlled() const { return _lfgAutoQueueRequesterGuid.load() != 0; }
     bool CanLfgAutoQueueEngage(Unit const* target) const;
     bool IsGroupPveAreaSpellSafe(SpellInfo const* spellInfo, Unit* target);
+    bool IsGroupPveTauntAllowed(SpellInfo const* spellInfo, Unit* target);
 
     bool CanMove();
 

@@ -197,6 +197,26 @@ uint32 PlayerBotSpec::GetGroupTankNum(Player* player)
     return result;
 }
 
+Player* PlayerBotSpec::GetDiamondMarkedTank(Player* player)
+{
+    Group* group = GetActiveGroup(player);
+    if (!group || player->InBattleground() || player->InArena())
+        return nullptr;
+
+    ObjectGuid const markedGuid = group->GetTargetIcon(2); // Purple diamond.
+    if (markedGuid.IsEmpty())
+        return nullptr;
+
+    for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+    {
+        Player* member = ref->GetSource();
+        if (member && member->GetGUID() == markedGuid && member->IsInWorld() &&
+            member->GetMap() == player->GetMap() && IsTank(member, true))
+            return member;
+    }
+    return nullptr;
+}
+
 bool PlayerBotSpec::IsMainTank(Player* player)
 {
     Group* group = GetActiveGroup(player);
@@ -204,6 +224,10 @@ bool PlayerBotSpec::IsMainTank(Player* player)
     {
         return false;
     }
+    if (Player* markedTank = GetDiamondMarkedTank(player))
+        if (markedTank->IsAlive())
+            return markedTank == player;
+
     ObjectGuid mainTank = ObjectGuid();
     Group::MemberSlotList const& slots = group->GetMemberSlots();
     for (Group::member_citerator itr = slots.begin(); itr != slots.end(); ++itr)
