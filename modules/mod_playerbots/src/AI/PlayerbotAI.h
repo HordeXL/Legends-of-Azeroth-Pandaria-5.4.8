@@ -13,6 +13,7 @@
 #include "PlayerbotAIBase.h"
 #include "NewRpgStrategy.h"
 #include "WorldPacket.h"
+#include "PvePetPullGate.h"
 
 enum BotState
 {
@@ -182,6 +183,7 @@ public:
     bool IsSafe(WorldObject* obj);
     bool HasAggro(Unit* unit);
     bool HasEngagedTarget(Unit* target) const;
+    bool CanPetEngageTarget(Unit* target);
 
     // Get the group leader or the master of the bot.
     // Checks if the bot is summoned as alt of a player
@@ -272,6 +274,7 @@ protected:
     std::atomic<bool> _lfgPreparationBuffPending{ false };
     std::atomic<uint32> _lfgAutoQueueRequesterGuid{ 0 };
     uint32 _invalidFollowPositionSince = 0;
+    PvePetPullGate<ObjectGuid> _pvePetPullGate;
     // Some login/group/queue callbacks run on the world thread while normal
     // actions run on a map worker. Keep Engine strategy/action ownership valid
     // for the complete duration of an action selection/execution cycle.

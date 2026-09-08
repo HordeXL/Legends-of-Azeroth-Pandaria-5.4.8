@@ -1,4 +1,5 @@
 #include "BotFactory.h"
+#include "PvePetSpellSafety.h"
 
 #include <algorithm>
 #include <cctype>
@@ -437,7 +438,9 @@ void BotFactory::InitPet()
                 break;
             }
         }
-        pet->ToggleAutocast(spellInfo, !threatSpell);
+        bool const rushSpell = GET_PLAYERBOT_AI(bot) &&
+            GET_PLAYERBOT_AI(bot)->IsGroupPveActivity() && IsPvePetRushSpell(spellInfo);
+        pet->ToggleAutocast(spellInfo, !threatSpell && !rushSpell);
     }
 
     // Persist Ferocity (where applicable), passive reaction and the corrected

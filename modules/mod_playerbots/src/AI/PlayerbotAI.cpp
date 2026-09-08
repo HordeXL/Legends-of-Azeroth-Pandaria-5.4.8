@@ -16,6 +16,7 @@
 */
 
 #include "PlayerbotAI.h"
+#include "PvePetSpellSafety.h"
 
 #include <algorithm>
 #include <array>
@@ -376,15 +377,29 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
     if (Guardian* pet = bot->GetGuardianPet())
     {
         pet->SetReactState(REACT_PASSIVE);
+        if (IsGroupPveActivity())
+            if (Pet* permanentPet = pet->ToPet())
+                for (auto const& entry : permanentPet->m_spells)
+                {
+                    if (entry.second.state == PETSPELL_REMOVED) continue;
+                    SpellInfo const* info = sSpellMgr->GetSpellInfo(entry.first);
+                    if (!IsPvePetRushSpell(info)) continue;
+                    permanentPet->ToggleAutocast(info, false);
+                    permanentPet->RemoveAurasDueToSpell(entry.first);
+                }
+        Value<Unit*>* currentTargetValue = _aiObjectContext ?
+            _aiObjectContext->GetValue<Unit*>("current target") : nullptr;
+        Unit* ownerTarget = currentTargetValue ? currentTargetValue->Get() : nullptr;
+        bool const petMayEngage = CanPetEngageTarget(ownerTarget);
         Unit* petTarget = pet->GetVictim();
         CharmInfo* charmInfo = pet->GetCharmInfo();
-        bool const ownerStillEngaged = petTarget &&
-            HasEngagedTarget(petTarget);
+        bool const ownerStillEngaged = petTarget && petTarget == ownerTarget && petMayEngage;
         bool const staleAttackCommand = charmInfo &&
             charmInfo->IsCommandAttack() && !ownerStillEngaged;
         if ((petTarget && !ownerStillEngaged) || staleAttackCommand)
         {
             pet->AttackStop();
+            pet->InterruptNonMeleeSpells(false);
             pet->SetTarget(ObjectGuid::Empty);
             if (charmInfo)
             {
@@ -400,6 +415,8 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
                 bot, PET_FOLLOW_DIST, pet->GetFollowAngle());
         }
     }
+    else
+        _pvePetPullGate.Reset();
 
     // Playerbot sessions are not driven through WorldSession's normal socket
     // receive queue. Process synthetic time-sync replies here, after the login
@@ -3354,6 +3371,11 @@ bool PlayerbotAI::CastSpell(uint32 spellId, Unit* target, Item* itemTarget)
 
     if (pet && pet->HasSpell(spellId))
     {
+        if (IsGroupPveActivity() && IsPvePetRushSpell(spellInfo))
+        {
+            pet->ToggleAutocast(spellInfo, false);
+            return false;
+        }
         bool autocast = false;
         for (unsigned int& m_autospell : pet->m_autospells)
         {
@@ -3501,6 +3523,11 @@ bool PlayerbotAI::CastSpell(uint32 spellId, float x, float y, float z, Item* ite
         return false;
     if (pet && pet->HasSpell(spellId))
     {
+        if (IsGroupPveActivity() && IsPvePetRushSpell(spellInfo))
+        {
+            pet->ToggleAutocast(spellInfo, false);
+            return false;
+        }
         bool autocast = false;
         for (unsigned int& m_autospell : pet->m_autospells)
         {
@@ -4144,6 +4171,34 @@ bool PlayerbotAI::HasAggro(Unit* unit)
         return true;
     }
     return false;
+}
+
+bool PlayerbotAI::CanPetEngageTarget(Unit* target)
+{
+    if (!IsGroupPveActivity())
+    {
+        _pvePetPullGate.Reset();
+        return HasEngagedTarget(target); // Preserve PvP and solo behaviour.
+    }
+
+    Guardian* pet = bot->GetGuardianPet();
+    if (!pet || !pet->IsAlive() || !bot->IsAlive() || !bot->IsInCombat() ||
+        !target || !target->IsAlive() || !target->IsInWorld() ||
+        target->GetMap() != bot->GetMap() || !CanLfgAutoQueueEngage(target))
+    {
+        _pvePetPullGate.Reset();
+        return false;
+    }
+
+    Group* group = bot->GetGroup(GroupSlot::Instance);
+    if (!group) group = bot->GetGroup();
+    // A pet or another DPS taking threat is not proof that the pull is ready.
+    Player* tank = target->GetVictim() ? target->GetVictim()->ToPlayer() : nullptr;
+    bool const collected = group && tank && tank->IsAlive() && tank->IsInWorld() &&
+        tank->GetMap() == bot->GetMap() && group->IsMember(tank->GetGUID()) &&
+        PlayerBotSpec::IsTank(tank, true) && tank->IsWithinMeleeRange(target);
+    return _pvePetPullGate.Ready(getMSTime(), target->GetGUID(), pet->GetGUID(),
+        HasEngagedTarget(target), collected);
 }
 
 bool PlayerbotAI::HasEngagedTarget(Unit* target) const

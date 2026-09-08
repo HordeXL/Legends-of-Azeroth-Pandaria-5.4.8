@@ -8,6 +8,7 @@
 #include "CreatureAI.h"
 #include "Playerbots.h"
 #include "SpellAuraDefines.h"
+#include "PvePetSpellSafety.h"
 
 namespace
 {
@@ -70,7 +71,7 @@ bool TogglePetSpellAutoCastAction::Execute(Event event)
 
         uint32 spellId = itr->first;
         const SpellInfo* spellInfo = sSpellMgr->GetSpellInfo(spellId);
-        if (!spellInfo->IsAutocastable())
+        if (!spellInfo || !spellInfo->IsAutocastable())
             continue;
 
         bool shouldApply = true;
@@ -85,6 +86,8 @@ bool TogglePetSpellAutoCastAction::Execute(Event event)
         // the PvE preparation performed by BotFactory. Keep taunt and direct
         // threat effects disabled for every Playerbot-controlled pet class.
         if (IsPlayerbotPetThreatSpell(spellInfo))
+            shouldApply = false;
+        if (botAI->IsGroupPveActivity() && IsPvePetRushSpell(spellInfo))
             shouldApply = false;
         bool isAutoCast = false;
         for (unsigned int& m_autospell : pet->m_autospells)
@@ -125,7 +128,7 @@ bool PetAttackAction::Execute(Event event)
 
     // Recheck at execution time: the trigger and action can run on different
     // updates, and the pet must not inherit a target selected by somebody else.
-    if (!botAI->HasEngagedTarget(target))
+    if (!botAI->CanPetEngageTarget(target))
     {
         return false;
     }
