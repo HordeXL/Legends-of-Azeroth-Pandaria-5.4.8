@@ -43,6 +43,8 @@ GenericHunterNonCombatStrategy::GenericHunterNonCombatStrategy(PlayerbotAI* botA
 void GenericHunterNonCombatStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 {
     NonCombatStrategy::InitTriggers(triggers);
+    triggers.push_back(new TriggerNode("pve hunter aspect", NextAction::array(0,
+        new NextAction("aspect of the hawk", ACTION_HIGH + 2), nullptr)));
 
     triggers.push_back(new TriggerNode("trueshot aura", NextAction::array(0, new NextAction("trueshot aura", 2.0f), nullptr)));
     triggers.push_back(new TriggerNode("often", NextAction::array(0, new NextAction("apply oil", 1.0f), nullptr)));

@@ -157,7 +157,7 @@ bool MovementAction::WaitForTankPull(WorldObject* object)
     // Being on the tank's threat list is not the same as having reached the
     // tank. Do not meet a ranged pull halfway and body-pull the next pack.
     // Friendly healing/resurrection movement and PvP remain independent.
-    // Tank bots may approach once the requester has authorized the fight.
+    // Only the designated pull tank may meet a ranged pull halfway.
     if (!object || !botAI->IsGroupPveActivity())
         return false;
 
@@ -172,13 +172,40 @@ bool MovementAction::WaitForTankPull(WorldObject* object)
     if (!botAI->CanLfgAutoQueueEngage(target))
         return true;
     if (PlayerBotSpec::IsTank(bot, true))
-        return false;
+    {
+        Player* mainTank = PlayerBotSpec::GetGroupPvePullTank(bot);
+        if (!mainTank || mainTank == bot || !mainTank->IsAlive()) return false;
+        // Local self-defence is allowed, but does not authorize a chase.
+        if (target->GetVictim() == bot && bot->IsWithinMeleeRange(target)) return false;
+        return !mainTank->IsWithinMeleeRange(target);
+    }
 
     Unit* victim = target->GetVictim();
     Player* tank = victim ? victim->ToPlayer() : nullptr;
     Group* group = bot->GetGroup(GroupSlot::Instance);
     if (!group)
         group = bot->GetGroup();
+    // Defending a ranged party member must not turn into a long chase into
+    // the next pack. Let the tank collect it; still allow local self-defence
+    // and targets explicitly being attacked by the real requester.
+    if (botAI->IsLfgAutoQueueControlled() && group &&
+        !bot->IsWithinMeleeRange(target) &&
+        (!botAI->GetMaster() || botAI->GetMaster()->GetVictim() != target))
+    {
+        bool hasTank = false;
+        bool nearTank = false;
+        for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+            if (Player* member = ref->GetSource())
+                if (member->IsAlive() && member->IsInWorld() && member->GetMap() == bot->GetMap() &&
+                    PlayerBotSpec::IsTank(member, true))
+                {
+                    hasTank = true;
+                    if (member->GetDistance(target) <= 8.0f)
+                        nearTank = true;
+                }
+        if (hasTank && !nearTank)
+            return true;
+    }
     if (!tank || !tank->IsInWorld() || !tank->IsAlive() ||
         tank->GetMap() != bot->GetMap() || !group ||
         !group->IsMember(tank->GetGUID()) ||

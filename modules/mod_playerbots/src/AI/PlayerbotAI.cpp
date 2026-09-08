@@ -16,6 +16,7 @@
 */
 
 #include "PlayerbotAI.h"
+#include "PvePetSpellSafety.h"
 
 #include <algorithm>
 #include <atomic>
@@ -33,6 +34,9 @@
 #include "AiFactory.h"
 #include "Channel.h"
 #include "ChannelMgr.h"
+#include "CellImpl.h"
+#include "GridNotifiers.h"
+#include "GridNotifiersImpl.h"
 #include "CreatureAIImpl.h"
 #include "DBCStores.h"
 #include "Engine.h"
@@ -412,6 +416,12 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
         bot->IsDuringRemoveFromWorld())
         return;
 
+    // A banner placed during emergency takeover must stop taunting when the
+    // marked main tank revives or the diamond is moved to another live tank.
+    if (bot->HasAura(114192) &&
+        !IsGroupPveTauntAllowed(sSpellMgr->GetSpellInfo(114192), bot))
+        bot->RemoveAurasDueToSpell(114192);
+
     // Playerbot-controlled pets must never acquire targets on their own. This
     // covers regular pets (hunter/warlock), permanent guardians (DK ghoul,
     // water elemental) and any other class guardian exposed through the same
@@ -420,15 +430,29 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
     if (Guardian* pet = bot->GetGuardianPet())
     {
         pet->SetReactState(REACT_PASSIVE);
+        if (IsGroupPveActivity())
+            if (Pet* permanentPet = pet->ToPet())
+                for (auto const& entry : permanentPet->m_spells)
+                {
+                    if (entry.second.state == PETSPELL_REMOVED) continue;
+                    SpellInfo const* info = sSpellMgr->GetSpellInfo(entry.first);
+                    if (!IsPvePetRushSpell(info)) continue;
+                    permanentPet->ToggleAutocast(info, false);
+                    permanentPet->RemoveAurasDueToSpell(entry.first);
+                }
+        Value<Unit*>* currentTargetValue = _aiObjectContext ?
+            _aiObjectContext->GetValue<Unit*>("current target") : nullptr;
+        Unit* ownerTarget = currentTargetValue ? currentTargetValue->Get() : nullptr;
+        bool const petMayEngage = CanPetEngageTarget(ownerTarget);
         Unit* petTarget = pet->GetVictim();
         CharmInfo* charmInfo = pet->GetCharmInfo();
-        bool const ownerStillEngaged = petTarget &&
-            HasEngagedTarget(petTarget);
+        bool const ownerStillEngaged = petTarget && petTarget == ownerTarget && petMayEngage;
         bool const staleAttackCommand = charmInfo &&
             charmInfo->IsCommandAttack() && !ownerStillEngaged;
         if ((petTarget && !ownerStillEngaged) || staleAttackCommand)
         {
             pet->AttackStop();
+            pet->InterruptNonMeleeSpells(false);
             pet->SetTarget(ObjectGuid::Empty);
             if (charmInfo)
             {
@@ -444,6 +468,8 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
                 bot, PET_FOLLOW_DIST, pet->GetFollowAngle());
         }
     }
+    else
+        _pvePetPullGate.Reset();
 
     // Playerbot sessions are not driven through WorldSession's normal socket
     // receive queue. Process synthetic time-sync replies here, after the login
@@ -3054,10 +3080,10 @@ bool CanStunLfgTrash(Unit* target, SpellInfo const* spellInfo)
 }
 
 bool ShouldDelayGroupPveAoe(PlayerbotAI* botAI, Player* bot,
-    Unit* spellTarget, SpellInfo const* spellInfo)
+    Unit* spellTarget, SpellInfo const* spellInfo, Position const* destination = nullptr)
 {
     if (!botAI || !bot || !spellTarget || !spellInfo ||
-        !botAI->IsGroupPveActivity() || PlayerBotSpec::IsTank(bot, true))
+        !botAI->IsGroupPveActivity())
         return false;
 
     Group* group = bot->GetGroup(GroupSlot::Instance);
@@ -3079,28 +3105,53 @@ bool ShouldDelayGroupPveAoe(PlayerbotAI* botAI, Player* bot,
             break;
         }
     }
-    if (!hasLivingTank)
-        return false;
-
     bool harmfulAreaEffect = false;
     float effectRadius = 0.0f;
-    for (uint8 effectIndex = EFFECT_0;
-         effectIndex < MAX_SPELL_EFFECTS; ++effectIndex)
+    // Rain of Fire (5740), for example, is a wrapper: its harmful area
+    // damage lives in triggered spell 42223, not in its own target selectors.
+    auto inspectAreaEffects = [&](auto&& inspect, SpellInfo const* info, uint8 depth) -> void
     {
-        SpellEffectInfo const& effect = spellInfo->Effects[effectIndex];
-        if (!effect.IsEffect() || spellInfo->IsPositiveEffect(effectIndex))
-            continue;
+        for (uint8 effectIndex = EFFECT_0; effectIndex < MAX_SPELL_EFFECTS; ++effectIndex)
+        {
+            SpellEffectInfo const& effect = info->Effects[effectIndex];
+            if (!effect.IsEffect())
+                continue;
 
-        bool const affectsSeveralTargets = effect.IsTargetingArea() ||
-            effect.IsAreaAuraEffect() || effect.ChainTarget > 1;
-        if (!affectsSeveralTargets)
-            continue;
+            if (effect.TriggerSpell && depth < 2)
+                if (SpellInfo const* triggered = sSpellMgr->GetSpellInfo(effect.TriggerSpell))
+                    inspect(inspect, triggered, depth + 1);
 
-        harmfulAreaEffect = true;
-        effectRadius = std::max(effectRadius, effect.CalcRadius(bot));
-        if (effect.ChainTarget > 1)
-            effectRadius = std::max(effectRadius, 12.0f);
+            if (info->IsPositiveEffect(effectIndex))
+                continue;
+            bool const affectsSeveralTargets = effect.IsTargetingArea() ||
+                effect.IsAreaAuraEffect() || effect.Effect == SPELL_EFFECT_PERSISTENT_AREA_AURA ||
+                effect.ChainTarget > 1;
+            if (!affectsSeveralTargets)
+                continue;
+
+            harmfulAreaEffect = true;
+            effectRadius = std::max(effectRadius, effect.CalcRadius(bot));
+            if (effect.ChainTarget > 1)
+                effectRadius = std::max(effectRadius, 12.0f * (effect.ChainTarget - 1));
+        }
+    };
+    inspectAreaEffects(inspectAreaEffects, spellInfo, 0);
+    // These MoP abilities select further victims in C++ scripts rather than
+    // DBC TriggerSpell/ChainTarget. Check their complete possible reach too,
+    // including Chi Wave / Holy Prism initially cast on a friendly player.
+    bool scriptedArea = false;
+    switch (spellInfo->Id)
+    {
+        case 117050: effectRadius = std::max(effectRadius, 40.0f); scriptedArea = true; break; // Glaive Toss path
+        case 115098: effectRadius = std::max(effectRadius, 175.0f); scriptedArea = true; break; // 7 Chi Wave jumps
+        case 114165: effectRadius = std::max(effectRadius, 15.0f); scriptedArea = true; break; // Holy Prism
+        case 121135: case 127632: // Cascade: friendly initial target remains healing-only.
+            if (bot->IsValidAttackTarget(spellTarget))
+            { effectRadius = std::max(effectRadius, 120.0f); scriptedArea = true; }
+            break;
+        default: break;
     }
+    harmfulAreaEffect = harmfulAreaEffect || scriptedArea;
     if (!harmfulAreaEffect)
         return false;
 
@@ -3111,38 +3162,139 @@ bool ShouldDelayGroupPveAoe(PlayerbotAI* botAI, Player* bot,
     Unit* center = bot->IsValidAttackTarget(spellTarget) ? spellTarget :
         botAI->GetAiObjectContext()->GetValue<Unit*>("current target")->Get();
     if (!center)
-        return false;
+        center = bot;
 
     uint32 affectedAttackers = 0;
+    bool const guidedStarfall = spellInfo->Id == 48505 && bot->HasAura(146655);
     bool packHeldByTank = true;
-    GuidVector const attackers = botAI->GetAiObjectContext()
-        ->GetValue<GuidVector>("attackers")->Get();
-    for (ObjectGuid const& guid : attackers)
+    // Do not use the cached "attackers" value: it deliberately excludes the
+    // idle enemies that an area spell could accidentally pull. Visit the live
+    // neighbourhood, including neutral attackable NPCs and extended radii
+    // (CalcRadius above applies spell mods such as Mannoroth's Fury).
+    Position const* areaCenter = spellInfo->Id == 48505 ? static_cast<Position const*>(bot) : destination ? destination :
+        static_cast<Position const*>(scriptedArea ? spellTarget : center);
+    float const searchRange = bot->GetExactDist(areaCenter) + effectRadius + 5.0f;
+    std::list<Unit*> nearbyUnits;
+    Trinity::AnyUnfriendlyUnitInObjectRangeCheck check(bot, bot, searchRange);
+    Trinity::UnitListSearcher<Trinity::AnyUnfriendlyUnitInObjectRangeCheck> searcher(bot, nearbyUnits, check);
+    Cell::VisitAllObjects(bot, searcher, searchRange);
+    for (Unit* unit : nearbyUnits)
     {
-        Unit* unit = botAI->GetUnit(guid);
         if (!unit || !unit->IsAlive() || unit->GetMap() != bot->GetMap() ||
             !bot->IsValidAttackTarget(unit))
             continue;
 
-        if (center->GetDistance2d(unit) > effectRadius &&
-            bot->GetDistance2d(unit) > effectRadius)
+        if (unit->GetExactDist(areaCenter) > effectRadius + unit->GetCombatReach() &&
+            bot->GetDistance(unit) > effectRadius)
             continue;
 
-        ++affectedAttackers;
+        // Match spell_dru_starfall_damage: Guided Stars cannot hit enemies
+        // without this caster's Moonfire/Sunfire. Do not veto safe Starfall
+        // because an unrelated, undotted pack happens to be in its radius.
+        if (guidedStarfall && !unit->HasAura(8921, bot->GetGUID()) && !unit->HasAura(93402, bot->GetGUID()))
+            continue;
+
+        if (unit->HasBreakableByDamageCrowdControlAura())
+            return true;
+
         Unit* victim = unit->GetVictim();
         Player* victimPlayer = victim ?
             victim->GetCharmerOrOwnerPlayerOrPlayerItself() : nullptr;
+        bool const attackingParty = victimPlayer && group->IsMember(victimPlayer->GetGUID());
+        bool partyAttacking = false;
+        for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+            if (Player* member = ref->GetSource())
+                if (member->IsAlive() && member->GetMap() == bot->GetMap() && member->GetVictim() == unit)
+                {
+                    partyAttacking = true;
+                    break;
+                }
+
+        // A zone-combat flag alone is not pull permission. This also applies
+        // to tank bots: they may tank the requested pack, not start the next.
+        if ((!attackingParty && !partyAttacking) || !botAI->CanLfgAutoQueueEngage(unit))
+            return true;
+
+        ++affectedAttackers;
         if (!victimPlayer || !victimPlayer->IsAlive() ||
             victimPlayer->GetMap() != bot->GetMap() ||
             !group->IsMember(victimPlayer->GetGUID()) ||
-            !PlayerBotSpec::IsTank(victimPlayer, true))
+            !PlayerBotSpec::IsTank(victimPlayer, true) ||
+            !victimPlayer->IsWithinMeleeRange(unit))
             packHeldByTank = false;
     }
 
     // Single-target use of a spell with an area-capable effect remains valid.
     // Once two or more engaged enemies can be hit, wait for tank ownership.
-    return affectedAttackers >= 2 && !packHeldByTank;
+    return hasLivingTank && !PlayerBotSpec::IsTank(bot, true) &&
+        affectedAttackers >= 2 && !packHeldByTank;
 }
+}
+
+namespace
+{
+bool IsTauntSpell(SpellInfo const* spellInfo, uint8 depth = 0)
+{
+    if (!spellInfo)
+        return false;
+
+    // These taunts are issued by scripts, not TriggerSpell DBC: the banner
+    // periodically casts 114198, Death Grip's OnHit casts 49560, and
+    // Provoke's OnHit casts 118635 (also for the Black Ox Statue).
+    if (spellInfo->Id == 114192 || spellInfo->Id == 49576 ||
+        spellInfo->Id == 115546)
+        return true;
+
+    for (uint8 index = 0; index < MAX_SPELL_EFFECTS; ++index)
+    {
+        SpellEffectInfo const& effect = spellInfo->Effects[index];
+        if (!effect.IsEffect())
+            continue;
+        if (effect.Effect == SPELL_EFFECT_ATTACK_ME ||
+            effect.ApplyAuraName == SPELL_AURA_MOD_TAUNT)
+            return true;
+        if (depth < 2 && effect.TriggerSpell &&
+            IsTauntSpell(sSpellMgr->GetSpellInfo(effect.TriggerSpell), depth + 1))
+            return true;
+    }
+    return false;
+}
+}
+
+bool PlayerbotAI::IsGroupPveTauntAllowed(SpellInfo const* spellInfo, Unit* target)
+{
+    if (!bot || !IsGroupPveActivity() || !IsTauntSpell(spellInfo))
+        return true;
+
+    if (!PlayerBotSpec::IsTank(bot, true))
+        return false;
+
+    if (Player* mainTank = PlayerBotSpec::GetGroupPvePullTank(bot))
+    {
+        // Re-evaluate every cast: death permits takeover immediately and
+        // resurrection/remarking restores the designated tank's ownership.
+        // This also covers self/destination-targeted mass taunts.
+        return !mainTank->IsAlive() || mainTank == bot;
+    }
+
+    // No valid diamond: keep the normal rescue policy, without stealing an
+    // individual enemy which is already attacking another living tank.
+    Unit* victim = target ? target->GetVictim() : nullptr;
+    Player* victimPlayer = victim ?
+        victim->GetCharmerOrOwnerPlayerOrPlayerItself() : nullptr;
+    if (!victimPlayer || victimPlayer == bot || !victimPlayer->IsAlive() ||
+        !PlayerBotSpec::IsTank(victimPlayer, true))
+        return true;
+
+    Group* group = bot->GetGroup(GroupSlot::Instance);
+    if (!group)
+        group = bot->GetGroup();
+    return !group || !group->IsMember(victimPlayer->GetGUID());
+}
+
+bool PlayerbotAI::IsGroupPveAreaSpellSafe(SpellInfo const* spellInfo, Unit* target)
+{
+    return !ShouldDelayGroupPveAoe(this, bot, target, spellInfo);
 }
 
 bool PlayerbotAI::TryGroupPveCoordinatedInterrupt()
@@ -3756,6 +3908,9 @@ bool PlayerbotAI::CastSpell(uint32 spellId, Unit* target, Item* itemTarget)
     Pet* pet = bot->GetPet();
     SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
 
+    if (!IsGroupPveTauntAllowed(spellInfo, target))
+        return false;
+
     // PvP displacement and control make dungeon trash scatter out of the
     // tank's control and may aggro neighbouring packs. Keep those tools for
     // PvP, but suppress them at the final cast boundary in PvE instances.
@@ -3800,6 +3955,11 @@ bool PlayerbotAI::CastSpell(uint32 spellId, Unit* target, Item* itemTarget)
 
     if (pet && pet->HasSpell(spellId))
     {
+        if (IsGroupPveActivity() && IsPvePetRushSpell(spellInfo))
+        {
+            pet->ToggleAutocast(spellInfo, false);
+            return false;
+        }
         bool autocast = false;
         for (unsigned int& m_autospell : pet->m_autospells)
         {
@@ -3850,8 +4010,9 @@ bool PlayerbotAI::CastSpell(uint32 spellId, Unit* target, Item* itemTarget)
     SpellCastTargets targets;
     if (spellInfo->Targets & TARGET_FLAG_ITEM)
     {
-        //spell->m_CastItem = itemTarget ? itemTarget : aiObjectContext->GetValue<Item*>("item for spell", spellId)->Get();
-        targets.SetItemTarget(spell->m_CastItem);
+        // The weapon being enchanted is the target, not the consumable which
+        // casts a spell. Do not discard an explicitly supplied item target.
+        targets.SetItemTarget(itemTarget);
 
         if (bot->GetTradeData())
         {
@@ -3939,8 +4100,18 @@ bool PlayerbotAI::CastSpell(uint32 spellId, float x, float y, float z, Item* ite
 
     Pet* pet = bot->GetPet();
     SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
+    Position const destination = { x, y, z, 0.0f };
+    if (!IsGroupPveTauntAllowed(spellInfo, bot))
+        return false;
+    if (ShouldDelayGroupPveAoe(this, bot, bot, spellInfo, &destination))
+        return false;
     if (pet && pet->HasSpell(spellId))
     {
+        if (IsGroupPveActivity() && IsPvePetRushSpell(spellInfo))
+        {
+            pet->ToggleAutocast(spellInfo, false);
+            return false;
+        }
         bool autocast = false;
         for (unsigned int& m_autospell : pet->m_autospells)
         {
@@ -4584,6 +4755,34 @@ bool PlayerbotAI::HasAggro(Unit* unit)
         return true;
     }
     return false;
+}
+
+bool PlayerbotAI::CanPetEngageTarget(Unit* target)
+{
+    if (!IsGroupPveActivity())
+    {
+        _pvePetPullGate.Reset();
+        return HasEngagedTarget(target); // Preserve PvP and solo behaviour.
+    }
+
+    Guardian* pet = bot->GetGuardianPet();
+    if (!pet || !pet->IsAlive() || !bot->IsAlive() || !bot->IsInCombat() ||
+        !target || !target->IsAlive() || !target->IsInWorld() ||
+        target->GetMap() != bot->GetMap() || !CanLfgAutoQueueEngage(target))
+    {
+        _pvePetPullGate.Reset();
+        return false;
+    }
+
+    Group* group = bot->GetGroup(GroupSlot::Instance);
+    if (!group) group = bot->GetGroup();
+    // A pet or another DPS taking threat is not proof that the pull is ready.
+    Player* tank = target->GetVictim() ? target->GetVictim()->ToPlayer() : nullptr;
+    bool const collected = group && tank && tank->IsAlive() && tank->IsInWorld() &&
+        tank->GetMap() == bot->GetMap() && group->IsMember(tank->GetGUID()) &&
+        PlayerBotSpec::IsTank(tank, true) && tank->IsWithinMeleeRange(target);
+    return _pvePetPullGate.Ready(getMSTime(), target->GetGUID(), pet->GetGUID(),
+        HasEngagedTarget(target), collected);
 }
 
 bool PlayerbotAI::HasEngagedTarget(Unit* target) const

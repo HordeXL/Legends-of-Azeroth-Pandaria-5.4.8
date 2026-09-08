@@ -1,4 +1,5 @@
 #include "BotFactory.h"
+#include "PvePetSpellSafety.h"
 
 #include <algorithm>
 #include <cctype>
@@ -437,7 +438,9 @@ void BotFactory::InitPet()
                 break;
             }
         }
-        pet->ToggleAutocast(spellInfo, !threatSpell);
+        bool const rushSpell = GET_PLAYERBOT_AI(bot) &&
+            GET_PLAYERBOT_AI(bot)->IsGroupPveActivity() && IsPvePetRushSpell(spellInfo);
+        pet->ToggleAutocast(spellInfo, !threatSpell && !rushSpell);
     }
 
     // Persist Ferocity (where applicable), passive reaction and the corrected
@@ -484,14 +487,18 @@ std::string GetPlayerbotActionSpellName(SpellInfo const* spellInfo)
     return name;
 }
 
-uint32 GetPlayerbotRotationSpellScore(Player* bot, SpellInfo const* modifier)
+uint32 GetPlayerbotRotationSpellScore(Player* bot, SpellInfo const* modifier,
+    BotFactory::ManagedLoadoutMode mode)
 {
     PlayerbotAI* botAI = bot ? GET_PLAYERBOT_AI(bot) : nullptr;
     if (!botAI || !modifier)
         return 0;
 
-    std::set<std::string> const supported =
+    std::set<std::string> supported =
         botAI->GetAiObjectContext()->GetSupportedActions();
+    if (bot->GetClass() == CLASS_ROGUE && mode == BotFactory::ManagedLoadoutMode::Pvp)
+        for (char const* pveAction : { "deadly poison", "shadow dance", "premeditation", "burst of speed" })
+            supported.erase(pveAction);
     uint32 score = supported.count(GetPlayerbotActionSpellName(modifier)) ? 4 : 0;
 
     // Passive talents and glyphs usually modify another class spell rather
@@ -655,65 +662,65 @@ uint8 GetManagedTalentProfileColumn(Player* bot, uint8 row,
     bool const tank = PlayerBotSpec::IsTank(bot, true);
     std::array<uint8, 6> profile{};
 
-    // MoP talent rows are class-wide.  These profiles intentionally provide
-    // only a stable role/environment preference: registered rotation support
-    // and the spell's actual mechanics retain the much larger score and can
-    // override a profile choice which this core cannot execute.
+    // Zero-based MoP Talent.dbc columns. PvE profiles are authoritative:
+    // prefer supported abilities/passives, not arbitrary effect-score totals.
+    // Utility/control talents need not be spammed by the damage rotation.
     switch (bot->GetClass())
     {
         case CLASS_WARRIOR:
             profile = pvp ? std::array<uint8, 6>{ 2, 1, 1, 1, 1, 2 } :
-                (tank ? std::array<uint8, 6>{ 1, 2, 1, 1, 2, 1 } :
-                        std::array<uint8, 6>{ 1, 2, 1, 2, 2, 1 });
+                (tank ? std::array<uint8, 6>{ 1, 1, 2, 1, 2, 1 } :
+                        std::array<uint8, 6>{ 1, 1, 2, 0, 2, 1 });
             break;
         case CLASS_PALADIN:
             profile = pvp ? std::array<uint8, 6>{ 0, 1, 2, 2, 1, 0 } :
-                (healer ? std::array<uint8, 6>{ 2, 1, 1, 2, 1, 0 } :
-                 tank ? std::array<uint8, 6>{ 2, 2, 2, 1, 2, 1 } :
-                        std::array<uint8, 6>{ 1, 2, 2, 1, 2, 2 });
+                (healer ? std::array<uint8, 6>{ 2, 0, 1, 1, 1, 0 } :
+                 tank ? std::array<uint8, 6>{ 2, 0, 2, 1, 2, 2 } :
+                        std::array<uint8, 6>{ 2, 0, 2, 1, 2, 2 });
             break;
         case CLASS_HUNTER:
             profile = pvp ? std::array<uint8, 6>{ 1, 2, 0, 2, 1, 2 } :
-                            std::array<uint8, 6>{ 2, 1, 1, 2, 0, 0 };
+                            std::array<uint8, 6>{ 2, 0, 1, 2, 0, 0 };
             break;
         case CLASS_ROGUE:
             profile = pvp ? std::array<uint8, 6>{ 1, 2, 0, 1, 0, 1 } :
-                            std::array<uint8, 6>{ 2, 1, 1, 1, 1, 2 };
+                            std::array<uint8, 6>{ 2, 1, 0, 2, 0, 2 };
+            // PvE: Shadow Focus, Nerve Strike, Cheat Death, Burst of Speed,
+            // Prey on the Weak, Anticipation. No automatic opener teleport
+            // from Cloak and Dagger, nor unused ranged Shuriken Toss.
             break;
         case CLASS_PRIEST:
             profile = pvp ? std::array<uint8, 6>{ 1, 2, 1, 1, 1, 1 } :
-                (healer ? std::array<uint8, 6>{ 2, 1, 0, 2, 2, 1 } :
-                          std::array<uint8, 6>{ 2, 1, 2, 2, 0, 2 });
+                (healer ? std::array<uint8, 6>{ 0, 0, 0, 2, 0, 0 } :
+                          std::array<uint8, 6>{ 0, 0, 2, 2, 0, 0 });
             break;
         case CLASS_DEATH_KNIGHT:
             profile = pvp ? std::array<uint8, 6>{ 2, 1, 2, 1, 0, 2 } :
-                (tank ? std::array<uint8, 6>{ 0, 2, 1, 0, 1, 1 } :
-                        std::array<uint8, 6>{ 1, 1, 1, 0, 2, 1 });
+                (bot->GetSpecialization() == SPEC_DEATH_KNIGHT_UNHOLY ?
+                    std::array<uint8, 6>{ 0, 2, 0, 0, 2, 1 } :
+                    std::array<uint8, 6>{ 0, 2, 0, 0, 1, 1 });
             break;
         case CLASS_SHAMAN:
             profile = pvp ? std::array<uint8, 6>{ 2, 2, 2, 0, 1, 1 } :
-                (healer ? std::array<uint8, 6>{ 2, 2, 1, 1, 0, 1 } :
-                          std::array<uint8, 6>{ 2, 2, 1, 0, 1, 2 });
+                (healer ? std::array<uint8, 6>{ 0, 2, 1, 1, 0, 1 } :
+                          std::array<uint8, 6>{ 0, 2, 1, 2, 0, 1 });
             break;
         case CLASS_MAGE:
             profile = pvp ? std::array<uint8, 6>{ 2, 2, 2, 0, 1, 2 } :
-                            std::array<uint8, 6>{ 1, 1, 1, 1, 0, 0 };
+                            std::array<uint8, 6>{ 0, 1, 1, 1,
+                                uint8(bot->GetSpecialization() == SPEC_MAGE_ARCANE ? 0 : 1), 1 };
             break;
         case CLASS_WARLOCK:
             profile = pvp ? std::array<uint8, 6>{ 2, 1, 2, 2, 1, 0 } :
-                            std::array<uint8, 6>{ 1, 1, 1, 1, 0, 1 };
+                            std::array<uint8, 6>{ 1, 2, 0, 2, 0, 1 };
             break;
         case CLASS_MONK:
             profile = pvp ? std::array<uint8, 6>{ 1, 0, 2, 0, 2, 1 } :
-                (healer ? std::array<uint8, 6>{ 1, 0, 1, 0, 0, 0 } :
-                 tank ? std::array<uint8, 6>{ 2, 0, 1, 2, 1, 1 } :
-                        std::array<uint8, 6>{ 1, 0, 1, 2, 1, 1 });
+                            std::array<uint8, 6>{ 0, 0, 1, 2, 0, 1 };
             break;
         case CLASS_DRUID:
             profile = pvp ? std::array<uint8, 6>{ 1, 1, 0, 2, 2, 0 } :
-                (healer ? std::array<uint8, 6>{ 1, 2, 1, 0, 1, 1 } :
-                 tank ? std::array<uint8, 6>{ 2, 2, 1, 0, 1, 0 } :
-                        std::array<uint8, 6>{ 2, 1, 1, 0, 1, 2 });
+                            std::array<uint8, 6>{ 0, 0, 1, 0, 2, 0 };
             break;
         default:
             profile = { 0, 0, 0, 0, 0, 0 };
@@ -721,6 +728,37 @@ uint8 GetManagedTalentProfileColumn(Player* bot, uint8 row,
     }
 
     return profile[row];
+}
+
+std::array<uint32, 3> GetManagedPveMajorGlyphSpells(Player* bot)
+{
+    bool const healer = PlayerBotSpec::IsHeal(bot, true);
+    switch (bot->GetClass())
+    {
+        case CLASS_WARRIOR: return {58098, 58382,
+            uint32(PlayerBotSpec::IsTank(bot, true) ? 58388 : 58372)};
+        case CLASS_PALADIN:
+            if (healer) return {57955, 63218, 54939};
+            if (PlayerBotSpec::IsTank(bot, true)) return {54924, 54936, 54939};
+            return {54926, 54936, 63220};
+        case CLASS_HUNTER: return {20895, 56850, 56844};
+        case CLASS_ROGUE: return {56804, 63269, 56811};
+        case CLASS_PRIEST: return healer ? std::array<uint32, 3>{14771, 89489, 55685} :
+            std::array<uint32, 3>{14771, 55686, 120585};
+        case CLASS_DEATH_KNIGHT: return {58623, 146648, 58673};
+        case CLASS_SHAMAN: return healer ? std::array<uint32, 3>{55436, 55456, 55440} :
+            std::array<uint32, 3>{55447, 55456, 55449};
+        case CLASS_MAGE: return {56380, 115723, uint32(bot->GetSpecialization() == SPEC_MAGE_FROST ?
+            63090 : bot->GetSpecialization() == SPEC_MAGE_FIRE ? 56368 : 62210)};
+        case CLASS_WARLOCK: return {56218, 56224, 56231};
+        case CLASS_MONK: return {120479, 120482, uint32(healer ? 123334 : 146953)};
+        case CLASS_DRUID:
+            if (healer) return {54733, 17076, 54825};
+            if (bot->GetSpecialization() == SPEC_DRUID_FERAL) return {47180, 114300, 54733};
+            if (bot->GetSpecialization() == SPEC_DRUID_GUARDIAN) return {54733, 114222, 114223};
+            return {54733, 146655, 114222};
+        default: return {};
+    }
 }
 
 int32 GetPlayerbotTalentScore(Player* bot, TalentEntry const* talent,
@@ -735,13 +773,18 @@ int32 GetPlayerbotTalentScore(Player* bot, TalentEntry const* talent,
 
     SpellInfo const* talentSpell = sSpellMgr->GetSpellInfo(talent->SpellId);
     score += int32(GetPlayerbotBuildSpellScore(bot, talentSpell) * 100);
-    score += int32(GetPlayerbotRotationSpellScore(bot, talentSpell) * 500);
+    score += int32(GetPlayerbotRotationSpellScore(bot, talentSpell, mode) * 500);
     score += GetPlayerbotEnvironmentSpellScore(bot, talentSpell, mode);
 
     uint8 const preferredColumn = GetManagedTalentProfileColumn(bot,
         talent->Row, mode);
     score += talent->Col == preferredColumn ? 300 :
         ((talent->Col + 1) % 3 == preferredColumn ? 200 : 100);
+    // Generic scores rewarded spell replacements/control even if the selected
+    // PvE rotation never used them. Keep the old scoring policy for PvP.
+    if (mode == BotFactory::ManagedLoadoutMode::Pve &&
+        talent->Col == preferredColumn)
+        score += 1000000;
     return score;
 }
 }
@@ -932,10 +975,29 @@ void BotFactory::InitGlyphsForMode(ManagedLoadoutMode mode)
 
                 SpellInfo const* glyphEffect =
                     sSpellMgr->GetSpellInfo(glyph->SpellId);
+                if (mode == ManagedLoadoutMode::Pve && glyph->TypeFlags == 0)
+                {
+                    auto const allowed = GetManagedPveMajorGlyphSpells(bot);
+                    if (std::find(allowed.begin(), allowed.end(), glyph->SpellId) == allowed.end())
+                        continue;
+                }
+                if (bot->GetClass() == CLASS_ROGUE && mode == ManagedLoadoutMode::Pve)
+                {
+                    // Major: Feint, Cloak of Shadows, Sprint. Minor: Safe
+                    // Fall, Poisons, Blurred Speed. These modify abilities the
+                    // bot actually uses, without Hemorrhage's bleed restriction
+                    // or a dependence on landing killing blows in a raid.
+                    static uint32 const pveRogueGlyphSpells[] =
+                        { 56804, 63269, 56811, 58033, 58038, 58039 };
+                    if (std::find(std::begin(pveRogueGlyphSpells),
+                            std::end(pveRogueGlyphSpells), glyph->SpellId) ==
+                        std::end(pveRogueGlyphSpells))
+                        continue;
+                }
                 int32 score = 50000 + int32(GetPlayerbotBuildSpellScore(
                     bot, glyphEffect) * 100);
                 score += int32(GetPlayerbotRotationSpellScore(
-                    bot, glyphEffect) * 500);
+                    bot, glyphEffect, mode) * 500);
                 score += GetPlayerbotEnvironmentSpellScore(bot, glyphEffect,
                     mode);
                 // The mode salt gives neutral glyph choices separate stable

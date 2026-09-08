@@ -31,6 +31,15 @@ bool CorruptionTrigger::IsActive()
 
 bool FireAndBrimeStoneTrigger::IsActive()
 {
+    if (botAI->IsGroupPveActivity())
+    {
+        MediumAoeTrigger pack(botAI);
+        if (!pack.IsActive())
+        {
+            botAI->RemoveAura("fire and brimstone");
+            return false;
+        }
+    }
     if (botAI->HasAura("fire and brimstone", bot) && bot->GetPower(Powers::POWER_BURNING_EMBERS) <= 0)
     {
         botAI->RemoveAura("fire and brimstone");

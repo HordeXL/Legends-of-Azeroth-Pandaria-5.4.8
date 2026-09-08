@@ -43,7 +43,14 @@ NextAction** AssassinationRogueStrategy::getDefaultActions()
 
 void AssassinationRogueStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 {
+    triggers.push_back(new TriggerNode("pve rogue open combat", NextAction::array(0,
+        new NextAction("pve rogue open combat", ACTION_HIGH + 10), nullptr)));
     MeleeCombatStrategy::InitTriggers(triggers);
+
+    triggers.push_back(new TriggerNode("pve deadly poison",
+        NextAction::array(0, new NextAction("deadly poison", ACTION_HIGH + 10), nullptr)));
+    triggers.push_back(new TriggerNode("pve burst of speed",
+        NextAction::array(0, new NextAction("burst of speed", ACTION_HIGH + 1.5f), nullptr)));
 
     triggers.push_back(new TriggerNode("high energy available",
                                        NextAction::array(0, new NextAction("garrote", ACTION_HIGH + 7),

@@ -156,7 +156,8 @@ class CastKillCommandAction : public CastAuraSpellAction
 public:
     CastKillCommandAction(PlayerbotAI* botAI) : CastAuraSpellAction(botAI, "kill command") {}
 
-    std::string const GetTargetName() override { return "pet target"; }
+    std::string const GetTargetName() override;
+    bool isUseful() override;
 };
 
 class CastRevivePetAction : public CastBuffSpellAction

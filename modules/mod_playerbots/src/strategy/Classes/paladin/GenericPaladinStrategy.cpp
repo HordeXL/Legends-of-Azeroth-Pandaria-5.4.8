@@ -15,6 +15,10 @@ GenericPaladinStrategy::GenericPaladinStrategy(PlayerbotAI* botAI) : CombatStrat
 
 void GenericPaladinStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 {
+    triggers.push_back(new TriggerNode("pve execution sentence", NextAction::array(0,
+        new NextAction("pve execution sentence", ACTION_NORMAL + 3), nullptr)));
+    triggers.push_back(new TriggerNode("group heal setting", NextAction::array(0,
+        new NextAction("pve holy prism on party", ACTION_MEDIUM_HEAL + 3), nullptr)));
     CombatStrategy::InitTriggers(triggers);
 
     triggers.push_back(new TriggerNode("critical health", NextAction::array(0, new NextAction("divine shield",

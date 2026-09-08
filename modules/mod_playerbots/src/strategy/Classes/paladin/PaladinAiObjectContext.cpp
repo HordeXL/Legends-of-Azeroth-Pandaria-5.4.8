@@ -177,6 +177,8 @@ public:
         creators["divine plea"] = &PaladinAiObjectContextInternal::divine_plea;
         creators["shield of righteousness"] = &PaladinAiObjectContextInternal::shield_of_righteousness;
         creators["beacon of light on main tank"] = &PaladinAiObjectContextInternal::beacon_of_light_on_main_tank;
+        creators["pve execution sentence"] = [](PlayerbotAI* ai) -> Action* { return new CastSpellAction(ai, "execution sentence"); };
+        creators["pve holy prism on party"] = [](PlayerbotAI* ai) -> Action* { return new HealPartyMemberAction(ai, "holy prism"); };
         creators["sacred shield on main tank"] = &PaladinAiObjectContextInternal::sacred_shield_on_main_tank;
         creators["avenging wrath"] = &PaladinAiObjectContextInternal::avenging_wrath;
         creators["divine illumination"] = &PaladinAiObjectContextInternal::divine_illumination;

@@ -119,6 +119,9 @@ public:
         creators["aspect of the dragonhawk"] = &HunterAiObjectContextInternal::aspect_of_the_dragonhawk;
         creators["tranquilizing shot"] = &HunterAiObjectContextInternal::tranquilizing_shot;
         creators["steady shot"] = &HunterAiObjectContextInternal::steady_shot;
+        creators["pve cobra shot"] = [](PlayerbotAI* ai) -> Action* { return new CastSpellAction(ai, "cobra shot"); };
+        creators["pve crows"] = [](PlayerbotAI* ai) -> Action* { return new CastSpellAction(ai, "a murder of crows"); };
+        creators["pve glaive toss"] = [](PlayerbotAI* ai) -> Action* { return new CastSpellAction(ai, "glaive toss"); };
         creators["kill shot"] = &HunterAiObjectContextInternal::kill_shot;
         creators["misdirection on main tank"] = &HunterAiObjectContextInternal::misdirection_on_main_tank;
         creators["silencing shot"] = &HunterAiObjectContextInternal::silencing_shot;

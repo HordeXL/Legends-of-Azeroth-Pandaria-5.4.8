@@ -59,7 +59,17 @@ class RogueTriggerFactoryInternal : public NamedObjectContext<Trigger>
 public:
     RogueTriggerFactoryInternal()
     {
-
+        creators["combo points available"] = [](PlayerbotAI* ai) -> Trigger* { return new RogueComboPointsTrigger(ai); };
+        creators["target with combo points almost dead"] = [](PlayerbotAI* ai) -> Trigger* { return new RogueComboPointsTrigger(ai, true); };
+        creators["slice and dice"] = [](PlayerbotAI* ai) -> Trigger* { return new RogueSliceAndDiceTrigger(ai); };
+        creators["subtlety builder"] = [](PlayerbotAI* ai) -> Trigger* { return new RogueSubtletyBuilderTrigger(ai); };
+        creators["pve deadly poison"] = [](PlayerbotAI* ai) -> Trigger* { return new RoguePveAbilityTrigger(ai, "pve deadly poison", RoguePveAbility::Poison); };
+        creators["pve shadow dance"] = [](PlayerbotAI* ai) -> Trigger* { return new RoguePveAbilityTrigger(ai, "pve shadow dance", RoguePveAbility::ShadowDance); };
+        creators["pve dance ambush"] = [](PlayerbotAI* ai) -> Trigger* { return new RoguePveAbilityTrigger(ai, "pve dance ambush", RoguePveAbility::Ambush); };
+        creators["pve premeditation"] = [](PlayerbotAI* ai) -> Trigger* { return new RoguePveAbilityTrigger(ai, "pve premeditation", RoguePveAbility::Premeditation); };
+        creators["pve burst of speed"] = [](PlayerbotAI* ai) -> Trigger* { return new RoguePveAbilityTrigger(ai, "pve burst of speed", RoguePveAbility::BurstOfSpeed); };
+        creators["pve rogue aoe"] = [](PlayerbotAI* ai) -> Trigger* { return new RoguePveAoeTrigger(ai); };
+        creators["pve rogue open combat"] = [](PlayerbotAI* ai) -> Trigger* { return new RoguePveAbilityTrigger(ai, "pve rogue open combat", RoguePveAbility::OpenCombat); };
     }
 
 private:
@@ -86,6 +96,7 @@ public:
         creators["kick"] = &RogueAiObjectContextInternal::kick;
         creators["feint"] = &RogueAiObjectContextInternal::feint;
         creators["backstab"] = &RogueAiObjectContextInternal::backstab;
+        creators["hemorrhage"] = [](PlayerbotAI* ai) -> Action* { return new CastMeleeSpellAction(ai, "hemorrhage"); };
         creators["expose armor"] = &RogueAiObjectContextInternal::expose_armor;
         creators["kick on enemy healer"] = &RogueAiObjectContextInternal::kick_on_enemy_healer;
         creators["blade flurry"] = &RogueAiObjectContextInternal::blade_flurry;
@@ -104,6 +115,11 @@ public:
         creators["tricks of the trade on main tank"] = &RogueAiObjectContextInternal::tricks_of_the_trade_on_main_tank;
         creators["fan of knives"] = &RogueAiObjectContextInternal::fan_of_knives;
         creators["killing spree"] = &RogueAiObjectContextInternal::killing_spree;
+        creators["deadly poison"] = [](PlayerbotAI* ai) -> Action* { return new CastBuffSpellAction(ai, "deadly poison", false, 60000); };
+        creators["shadow dance"] = [](PlayerbotAI* ai) -> Action* { return new CastBuffSpellAction(ai, "shadow dance"); };
+        creators["premeditation"] = [](PlayerbotAI* ai) -> Action* { return new CastSpellAction(ai, "premeditation"); };
+        creators["burst of speed"] = [](PlayerbotAI* ai) -> Action* { return new CastBuffSpellAction(ai, "burst of speed"); };
+        creators["pve rogue open combat"] = [](PlayerbotAI* ai) -> Action* { return new PveRogueOpenCombatAction(ai); };
     }
 
 private:

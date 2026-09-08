@@ -11,6 +11,25 @@
 #include "SpellInfo.h"
 #include "SpellMgr.h"
 
+bool CastPestilenceAction::isUseful()
+{
+    if (!botAI->IsGroupPveActivity()) return CastSpellAction::isUseful();
+    Unit* target = GetTarget();
+    if (!target) return false;
+    bool const frost = target->HasAura(55095, bot->GetGUID());
+    bool const blood = target->HasAura(55078, bot->GetGUID());
+    if (!frost && !blood) return false;
+    // AttackersValue stores GuidVector, not std::list<ObjectGuid>. The typed
+    // context lookup returns null for a mismatched type.
+    for (ObjectGuid guid : AI_VALUE(GuidVector, "attackers"))
+        if (Unit* other = botAI->GetUnit(guid))
+            if (other != target && other->IsAlive() && target->IsWithinDistInMap(other, 10.0f) &&
+                ((frost && !other->HasAura(55095, bot->GetGUID())) ||
+                 (blood && !other->HasAura(55078, bot->GetGUID()))))
+                return CastSpellAction::isUseful();
+    return false;
+}
+
 namespace
 {
 bool IsGroupPveTrash(PlayerbotAI* botAI, Unit* target)

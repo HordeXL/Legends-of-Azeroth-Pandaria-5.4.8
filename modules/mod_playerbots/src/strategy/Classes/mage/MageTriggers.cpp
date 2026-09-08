@@ -25,6 +25,21 @@ bool MageArmorTrigger::IsActive()
         !botAI->HasAura("mage armor", bot);
 }
 
+bool ArcaneMissilesTrigger::IsActive()
+{
+    if (!botAI->IsGroupPveActivity()) return HasAuraStackTrigger::IsActive();
+    Aura* missiles = bot->GetAura(79683);
+    Aura* charge = bot->GetAura(36032);
+    return missiles && (missiles->GetStackAmount() >= 2 || (charge && charge->GetStackAmount() >= 4));
+}
+
+bool ArcaneChargeTrigger::IsActive()
+{
+    if (!botAI->IsGroupPveActivity()) return HasAuraStackTrigger::IsActive();
+    Aura* charge = bot->GetAura(36032);
+    return charge && charge->GetStackAmount() >= 4;
+}
+
 bool FrostArmorTrigger::IsActive()
 {
     return botAI->GetBot()->GetSpecialization() ==

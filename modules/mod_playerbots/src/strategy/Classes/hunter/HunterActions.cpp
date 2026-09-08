@@ -10,6 +10,23 @@
 #include "Playerbots.h"
 #include "SpellHistory.h"
 
+std::string const CastKillCommandAction::GetTargetName()
+{
+    return botAI->IsGroupPveActivity() ? "current target" : "pet target";
+}
+
+bool CastKillCommandAction::isUseful()
+{
+    if (!botAI->IsGroupPveActivity()) return CastAuraSpellAction::isUseful();
+    Unit* target = GetTarget();
+    Pet* pet = bot->GetPet();
+    // Kill Command can make the pet charge. Only use it after the delayed
+    // pet order has reached this enemy; never use it to launch a ranged pull.
+    return target && pet && pet->IsAlive() && pet->GetVictim() == target &&
+        pet->IsWithinMeleeRange(target) && botAI->CanPetEngageTarget(target) &&
+        CastSpellAction::isUseful();
+}
+
 bool CastAncientHysteriaAction::isPossible()
 {
     Pet* pet = bot->GetPet();

@@ -78,6 +78,9 @@ BotRoles AiFactory::GetPlayerRoles(Player* player)
 
     switch (player->GetClass())
     {
+        case CLASS_DEATH_KNIGHT:
+            role = spec == SPEC_DEATH_KNIGHT_BLOOD ? BOT_ROLE_TANK : BOT_ROLE_DPS;
+            break;
         case CLASS_PRIEST:
             if (spec == Specializations::SPEC_PRIEST_SHADOW)
                 role = BOT_ROLE_DPS;
@@ -291,7 +294,8 @@ void AiFactory::AddDefaultCombatStrategies(Player* player, PlayerbotAI* const fa
         case CLASS_SHAMAN:
         {
             if (spec == Specializations::SPEC_SHAMAN_ELEMENTAL)
-                engine->addStrategiesNoInit("caster", "caster aoe", "bmana", nullptr);
+                engine->addStrategiesNoInit("caster", "caster aoe",
+                    facade->IsGroupPveActivity() ? "bdps" : "bmana", nullptr);
             else if (spec == Specializations::SPEC_SHAMAN_RESTORATION)
                 engine->addStrategiesNoInit("heal", "bmana", nullptr);
             else
@@ -321,14 +325,7 @@ void AiFactory::AddDefaultCombatStrategies(Player* player, PlayerbotAI* const fa
                 engine->addStrategiesNoInit("heal", "cure", "dps assist", nullptr);
             else if (spec == Specializations::SPEC_DRUID_FERAL)
             {
-                if (player->GetLevel() >= 20 && !player->HasAura(16931) /*thick hide*/)
-                {
-                    engine->addStrategiesNoInit("cat", "dps assist", nullptr);
-                }
-                else
-                {
-                    engine->addStrategiesNoInit("bear", "tank assist", nullptr);
-                }
+                engine->addStrategiesNoInit("cat", "dps assist", nullptr);
             }
             else if (spec == Specializations::SPEC_DRUID_GUARDIAN)
             {
@@ -518,7 +515,8 @@ void AiFactory::AddDefaultNonCombatStrategies(Player* player, PlayerbotAI* const
             nonCombatEngine->addStrategiesNoInit("bdps", "dps assist", "pet", nullptr);
             break;
         case CLASS_SHAMAN:
-            if (tab == Specializations::SPEC_SHAMAN_ELEMENTAL || tab == Specializations::SPEC_SHAMAN_RESTORATION)
+            if (tab == Specializations::SPEC_SHAMAN_RESTORATION ||
+                (tab == Specializations::SPEC_SHAMAN_ELEMENTAL && !facade->IsGroupPveActivity()))
                 nonCombatEngine->addStrategy("bmana", false);
             else
                 nonCombatEngine->addStrategy("bdps", false);
@@ -536,14 +534,7 @@ void AiFactory::AddDefaultNonCombatStrategies(Player* player, PlayerbotAI* const
         case CLASS_DRUID:
             if (tab == Specializations::SPEC_DRUID_FERAL)
             {
-                if (player->GetLevel() >= 20 && !player->HasAura(16931) /*thick hide*/)
-                {
-                    nonCombatEngine->addStrategy("dps assist", false);
-                }
-                else
-                {
-                    nonCombatEngine->addStrategy("tank assist", false);
-                }
+                nonCombatEngine->addStrategy("dps assist", false);
             }
             else if (tab == Specializations::SPEC_DRUID_GUARDIAN)
             {

@@ -15,6 +15,7 @@
 #include "ShamanNonCombatStrategy.h"
 #include "ShamanTriggers.h"
 #include "TotemsShamanStrategy.h"
+#include "PveWeaponImbueAction.h"
 
 class ShamanStrategyFactoryInternal : public NamedObjectContext<Strategy>
 {
@@ -162,6 +163,8 @@ public:
         creators["cure poison on party"] = &ShamanAiObjectContextInternal::cure_poison_on_party;
         creators["lava burst"] = &ShamanAiObjectContextInternal::lava_burst;
         creators["earth shield on main tank"] = &ShamanAiObjectContextInternal::earth_shield_on_main_tank;
+        creators["pve main hand imbue"] = [](PlayerbotAI* ai) -> Action* { return new PveWeaponImbueAction(ai, EQUIPMENT_SLOT_MAINHAND); };
+        creators["pve off hand imbue"] = [](PlayerbotAI* ai) -> Action* { return new PveWeaponImbueAction(ai, EQUIPMENT_SLOT_OFFHAND); };
         creators["fire elemental totem"] = &ShamanAiObjectContextInternal::fire_elemental_totem;
         creators["fire elemental totem melee"] = &ShamanAiObjectContextInternal::fire_elemental_totem_melee;
         creators["totem of wrath"] = &ShamanAiObjectContextInternal::totem_of_wrath;

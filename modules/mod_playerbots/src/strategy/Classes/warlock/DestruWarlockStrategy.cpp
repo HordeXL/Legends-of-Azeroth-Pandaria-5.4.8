@@ -35,6 +35,13 @@ DestruWarlockStrategy::DestruWarlockStrategy(PlayerbotAI* botAI) : GenericWarloc
 
 NextAction** DestruWarlockStrategy::getDefaultActions()
 {
+    if (botAI->IsGroupPveActivity())
+        return NextAction::array(0,
+            new NextAction("dark soul: instability", ACTION_NORMAL + 3),
+            new NextAction("immolate", ACTION_NORMAL + 2),
+            new NextAction("chaos bolt", ACTION_NORMAL + 1),
+            new NextAction("conflagrate", ACTION_DEFAULT + 1),
+            new NextAction("incinerate", ACTION_DEFAULT), nullptr);
     return NextAction::array(0,
         new NextAction("dark soul: instability", ACTION_DEFAULT + 0.5f),
         new NextAction("conflagrate", ACTION_DEFAULT + 20.0f),

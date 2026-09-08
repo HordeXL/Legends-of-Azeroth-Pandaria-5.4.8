@@ -126,6 +126,7 @@ class ArcaneMissilesTrigger : public HasAuraStackTrigger
 {
 public:
     ArcaneMissilesTrigger(PlayerbotAI* ai) : HasAuraStackTrigger(ai, "arcane missiles", 1, 1) {}
+    bool IsActive() override;
 };
 
 class BrainFreezeTrigger : public HasAuraStackTrigger
@@ -138,6 +139,7 @@ class ArcaneChargeTrigger : public HasAuraStackTrigger
 {
 public:
     ArcaneChargeTrigger(PlayerbotAI* ai) : HasAuraStackTrigger(ai, "arcane charge", 1, 1) {}
+    bool IsActive() override;
 };
 
 class SlowNotOnTargetTrigger : public DebuffTrigger

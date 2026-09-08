@@ -16,6 +16,8 @@ GenericPriestStrategy::GenericPriestStrategy(PlayerbotAI* botAI) : RangedCombatS
 
 void GenericPriestStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 {
+    triggers.push_back(new TriggerNode("group heal setting", NextAction::array(0,
+        new NextAction("pve cascade on party", ACTION_MEDIUM_HEAL + 3), nullptr)));
     CombatStrategy::InitTriggers(triggers);
 
     // triggers.push_back(new TriggerNode("medium health", NextAction::array(0, new NextAction("greater heal", 25.0f),

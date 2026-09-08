@@ -40,6 +40,36 @@ DpsHunterStrategy::DpsHunterStrategy(PlayerbotAI* botAI) : GenericHunterStrategy
 
 NextAction** DpsHunterStrategy::getDefaultActions()
 {
+    if (botAI->IsGroupPveActivity())
+    {
+        switch (botAI->GetBot()->GetSpecialization())
+        {
+            case SPEC_HUNTER_BEAST_MASTERY:
+                return NextAction::array(0,
+                    new NextAction("kill shot", ACTION_DEFAULT + 0.9f),
+                    new NextAction("bestial wrath", ACTION_DEFAULT + 0.8f),
+                    new NextAction("kill command", ACTION_DEFAULT + 0.7f),
+                    new NextAction("arcane shot", ACTION_DEFAULT + 0.3f),
+                    new NextAction("pve cobra shot", ACTION_DEFAULT + 0.2f),
+                    new NextAction("auto shot", ACTION_DEFAULT), nullptr);
+            case SPEC_HUNTER_SURVIVAL:
+                return NextAction::array(0,
+                    new NextAction("kill shot", ACTION_DEFAULT + 0.9f),
+                    new NextAction("explosive shot", ACTION_DEFAULT + 0.8f),
+                    new NextAction("black arrow", ACTION_DEFAULT + 0.7f),
+                    new NextAction("arcane shot", ACTION_DEFAULT + 0.3f),
+                    new NextAction("pve cobra shot", ACTION_DEFAULT + 0.2f),
+                    new NextAction("auto shot", ACTION_DEFAULT), nullptr);
+            default:
+                return NextAction::array(0,
+                    new NextAction("kill shot", ACTION_DEFAULT + 0.9f),
+                    new NextAction("chimera shot", ACTION_DEFAULT + 0.8f),
+                    new NextAction("aimed shot", ACTION_DEFAULT + 0.6f),
+                    new NextAction("arcane shot", ACTION_DEFAULT + 0.3f),
+                    new NextAction("steady shot", ACTION_DEFAULT + 0.2f),
+                    new NextAction("auto shot", ACTION_DEFAULT), nullptr);
+        }
+    }
     return NextAction::array(
         0,
         new NextAction("explosive shot", ACTION_HIGH + 1.0f),
@@ -55,6 +85,10 @@ NextAction** DpsHunterStrategy::getDefaultActions()
 void DpsHunterStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 {
     GenericHunterStrategy::InitTriggers(triggers);
+    triggers.push_back(new TriggerNode("pve crows", NextAction::array(0,
+        new NextAction("pve crows", ACTION_NORMAL + 3), nullptr)));
+    triggers.push_back(new TriggerNode("pve glaive toss", NextAction::array(0,
+        new NextAction("pve glaive toss", ACTION_NORMAL + 2), nullptr)));
 
     triggers.push_back(
         new TriggerNode("black arrow", NextAction::array(0, new NextAction("black arrow", 19.0f), nullptr)));

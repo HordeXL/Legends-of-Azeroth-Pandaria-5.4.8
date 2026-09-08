@@ -66,7 +66,7 @@ bool PetAttackTrigger::IsActive()
     }
     // A party member pulling is not permission for this bot's pet to attack.
     // The owner itself must have started a melee/ranged/spell attack first.
-    if (!botAI->HasEngagedTarget(target))
+    if (!botAI->CanPetEngageTarget(target))
     {
         return false;
     }

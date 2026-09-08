@@ -197,6 +197,26 @@ uint32 PlayerBotSpec::GetGroupTankNum(Player* player)
     return result;
 }
 
+Player* PlayerBotSpec::GetDiamondMarkedTank(Player* player)
+{
+    Group* group = GetActiveGroup(player);
+    if (!group || player->InBattleground() || player->InArena())
+        return nullptr;
+
+    ObjectGuid const markedGuid = group->GetTargetIcon(2); // Purple diamond.
+    if (markedGuid.IsEmpty())
+        return nullptr;
+
+    for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+    {
+        Player* member = ref->GetSource();
+        if (member && member->GetGUID() == markedGuid && member->IsInWorld() &&
+            member->GetMap() == player->GetMap() && IsTank(member, true))
+            return member;
+    }
+    return nullptr;
+}
+
 bool PlayerBotSpec::IsMainTank(Player* player)
 {
     Group* group = GetActiveGroup(player);
@@ -204,6 +224,10 @@ bool PlayerBotSpec::IsMainTank(Player* player)
     {
         return false;
     }
+    if (Player* markedTank = GetDiamondMarkedTank(player))
+        if (markedTank->IsAlive())
+            return markedTank == player;
+
     ObjectGuid mainTank = ObjectGuid();
     Group::MemberSlotList const& slots = group->GetMemberSlots();
     for (Group::member_citerator itr = slots.begin(); itr != slots.end(); ++itr)
@@ -265,4 +289,25 @@ bool PlayerBotSpec::IsAssistTankOfIndex(Player* bot, Player* player, int index)
         }
     }
     return false;
+}
+
+Player* PlayerBotSpec::GetGroupPvePullTank(Player* player)
+{
+    Group* group = GetActiveGroup(player);
+    if (!group || player->InBattleground() || player->InArena()) return nullptr;
+    // Keep a dead designated tank as the anchor: callers allow emergency
+    // takeover, then restore ownership when that player is resurrected.
+    if (Player* marked = GetDiamondMarkedTank(player)) return marked;
+    if (PlayerbotAI* ai = GET_PLAYERBOT_AI(player))
+        if (Player* master = ai->GetMaster())
+            if (group->IsMember(master->GetGUID()) && master->IsInWorld() &&
+                master->GetMap() == player->GetMap() && IsTank(master, true) &&
+                (!GET_PLAYERBOT_AI(master) || GET_PLAYERBOT_AI(master)->IsRealPlayer()))
+                return master;
+    for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+        if (Player* member = ref->GetSource())
+            if (member->GetGUID() == group->GetLeaderGUID() && member->IsInWorld() &&
+                member->GetMap() == player->GetMap() && IsTank(member, true))
+                return member;
+    return nullptr;
 }

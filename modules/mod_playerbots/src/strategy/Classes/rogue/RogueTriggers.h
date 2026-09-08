@@ -10,5 +10,48 @@
 
 class PlayerbotAI;
 
+enum class RoguePveAbility { Poison, ShadowDance, Ambush, Premeditation, BurstOfSpeed, OpenCombat };
+
+class RoguePveAoeTrigger : public MediumAoeTrigger
+{
+public:
+    RoguePveAoeTrigger(PlayerbotAI* ai) : MediumAoeTrigger(ai) { }
+    bool IsActive() override;
+};
+
+class RoguePveAbilityTrigger : public Trigger
+{
+public:
+    RoguePveAbilityTrigger(PlayerbotAI* ai, std::string const& name, RoguePveAbility ability)
+        : Trigger(ai, name, 1), ability(ability) { }
+    bool IsActive() override;
+private:
+    RoguePveAbility ability;
+};
+
+class RogueComboPointsTrigger : public Trigger
+{
+public:
+    RogueComboPointsTrigger(PlayerbotAI* ai, bool dyingTarget = false)
+        : Trigger(ai, dyingTarget ? "target with combo points almost dead" : "combo points available", 1),
+          dyingTarget(dyingTarget) { }
+    bool IsActive() override;
+private:
+    bool dyingTarget;
+};
+
+class RogueSliceAndDiceTrigger : public Trigger
+{
+public:
+    RogueSliceAndDiceTrigger(PlayerbotAI* ai) : Trigger(ai, "slice and dice", 1) { }
+    bool IsActive() override;
+};
+
+class RogueSubtletyBuilderTrigger : public Trigger
+{
+public:
+    RogueSubtletyBuilderTrigger(PlayerbotAI* ai) : Trigger(ai, "subtlety builder", 1) { }
+    bool IsActive() override;
+};
 
 #endif
