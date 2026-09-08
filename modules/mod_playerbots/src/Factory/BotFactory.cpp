@@ -659,26 +659,25 @@ uint8 GetManagedTalentProfileColumn(Player* bot, uint8 row,
     bool const tank = PlayerBotSpec::IsTank(bot, true);
     std::array<uint8, 6> profile{};
 
-    // MoP talent rows are class-wide.  These profiles intentionally provide
-    // only a stable role/environment preference: registered rotation support
-    // and the spell's actual mechanics retain the much larger score and can
-    // override a profile choice which this core cannot execute.
+    // Zero-based MoP Talent.dbc columns. PvE profiles are authoritative:
+    // prefer supported abilities/passives, not arbitrary effect-score totals.
+    // Utility/control talents need not be spammed by the damage rotation.
     switch (bot->GetClass())
     {
         case CLASS_WARRIOR:
             profile = pvp ? std::array<uint8, 6>{ 2, 1, 1, 1, 1, 2 } :
-                (tank ? std::array<uint8, 6>{ 1, 2, 1, 1, 2, 1 } :
-                        std::array<uint8, 6>{ 1, 2, 1, 2, 2, 1 });
+                (tank ? std::array<uint8, 6>{ 1, 1, 2, 1, 2, 1 } :
+                        std::array<uint8, 6>{ 1, 1, 2, 0, 2, 1 });
             break;
         case CLASS_PALADIN:
             profile = pvp ? std::array<uint8, 6>{ 0, 1, 2, 2, 1, 0 } :
-                (healer ? std::array<uint8, 6>{ 2, 1, 1, 2, 1, 0 } :
-                 tank ? std::array<uint8, 6>{ 2, 2, 2, 1, 2, 1 } :
-                        std::array<uint8, 6>{ 1, 2, 2, 1, 2, 2 });
+                (healer ? std::array<uint8, 6>{ 2, 0, 1, 1, 1, 0 } :
+                 tank ? std::array<uint8, 6>{ 2, 0, 2, 1, 2, 2 } :
+                        std::array<uint8, 6>{ 2, 0, 2, 1, 2, 2 });
             break;
         case CLASS_HUNTER:
             profile = pvp ? std::array<uint8, 6>{ 1, 2, 0, 2, 1, 2 } :
-                            std::array<uint8, 6>{ 2, 1, 1, 2, 0, 0 };
+                            std::array<uint8, 6>{ 2, 0, 1, 2, 0, 0 };
             break;
         case CLASS_ROGUE:
             profile = pvp ? std::array<uint8, 6>{ 1, 2, 0, 1, 0, 1 } :
@@ -689,38 +688,36 @@ uint8 GetManagedTalentProfileColumn(Player* bot, uint8 row,
             break;
         case CLASS_PRIEST:
             profile = pvp ? std::array<uint8, 6>{ 1, 2, 1, 1, 1, 1 } :
-                (healer ? std::array<uint8, 6>{ 2, 1, 0, 2, 2, 1 } :
-                          std::array<uint8, 6>{ 2, 1, 2, 2, 0, 2 });
+                (healer ? std::array<uint8, 6>{ 0, 0, 0, 2, 0, 0 } :
+                          std::array<uint8, 6>{ 0, 0, 2, 2, 0, 0 });
             break;
         case CLASS_DEATH_KNIGHT:
             profile = pvp ? std::array<uint8, 6>{ 2, 1, 2, 1, 0, 2 } :
-                (tank ? std::array<uint8, 6>{ 0, 2, 1, 0, 1, 1 } :
-                        std::array<uint8, 6>{ 1, 1, 1, 0, 2, 1 });
+                (bot->GetSpecialization() == SPEC_DEATH_KNIGHT_UNHOLY ?
+                    std::array<uint8, 6>{ 0, 2, 0, 0, 2, 1 } :
+                    std::array<uint8, 6>{ 0, 2, 0, 0, 1, 1 });
             break;
         case CLASS_SHAMAN:
             profile = pvp ? std::array<uint8, 6>{ 2, 2, 2, 0, 1, 1 } :
-                (healer ? std::array<uint8, 6>{ 2, 2, 1, 1, 0, 1 } :
-                          std::array<uint8, 6>{ 2, 2, 1, 0, 1, 2 });
+                (healer ? std::array<uint8, 6>{ 0, 2, 1, 1, 0, 1 } :
+                          std::array<uint8, 6>{ 0, 2, 1, 2, 0, 1 });
             break;
         case CLASS_MAGE:
             profile = pvp ? std::array<uint8, 6>{ 2, 2, 2, 0, 1, 2 } :
-                            std::array<uint8, 6>{ 1, 1, 1, 1, 0, 0 };
+                            std::array<uint8, 6>{ 0, 1, 1, 1,
+                                uint8(bot->GetSpecialization() == SPEC_MAGE_ARCANE ? 0 : 1), 1 };
             break;
         case CLASS_WARLOCK:
             profile = pvp ? std::array<uint8, 6>{ 2, 1, 2, 2, 1, 0 } :
-                            std::array<uint8, 6>{ 1, 1, 1, 1, 0, 1 };
+                            std::array<uint8, 6>{ 1, 2, 0, 2, 0, 1 };
             break;
         case CLASS_MONK:
             profile = pvp ? std::array<uint8, 6>{ 1, 0, 2, 0, 2, 1 } :
-                (healer ? std::array<uint8, 6>{ 1, 0, 1, 0, 0, 0 } :
-                 tank ? std::array<uint8, 6>{ 2, 0, 1, 2, 1, 1 } :
-                        std::array<uint8, 6>{ 1, 0, 1, 2, 1, 1 });
+                            std::array<uint8, 6>{ 0, 0, 1, 2, 0, 1 };
             break;
         case CLASS_DRUID:
             profile = pvp ? std::array<uint8, 6>{ 1, 1, 0, 2, 2, 0 } :
-                (healer ? std::array<uint8, 6>{ 1, 2, 1, 0, 1, 1 } :
-                 tank ? std::array<uint8, 6>{ 2, 2, 1, 0, 1, 0 } :
-                        std::array<uint8, 6>{ 2, 1, 1, 0, 1, 2 });
+                            std::array<uint8, 6>{ 0, 0, 1, 0, 2, 0 };
             break;
         default:
             profile = { 0, 0, 0, 0, 0, 0 };
@@ -728,6 +725,37 @@ uint8 GetManagedTalentProfileColumn(Player* bot, uint8 row,
     }
 
     return profile[row];
+}
+
+std::array<uint32, 3> GetManagedPveMajorGlyphSpells(Player* bot)
+{
+    bool const healer = PlayerBotSpec::IsHeal(bot, true);
+    switch (bot->GetClass())
+    {
+        case CLASS_WARRIOR: return {58098, 58382,
+            uint32(PlayerBotSpec::IsTank(bot, true) ? 58388 : 58372)};
+        case CLASS_PALADIN:
+            if (healer) return {57955, 63218, 54939};
+            if (PlayerBotSpec::IsTank(bot, true)) return {54924, 54936, 54939};
+            return {54926, 54936, 63220};
+        case CLASS_HUNTER: return {20895, 56850, 56844};
+        case CLASS_ROGUE: return {56804, 63269, 56811};
+        case CLASS_PRIEST: return healer ? std::array<uint32, 3>{14771, 89489, 55685} :
+            std::array<uint32, 3>{14771, 55686, 120585};
+        case CLASS_DEATH_KNIGHT: return {58623, 146648, 58673};
+        case CLASS_SHAMAN: return healer ? std::array<uint32, 3>{55436, 55456, 55440} :
+            std::array<uint32, 3>{55447, 55456, 55449};
+        case CLASS_MAGE: return {56380, 115723, uint32(bot->GetSpecialization() == SPEC_MAGE_FROST ?
+            63090 : bot->GetSpecialization() == SPEC_MAGE_FIRE ? 56368 : 62210)};
+        case CLASS_WARLOCK: return {56218, 56224, 56231};
+        case CLASS_MONK: return {120479, 120482, uint32(healer ? 123334 : 146953)};
+        case CLASS_DRUID:
+            if (healer) return {54733, 17076, 54825};
+            if (bot->GetSpecialization() == SPEC_DRUID_FERAL) return {47180, 114300, 54733};
+            if (bot->GetSpecialization() == SPEC_DRUID_GUARDIAN) return {54733, 114222, 114223};
+            return {54733, 146655, 114222};
+        default: return {};
+    }
 }
 
 int32 GetPlayerbotTalentScore(Player* bot, TalentEntry const* talent,
@@ -749,11 +777,9 @@ int32 GetPlayerbotTalentScore(Player* bot, TalentEntry const* talent,
         talent->Row, mode);
     score += talent->Col == preferredColumn ? 300 :
         ((talent->Col + 1) % 3 == preferredColumn ? 200 : 100);
-    // Rogue's generic effect score used to favour unused ranged/control
-    // talents over its supported PvE profile (notably Throw replacement's
-    // +10000 score). Make this audited profile authoritative for PvE only.
-    if (bot->GetClass() == CLASS_ROGUE &&
-        mode == BotFactory::ManagedLoadoutMode::Pve &&
+    // Generic scores rewarded spell replacements/control even if the selected
+    // PvE rotation never used them. Keep the old scoring policy for PvP.
+    if (mode == BotFactory::ManagedLoadoutMode::Pve &&
         talent->Col == preferredColumn)
         score += 1000000;
     return score;
@@ -946,6 +972,12 @@ void BotFactory::InitGlyphsForMode(ManagedLoadoutMode mode)
 
                 SpellInfo const* glyphEffect =
                     sSpellMgr->GetSpellInfo(glyph->SpellId);
+                if (mode == ManagedLoadoutMode::Pve && glyph->TypeFlags == 0)
+                {
+                    auto const allowed = GetManagedPveMajorGlyphSpells(bot);
+                    if (std::find(allowed.begin(), allowed.end(), glyph->SpellId) == allowed.end())
+                        continue;
+                }
                 if (bot->GetClass() == CLASS_ROGUE && mode == ManagedLoadoutMode::Pve)
                 {
                     // Major: Feint, Cloak of Shadows, Sprint. Minor: Safe

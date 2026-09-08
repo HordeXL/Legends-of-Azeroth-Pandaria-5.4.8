@@ -35,6 +35,12 @@ AffliWarlockStrategy::AffliWarlockStrategy(PlayerbotAI* botAI) : GenericWarlockS
 
 NextAction** AffliWarlockStrategy::getDefaultActions()
 {
+    if (botAI->IsGroupPveActivity())
+        return NextAction::array(0,
+            new NextAction("dark soul: misery", ACTION_NORMAL + 2),
+            new NextAction("haunt", ACTION_DEFAULT + 2),
+            new NextAction("malefic grasp", ACTION_DEFAULT + 1),
+            new NextAction("fel flame", ACTION_DEFAULT), nullptr);
     return NextAction::array(0,
         new NextAction("dark soul: misery", ACTION_DEFAULT + 0.5f),
         new NextAction("haunt", ACTION_DEFAULT + 0.4f),

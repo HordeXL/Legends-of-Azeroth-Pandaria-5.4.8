@@ -99,6 +99,9 @@ NextAction** FrostMageStrategy::getDefaultActions()
 void FrostMageStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 {
     GenericMageStrategy::InitTriggers(triggers);
+    if (botAI->IsGroupPveActivity())
+        triggers.push_back(new TriggerNode("living bomb", NextAction::array(0,
+            new NextAction("living bomb", 19.0f), nullptr)));
     triggers.push_back(new TriggerNode("icy veins", NextAction::array(0, new NextAction("icy veins", 50.0f), nullptr)));
 
     triggers.push_back(new TriggerNode("no pet", NextAction::array(0, new NextAction("summon water elemental", ACTION_HIGH), nullptr)));

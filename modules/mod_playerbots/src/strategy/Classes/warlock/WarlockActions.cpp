@@ -7,6 +7,23 @@
 
 #include "Event.h"
 #include "Playerbots.h"
+#include "DynamicObject.h"
+
+bool CastRainOfFireAction::isUseful()
+{
+    if (botAI->IsGroupPveActivity())
+    {
+        Unit* target = GetTarget();
+        if (!target) return false;
+        std::list<DynamicObject*> areas;
+        bot->GetDynObjectList(areas, 5740);
+        bot->GetDynObjectList(areas, 104232);
+        for (DynamicObject* area : areas)
+            if (area && area->IsWithinDistInMap(target, 8.0f))
+                return false;
+    }
+    return CastSpellAction::isUseful();
+}
 
 namespace
 {
@@ -99,6 +116,9 @@ bool CastHandOfGuldanAction::Execute(Event event)
 
 bool CastChaosBoltAction::isUseful()
 {
+	if (botAI->IsGroupPveActivity())
+		return !bot->HasAura(108683) && bot->GetPower(POWER_BURNING_EMBERS) >= 10 &&
+			CastSpellAction::isUseful();
 	return botAI->HasAura("fire and brimstone", bot) || bot->GetPower(Powers::POWER_BURNING_EMBERS) >= 10;
 }
 bool CastIncinerateAction::Execute(Event event)

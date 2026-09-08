@@ -195,6 +195,7 @@ public:
         creators["living bomb"] = &MageAiObjectContextInternal::living_bomb;
         creators["living bomb on attackers"] = &MageAiObjectContextInternal::living_bomb_on_attackers;
         creators["flamestrike"] = &MageAiObjectContextInternal::flamestrike;
+        creators["pve combustion"] = [](PlayerbotAI* ai) -> Action* { return new CastCombustionAction(ai); };
         
 
         // -- frost specific talent or spec

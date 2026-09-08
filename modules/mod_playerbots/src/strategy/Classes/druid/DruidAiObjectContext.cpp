@@ -130,6 +130,8 @@ public:
         creators["thorns"] = &DruidAiObjectContextInternal::thorns;
         creators["thorns on party"] = &DruidAiObjectContextInternal::thorns_on_party;
         creators["thorns on main tank"] = &DruidAiObjectContextInternal::thorns_on_main_tank;
+        creators["pve savage defense"] = [](PlayerbotAI* ai) -> Action* { return new CastBuffSpellAction(ai, "savage defense"); };
+        creators["pve thrash"] = [](PlayerbotAI* ai) -> Action* { return new CastMeleeDebuffSpellAction(ai, "thrash", true, 0.0f); };
         creators["cure poison"] = &DruidAiObjectContextInternal::cure_poison;
         creators["cure poison on party"] = &DruidAiObjectContextInternal::cure_poison_on_party;
         creators["abolish poison"] = &DruidAiObjectContextInternal::abolish_poison;

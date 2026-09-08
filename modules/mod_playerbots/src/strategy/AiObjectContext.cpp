@@ -13,6 +13,7 @@
 #include "SharedValueContext.h"
 #include "StrategyContext.h"
 #include "TriggerContext.h"
+#include "PveRotationTriggerContext.h"
 #include "ValueContext.h"
 #include "WorldPacketActionContext.h"
 #include "WorldPacketTriggerContext.h"
@@ -29,6 +30,7 @@ AiObjectContext::AiObjectContext(PlayerbotAI* botAI) : PlayerbotAIAware(botAI)
 
     triggerContexts.Add(new TriggerContext());
     triggerContexts.Add(new WorldPacketTriggerContext());
+    triggerContexts.Add(new PveRotationTriggerContext());
 
     valueContexts.Add(new ValueContext());
     valueContexts.Add(sSharedValueContext);

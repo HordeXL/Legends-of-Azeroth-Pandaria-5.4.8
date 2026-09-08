@@ -131,6 +131,10 @@ NextAction** CasterDruidStrategy::getDefaultActions()
 void CasterDruidStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 {
     GenericDruidStrategy::InitTriggers(triggers);
+    triggers.push_back(new TriggerNode("pve lunar filler", NextAction::array(0,
+        new NextAction("starsurge", ACTION_NORMAL + 2), new NextAction("starfire", ACTION_NORMAL + 1), nullptr)));
+    triggers.push_back(new TriggerNode("pve solar filler", NextAction::array(0,
+        new NextAction("starsurge", ACTION_NORMAL + 2), new NextAction("wrath", ACTION_NORMAL + 1), nullptr)));
 
     // triggers.push_back(new TriggerNode("enemy out of spell", NextAction::array(0, new NextAction("reach spell",
     // ACTION_MOVE), nullptr)));

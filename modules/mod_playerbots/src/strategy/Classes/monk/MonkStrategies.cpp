@@ -20,6 +20,12 @@ NextAction** BrewmasterMonkStrategy::getDefaultActions()
 
 void BrewmasterMonkStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 {
+    triggers.push_back(new TriggerNode("pve purify stagger", NextAction::array(0,
+        new NextAction("purifying brew", ACTION_EMERGENCY + 3), nullptr)));
+    triggers.push_back(new TriggerNode("pve chi wave", NextAction::array(0,
+        new NextAction("pve chi wave", ACTION_NORMAL + 1), nullptr)));
+    triggers.push_back(new TriggerNode("pve xuen", NextAction::array(0,
+        new NextAction("pve xuen", ACTION_NORMAL + 2), nullptr)));
     MeleeCombatStrategy::InitTriggers(triggers);
     triggers.push_back(new TriggerNode("spear hand strike",
         NextAction::array(0, new NextAction("spear hand strike", ACTION_INTERRUPT), nullptr)));
@@ -49,6 +55,12 @@ NextAction** WindwalkerMonkStrategy::getDefaultActions()
 
 void WindwalkerMonkStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 {
+    triggers.push_back(new TriggerNode("pve tiger power", NextAction::array(0,
+        new NextAction("tiger palm", ACTION_HIGH + 3), nullptr)));
+    triggers.push_back(new TriggerNode("pve chi wave", NextAction::array(0,
+        new NextAction("pve chi wave", ACTION_NORMAL + 1), nullptr)));
+    triggers.push_back(new TriggerNode("pve xuen", NextAction::array(0,
+        new NextAction("pve xuen", ACTION_NORMAL + 2), nullptr)));
     MeleeCombatStrategy::InitTriggers(triggers);
     triggers.push_back(new TriggerNode("spear hand strike",
         NextAction::array(0, new NextAction("spear hand strike", ACTION_INTERRUPT), nullptr)));
@@ -76,6 +88,8 @@ NextAction** MistweaverMonkStrategy::getDefaultActions()
 
 void MistweaverMonkStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 {
+    triggers.push_back(new TriggerNode("group heal setting", NextAction::array(0,
+        new NextAction("pve chi wave on party", ACTION_MEDIUM_HEAL + 4), nullptr)));
     CombatStrategy::InitTriggers(triggers);
     triggers.push_back(new TriggerNode("spear hand strike",
         NextAction::array(0, new NextAction("spear hand strike", ACTION_INTERRUPT), nullptr)));

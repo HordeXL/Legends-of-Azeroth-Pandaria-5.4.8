@@ -92,6 +92,14 @@ NextAction** UnholyDKStrategy::getDefaultActions()
 void UnholyDKStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 {
     GenericDKStrategy::InitTriggers(triggers);
+    // MoP Unholy still needs both diseases; the old rune/cooldown trigger
+    // names below are not a replacement for applying missing diseases.
+    triggers.push_back(new TriggerNode("icy touch", NextAction::array(0,
+        new NextAction("icy touch", ACTION_HIGH + 2), nullptr)));
+    triggers.push_back(new TriggerNode("plague strike", NextAction::array(0,
+        new NextAction("plague strike", ACTION_HIGH + 2), nullptr)));
+    if (botAI->IsGroupPveActivity())
+        return; // No WotLK ghoul frenzy / Unholy bone shield / old rune triggers.
     triggers.push_back(new TriggerNode(
         "death and decay cooldown", NextAction::array(0, 
             new NextAction("ghoul frenzy", ACTION_DEFAULT + 0.9f),
@@ -135,6 +143,8 @@ void UnholyDKStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 
 void UnholyDKAoeStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 {
+    if (botAI->IsGroupPveActivity())
+        return; // GenericDKStrategy supplies D&D / disease spread / Blood Boil.
     triggers.push_back(new TriggerNode(
         "loot available", NextAction::array(0, new NextAction("corpse explosion", ACTION_NORMAL + 1), nullptr)));
     triggers.push_back(new TriggerNode(

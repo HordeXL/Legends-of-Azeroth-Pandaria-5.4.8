@@ -14,6 +14,16 @@
 #include "Totem.h"
 #include "Timer.h"
 
+bool CastEarthShockAction::isUseful()
+{
+    if (botAI->IsGroupPveActivity() && bot->GetSpecialization() == SPEC_SHAMAN_ELEMENTAL)
+    {
+        Aura* shield = bot->GetAura(324);
+        if (!shield || shield->GetCharges() < 6) return false;
+    }
+    return CastSpellAction::isUseful();
+}
+
 namespace
 {
 constexpr float CoordinatedTotemRadius = 80.0f;
@@ -309,6 +319,10 @@ bool CastFlametongueTotemAction::isUseful()
 
 bool CastSearingTotemAction::isUseful()
 {
+    if (botAI->IsGroupPveActivity())
+        if (Creature* fire = bot->GetMap()->GetCreature(bot->m_SummonSlot[SUMMON_SLOT_TOTEM_FIRE]))
+            if (fire->IsAlive() && fire->GetUInt32Value(UNIT_FIELD_CREATED_BY_SPELL) == 2894)
+                return false; // Protect Fire Elemental, but allow relocating a distant Searing Totem.
     return CastTotemAction::isUseful() && !AI_VALUE2(bool, "has totem", "flametongue totem");
 }
 
@@ -324,6 +338,8 @@ bool CastFireNovaAction::isUseful() {
     Unit* target = AI_VALUE(Unit*, "current target");
     if (!target)
         return false;
+    if (botAI->IsGroupPveActivity())
+        return target->HasAura(8050, bot->GetGUID()) && CastMeleeSpellAction::isUseful();
     Creature* fireTotem = bot->GetMap()->GetCreature(bot->m_SummonSlot[1]);
     if (!fireTotem)
         return false;

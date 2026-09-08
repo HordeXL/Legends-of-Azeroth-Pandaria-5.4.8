@@ -151,12 +151,16 @@ NextAction** BearTankDruidStrategy::getDefaultActions()
 void BearTankDruidStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 {
     FeralDruidStrategy::InitTriggers(triggers);
+    triggers.push_back(new TriggerNode("pve savage defense", NextAction::array(0,
+        new NextAction("pve savage defense", ACTION_HIGH + 7), nullptr)));
+    triggers.push_back(new TriggerNode("pve medium aoe", NextAction::array(0,
+        new NextAction("pve thrash", ACTION_HIGH + 6.5f), nullptr)));
     triggers.push_back(new TriggerNode(
         "enemy out of melee", NextAction::array(0, new NextAction("feral charge - bear", ACTION_NORMAL + 8), nullptr)));
     // triggers.push_back(new TriggerNode("thorns", NextAction::array(0, new NextAction("thorns", ACTION_HIGH + 9),
     // nullptr)));
     triggers.push_back(
-        new TriggerNode("bear form", NextAction::array(0, new NextAction("dire bear form", ACTION_HIGH + 8), nullptr)));
+        new TriggerNode("bear form", NextAction::array(0, new NextAction("bear form", ACTION_HIGH + 8), nullptr)));
     triggers.push_back(new TriggerNode(
         "low health", NextAction::array(0, new NextAction("frenzied regeneration", ACTION_HIGH + 7), nullptr)));
     triggers.push_back(new TriggerNode(

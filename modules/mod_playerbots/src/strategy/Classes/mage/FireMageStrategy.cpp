@@ -86,6 +86,8 @@ NextAction** FireMageStrategy::getDefaultActions()
 void FireMageStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 {
     GenericMageStrategy::InitTriggers(triggers);
+    triggers.push_back(new TriggerNode("pve combustion", NextAction::array(0,
+        new NextAction("pve combustion", 50.0f), nullptr)));
 
     triggers.push_back(new TriggerNode("medium health", NextAction::array(0, new NextAction("ice barrier", ACTION_NORMAL), nullptr)));
     triggers.push_back(new TriggerNode("heating up", NextAction::array(0, new NextAction("inferno blast", ACTION_INTERRUPT), nullptr)));

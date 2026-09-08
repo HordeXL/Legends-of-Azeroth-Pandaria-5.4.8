@@ -181,6 +181,8 @@ public:
         creators["chastise"] = &PriestAiObjectContextInternal::chastise;
         creators["shadow word: death"] = &PriestAiObjectContextInternal::shadow_word_death;
         creators["shadowfiend"] = &PriestAiObjectContextInternal::shadowfiend;
+        creators["pve cascade"] = [](PlayerbotAI* ai) -> Action* { return new CastSpellAction(ai, "cascade"); };
+        creators["pve cascade on party"] = [](PlayerbotAI* ai) -> Action* { return new HealPartyMemberAction(ai, "cascade"); };
         creators["mass dispel"] = &PriestAiObjectContextInternal::mass_dispel;
         creators["pain suppression"] = &PriestAiObjectContextInternal::pain_suppression;
         creators["pain suppression on party"] = &PriestAiObjectContextInternal::pain_suppression_on_party;

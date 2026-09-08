@@ -96,6 +96,7 @@ class CastRainOfFireAction : public CastSpellAction
 {
 public:
     CastRainOfFireAction(PlayerbotAI* botAI) : CastSpellAction(botAI, "rain of fire") {}
+    bool isUseful() override;
     ActionThreatType getThreatType() override { return ActionThreatType::Aoe; }
 };
 class CastFearAction : public CastDebuffSpellAction
@@ -185,7 +186,8 @@ public:
     CastSeedOfCorruptionAction(PlayerbotAI* botAI) : CastDebuffSpellAction(botAI, "seed of corruption", true, 0) {}
     bool isUseful() override
     {
-        return CastDebuffSpellAction::isUseful() && !botAI->HasAura("corruption", GetTarget(), false, true);
+        return CastDebuffSpellAction::isUseful() && (botAI->IsGroupPveActivity() ||
+            !botAI->HasAura("corruption", GetTarget(), false, true));
     }
     ActionThreatType getThreatType() override { return ActionThreatType::Aoe; }
 };
@@ -199,7 +201,8 @@ public:
     }
     bool isUseful() override
     {
-        return CastDebuffSpellOnAttackerAction::isUseful() && !botAI->HasAura("corruption", GetTarget(), false, true);
+        return CastDebuffSpellOnAttackerAction::isUseful() && (botAI->IsGroupPveActivity() ||
+            !botAI->HasAura("corruption", GetTarget(), false, true));
     }
     ActionThreatType getThreatType() override { return ActionThreatType::Aoe; }
 };

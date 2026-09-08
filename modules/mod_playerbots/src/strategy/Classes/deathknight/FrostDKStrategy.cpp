@@ -100,7 +100,7 @@ void FrostDKStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
     GenericDKStrategy::InitTriggers(triggers);
 
     triggers.push_back(new TriggerNode(
-        "freezing fog", NextAction::array(0, new NextAction("howling blast", ACTION_DEFAULT + 0.5f), nullptr)));
+        "freezing fog", NextAction::array(0, new NextAction("howling blast", ACTION_NORMAL + 1), nullptr)));
 
     triggers.push_back(new TriggerNode(
         "army of the dead", NextAction::array(0, new NextAction("army of the dead", ACTION_HIGH + 6), nullptr)));

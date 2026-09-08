@@ -40,6 +40,13 @@ DemonoWarlockStrategy::DemonoWarlockStrategy(PlayerbotAI* botAI) : GenericWarloc
 
 NextAction** DemonoWarlockStrategy::getDefaultActions()
 {
+    if (botAI->IsGroupPveActivity())
+        return NextAction::array(0,
+            new NextAction("dark soul: knowledge", ACTION_DEFAULT + 0.9f),
+            new NextAction("hand of guldan", ACTION_DEFAULT + 0.7f),
+            new NextAction("doom", ACTION_DEFAULT + 0.6f),
+            new NextAction("touch of chaos", ACTION_DEFAULT + 0.3f),
+            new NextAction("shadow bolt", ACTION_DEFAULT), nullptr);
     return NextAction::array(0,
         new NextAction("dark soul: knowledge", ACTION_DEFAULT + 0.9f),
         new NextAction("hand of guldan", ACTION_DEFAULT + 0.7f),

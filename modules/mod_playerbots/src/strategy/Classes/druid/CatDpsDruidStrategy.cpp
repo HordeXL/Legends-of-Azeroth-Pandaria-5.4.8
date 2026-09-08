@@ -128,6 +128,16 @@ NextAction** CatDpsDruidStrategy::getDefaultActions()
 void CatDpsDruidStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 {
     FeralDruidStrategy::InitTriggers(triggers);
+    triggers.push_back(new TriggerNode("pve feral build", NextAction::array(0,
+        new NextAction("shred", ACTION_DEFAULT + 0.4f), new NextAction("mangle (cat)", ACTION_DEFAULT + 0.3f), nullptr)));
+    triggers.push_back(new TriggerNode("pve feral rip", NextAction::array(0,
+        new NextAction("rip", ACTION_HIGH + 6), nullptr)));
+    triggers.push_back(new TriggerNode("pve feral bite", NextAction::array(0,
+        new NextAction("ferocious bite", ACTION_HIGH + 5), nullptr)));
+    triggers.push_back(new TriggerNode("pve feral roar", NextAction::array(0,
+        new NextAction("savage roar", ACTION_HIGH + 7), nullptr)));
+    triggers.push_back(new TriggerNode("pve medium aoe", NextAction::array(0,
+        new NextAction("pve thrash", ACTION_HIGH + 3.5f), nullptr)));
 
     // Default priority
     triggers.push_back(new TriggerNode("almost full energy available",

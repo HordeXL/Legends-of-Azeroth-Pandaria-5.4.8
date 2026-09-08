@@ -10,6 +10,9 @@
 
 void CombatStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 {
+    for (char const* dispel : {"pve dispel magic", "pve dispel curse", "pve dispel poison", "pve dispel disease"})
+        triggers.push_back(new TriggerNode(dispel, NextAction::array(0,
+            new NextAction(dispel, ACTION_DISPEL), nullptr)));
     triggers.push_back(new TriggerNode("enemy out of spell", NextAction::array(0, new NextAction("reach spell", ACTION_HIGH), nullptr)));
     triggers.push_back(new TriggerNode("invalid target", NextAction::array(0, new NextAction("drop target", 100), nullptr)));
     triggers.push_back(new TriggerNode("mounted", NextAction::array(0, new NextAction("check mount state", 54), nullptr)));

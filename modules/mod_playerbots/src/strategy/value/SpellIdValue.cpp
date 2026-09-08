@@ -13,6 +13,28 @@ VehicleSpellIdValue::VehicleSpellIdValue(PlayerbotAI* botAI) : CalculatedValue<u
 uint32 SpellIdValue::Calculate()
 {
     std::string namepart = qualifier;
+    // Strategy/action labels inherited from older cores are not always the
+    // actual English spellbook names in the shipped 5.4.8 DBC. Resolve only
+    // real renames here; the learned/active spell checks below still apply.
+    static std::map<std::string, std::string> const mopSpellNames = {
+        {"anti magic shell", "anti-magic shell"},
+        {"anti magic zone", "anti-magic zone"},
+        {"mangle (cat)", "mangle"}, {"mangle (bear)", "mangle"},
+        {"swipe (cat)", "swipe"}, {"swipe (bear)", "swipe"},
+        {"faerie fire (feral)", "faerie fire"},
+        {"judgement", "judgment"},
+        {"shield of righteousness", "shield of the righteous"},
+        {"hand of reckoning", "reckoning"},
+        {"hand of guldan", "hand of gul'dan"},
+        {"dragonroar", "dragon roar"},
+        {"remove lesser curse", "remove curse"}
+    };
+    if (auto const alias = mopSpellNames.find(namepart); alias != mopSpellNames.end())
+        namepart = alias->second;
+    if (namepart == "aspect of the hawk" && bot->HasSpell(109260))
+        namepart = "aspect of the iron hawk";
+    if (namepart.empty())
+        return 0;
     //ItemIds itemIds = ChatHelper::parseItems(namepart);
 
     PlayerbotChatHandler handler(bot);

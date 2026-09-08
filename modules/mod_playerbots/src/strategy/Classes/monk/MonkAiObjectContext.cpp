@@ -100,6 +100,9 @@ class MonkActionContextInternal : public NamedObjectContext<Action>
 public:
     MonkActionContextInternal()
     {
+        creators["pve chi wave"] = [](PlayerbotAI* ai) -> Action* { return new CastSpellAction(ai, "chi wave"); };
+        creators["pve chi wave on party"] = [](PlayerbotAI* ai) -> Action* { return new HealPartyMemberAction(ai, "chi wave"); };
+        creators["pve xuen"] = [](PlayerbotAI* ai) -> Action* { return new CastSpellAction(ai, "invoke xuen, the white tiger"); };
         creators["stance of the fierce tiger"] = &MonkActionContextInternal::fierce_tiger_stance;
         creators["stance of the sturdy ox"] = &MonkActionContextInternal::sturdy_ox_stance;
         creators["stance of the wise serpent"] = &MonkActionContextInternal::wise_serpent_stance;

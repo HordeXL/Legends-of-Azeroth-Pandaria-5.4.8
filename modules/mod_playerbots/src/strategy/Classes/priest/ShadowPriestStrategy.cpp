@@ -24,6 +24,8 @@ NextAction** ShadowPriestStrategy::getDefaultActions()
 void ShadowPriestStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 {
     GenericPriestStrategy::InitTriggers(triggers);
+    triggers.push_back(new TriggerNode("pve cascade", NextAction::array(0,
+        new NextAction("pve cascade", ACTION_NORMAL + 1), nullptr)));
 
     // triggers.push_back(new TriggerNode("enemy out of spell", NextAction::array(0, new NextAction("reach spell",
     // ACTION_MOVE + 9), nullptr)));

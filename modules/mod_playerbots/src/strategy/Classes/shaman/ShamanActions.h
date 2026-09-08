@@ -371,6 +371,7 @@ class CastEarthShockAction : public CastSpellAction
 {
 public:
     CastEarthShockAction(PlayerbotAI* botAI) : CastSpellAction(botAI, "earth shock") {}
+    bool isUseful() override;
 };
 
 class CastFrostShockAction : public CastSnareSpellAction

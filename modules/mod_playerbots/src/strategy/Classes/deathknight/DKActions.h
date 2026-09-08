@@ -87,6 +87,7 @@ class CastPestilenceAction : public CastSpellAction
 {
 public:
     CastPestilenceAction(PlayerbotAI* ai) : CastSpellAction(ai, "pestilence") {}
+    bool isUseful() override;
     ActionThreatType getThreatType() override { return ActionThreatType::None; }
 };
 

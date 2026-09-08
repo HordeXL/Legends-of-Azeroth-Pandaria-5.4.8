@@ -39,7 +39,7 @@ class CastSavageRoarAction : public CastBuffSpellAction
 {
 public:
     CastSavageRoarAction(PlayerbotAI* botAI) : CastBuffSpellAction(botAI, "savage roar") {}
-    std::string const GetTargetName() override { return "current target"; }
+    std::string const GetTargetName() override { return botAI->IsGroupPveActivity() ? "self target" : "current target"; }
 };
 
 class CastRakeAction : public CastDebuffSpellAction

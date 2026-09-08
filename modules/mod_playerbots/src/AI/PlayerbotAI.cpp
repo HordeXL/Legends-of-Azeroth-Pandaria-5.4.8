@@ -2542,6 +2542,22 @@ bool ShouldDelayGroupPveAoe(PlayerbotAI* botAI, Player* bot,
         }
     };
     inspectAreaEffects(inspectAreaEffects, spellInfo, 0);
+    // These MoP abilities select further victims in C++ scripts rather than
+    // DBC TriggerSpell/ChainTarget. Check their complete possible reach too,
+    // including Chi Wave / Holy Prism initially cast on a friendly player.
+    bool scriptedArea = false;
+    switch (spellInfo->Id)
+    {
+        case 117050: effectRadius = std::max(effectRadius, 40.0f); scriptedArea = true; break; // Glaive Toss path
+        case 115098: effectRadius = std::max(effectRadius, 175.0f); scriptedArea = true; break; // 7 Chi Wave jumps
+        case 114165: effectRadius = std::max(effectRadius, 15.0f); scriptedArea = true; break; // Holy Prism
+        case 121135: case 127632: // Cascade: friendly initial target remains healing-only.
+            if (bot->IsValidAttackTarget(spellTarget))
+            { effectRadius = std::max(effectRadius, 120.0f); scriptedArea = true; }
+            break;
+        default: break;
+    }
+    harmfulAreaEffect = harmfulAreaEffect || scriptedArea;
     if (!harmfulAreaEffect)
         return false;
 
@@ -2560,7 +2576,8 @@ bool ShouldDelayGroupPveAoe(PlayerbotAI* botAI, Player* bot,
     // idle enemies that an area spell could accidentally pull. Visit the live
     // neighbourhood, including neutral attackable NPCs and extended radii
     // (CalcRadius above applies spell mods such as Mannoroth's Fury).
-    Position const* areaCenter = destination ? destination : static_cast<Position const*>(center);
+    Position const* areaCenter = destination ? destination :
+        static_cast<Position const*>(scriptedArea ? spellTarget : center);
     float const searchRange = bot->GetExactDist(areaCenter) + effectRadius + 5.0f;
     std::list<Unit*> nearbyUnits;
     Trinity::AnyUnfriendlyUnitInObjectRangeCheck check(bot, bot, searchRange);
@@ -3387,8 +3404,9 @@ bool PlayerbotAI::CastSpell(uint32 spellId, Unit* target, Item* itemTarget)
     SpellCastTargets targets;
     if (spellInfo->Targets & TARGET_FLAG_ITEM)
     {
-        //spell->m_CastItem = itemTarget ? itemTarget : aiObjectContext->GetValue<Item*>("item for spell", spellId)->Get();
-        targets.SetItemTarget(spell->m_CastItem);
+        // The weapon being enchanted is the target, not the consumable which
+        // casts a spell. Do not discard an explicitly supplied item target.
+        targets.SetItemTarget(itemTarget);
 
         if (bot->GetTradeData())
         {

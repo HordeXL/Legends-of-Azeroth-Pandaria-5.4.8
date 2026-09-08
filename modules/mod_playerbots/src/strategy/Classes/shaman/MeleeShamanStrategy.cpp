@@ -60,6 +60,10 @@ NextAction** MeleeShamanStrategy::getDefaultActions()
 void MeleeShamanStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 {
     GenericShamanStrategy::InitTriggers(triggers);
+    triggers.push_back(new TriggerNode("pve searing totem", NextAction::array(0,
+        new NextAction("searing totem", ACTION_NORMAL + 1), nullptr)));
+    triggers.push_back(new TriggerNode("pve maelstrom five", NextAction::array(0,
+        new NextAction("lightning bolt", 25.0f), nullptr)));
 
     // triggers.push_back(new TriggerNode("shaman weapon", NextAction::array(0, new NextAction("flametongue
     // weapon", 22.0f), nullptr)));

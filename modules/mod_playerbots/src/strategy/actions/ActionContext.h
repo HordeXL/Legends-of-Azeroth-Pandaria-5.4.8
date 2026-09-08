@@ -13,6 +13,7 @@
 #include "RandomBotUpdateAction.h"
 #include "ReachTargetActions.h"
 #include "StayActions.h"
+#include "PveDispelAction.h"
 
 class PlayerbotAI;
 class ActionContext : public NamedObjectContext<Action>
@@ -20,6 +21,10 @@ class ActionContext : public NamedObjectContext<Action>
 public:
     ActionContext()
     {
+        creators["pve dispel magic"] = [](PlayerbotAI* ai) -> Action* { return new PveDispelAction(ai, DISPEL_MAGIC); };
+        creators["pve dispel curse"] = [](PlayerbotAI* ai) -> Action* { return new PveDispelAction(ai, DISPEL_CURSE); };
+        creators["pve dispel poison"] = [](PlayerbotAI* ai) -> Action* { return new PveDispelAction(ai, DISPEL_POISON); };
+        creators["pve dispel disease"] = [](PlayerbotAI* ai) -> Action* { return new PveDispelAction(ai, DISPEL_DISEASE); };
         creators["say hello"] = &ActionContext::hello;
         creators["move random"] = &ActionContext::move_random;
         creators["battleground objective"] = &ActionContext::battleground_objective;

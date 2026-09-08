@@ -94,6 +94,8 @@ NextAction** BloodDKStrategy::getDefaultActions()
 void BloodDKStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 {
     GenericDKStrategy::InitTriggers(triggers);
+    triggers.push_back(new TriggerNode("bone shield", NextAction::array(0,
+        new NextAction("bone shield", ACTION_HIGH + 4), nullptr)));
 
     triggers.push_back(new TriggerNode(
         "rune strike", NextAction::array(0, new NextAction("rune strike", ACTION_NORMAL + 3), nullptr)));
