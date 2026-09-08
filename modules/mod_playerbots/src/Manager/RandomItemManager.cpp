@@ -1,6 +1,7 @@
 ﻿#include "RandomItemManager.h"
 
 #include "Player.h"
+#include "ManagedPveEquipmentPolicy.h"
 #include "PlayerbotSpec.h"
 #include "SpellMgr.h"
 
@@ -40,6 +41,12 @@ void InspectTrinketSpell(uint32 spellId, TrinketAffinity& affinity,
     if (!spellInfo)
         return;
 
+    if (ManagedPveEquipmentPolicy::IsHealingProc(spellId))
+    {
+        affinity.caster = true;
+        affinity.healing = true;
+    }
+
     // This 5.4.8 core populates the public Effects array in SpellInfo's
     // constructor. The newer _effects/GetEffects storage remains empty, so
     // using it silently misses proc chains such as Bad Juju -> Agility.
@@ -66,6 +73,10 @@ void InspectTrinketSpell(uint32 spellId, TrinketAffinity& affinity,
                         break;
                     case STAT_INTELLECT:
                         affinity.primaryMask |= TRINKET_PRIMARY_INTELLECT;
+                        break;
+                    case STAT_SPIRIT:
+                        affinity.caster = true;
+                        affinity.healing = true;
                         break;
                     default:
                         break;

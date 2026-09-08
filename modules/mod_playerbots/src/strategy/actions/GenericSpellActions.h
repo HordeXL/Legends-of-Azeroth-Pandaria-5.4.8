@@ -133,6 +133,8 @@ public:
 
     std::string const GetTargetName() override { return "self target"; }
     bool isUseful() override;
+    bool Execute(Event event) override;
+    bool IsHealingRoleAllowed();
     ActionThreatType getThreatType() override { return ActionThreatType::Aoe; }
     // Yunfan: Mana efficiency tell the bot how to save mana. The higher the better.
     HealingManaEfficiency manaEfficiency;

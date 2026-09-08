@@ -17,15 +17,56 @@ BUFF_ACTION(CastStanceOfTheFierceTigerAction, "stance of the fierce tiger");
 BUFF_ACTION(CastStanceOfTheSturdyOxAction, "stance of the sturdy ox");
 BUFF_ACTION(CastStanceOfTheWiseSerpentAction, "stance of the wise serpent");
 MELEE_ACTION(CastJabAction, "jab");
-MELEE_ACTION(CastTigerPalmAction, "tiger palm");
-MELEE_ACTION(CastBlackoutKickAction, "blackout kick");
+class CastTigerPalmAction : public CastMeleeSpellAction
+{
+public:
+    CastTigerPalmAction(PlayerbotAI* ai) : CastMeleeSpellAction(ai, "tiger palm") { }
+    bool isUseful() override
+    {
+        if (botAI->IsGroupPveActivity() && bot->GetSpecialization() == SPEC_MONK_WINDWALKER)
+        {
+            Aura* power = bot->GetAura(125359); // Tiger Power, not the attack ID.
+            if (power && power->GetDuration() > 4000 && !bot->HasAura(118864))
+                return false; // Only refresh, or use a free Combo Breaker.
+        }
+        return CastMeleeSpellAction::isUseful();
+    }
+};
+
+class CastBlackoutKickAction : public CastMeleeSpellAction
+{
+public:
+    CastBlackoutKickAction(PlayerbotAI* ai) : CastMeleeSpellAction(ai, "blackout kick") { }
+    bool isUseful() override
+    {
+        if (botAI->IsGroupPveActivity() && bot->GetSpecialization() == SPEC_MONK_WINDWALKER &&
+            bot->HasSpell(113656) && !bot->HasSpellCooldown(113656) &&
+            bot->GetPower(POWER_CHI) < 3 && !bot->HasAura(116768) &&
+            botAI->IsGroupPveAreaSpellSafe(sSpellMgr->GetSpellInfo(113656), GetTarget()))
+            return false; // Let Jab build 3 Chi instead of spending every 2.
+        return CastMeleeSpellAction::isUseful();
+    }
+};
 MELEE_ACTION(CastRisingSunKickAction, "rising sun kick");
 MELEE_ACTION(CastFistsOfFuryAction, "fists of fury");
 MELEE_ACTION(CastSpearHandStrikeAction, "spear hand strike");
 SPELL_ACTION(CastSpinningCraneKickAction, "spinning crane kick");
 BUFF_ACTION(CastFortifyingBrewAction, "fortifying brew");
 BUFF_ACTION(CastEnergizingBrewAction, "energizing brew");
-BUFF_ACTION(CastTigereyeBrewAction, "tigereye brew");
+class CastTigereyeBrewAction : public CastBuffSpellAction
+{
+public:
+    CastTigereyeBrewAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "tigereye brew") { }
+    bool isUseful() override
+    {
+        if (!botAI->IsGroupPveActivity())
+            return CastBuffSpellAction::isUseful();
+        Aura* stacks = bot->GetAura(125195);
+        // Saved stacks share the damage buff's name, but are not an active buff.
+        return bot->IsInCombat() && stacks && stacks->GetStackAmount() >= 10 &&
+            !bot->HasAura(116740) && CastSpellAction::isUseful();
+    }
+};
 HEAL_ACTION(CastExpelHarmAction, "expel harm");
 
 // Brewmaster actions.
