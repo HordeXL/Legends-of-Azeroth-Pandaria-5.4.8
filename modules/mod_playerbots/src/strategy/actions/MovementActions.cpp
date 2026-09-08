@@ -179,6 +179,27 @@ bool MovementAction::WaitForTankPull(WorldObject* object)
     Group* group = bot->GetGroup(GroupSlot::Instance);
     if (!group)
         group = bot->GetGroup();
+    // Defending a ranged party member must not turn into a long chase into
+    // the next pack. Let the tank collect it; still allow local self-defence
+    // and targets explicitly being attacked by the real requester.
+    if (botAI->IsLfgAutoQueueControlled() && group &&
+        !bot->IsWithinMeleeRange(target) &&
+        (!botAI->GetMaster() || botAI->GetMaster()->GetVictim() != target))
+    {
+        bool hasTank = false;
+        bool nearTank = false;
+        for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+            if (Player* member = ref->GetSource())
+                if (member->IsAlive() && member->IsInWorld() && member->GetMap() == bot->GetMap() &&
+                    PlayerBotSpec::IsTank(member, true))
+                {
+                    hasTank = true;
+                    if (member->GetDistance(target) <= 8.0f)
+                        nearTank = true;
+                }
+        if (hasTank && !nearTank)
+            return true;
+    }
     if (!tank || !tank->IsInWorld() || !tank->IsAlive() ||
         tank->GetMap() != bot->GetMap() || !group ||
         !group->IsMember(tank->GetGUID()) ||

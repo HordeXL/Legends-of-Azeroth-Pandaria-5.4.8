@@ -4,11 +4,41 @@
  */
 
 #include "RogueActions.h"
+#include "RogueFinishingActions.h"
 
 #include "Event.h"
 #include "ObjectGuid.h"
 #include "Player.h"
 #include "Playerbots.h"
+
+namespace
+{
+bool HasRogueFinisherPoints(Player* bot, Unit* target)
+{
+    return target && target->IsAlive() && target == bot->GetComboTarget() &&
+        (bot->GetComboPoints() >= 4 || (bot->GetComboPoints() > 0 && target->GetHealthPct() < 20.0f));
+}
+}
+
+bool CastEviscerateAction::isUseful()
+{
+    return HasRogueFinisherPoints(bot, GetTarget()) && CastMeleeSpellAction::isUseful();
+}
+
+bool CastRuptureAction::isUseful()
+{
+    Unit* target = GetTarget();
+    return target && target == bot->GetComboTarget() && bot->GetComboPoints() >= 4 &&
+        CastDebuffSpellAction::isUseful();
+}
+
+bool CastSliceAndDiceAction::isUseful()
+{
+    Unit* target = AI_VALUE(Unit*, "current target");
+    Aura* aura = bot->GetAura(5171);
+    return target && target->IsAlive() && target == bot->GetComboTarget() && bot->GetComboPoints() > 0 &&
+        (!aura || bot->GetComboPoints() >= 4) && CastBuffSpellAction::isUseful();
+}
 
 bool CastStealthAction::isPossible()
 {

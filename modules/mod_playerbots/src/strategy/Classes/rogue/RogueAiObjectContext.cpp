@@ -59,7 +59,10 @@ class RogueTriggerFactoryInternal : public NamedObjectContext<Trigger>
 public:
     RogueTriggerFactoryInternal()
     {
-
+        creators["combo points available"] = [](PlayerbotAI* ai) -> Trigger* { return new RogueComboPointsTrigger(ai); };
+        creators["target with combo points almost dead"] = [](PlayerbotAI* ai) -> Trigger* { return new RogueComboPointsTrigger(ai, true); };
+        creators["slice and dice"] = [](PlayerbotAI* ai) -> Trigger* { return new RogueSliceAndDiceTrigger(ai); };
+        creators["subtlety builder"] = [](PlayerbotAI* ai) -> Trigger* { return new RogueSubtletyBuilderTrigger(ai); };
     }
 
 private:
@@ -86,6 +89,7 @@ public:
         creators["kick"] = &RogueAiObjectContextInternal::kick;
         creators["feint"] = &RogueAiObjectContextInternal::feint;
         creators["backstab"] = &RogueAiObjectContextInternal::backstab;
+        creators["hemorrhage"] = [](PlayerbotAI* ai) -> Action* { return new CastMeleeSpellAction(ai, "hemorrhage"); };
         creators["expose armor"] = &RogueAiObjectContextInternal::expose_armor;
         creators["kick on enemy healer"] = &RogueAiObjectContextInternal::kick_on_enemy_healer;
         creators["blade flurry"] = &RogueAiObjectContextInternal::blade_flurry;

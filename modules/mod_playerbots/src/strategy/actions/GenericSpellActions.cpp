@@ -219,6 +219,13 @@ bool CastSpellAction::isUseful()
     if (WouldBreakGroupPveCrowdControl(botAI, bot, spellTarget, spell))
         return false;
 
+    if (botAI->IsGroupPveActivity())
+    {
+        uint32 const spellId = AI_VALUE2(uint32, "spell id", spell);
+        if (!botAI->IsGroupPveAreaSpellSafe(sSpellMgr->GetSpellInfo(spellId), spellTarget))
+            return false;
+    }
+
     // float combatReach = bot->GetCombatReach() + spellTarget->GetCombatReach();
     // if (!botAI->IsRanged(bot))
     //     combatReach += 4.0f / 3.0f;

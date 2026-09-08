@@ -61,7 +61,7 @@ private:
     {
         return new ActionNode("backstab",
                               /*P*/ nullptr,
-                              /*A*/ NextAction::array(0, new NextAction("mutilate"), nullptr),
+                              /*A*/ NextAction::array(0, new NextAction("hemorrhage"), new NextAction("mutilate"), nullptr),
                               /*C*/ nullptr);
     }
     static ActionNode* rupture(PlayerbotAI* botAI)
@@ -88,6 +88,10 @@ NextAction** DpsRogueStrategy::getDefaultActions()
 void DpsRogueStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 {
     MeleeCombatStrategy::InitTriggers(triggers);
+
+    triggers.push_back(new TriggerNode("subtlety builder",
+        NextAction::array(0, new NextAction("backstab", ACTION_NORMAL + 5),
+            new NextAction("hemorrhage", ACTION_NORMAL + 4), nullptr)));
 
     triggers.push_back(new TriggerNode("high energy available",
                                        NextAction::array(0, new NextAction("garrote", ACTION_HIGH + 7),

@@ -14,12 +14,14 @@ class CastEviscerateAction : public CastMeleeSpellAction
 {
 public:
     CastEviscerateAction(PlayerbotAI* botAI) : CastMeleeSpellAction(botAI, "eviscerate") {}
+    bool isUseful() override;
 };
 
-class CastSliceAndDiceAction : public CastMeleeSpellAction
+class CastSliceAndDiceAction : public CastBuffSpellAction
 {
 public:
-    CastSliceAndDiceAction(PlayerbotAI* botAI) : CastMeleeSpellAction(botAI, "slice and dice") {}
+    CastSliceAndDiceAction(PlayerbotAI* botAI) : CastBuffSpellAction(botAI, "slice and dice", true, 3000) {}
+    bool isUseful() override;
 };
 
 class CastExposeArmorAction : public CastDebuffSpellAction
@@ -32,6 +34,7 @@ class CastRuptureAction : public CastDebuffSpellAction
 {
 public:
     CastRuptureAction(PlayerbotAI* botAI) : CastDebuffSpellAction(botAI, "rupture", true, 6.0f) {}
+    bool isUseful() override;
 };
 
 class CastKidneyShotAction : public CastMeleeSpellAction

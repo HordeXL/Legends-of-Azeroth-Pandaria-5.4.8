@@ -30,6 +30,9 @@
 
 #include "AiFactory.h"
 #include "ChannelMgr.h"
+#include "CellImpl.h"
+#include "GridNotifiers.h"
+#include "GridNotifiersImpl.h"
 #include "CreatureAIImpl.h"
 #include "Engine.h"
 #include "ExternalEventHelper.h"
@@ -2477,10 +2480,10 @@ bool CanStunLfgTrash(Unit* target, SpellInfo const* spellInfo)
 }
 
 bool ShouldDelayGroupPveAoe(PlayerbotAI* botAI, Player* bot,
-    Unit* spellTarget, SpellInfo const* spellInfo)
+    Unit* spellTarget, SpellInfo const* spellInfo, Position const* destination = nullptr)
 {
     if (!botAI || !bot || !spellTarget || !spellInfo ||
-        !botAI->IsGroupPveActivity() || PlayerBotSpec::IsTank(bot, true))
+        !botAI->IsGroupPveActivity())
         return false;
 
     Group* group = bot->GetGroup(GroupSlot::Instance);
@@ -2502,28 +2505,37 @@ bool ShouldDelayGroupPveAoe(PlayerbotAI* botAI, Player* bot,
             break;
         }
     }
-    if (!hasLivingTank)
-        return false;
-
     bool harmfulAreaEffect = false;
     float effectRadius = 0.0f;
-    for (uint8 effectIndex = EFFECT_0;
-         effectIndex < MAX_SPELL_EFFECTS; ++effectIndex)
+    // Rain of Fire (5740), for example, is a wrapper: its harmful area
+    // damage lives in triggered spell 42223, not in its own target selectors.
+    auto inspectAreaEffects = [&](auto&& inspect, SpellInfo const* info, uint8 depth) -> void
     {
-        SpellEffectInfo const& effect = spellInfo->Effects[effectIndex];
-        if (!effect.IsEffect() || spellInfo->IsPositiveEffect(effectIndex))
-            continue;
+        for (uint8 effectIndex = EFFECT_0; effectIndex < MAX_SPELL_EFFECTS; ++effectIndex)
+        {
+            SpellEffectInfo const& effect = info->Effects[effectIndex];
+            if (!effect.IsEffect())
+                continue;
 
-        bool const affectsSeveralTargets = effect.IsTargetingArea() ||
-            effect.IsAreaAuraEffect() || effect.ChainTarget > 1;
-        if (!affectsSeveralTargets)
-            continue;
+            if (effect.TriggerSpell && depth < 2)
+                if (SpellInfo const* triggered = sSpellMgr->GetSpellInfo(effect.TriggerSpell))
+                    inspect(inspect, triggered, depth + 1);
 
-        harmfulAreaEffect = true;
-        effectRadius = std::max(effectRadius, effect.CalcRadius(bot));
-        if (effect.ChainTarget > 1)
-            effectRadius = std::max(effectRadius, 12.0f);
-    }
+            if (info->IsPositiveEffect(effectIndex))
+                continue;
+            bool const affectsSeveralTargets = effect.IsTargetingArea() ||
+                effect.IsAreaAuraEffect() || effect.Effect == SPELL_EFFECT_PERSISTENT_AREA_AURA ||
+                effect.ChainTarget > 1;
+            if (!affectsSeveralTargets)
+                continue;
+
+            harmfulAreaEffect = true;
+            effectRadius = std::max(effectRadius, effect.CalcRadius(bot));
+            if (effect.ChainTarget > 1)
+                effectRadius = std::max(effectRadius, 12.0f * (effect.ChainTarget - 1));
+        }
+    };
+    inspectAreaEffects(inspectAreaEffects, spellInfo, 0);
     if (!harmfulAreaEffect)
         return false;
 
@@ -2534,38 +2546,70 @@ bool ShouldDelayGroupPveAoe(PlayerbotAI* botAI, Player* bot,
     Unit* center = bot->IsValidAttackTarget(spellTarget) ? spellTarget :
         botAI->GetAiObjectContext()->GetValue<Unit*>("current target")->Get();
     if (!center)
-        return false;
+        center = bot;
 
     uint32 affectedAttackers = 0;
     bool packHeldByTank = true;
-    GuidVector const attackers = botAI->GetAiObjectContext()
-        ->GetValue<GuidVector>("attackers")->Get();
-    for (ObjectGuid const& guid : attackers)
+    // Do not use the cached "attackers" value: it deliberately excludes the
+    // idle enemies that an area spell could accidentally pull. Visit the live
+    // neighbourhood, including neutral attackable NPCs and extended radii
+    // (CalcRadius above applies spell mods such as Mannoroth's Fury).
+    Position const* areaCenter = destination ? destination : static_cast<Position const*>(center);
+    float const searchRange = bot->GetExactDist(areaCenter) + effectRadius + 5.0f;
+    std::list<Unit*> nearbyUnits;
+    Trinity::AnyUnfriendlyUnitInObjectRangeCheck check(bot, bot, searchRange);
+    Trinity::UnitListSearcher<Trinity::AnyUnfriendlyUnitInObjectRangeCheck> searcher(bot, nearbyUnits, check);
+    Cell::VisitAllObjects(bot, searcher, searchRange);
+    for (Unit* unit : nearbyUnits)
     {
-        Unit* unit = botAI->GetUnit(guid);
         if (!unit || !unit->IsAlive() || unit->GetMap() != bot->GetMap() ||
             !bot->IsValidAttackTarget(unit))
             continue;
 
-        if (center->GetDistance2d(unit) > effectRadius &&
-            bot->GetDistance2d(unit) > effectRadius)
+        if (unit->GetExactDist(areaCenter) > effectRadius + unit->GetCombatReach() &&
+            bot->GetDistance(unit) > effectRadius)
             continue;
 
-        ++affectedAttackers;
+        if (unit->HasBreakableByDamageCrowdControlAura())
+            return true;
+
         Unit* victim = unit->GetVictim();
         Player* victimPlayer = victim ?
             victim->GetCharmerOrOwnerPlayerOrPlayerItself() : nullptr;
+        bool const attackingParty = victimPlayer && group->IsMember(victimPlayer->GetGUID());
+        bool partyAttacking = false;
+        for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+            if (Player* member = ref->GetSource())
+                if (member->IsAlive() && member->GetMap() == bot->GetMap() && member->GetVictim() == unit)
+                {
+                    partyAttacking = true;
+                    break;
+                }
+
+        // A zone-combat flag alone is not pull permission. This also applies
+        // to tank bots: they may tank the requested pack, not start the next.
+        if ((!attackingParty && !partyAttacking) || !botAI->CanLfgAutoQueueEngage(unit))
+            return true;
+
+        ++affectedAttackers;
         if (!victimPlayer || !victimPlayer->IsAlive() ||
             victimPlayer->GetMap() != bot->GetMap() ||
             !group->IsMember(victimPlayer->GetGUID()) ||
-            !PlayerBotSpec::IsTank(victimPlayer, true))
+            !PlayerBotSpec::IsTank(victimPlayer, true) ||
+            !victimPlayer->IsWithinMeleeRange(unit))
             packHeldByTank = false;
     }
 
     // Single-target use of a spell with an area-capable effect remains valid.
     // Once two or more engaged enemies can be hit, wait for tank ownership.
-    return affectedAttackers >= 2 && !packHeldByTank;
+    return hasLivingTank && !PlayerBotSpec::IsTank(bot, true) &&
+        affectedAttackers >= 2 && !packHeldByTank;
 }
+}
+
+bool PlayerbotAI::IsGroupPveAreaSpellSafe(SpellInfo const* spellInfo, Unit* target)
+{
+    return !ShouldDelayGroupPveAoe(this, bot, target, spellInfo);
 }
 
 bool PlayerbotAI::TryGroupPveCoordinatedInterrupt()
@@ -3362,6 +3406,9 @@ bool PlayerbotAI::CastSpell(uint32 spellId, float x, float y, float z, Item* ite
 
     Pet* pet = bot->GetPet();
     SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
+    Position const destination = { x, y, z, 0.0f };
+    if (ShouldDelayGroupPveAoe(this, bot, bot, spellInfo, &destination))
+        return false;
     if (pet && pet->HasSpell(spellId))
     {
         bool autocast = false;
