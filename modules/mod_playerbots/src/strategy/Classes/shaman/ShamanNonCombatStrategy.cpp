@@ -10,6 +10,8 @@
 void ShamanNonCombatStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 {
     NonCombatStrategy::InitTriggers(triggers);
+    triggers.push_back(new TriggerNode("often", NextAction::array(0,
+        new NextAction("totemic recall", ACTION_NORMAL + 2), nullptr)));
     triggers.push_back(new TriggerNode("main hand weapon no imbue", NextAction::array(0,
         new NextAction("pve main hand imbue", ACTION_HIGH + 2), nullptr)));
     triggers.push_back(new TriggerNode("off hand weapon no imbue", NextAction::array(0,

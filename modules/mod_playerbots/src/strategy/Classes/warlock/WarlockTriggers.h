@@ -22,6 +22,14 @@ class CurseOfAgonyTrigger : public DebuffTrigger
 {
 public:
     CurseOfAgonyTrigger(PlayerbotAI* botAI) : DebuffTrigger(botAI, "agony", 1, true, 20.0f) {}
+    bool IsActive() override
+    {
+        // The old 20-second requirement excluded normal raid trash even when
+        // there was enough time for several ticks. Keep a short-lived-target
+        // guard and the original PvP threshold; evaluate the mode dynamically.
+        needLifeTime = botAI->IsGroupPveActivity() ? 8.0f : 20.0f;
+        return DebuffTrigger::IsActive();
+    }
 };
 
 class CurseOfElementsTrigger : public DebuffTrigger

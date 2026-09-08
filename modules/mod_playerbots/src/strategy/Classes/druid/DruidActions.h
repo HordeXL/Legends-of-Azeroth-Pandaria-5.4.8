@@ -42,38 +42,49 @@ public:
     CastHealingTouchAction(PlayerbotAI* botAI) : CastHealingSpellAction(botAI, "healing touch") {}
 };
 
-class CastRejuvenationOnPartyAction : public HealPartyMemberAction
+// Keep PvE damage druids in their assigned role, including non-combat healing.
+class DruidPartyHealAction : public HealPartyMemberAction
+{
+public:
+    using HealPartyMemberAction::HealPartyMemberAction;
+    bool isUseful() override;
+    bool Execute(Event event) override;
+protected:
+    bool IsRoleAllowed();
+};
+
+class CastRejuvenationOnPartyAction : public DruidPartyHealAction
 {
 public:
     CastRejuvenationOnPartyAction(PlayerbotAI* botAI)
-        : HealPartyMemberAction(botAI, "rejuvenation", 15.0f, HealingManaEfficiency::VERY_HIGH)
+        : DruidPartyHealAction(botAI, "rejuvenation", 15.0f, HealingManaEfficiency::VERY_HIGH)
     {
     }
 };
 
-class CastRegrowthOnPartyAction : public HealPartyMemberAction
+class CastRegrowthOnPartyAction : public DruidPartyHealAction
 {
 public:
     CastRegrowthOnPartyAction(PlayerbotAI* botAI)
-        : HealPartyMemberAction(botAI, "regrowth", 35.0f, HealingManaEfficiency::HIGH)
+        : DruidPartyHealAction(botAI, "regrowth", 35.0f, HealingManaEfficiency::HIGH)
     {
     }
 };
 
-class CastHealingTouchOnPartyAction : public HealPartyMemberAction
+class CastHealingTouchOnPartyAction : public DruidPartyHealAction
 {
 public:
     CastHealingTouchOnPartyAction(PlayerbotAI* botAI)
-        : HealPartyMemberAction(botAI, "healing touch", 50.0f, HealingManaEfficiency::LOW)
+        : DruidPartyHealAction(botAI, "healing touch", 50.0f, HealingManaEfficiency::LOW)
     {
     }
 };
 
-class CastLifebloomOnPartyAction : public HealPartyMemberAction
+class CastLifebloomOnPartyAction : public DruidPartyHealAction
 {
 public:
     CastLifebloomOnPartyAction(PlayerbotAI* botAI)
-        : HealPartyMemberAction(botAI, "lifebloom", 15.0f, HealingManaEfficiency::VERY_HIGH)
+        : DruidPartyHealAction(botAI, "lifebloom", 15.0f, HealingManaEfficiency::VERY_HIGH)
     {
     }
 };
@@ -298,28 +309,28 @@ public:
     CastNaturesSwiftnessAction(PlayerbotAI* botAI) : CastBuffSpellAction(botAI, "nature's swiftness") {}
 };
 
-class CastWildGrowthOnPartyAction : public HealPartyMemberAction
+class CastWildGrowthOnPartyAction : public DruidPartyHealAction
 {
 public:
     CastWildGrowthOnPartyAction(PlayerbotAI* ai)
-        : HealPartyMemberAction(ai, "wild growth", 15.0f, HealingManaEfficiency::VERY_HIGH)
+        : DruidPartyHealAction(ai, "wild growth", 15.0f, HealingManaEfficiency::VERY_HIGH)
     {
     }
 };
 
-class CastPartySwiftmendAction : public HealPartyMemberAction
+class CastPartySwiftmendAction : public DruidPartyHealAction
 {
 public:
     CastPartySwiftmendAction(PlayerbotAI* ai)
-        : HealPartyMemberAction(ai, "swiftmend", 15.0f, HealingManaEfficiency::MEDIUM)
+        : DruidPartyHealAction(ai, "swiftmend", 15.0f, HealingManaEfficiency::MEDIUM)
     {
     }
 };
 
-class CastPartyNourishAction : public HealPartyMemberAction
+class CastPartyNourishAction : public DruidPartyHealAction
 {
 public:
-    CastPartyNourishAction(PlayerbotAI* ai) : HealPartyMemberAction(ai, "nourish", 25.0f, HealingManaEfficiency::LOW) {}
+    CastPartyNourishAction(PlayerbotAI* ai) : DruidPartyHealAction(ai, "nourish", 25.0f, HealingManaEfficiency::LOW) {}
 };
 
 class CastDruidRemoveCurseOnPartyAction : public CurePartyMemberAction
@@ -347,11 +358,11 @@ public:
 };
 
 
-class CastRejuvenationOnNotFullAction : public HealPartyMemberAction
+class CastRejuvenationOnNotFullAction : public DruidPartyHealAction
 {
 public:
     CastRejuvenationOnNotFullAction(PlayerbotAI* ai)
-        : HealPartyMemberAction(ai, "rejuvenation", 5.0f, HealingManaEfficiency::VERY_HIGH)
+        : DruidPartyHealAction(ai, "rejuvenation", 5.0f, HealingManaEfficiency::VERY_HIGH)
     {
     }
     bool isUseful() override;

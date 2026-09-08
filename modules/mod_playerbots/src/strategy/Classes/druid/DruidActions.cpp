@@ -7,6 +7,49 @@
 
 #include "Event.h"
 #include "Playerbots.h"
+#include "PlayerbotSpec.h"
+
+bool DruidPartyHealAction::IsRoleAllowed()
+{
+    if (!botAI->IsGroupPveActivity() ||
+        (bot->GetSpecialization() != SPEC_DRUID_BALANCE &&
+         bot->GetSpecialization() != SPEC_DRUID_FERAL))
+        return true;
+
+    Unit* target = GetTarget();
+    if (!target || !target->IsAlive() || !target->IsInWorld() ||
+        !target->IsInCombat() || target->GetHealthPct() >= 20.0f ||
+        target->GetMap() != bot->GetMap())
+        return false;
+
+    Group* group = bot->GetGroup(GroupSlot::Instance);
+    if (!group) group = bot->GetGroup();
+    if (!group || !group->IsMember(target->GetGUID()))
+        return false;
+
+    // A living healer in the active map retains responsibility for healing.
+    // Only rescue a critically injured party member when no such healer exists.
+    for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+    {
+        Player* member = ref->GetSource();
+        if (member && member->IsAlive() && member->IsInWorld() &&
+            member->GetMap() == bot->GetMap() && PlayerBotSpec::IsHeal(member, true))
+            return false;
+    }
+    return true;
+}
+
+bool DruidPartyHealAction::isUseful()
+{
+    // Checked before caster-form prerequisites are queued by the engine.
+    return IsRoleAllowed() && HealPartyMemberAction::isUseful();
+}
+
+bool DruidPartyHealAction::Execute(Event event)
+{
+    // Health, specialization and healer availability can change while queued.
+    return IsRoleAllowed() && HealPartyMemberAction::Execute(event);
+}
 
 std::string const CastStarfallAction::GetTargetName()
 {
@@ -88,5 +131,5 @@ Unit* CastRejuvenationOnNotFullAction::GetTarget()
 
 bool CastRejuvenationOnNotFullAction::isUseful()
 {
-    return GetTarget();
+    return IsRoleAllowed() && GetTarget();
 }

@@ -1,5 +1,6 @@
 #include "BotFactory.h"
 #include "PvePetSpellSafety.h"
+#include "ManagedPveEquipmentPolicy.h"
 
 #include <algorithm>
 #include <cctype>
@@ -1610,10 +1611,11 @@ uint32 BotFactory::FindDeterministicManagedItem(EquipmentSlots slot,
     uint32 const equipmentReferenceItemLevel = GetWeaponReferenceItemLevel();
     uint32 const weaponReferenceItemLevel = weaponSlot ?
         equipmentReferenceItemLevel : 0;
-    uint32 const weaponMinimumItemLevel = weaponReferenceItemLevel > 35 ?
-        weaponReferenceItemLevel - 35 : weaponReferenceItemLevel;
-    uint32 const targetItemLevel =
-        std::max(equipmentReferenceItemLevel, minimumItemLevel);
+    uint32 const weaponMinimumItemLevel = weaponSlot ?
+        ManagedPveEquipmentPolicy::WeaponFloor(weaponReferenceItemLevel,
+            level, genuineItemsOnly && pveOnly) : 0;
+    uint32 const targetItemLevel = std::max(weaponMinimumItemLevel,
+        std::max(equipmentReferenceItemLevel, minimumItemLevel));
     ItemQualities const minimumQuality = level >= 80 ? ITEM_QUALITY_EPIC :
         (level >= 35 ? ITEM_QUALITY_RARE :
             (level >= 10 ? ITEM_QUALITY_UNCOMMON : ITEM_QUALITY_NORMAL));
@@ -1883,8 +1885,9 @@ void BotFactory::InitEquipmentInternal(bool incremental, bool second_chance,
     int32 delta = std::min(blevel, 10u);
     uint32 const weaponReferenceItemLevel = specCompatible ?
         GetWeaponReferenceItemLevel() : 0;
-    uint32 const weaponMinimumItemLevel = weaponReferenceItemLevel > 35 ?
-        weaponReferenceItemLevel - 35 : weaponReferenceItemLevel;
+    uint32 const weaponMinimumItemLevel = specCompatible ?
+        ManagedPveEquipmentPolicy::WeaponFloor(weaponReferenceItemLevel,
+            level, genuineItemsOnly && pveOnly) : 0;
 
     for (int32 slot = (int32)EQUIPMENT_SLOT_TABARD; slot >= (int32)EQUIPMENT_SLOT_START; slot--)
     {
@@ -1919,8 +1922,10 @@ void BotFactory::InitEquipmentInternal(bool incremental, bool second_chance,
                 (!specCompatible ||
                     sRandomItemMgr->IsItemValidForEquipmentSlot(
                         bot, EquipmentSlots(slot), oldItem->GetTemplate()));
-            uint32 const slotFloor = minimumItemLevel ? minimumItemLevel :
-                (weaponSlot ? weaponMinimumItemLevel : 0u);
+            uint32 const slotFloor = genuineItemsOnly && pveOnly ?
+                std::max(minimumItemLevel, weaponSlot ? weaponMinimumItemLevel : 0u) :
+                (minimumItemLevel ? minimumItemLevel :
+                    (weaponSlot ? weaponMinimumItemLevel : 0u));
             bool const underleveledItem = specCompatible && validForSpec &&
                 slotFloor && oldItem->GetTemplate()->ItemLevel < slotFloor;
 

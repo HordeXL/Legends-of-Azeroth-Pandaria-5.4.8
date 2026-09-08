@@ -15,6 +15,21 @@ local defaults = {
 }
 
 local reasonText = {
+    DOT_REFRESH = "Maintain your DoTs / Pandemic refresh",
+    MULTIDOT = "Maintain DoTs on an engaged secondary enemy",
+    CHANNELING = "Keep channeling (repeated presses are safe)",
+    CHANNEL_DAMAGE = "Malefic Grasp: amplify your DoTs",
+    MOVING_DAMAGE = "Damage while moving",
+    RESTORE_MANA = "Life Tap with a health reserve",
+    DARK_SOUL = "Dark Soul: Misery burst",
+    PREPARE_SOULBURN = "Prepare Soulburn for the next press",
+    SOULBURN_SWAP = "Soulburn: apply all three DoTs",
+    SOULBURN_SEED = "Soulburn: Seed on an engaged pack",
+    SEED_AOE = "Seed on 4+ engaged enemies",
+    HAUNT = "Maintain Haunt during burst / spend available shards",
+    TANK_BUFF = "Maintain tank buff",
+    TANK_RESCUE = "Taunt an enemy attacking a non-tank ally",
+    TANK_MITIGATION = "Spend Holy Power on active mitigation",
     RACIAL_ESCAPE = "Human racial: break crowd control",
     ESCAPE_CC = "Break crowd control",
     ESCAPE_MOVEMENT = "Break root / slow",

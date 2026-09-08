@@ -14,5 +14,11 @@
 
 class PlayerbotAI;
 
+class PveMoonkinFormTrigger : public Trigger
+{
+public:
+    PveMoonkinFormTrigger(PlayerbotAI* ai) : Trigger(ai, "pve moonkin form") {}
+    bool IsActive() override;
+};
 
 #endif

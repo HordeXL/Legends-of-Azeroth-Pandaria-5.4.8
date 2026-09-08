@@ -76,6 +76,7 @@ public:
     ShamanATriggerFactoryInternal()
     {
         creators["group low mana for mana tide"] = &ShamanATriggerFactoryInternal::group_low_mana_for_mana_tide;
+        creators["no water totem"] = [](PlayerbotAI* ai) -> Trigger* { return new MissingWaterTotemTrigger(ai); };
         creators["pve heroism burn"] = &ShamanATriggerFactoryInternal::pve_heroism_burn;
         creators["pve bloodlust burn"] = &ShamanATriggerFactoryInternal::pve_bloodlust_burn;
     }
@@ -112,6 +113,7 @@ public:
         creators["grace of air totem"] = &ShamanAiObjectContextInternal::grace_of_air_totem;
         creators["mana spring totem"] = &ShamanAiObjectContextInternal::mana_spring_totem;
         creators["mana tide totem"] = &ShamanAiObjectContextInternal::mana_tide_totem;
+        creators["totemic recall"] = [](PlayerbotAI* ai) -> Action* { return new CastTotemicRecallAction(ai); };
         creators["earthbind totem"] = &ShamanAiObjectContextInternal::earthbind_totem;
         creators["healing stream totem"] = &ShamanAiObjectContextInternal::healing_stream_totem;
         creators["wind shear"] = &ShamanAiObjectContextInternal::wind_shear;

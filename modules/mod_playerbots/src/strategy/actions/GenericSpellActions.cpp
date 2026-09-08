@@ -181,10 +181,12 @@ bool CastSpellAction::isUseful()
     if (!spellTarget->IsInWorld() || spellTarget->GetMapId() != bot->GetMapId())
         return false;
 
-    // The diamond-marked living tank owns taunts, including mass taunts.
+    // Both tanks may rescue non-tanks; avoid taunt wars on tank-held enemies.
     // Check during selection as well as at PlayerbotAI's final cast boundary.
     uint32 const tauntSpellId = AI_VALUE2(uint32, "spell id", spell);
     if (!botAI->IsGroupPveTauntAllowed(sSpellMgr->GetSpellInfo(tauntSpellId), spellTarget))
+        return false;
+    if (!botAI->IsGroupPveOpeningSpellAllowed(sSpellMgr->GetSpellInfo(tauntSpellId), spellTarget))
         return false;
 
     // Preserve sap, polymorph, fear, freezing trap and similar breakable CC.
@@ -285,9 +287,51 @@ CastHealingSpellAction::CastHealingSpellAction(PlayerbotAI* botAI, std::string c
     range = botAI->GetRange("heal");
 }
 
-bool CastHealingSpellAction::isUseful() { return CastAuraSpellAction::isUseful(); }
+bool CastHealingSpellAction::IsHealingRoleAllowed()
+{
+    if (!botAI->IsGroupPveActivity() || !PlayerBotSpec::IsDps(bot, true))
+        return true;
 
-bool CastAoeHealSpellAction::isUseful() { return CastSpellAction::isUseful(); }
+    // Expel Harm is also a Windwalker Chi generator, not a party-heal detour.
+    if (spell == "expel harm" && GetTarget() == bot)
+        return true;
+
+    Unit* target = GetTarget();
+    if (!target || !target->IsAlive() || !target->IsInWorld() ||
+        !target->IsInCombat() || target->GetHealthPct() >= 20.0f ||
+        target->GetMap() != bot->GetMap())
+        return false;
+
+    Group* group = bot->GetGroup(GroupSlot::Instance);
+    if (!group) group = bot->GetGroup();
+    if (!group || !group->IsMember(target->GetGUID()))
+        return false;
+
+    for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+    {
+        Player* member = ref->GetSource();
+        if (member && member->IsAlive() && member->IsInWorld() &&
+            member->GetMap() == bot->GetMap() && PlayerBotSpec::IsHeal(member, true))
+            return false;
+    }
+    return true;
+}
+
+bool CastHealingSpellAction::isUseful()
+{
+    // Check before form-changing prerequisites as well as at cast time.
+    return IsHealingRoleAllowed() && CastAuraSpellAction::isUseful();
+}
+
+bool CastHealingSpellAction::Execute(Event event)
+{
+    return IsHealingRoleAllowed() && CastAuraSpellAction::Execute(event);
+}
+
+bool CastAoeHealSpellAction::isUseful()
+{
+    return IsHealingRoleAllowed() && CastSpellAction::isUseful();
+}
 
 CastCureSpellAction::CastCureSpellAction(PlayerbotAI* botAI, std::string const spell) : CastSpellAction(botAI, spell)
 {

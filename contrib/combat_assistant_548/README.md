@@ -93,6 +93,66 @@ on an unusable Lay on Hands recommendation.
 Normal cast-time healing remains manual. Only the explicit sub-15% instant-heal
 emergency rule is included.
 
+## Affliction PvE priority
+
+Affliction has a dedicated player-controlled priority outside battlegrounds and
+arenas. It also works solo on world training dummies. Bot rotations are separate.
+
+- Read only this warlock's Agony, Corruption (aura 146739, cast spell 172), and
+  Unstable Affliction. Refresh within the base-duration Pandemic window; without
+  Pandemic, wait until the cast/GCD lead time. Player refresh checks do not use
+  the pet-autocast rule that rejects an existing aura.
+- Use Dark Soul: Misery during combat. Use learned Soulburn + Soul Swap to apply
+  multiple needed DoTs. The two spells take separate physical presses, with
+  action-bar overrides resolved through the same active auras as client casts.
+- Reserve the last Soul Shard outside burst/execute, maintain Haunt when shards
+  allow, and suppress duplicate Haunts while the previous cast/projectile is in
+  flight. Display whole shards (the core stores 100 units per shard).
+- Use Malefic Grasp above 20% and Drain Soul in the core's below-20% execute state.
+  Repeated presses preserve the existing channel. Routine replacements wait
+  until shortly after a tick; urgent DoTs, target changes and execute can pre-empt
+  it. A replacement is validated before the channel is interrupted.
+- Maintain DoTs on up to three engaged enemies. For four or more, prefer Seed,
+  including its learned Soulburn version, while maintaining the primary DoTs.
+  Do not overwrite an existing Seed: use damage to detonate it.
+- Extra targets must already be engaged by the player/group. Dungeon/raid
+  secondaries respect the shared three-second pull opening and tank collection.
+  Seed also checks idle/CC neighbours in a conservative splash radius (at least
+  15 yards). The scan cannot predict enemies entering the explosion later.
+- Life Tap below 15% mana requires over 45% health; maintenance below 30% mana
+  requires over 65% health. Moving casts respect the core's cast-while-walking
+  auras, with Fel Flame as an available fallback.
+
+Normal casts, including cooldown/resource/GCD/range/LoS checks, remain in effect.
+Only a discarded recommendation probe may ignore an in-progress damage channel;
+the actual replacement is always untriggered. Other channels remain manual.
+Pet choice/control, trinket-proc snapshot optimization, target time-to-die
+prediction, and normal Soul Swap inhale/exhale transfer are not automated by
+this priority. These are not claims of theoretical maximum DPS.
+
+### Training-dummy validation
+
+1. Start the rebuilt server; use `/reload` if the client was open while the Lua
+   file changed. Select Affliction and check `.combatassist status`. The usual
+   `/ca548 bind2` binding continues to use the active specialization.
+2. Enter `/combatlog` and confirm that logging is enabled. Hit one dummy for
+   3–5 minutes using the assistant. Keep pet/talents/gear consistent between runs.
+3. Separately test 2–3 nearby dummies after manually engaging each one. For Seed,
+   engage at least four and ensure there are no untouched dummies in the splash
+   radius. The assistant deliberately does not start those additional fights.
+4. Stop combat and enter `/combatlog` again to disable/flush the log. Record the
+   character name and approximate times for each segment.
+
+The client writes `Logs/WoWCombatLog.txt`. Spell sequences, DoT uptime/ticks,
+channel ticks, Haunt, Soulburn consumption, cooldown use and damage distribution
+can be checked there. A never-dying dummy whose health stays high cannot validate
+Drain Soul execute, kill-triggered shard returns, tank threat or raid mechanics.
+Combat logs also do not prove optimal play across all gear/proc configurations.
+
+Run `contrib/combat_assistant_548/test_affliction.ps1` from a VS x64 developer
+PowerShell to test the actual production policy header. A server build validates
+the spell-engine integration; gameplay still requires the recorded run above.
+
 ## Install
 
 1. Apply/build the server changes and set

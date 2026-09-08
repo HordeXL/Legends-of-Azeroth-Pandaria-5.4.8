@@ -5,7 +5,7 @@
 #include <string>
 #include <iostream>
 #include <cstdlib>
-#include "../../modules/mod_playerbots/src/AI/PvePetPullGate.h"
+#include "../../modules/mod_playerbots/src/AI/PvePullState.h"
 using ObjectGuid = unsigned;
 using GuidVector = std::vector<ObjectGuid>;
 struct Unit {
@@ -73,23 +73,17 @@ int main(){
  action.baseUseful=true;action.target=nullptr;check(!action.isUseful(),"no current target");
  ai.pve=false;check(action.isUseful(),"PvP base behaviour retained");
 
- PvePetPullGate<unsigned> gate;
- check(!gate.Ready(0,1,10,false,true),"owner must engage");
- check(!gate.Ready(0,1,10,true,true),"no immediate pet attack");
- check(!gate.Ready(3999,1,10,true,true),"wait full 4 seconds");
- check(gate.Ready(4000,1,10,true,true),"release at 4 seconds when collected");
- check(!gate.Ready(6000,1,10,true,false),"elapsed delay not enough without tank");
- check(gate.Ready(6001,1,10,true,true),"release when tank collects");
- check(!gate.Ready(7000,2,10,true,true),"new target resets delay");
- check(!gate.Ready(10999,2,10,true,true),"new target still waiting");
- check(gate.Ready(11000,2,10,true,true),"new target release");
- check(!gate.Ready(12000,2,11,true,true),"new pet resets delay");
- check(!gate.Ready(16000,2,11,false,true),"owner disengagement resets");
- check(!gate.Ready(16001,2,11,true,true),"resume requires fresh delay");
- check(gate.Ready(20001,2,11,true,true),"resume after fresh delay");
- gate.Reset();check(!gate.Ready(25000,2,11,true,true),"explicit reset");
- gate.Reset();check(!gate.Ready(0xfffffff0u,3,12,true,true),"start before clock wrap");
- check(!gate.Ready(3983,3,12,true,true),"clock wrap 3999ms");
- check(gate.Ready(3984,3,12,true,true),"clock wrap 4000ms");
+ PvePullState<unsigned> gate;
+ gate.Observe(0,{});check(!gate.Ready(3000),"idle group has no pull");
+ gate.Observe(100,{1,2});check(!gate.Ready(3099),"wait full three seconds");
+ check(gate.OpeningTarget(200)==1,"first target is group focus");
+ gate.Observe(2000,{2,1});check(gate.OpeningTarget(2000)==1,"retarget does not change opening focus");
+ check(gate.Ready(3100),"release after three seconds");
+ gate.Observe(3200,{2,3});check(gate.Ready(3200),"focus death and add keep pack clock");
+ check(gate.OpeningTarget(3200)==0,"no forced opening focus after release");
+ gate.Observe(4000,{4});check(!gate.Ready(4000),"new separate pack gets own clock");
+ gate.Observe(4500,{});check(!gate.Ready(9000),"combat end resets");
+ gate.Observe(0xfffffff0u,{5});check(!gate.Ready(2983),"wrap waits full 2999ms");
+ check(gate.Ready(2984),"wrap releases at 3000ms");
  std::cout<<"PASS "<<checks<<" checks; typed Pestilence lookup and pet pull delay\n";
 }

@@ -4,6 +4,15 @@
 #include "Playerbots.h"
 #include "PlayerbotAI.h"
 #include "Player.h"
+#include "GroupPveCombat.h"
+#include "PvePullState.h"
+#include "ObjectAccessor.h"
+#include "Spell.h"
+#include "SpellMgr.h"
+#include "ThreatManager.h"
+#include <map>
+#include <mutex>
+#include <tuple>
 
 namespace
 {
@@ -309,5 +318,161 @@ Player* PlayerBotSpec::GetGroupPvePullTank(Player* player)
             if (member->GetGUID() == group->GetLeaderGUID() && member->IsInWorld() &&
                 member->GetMap() == player->GetMap() && IsTank(member, true))
                 return member;
-    return nullptr;
+    Player* fallback = nullptr;
+    for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+        if (Player* member = ref->GetSource())
+            if (member->IsAlive() && member->IsInWorld() && member->GetMap() == player->GetMap() &&
+                IsTank(member, true) && (!fallback || member->GetGUID() < fallback->GetGUID()))
+                fallback = member;
+    return fallback;
+}
+
+bool GroupPveCombat::IsEngaged(Player* player, Unit* target)
+{
+    Group* group = GetActiveGroup(player);
+    if (!player || !group || !target || !target->IsAlive() || !target->IsInWorld() ||
+        target->GetMap() != player->GetMap() || !target->IsInCombat() ||
+        !player->IsValidAttackTarget(target)) return false;
+    Unit* victim = target->GetVictim();
+    Player* owner = victim ? victim->GetCharmerOrOwnerPlayerOrPlayerItself() : nullptr;
+    if (owner && group->IsMember(owner->GetGUID())) return true;
+    for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+        if (Player* member = ref->GetSource())
+            if (member->IsAlive() && member->IsInWorld() && member->GetMap() == player->GetMap() &&
+                (member->GetVictim() == target || (target->CanHaveThreatList() &&
+                    target->GetThreatManager().getThreat(member) > 0.0f))) return true;
+    return false;
+}
+
+bool GroupPveCombat::IsCollected(Player* player, Unit* target)
+{
+    Group* group = GetActiveGroup(player);
+    if (!group || !target) return false;
+    bool hasTank = false;
+    for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+        if (Player* tank = ref->GetSource())
+            if (tank->IsAlive() && tank->IsInWorld() && tank->GetMap() == player->GetMap() &&
+                PlayerBotSpec::IsTank(tank, true))
+            {
+                hasTank = true;
+                if (tank->GetDistance(target) <= 8.0f) return true;
+            }
+    return !hasTank;
+}
+
+namespace
+{
+PvePullState<ObjectGuid> ObserveGroupPull(Player* player)
+{
+    Group* group = GetActiveGroup(player);
+    if (!group || !player->IsInWorld() || player->InBattleground() || player->InArena()) return {};
+    std::vector<ObjectGuid> engaged;
+    auto add = [&](Unit* unit)
+    {
+        if (GroupPveCombat::IsEngaged(player, unit) &&
+            std::find(engaged.begin(), engaged.end(), unit->GetGUID()) == engaged.end())
+            engaged.push_back(unit->GetGUID());
+    };
+    if (Player* tank = PlayerBotSpec::GetGroupPvePullTank(player)) add(tank->GetVictim());
+    // Actual victim / positive threat is required; selecting an idle mob cannot pull.
+    // Collect from the whole group, so observers and changing targets share one clock.
+    for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+        if (Player* member = ref->GetSource())
+            if (member->IsAlive() && member->IsInWorld() && member->GetMap() == player->GetMap())
+            {
+                add(member->GetVictim());
+                add(member->GetSelectedUnit());
+                for (Unit* attacker : member->getAttackers()) add(attacker);
+            }
+    struct Record { PvePullState<ObjectGuid> state; uint32 seen = 0; };
+    using Key = std::tuple<ObjectGuid, uint32, uint32>;
+    static std::map<Key, Record> records;
+    static std::mutex mutex;
+    std::lock_guard<std::mutex> guard(mutex);
+    uint32 now = getMSTime();
+    for (auto it = records.begin(); it != records.end();)
+        if (uint32(now - it->second.seen) > 60000u) it = records.erase(it); else ++it;
+    auto& record = records[Key(group->GetGUID(), player->GetMapId(), player->GetInstanceId())];
+    record.seen = now;
+    record.state.Observe(now, engaged);
+    return record.state;
+}
+}
+
+Unit* GroupPveCombat::OpeningTarget(Player* player)
+{
+    if (!player) return nullptr;
+    ObjectGuid guid = ObserveGroupPull(player).OpeningTarget(getMSTime());
+    return guid ? ObjectAccessor::GetUnit(*player, guid) : nullptr;
+}
+
+bool GroupPveCombat::AoeReady(Player* player, Unit* target)
+{
+    return IsEngaged(player, target) &&
+        (PlayerBotSpec::IsTank(player, true) ||
+            (ObserveGroupPull(player).Ready(getMSTime()) && IsCollected(player, target)));
+}
+
+bool GroupPveCombat::DamageAllowed(Player* player, Unit* target)
+{
+    if (!IsEngaged(player, target)) return false;
+    if (PlayerBotSpec::IsTank(player, true)) return true;
+    Unit* opening = OpeningTarget(player);
+    return !opening || opening == target;
+}
+
+bool GroupPveCombat::NeedsRescue(Player* player, Unit* target)
+{
+    if (!IsEngaged(player, target) || !target->CanHaveThreatList() ||
+        target->HasBreakableByDamageCrowdControlAura()) return false;
+    // A successful taunt changes the attack victim before the threat manager
+    // necessarily refreshes its cached reference. Do not send a second taunt.
+    Unit* attacking = target->GetVictim();
+    Player* attackingOwner = attacking ? attacking->GetCharmerOrOwnerPlayerOrPlayerItself() : nullptr;
+    if (attackingOwner && attackingOwner->IsAlive() &&
+        GetActiveGroup(player)->IsMember(attackingOwner->GetGUID()) &&
+        PlayerBotSpec::IsTank(attackingOwner, true)) return false;
+    // Threat victim, not the temporary target of a scripted boss ability.
+    HostileReference* reference = target->GetThreatManager().getCurrentVictim();
+    Unit* victim = reference ? reference->getTarget() : target->GetVictim();
+    Player* owner = victim ? victim->GetCharmerOrOwnerPlayerOrPlayerItself() : nullptr;
+    Group* group = GetActiveGroup(player);
+    return owner && owner->IsAlive() && group->IsMember(owner->GetGUID()) &&
+        !PlayerBotSpec::IsTank(owner, true);
+}
+
+unsigned GroupPveCombat::TauntSpell(Player* player)
+{
+    switch (player->GetClass())
+    {
+        case CLASS_WARRIOR: return 355;
+        case CLASS_PALADIN: return 62124;
+        case CLASS_DRUID: return 6795;
+        case CLASS_DEATH_KNIGHT: return 56222;
+        case CLASS_MONK: return 115546;
+        default: return 0;
+    }
+}
+
+Player* GroupPveCombat::RescueTank(Player* player, Unit* target)
+{
+    if (!NeedsRescue(player, target)) return nullptr;
+    Player* best = nullptr;
+    for (GroupReference* ref = GetActiveGroup(player)->GetFirstMember(); ref; ref = ref->next())
+    {
+        Player* tank = ref->GetSource();
+        PlayerbotAI* ai = tank ? GET_PLAYERBOT_AI(tank) : nullptr;
+        if (!tank || !tank->IsAlive() || !tank->IsInWorld() || tank->GetMap() != player->GetMap() ||
+            !PlayerBotSpec::IsTank(tank, true) || tank->HasUnitState(UNIT_STATE_LOST_CONTROL) ||
+            (tank != player && (!ai || ai->IsRealPlayer()))) continue;
+        uint32 id = TauntSpell(tank);
+        SpellInfo const* info = sSpellMgr->GetSpellInfo(id);
+        if (!info || !tank->HasSpell(id) || tank->HasSpellCooldown(id) ||
+            target->IsImmunedToSpell(info, info->NegativeEffectMask)) continue;
+        Spell probe(tank, info, TRIGGERED_NONE);
+        if (!probe.CanAutoCast(target)) continue;
+        if (!best || std::make_pair(tank->GetDistance(target), tank->GetGUID()) <
+            std::make_pair(best->GetDistance(target), best->GetGUID())) best = tank;
+    }
+    return best;
 }

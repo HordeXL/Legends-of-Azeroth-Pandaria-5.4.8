@@ -13,7 +13,6 @@
 #include "PlayerbotAIBase.h"
 #include "NewRpgStrategy.h"
 #include "WorldPacket.h"
-#include "PvePetPullGate.h"
 
 enum BotState
 {
@@ -207,6 +206,8 @@ public:
     bool CanLfgAutoQueueEngage(Unit const* target) const;
     bool IsGroupPveAreaSpellSafe(SpellInfo const* spellInfo, Unit* target);
     bool IsGroupPveTauntAllowed(SpellInfo const* spellInfo, Unit* target);
+    bool IsGroupPveOpeningSpellAllowed(SpellInfo const* spellInfo, Unit* target);
+    bool TryGroupPveTankRescue();
 
     bool CanMove();
 
@@ -299,7 +300,6 @@ protected:
     std::atomic<bool> _lfgPreparationBuffPending{ false };
     std::atomic<uint32> _lfgAutoQueueRequesterGuid{ 0 };
     uint32 _invalidFollowPositionSince = 0;
-    PvePetPullGate<ObjectGuid> _pvePetPullGate;
     // Some login/group/queue callbacks run on the world thread while normal
     // actions run on a map worker. Keep Engine strategy/action ownership valid
     // for the complete duration of an action selection/execution cycle.

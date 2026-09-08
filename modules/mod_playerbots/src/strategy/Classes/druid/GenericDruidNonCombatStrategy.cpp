@@ -109,6 +109,10 @@ void GenericDruidNonCombatStrategy::InitTriggers(std::vector<TriggerNode*>& trig
 {
     NonCombatStrategy::InitTriggers(triggers);
 
+    // Restore the DPS stance after a rescue heal, before the next pull.
+    triggers.push_back(new TriggerNode("pve moonkin form",
+        NextAction::array(0, new NextAction("moonkin form", ACTION_NORMAL + 3), nullptr)));
+
     triggers.push_back(
         new TriggerNode("mark of the wild", NextAction::array(0, new NextAction("mark of the wild", 14.0f), nullptr)));
     // triggers.push_back(new TriggerNode("thorns", NextAction::array(0, new NextAction("thorns", 12.0f), nullptr)));

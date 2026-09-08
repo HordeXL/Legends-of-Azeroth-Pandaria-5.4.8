@@ -145,10 +145,19 @@ public:
     }
 
     bool isUseful() override;
+    bool Execute(Event event) override;
 
 protected:
     float needLifeTime;
     std::string buff;
+};
+
+class CastTotemicRecallAction : public CastBuffSpellAction
+{
+public:
+    CastTotemicRecallAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "totemic recall") { }
+    bool isUseful() override;
+    bool Execute(Event event) override;
 };
 
 class CastStoneskinTotemAction : public CastTotemAction
