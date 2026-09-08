@@ -13,6 +13,16 @@ void TotemsShamanStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 {
     GenericShamanStrategy::InitTriggers(triggers);
 
+    if (botAI->IsGroupPveActivity())
+    {
+        // MoP uses situational/cooldown totems. Do not resurrect legacy air
+        // buff maintenance here. DPS fire totems have their own pull-safe trigger.
+        triggers.push_back(new TriggerNode("no water totem", NextAction::array(0,
+            new NextAction("healing stream totem", 7.0f),
+            new NextAction("mana spring totem", 6.0f), nullptr)));
+        return;
+    }
+
     triggers.push_back(
         new TriggerNode("no air totem", NextAction::array(0,
             new NextAction("wrath of air totem", 8.0f),

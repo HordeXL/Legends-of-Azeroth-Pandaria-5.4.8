@@ -4,6 +4,8 @@
  */
 
 #include "ShamanActions.h"
+#include "ShamanTotemSupport.h"
+#include "ShamanTriggers.h"
 
 #include <algorithm>
 #include <initializer_list>
@@ -27,6 +29,15 @@ bool CastEarthShockAction::isUseful()
 namespace
 {
 constexpr float CoordinatedTotemRadius = 80.0f;
+
+Creature* GetOwnedActiveTotem(Player* bot, uint8 slot)
+{
+    if (!bot || !bot->IsInWorld() || !bot->GetMap() || !bot->m_SummonSlot[slot])
+        return nullptr;
+    Creature* totem = bot->GetMap()->GetCreature(bot->m_SummonSlot[slot]);
+    return totem && totem->IsTotem() && totem->IsAlive() &&
+        totem->GetOwnerGUID() == bot->GetGUID() ? totem : nullptr;
+}
 
 Group* GetTotemCoordinationGroup(Player* bot)
 {
@@ -229,12 +240,108 @@ bool IsCoordinatedSustainedTotemUseful(Player* bot, PlayerbotAI* botAI,
 }
 }
 
+bool ShamanTotemSupport::IsWaterAction(std::string const& action)
+{
+    return action == "healing stream totem" || action == "mana spring totem" ||
+        action == "cleansing totem" || action == "mana tide totem" ||
+        action == "healing tide totem";
+}
+
+bool ShamanTotemSupport::HasProtectedWaterTotem(Player* bot)
+{
+    // Totemic Persistence can move a water totem into the extra slot. Range
+    // must not make a still-running healing/mana cooldown replaceable.
+    for (uint8 slot : {SUMMON_SLOT_TOTEM_WATER, SUMMON_SLOT_TOTEM_EXTRA})
+        if (Creature* totem = GetOwnedActiveTotem(bot, slot))
+        {
+            uint32 spellId = totem->GetUInt32Value(UNIT_FIELD_CREATED_BY_SPELL);
+            if (spellId == 16190 || spellId == 108280)
+                return true;
+        }
+    return false;
+}
+
+bool ShamanTotemSupport::CanPlaceWaterTotem(Player* bot, std::string const& action)
+{
+    if (!IsWaterAction(action))
+        return true;
+    if (HasProtectedWaterTotem(bot))
+        return false;
+    // Emergency cooldowns may replace a regular stream/spring, never each other.
+    if (action == "mana tide totem" || action == "healing tide totem")
+        return true;
+    Creature* water = GetOwnedActiveTotem(bot, SUMMON_SLOT_TOTEM_WATER);
+    return !water || bot->GetDistance(water) > 30.0f;
+}
+
+bool ShamanTotemSupport::NeedsWaterTotem(PlayerbotAI* ai, Player* bot)
+{
+    return ai->IsGroupPveActivity() && bot->IsAlive() && bot->IsInWorld() &&
+        bot->IsInCombat() && CanPlaceWaterTotem(bot, "healing stream totem");
+}
+
+bool ShamanTotemSupport::CanRecallTotems(PlayerbotAI* ai, Player* bot)
+{
+    if (!ai->IsGroupPveActivity() || !bot->IsAlive() || !bot->IsInWorld() ||
+        bot->IsInCombat() || !bot->HasSpell(36936) || HasProtectedWaterTotem(bot))
+        return false;
+    Group* group = GetTotemCoordinationGroup(bot);
+    if (!group)
+        return false;
+    bool injured = false;
+    for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+    {
+        Player* member = ref->GetSource();
+        if (!member || !member->IsAlive() || !member->IsInWorld() ||
+            member->GetMap() != bot->GetMap())
+            continue;
+        if (member->IsInCombat())
+            return false; // No recalling between boss phases or during another member's pull.
+        if (member->GetHealthPct() < 95.0f && bot->GetDistance(member) <= 40.0f)
+            injured = true;
+    }
+    bool found = false;
+    for (uint8 slot : {SUMMON_SLOT_TOTEM_FIRE, SUMMON_SLOT_TOTEM_EARTH,
+                       SUMMON_SLOT_TOTEM_WATER, SUMMON_SLOT_TOTEM_AIR,
+                       SUMMON_SLOT_TOTEM_EXTRA})
+        if (Creature* totem = GetOwnedActiveTotem(bot, slot))
+        {
+            if (totem->IsInCombat())
+                return false;
+            uint32 spellId = totem->GetUInt32Value(UNIT_FIELD_CREATED_BY_SPELL);
+            if (injured && (spellId == 5394 || spellId == 98008))
+                return false; // Let Healing Stream/Spirit Link finish recovery.
+            found = true;
+        }
+    return found;
+}
+
+bool CastTotemicRecallAction::isUseful()
+{
+    return ShamanTotemSupport::CanRecallTotems(botAI, bot) && CastSpellAction::isUseful();
+}
+
+bool CastTotemicRecallAction::Execute(Event event)
+{
+    return isUseful() && CastBuffSpellAction::Execute(event);
+}
+
+bool CastTotemAction::Execute(Event event)
+{
+    // Recheck immediately before casting: a queued regular water totem must
+    // not destroy a Mana Tide that appeared after action selection.
+    return (!botAI->IsGroupPveActivity() || isUseful()) && CastBuffSpellAction::Execute(event);
+}
+
 bool CastTotemAction::isUseful()
 {
+    bool const pveWater = botAI->IsGroupPveActivity() && ShamanTotemSupport::IsWaterAction(name);
+    if (pveWater && !ShamanTotemSupport::CanPlaceWaterTotem(bot, name))
+        return false;
     if (!IsCoordinatedSustainedTotemUseful(bot, botAI, name))
         return false;
 
-    if (needLifeTime > 0.1f && AI_VALUE(uint8, "attacker count") < 3)
+    if (!pveWater && needLifeTime > 0.1f && AI_VALUE(uint8, "attacker count") < 3)
     {
         Unit* target = AI_VALUE(Unit*, "current target");
         if (!target)
@@ -279,6 +386,13 @@ bool CastManaTideTotemAction::isUseful()
 
 bool CastManaTideTotemAction::Execute(Event event)
 {
+    GroupLowManaForManaTideTrigger need(botAI);
+    if (botAI->IsGroupPveActivity() && (!need.IsActive() ||
+        !ShamanTotemSupport::CanPlaceWaterTotem(bot, "mana tide totem")))
+    {
+        announcementStartedAt = 0;
+        return false;
+    }
     uint32 now = getMSTime();
     if (!announcementStartedAt)
     {
@@ -290,7 +404,8 @@ bool CastManaTideTotemAction::Execute(Event event)
     if (getMSTimeDiff(announcementStartedAt, now) < 5000)
         return false;
 
-    bool cast = CastBuffSpellAction::Execute(event);
+    bool cast = botAI->IsGroupPveActivity() ?
+        CastTotemAction::Execute(event) : CastBuffSpellAction::Execute(event);
     if (cast)
         announcementStartedAt = 0;
 

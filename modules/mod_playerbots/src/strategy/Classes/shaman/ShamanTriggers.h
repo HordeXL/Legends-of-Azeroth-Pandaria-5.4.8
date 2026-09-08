@@ -8,8 +8,16 @@
 
 #include "GenericTriggers.h"
 #include "SharedDefines.h"
+#include "ShamanTotemSupport.h"
 
 class PlayerbotAI;
+
+class MissingWaterTotemTrigger : public Trigger
+{
+public:
+    MissingWaterTotemTrigger(PlayerbotAI* ai) : Trigger(ai, "no water totem", 1) { }
+    bool IsActive() override { return ShamanTotemSupport::NeedsWaterTotem(botAI, bot); }
+};
 
 class GroupLowManaForManaTideTrigger : public Trigger
 {
