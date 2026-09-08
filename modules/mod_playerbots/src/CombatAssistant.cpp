@@ -6,6 +6,7 @@
  */
 
 #include "CombatAssistant.h"
+#include "AfflictionAssistantPolicy.h"
 #include "GroupPveCombat.h"
 
 #include "Chat.h"
@@ -19,6 +20,7 @@
 #include "SpellAuraEffects.h"
 #include "SpellAuras.h"
 #include "SpellMgr.h"
+#include "ThreatManager.h"
 #include "WorldSession.h"
 #include "DynamicObject.h"
 
@@ -82,10 +84,19 @@ struct CombatAssistantPlayerState
     uint32 DamageWindowTimer = 0;
     float DamageWindowStartPct = 100.0f;
     float RecentDamagePct = 0.0f;
+    ObjectGuid HauntTarget;
+    uint32 HauntPendingTimer = 0;
     std::string LastPayload;
 };
 
 std::unordered_map<uint32, CombatAssistantPlayerState> CombatAssistantStates;
+
+bool UsesAfflictionAssistant(Player* player)
+{
+    return player->GetClass() == CLASS_WARLOCK &&
+        player->GetTalentSpecialization() == SPEC_WARLOCK_AFFLICTION &&
+        !player->InBattleground() && !player->InArena();
+}
 
 Spell* PrepareCheckedSpell(Player* player, uint32 spellId, Unit* target, bool cast)
 {
@@ -111,12 +122,55 @@ Spell* PrepareCheckedSpell(Player* player, uint32 spellId, Unit* target, bool ca
     if (!knownRank)
         return nullptr;
 
+    bool const affliction = UsesAfflictionAssistant(player);
     SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(knownRank);
+    if (affliction && spellInfo)
+    {
+        // Match the client's action-bar override path. Soulburn variants are
+        // granted by an active aura, not necessarily learned in the spell book.
+        Unit::AuraEffectList swaps = player->GetAuraEffectsByType(SPELL_AURA_OVERRIDE_ACTIONBAR_SPELLS);
+        Unit::AuraEffectList const& swaps2 = player->GetAuraEffectsByType(SPELL_AURA_OVERRIDE_ACTIONBAR_SPELLS_2);
+        swaps.insert(swaps.end(), swaps2.begin(), swaps2.end());
+        for (AuraEffect const* effect : swaps)
+            if (effect->IsAffectingSpell(spellInfo))
+                if (SpellInfo const* replacement = sSpellMgr->GetSpellInfo(effect->GetAmount()))
+                { spellInfo = replacement; break; }
+        // Never turn an intended instant DoT application into normal inhale.
+        if (spellId == AfflictionAssistant::SoulSwap &&
+            (!player->HasAura(AfflictionAssistant::Soulburn) ||
+             spellInfo->Id != AfflictionAssistant::SoulburnSwap)) return nullptr;
+        if (spellId == AfflictionAssistant::Seed && player->HasAura(AfflictionAssistant::Soulburn) &&
+            player->HasSpell(86664) && spellInfo->Id != AfflictionAssistant::SoulburnSeed) return nullptr;
+    }
     if (!spellInfo || player->GetGlobalCooldownMgr().HasGlobalCooldown(spellInfo))
         return nullptr;
 
-    Spell* spell = new Spell(player, spellInfo, TRIGGERED_NONE);
-    if (!spell->CanAutoCast(target))
+    Spell* channel = affliction ? player->GetCurrentSpell(CURRENT_CHANNELED_SPELL) : nullptr;
+    bool const damageChannel = channel && (channel->GetSpellInfo()->Id == AfflictionAssistant::MaleficGrasp ||
+        channel->GetSpellInfo()->Id == AfflictionAssistant::DrainSoul);
+    if (cast && damageChannel)
+    {
+        if (channel->GetSpellInfo()->Id == spellInfo->Id && channel->m_targets.GetUnitTarget() == target)
+            return nullptr;
+        // Validate before interrupting; range, mana, GCD and cooldown failures
+        // must leave the current channel intact. Actual casts remain untriggered.
+        Spell* probe = PrepareCheckedSpell(player, spellId, target, false);
+        if (!probe) return nullptr;
+        delete probe;
+        player->InterruptSpell(CURRENT_CHANNELED_SPELL);
+        return PrepareCheckedSpell(player, spellId, target, true);
+    }
+    Spell* spell = new Spell(player, spellInfo,
+        !cast && damageChannel ? TRIGGERED_IGNORE_CAST_IN_PROGRESS : TRIGGERED_NONE);
+    if (affliction && player->isMoving() &&
+        (spellInfo->IsChanneled() || spellInfo->CalcCastTime(player->GetLevel(), spell)) &&
+        (spellInfo->InterruptFlags & SPELL_INTERRUPT_FLAG_MOVEMENT) &&
+        !player->HasAuraTypeWithAffectMask(SPELL_AURA_CAST_WHILE_WALKING, spellInfo))
+    { delete spell; return nullptr; }
+    // Pet autocast deliberately rejects existing auras (even another caster's).
+    // A player DoT refresh needs normal cast checks without that pet-only filter.
+    bool const usable = affliction ? spell->CheckPetCast(target) == SPELL_CAST_OK : spell->CanAutoCast(target);
+    if (!usable)
     {
         delete spell;
         return nullptr;
@@ -124,6 +178,14 @@ Spell* PrepareCheckedSpell(Player* player, uint32 spellId, Unit* target, bool ca
 
     if (cast)
     {
+        if (affliction && spellId == AfflictionAssistant::Haunt)
+        {
+            CombatAssistantPlayerState& state = CombatAssistantStates[player->GetGUID().GetCounter()];
+            state.HauntTarget = target->GetGUID();
+            state.HauntPendingTimer = spellInfo->CalcCastTime(player->GetLevel(), spell) + 500;
+            if (spellInfo->Speed > 0)
+                state.HauntPendingTimer += uint32(1000 * player->GetDistance(target) / spellInfo->Speed);
+        }
         SpellCastTargets targets;
         targets.SetUnitTarget(target);
         if (spellInfo->ExplicitTargetMask & TARGET_FLAG_DEST_LOCATION)
@@ -1060,10 +1122,152 @@ CombatRecommendation SelectRetributionRecommendation(Player* player)
     return {};
 }
 
+int AfflictionAuraRemaining(Player* player, Unit* target, uint32 auraId)
+{
+    Aura const* aura = target->GetAura(auraId, player->GetGUID());
+    return aura ? std::max(0, aura->GetDuration()) : 0;
+}
+
+bool IsAfflictionEngaged(Player* player, Unit* target)
+{
+    if (!target || !target->IsAlive() || !target->IsInWorld() ||
+        target->GetMap() != player->GetMap() || !player->IsValidAttackTarget(target)) return false;
+    // Dummies need not have a victim. Own DoTs/threat also prove participation;
+    // an unrelated creature merely being in combat does not.
+    return IsEngagedWithPlayerOrGroup(player, target, GetCombatAssistantGroup(player)) ||
+        GroupPveCombat::IsEngaged(player, target) ||
+        target->HasAura(AfflictionAssistant::Agony, player->GetGUID()) ||
+        target->HasAura(AfflictionAssistant::CorruptionAura, player->GetGUID()) ||
+        target->HasAura(AfflictionAssistant::UnstableAffliction, player->GetGUID()) ||
+        (target->CanHaveThreatList() && target->GetThreatManager().getThreat(player) > 0.0f);
+}
+
+CombatRecommendation SelectAfflictionRecommendation(Player* player)
+{
+    using namespace AfflictionAssistant;
+    if (HasHardLossOfControl(player))
+    {
+        if (CombatRecommendation racial = RecommendNamed(player, player, "Every Man for Himself", "RACIAL_ESCAPE"))
+            return racial;
+        if (CombatRecommendation escape = RecommendFirstNamed(player, player,
+            GetCrowdControlBreaks(player->GetClass()), "ESCAPE_CC")) return escape;
+    }
+    Unit* selected = player->GetSelectedUnit();
+    if (!selected || !selected->IsAlive() || !player->IsValidAttackTarget(selected) ||
+        selected->HasBreakableByDamageCrowdControlAura()) return {};
+    if (TargetIsCasting(selected))
+        if (CombatRecommendation interrupt = RecommendFirstNamed(player, selected,
+            GetInterruptSpells(player->GetClass()), "INTERRUPT")) return interrupt;
+    if (player->GetHealthPct() < 15.0f)
+        if (CombatRecommendation heal = RecommendNamed(player, player, "Dark Regeneration", "EMERGENCY_HEAL"))
+            return heal;
+
+    State state;
+    state.Casting = player->GetCurrentSpell(CURRENT_GENERIC_SPELL) != nullptr;
+    if (state.Casting) return {};
+    state.Health = player->GetHealthPct();
+    state.Mana = player->GetMaxPower(POWER_MANA) ?
+        100.0f * player->GetPower(POWER_MANA) / player->GetMaxPower(POWER_MANA) : 0;
+    state.Shards = player->GetPower(POWER_SOUL_SHARDS) / 100;
+    state.InCombat = IsAfflictionEngaged(player, selected);
+    state.Pandemic = player->HasAura(131973);
+    state.DarkSoulActive = player->HasAura(DarkSoul);
+    state.SoulburnActive = player->HasAura(Soulburn);
+    state.CanSoulburnSwap = player->HasSpell(141931) && player->HasSpell(SoulSwap) &&
+        CanCast(player, Corruption, selected);
+    state.CanSoulburnSeed = player->HasSpell(86664) && player->HasSpell(Seed) &&
+        CanCast(player, Seed, selected);
+
+    bool allowSecondary = true;
+    if (GetCombatAssistantGroup(player) && (player->GetMap()->IsDungeon() || player->GetMap()->IsRaid()))
+        allowSecondary = GroupPveCombat::AoeReady(player, selected);
+
+    // Use the greater explosion radius, with a conservative floor if spell
+    // data has no radius. Check idle/CC neighbours as well as counted enemies.
+    float damageRadius = 0.0f;
+    for (uint32 id : {27285u, 87385u})
+        if (SpellInfo const* explosion = sSpellMgr->GetSpellInfo(id))
+            for (uint32 i = 0; i < MAX_SPELL_EFFECTS; ++i)
+                damageRadius = std::max(damageRadius, explosion->Effects[i].CalcRadius(player));
+    float const splashRadius = std::max(15.0f, damageRadius);
+    std::list<Unit*> nearby;
+    player->GetAttackableUnitListInRange(nearby, 40.0f + splashRadius);
+    if (std::find(nearby.begin(), nearby.end(), selected) == nearby.end()) nearby.push_back(selected);
+    std::vector<Unit*> secondary;
+    unsigned clusterCount = 0;
+    bool safeSplash = allowSecondary;
+    for (Unit* enemy : nearby)
+    {
+        if (!enemy || !enemy->IsAlive() || !player->IsValidAttackTarget(enemy) ||
+            !selected->IsWithinDistInMap(enemy, splashRadius)) continue;
+        bool const engaged = IsAfflictionEngaged(player, enemy);
+        bool const controlled = enemy->HasBreakableByDamageCrowdControlAura();
+        bool const collected = !GetCombatAssistantGroup(player) || GroupPveCombat::IsCollected(player, enemy);
+        if (!engaged || controlled || !collected) safeSplash = false;
+        if (engaged && !controlled && collected && damageRadius > 0 &&
+            selected->IsWithinDistInMap(enemy, damageRadius)) ++clusterCount;
+        if (enemy != selected && allowSecondary && engaged && !controlled && collected &&
+            player->IsWithinDistInMap(enemy, 40.0f) && player->IsWithinLOSInMap(enemy))
+            secondary.push_back(enemy);
+    }
+    state.SeedSafe = safeSplash && clusterCount >= 4;
+    std::sort(secondary.begin(), secondary.end(), [](Unit* left, Unit* right)
+        { return left->GetGUID() < right->GetGUID(); });
+    std::vector<Unit*> targets = {selected};
+    for (Unit* enemy : secondary)
+    {
+        if (targets.size() == 3) break;
+        targets.push_back(enemy);
+    }
+    std::array<uint32, 3> const auras = {{Agony, CorruptionAura, UnstableAffliction}};
+    float const castSpeed = player->GetFloatValue(UNIT_FIELD_MOD_CASTING_SPEED);
+    for (Unit* target : targets)
+    {
+        Target snapshot;
+        for (unsigned d = 0; d < auras.size(); ++d)
+        {
+            snapshot.Dots[d].Remaining = AfflictionAuraRemaining(player, target, auras[d]);
+            if (SpellInfo const* info = sSpellMgr->GetSpellInfo(auras[d]))
+                snapshot.Dots[d].BaseDuration = player->CalcSpellDuration(info);
+            // Cast/GCD plus a small input margin, scaled for haste.
+            snapshot.Dots[d].CastLead = std::max(1000, int(1500 * castSpeed)) + 250;
+        }
+        snapshot.HauntRemaining = AfflictionAuraRemaining(player, target, Haunt);
+        snapshot.HauntLead = std::max(1000, int(1500 * castSpeed)) + 500;
+        CombatAssistantPlayerState const& pending = CombatAssistantStates[player->GetGUID().GetCounter()];
+        if (pending.HauntPendingTimer && pending.HauntTarget == target->GetGUID())
+            snapshot.HauntRemaining = std::max(snapshot.HauntRemaining, snapshot.HauntLead + 1);
+        snapshot.SeedRemaining = std::max(AfflictionAuraRemaining(player, target, Seed),
+            AfflictionAuraRemaining(player, target, SoulburnSeed));
+        snapshot.Execute = target->HasAuraState(AURA_STATE_HEALTHLESS_20_PERCENT);
+        state.Targets.push_back(snapshot);
+    }
+    if (Spell* channel = player->GetCurrentSpell(CURRENT_CHANNELED_SPELL))
+    {
+        state.Channel = channel->GetSpellInfo()->Id;
+        // Preserve manually chosen channels (Drain Life, Health Funnel, etc.).
+        if (state.Channel != MaleficGrasp && state.Channel != DrainSoul) return {};
+        state.ChannelOnSelected = channel->m_targets.GetUnitTarget() == selected;
+        if (AuraEffect const* effect = selected->GetAuraEffect(state.Channel, EFFECT_0, player->GetGUID()))
+            state.JustTicked = effect->GetTickNumber() > 0 && effect->GetAmplitude() > 0 &&
+                effect->GetAmplitude() - effect->GetPeriodicTimer() <= 250;
+    }
+    Action const action = Select(state, [&](Action const& candidate)
+    {
+        Unit* target = candidate.TargetIndex < 0 ? player : targets[candidate.TargetIndex];
+        return CanCast(player, candidate.Spell, target);
+    });
+    if (!action) return {};
+    return {action.Spell, action.TargetIndex < 0 ? player : targets[action.TargetIndex], action.Reason};
+}
+
 CombatRecommendation SelectRecommendation(Player* player)
 {
     if (!player || !player->IsAlive())
         return {};
+
+    if (UsesAfflictionAssistant(player))
+        return SelectAfflictionRecommendation(player);
 
     if (player->GetClass() == CLASS_PALADIN &&
         player->GetTalentSpecialization() == SPEC_PALADIN_RETRIBUTION)
@@ -1116,7 +1320,9 @@ std::pair<uint32, char const*> GetAssistantPower(Player* player)
     }
 
     uint32 value = player->GetPower(power);
-    if (power == POWER_RAGE || power == POWER_RUNIC_POWER)
+    if (power == POWER_SOUL_SHARDS)
+        value /= 100;
+    else if (power == POWER_RAGE || power == POWER_RUNIC_POWER)
         value /= 10;
     return { value, name };
 }
@@ -1209,7 +1415,8 @@ public:
             return true;
         }
 
-        PrepareCheckedSpell(player, recommendation.SpellId, recommendation.Target, true);
+        if (strcmp(recommendation.Reason, "CHANNELING"))
+            PrepareCheckedSpell(player, recommendation.SpellId, recommendation.Target, true);
         PushRecommendation(player, true);
         return true;
     }
@@ -1237,6 +1444,7 @@ public:
 
         CombatAssistantPlayerState& state = CombatAssistantStates[player->GetGUID().GetCounter()];
         UpdateRecentDamage(player, state, diff);
+        state.HauntPendingTimer = state.HauntPendingTimer > diff ? state.HauntPendingTimer - diff : 0;
         if (state.UpdateTimer > diff)
         {
             state.UpdateTimer -= diff;
