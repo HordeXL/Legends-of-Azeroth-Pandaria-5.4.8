@@ -32,6 +32,10 @@ bool RoguePveAbilityTrigger::IsActive()
     }
 
     Unit* target = AI_VALUE(Unit*, "current target");
+    if (ability == RoguePveAbility::OpenCombat)
+        return target && target->IsAlive() && target->IsInCombat() && bot->HasAura(1784) &&
+            bot->IsValidAttackTarget(target) && bot->IsWithinMeleeRange(target) &&
+            botAI->CanLfgAutoQueueEngage(target);
     if (!target || !target->IsAlive() || !bot->IsInCombat() ||
         !bot->IsValidAttackTarget(target) || !botAI->CanLfgAutoQueueEngage(target))
         return false;

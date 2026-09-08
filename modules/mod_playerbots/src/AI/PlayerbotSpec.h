@@ -20,6 +20,7 @@ public:
     // Diamond (raid icon index 2) explicitly designates a PvE main tank.
     // May return a dead tank so callers can allow emergency takeover.
     static Player* GetDiamondMarkedTank(Player* player);
+    static Player* GetGroupPvePullTank(Player* player);
     static bool IsMainTank(Player* player);
     static bool IsAssistTank(Player* player);
     static bool IsAssistTankOfIndex(Player* bot, Player* player, int index);

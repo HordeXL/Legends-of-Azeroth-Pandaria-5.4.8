@@ -8,6 +8,17 @@
 #include "Event.h"
 #include "Playerbots.h"
 
+std::string const CastStarfallAction::GetTargetName()
+{
+    return botAI->IsGroupPveActivity() ? "self target" : "current target";
+}
+
+bool CastStarfallAction::isUseful()
+{
+    return (!botAI->IsGroupPveActivity() || (bot->IsInCombat() && !bot->HasAura(48505))) &&
+        CastSpellAction::isUseful();
+}
+
 NextAction** CastAbolishPoisonAction::getAlternatives()
 {
     return NextAction::merge(NextAction::array(0, new NextAction("cure poison"), nullptr),

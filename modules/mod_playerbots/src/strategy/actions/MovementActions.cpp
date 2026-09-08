@@ -157,7 +157,7 @@ bool MovementAction::WaitForTankPull(WorldObject* object)
     // Being on the tank's threat list is not the same as having reached the
     // tank. Do not meet a ranged pull halfway and body-pull the next pack.
     // Friendly healing/resurrection movement and PvP remain independent.
-    // Tank bots may approach once the requester has authorized the fight.
+    // Only the designated pull tank may meet a ranged pull halfway.
     if (!object || !botAI->IsGroupPveActivity())
         return false;
 
@@ -172,7 +172,13 @@ bool MovementAction::WaitForTankPull(WorldObject* object)
     if (!botAI->CanLfgAutoQueueEngage(target))
         return true;
     if (PlayerBotSpec::IsTank(bot, true))
-        return false;
+    {
+        Player* mainTank = PlayerBotSpec::GetGroupPvePullTank(bot);
+        if (!mainTank || mainTank == bot || !mainTank->IsAlive()) return false;
+        // Local self-defence is allowed, but does not authorize a chase.
+        if (target->GetVictim() == bot && bot->IsWithinMeleeRange(target)) return false;
+        return !mainTank->IsWithinMeleeRange(target);
+    }
 
     Unit* victim = target->GetVictim();
     Player* tank = victim ? victim->ToPlayer() : nullptr;

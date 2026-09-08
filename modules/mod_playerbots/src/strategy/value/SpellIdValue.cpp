@@ -68,6 +68,15 @@ uint32 SpellIdValue::Calculate()
         if (!spellInfo || spellInfo->IsPassive())
             continue;
 
+        // Cat and bear abilities share names in MoP. Picking the lowest ID
+        // alone can select a wrong-form ability and fail every cast.
+        if (botAI->IsGroupPveActivity() && bot->GetClass() == CLASS_DRUID &&
+            (namepart == "mangle" || namepart == "swipe" || namepart == "thrash"))
+        {
+            uint32 form = bot->GetSpecialization() == SPEC_DRUID_GUARDIAN ? FORM_BEAR : FORM_CAT;
+            if (spellInfo->CheckShapeshift(form) != SPELL_CAST_OK) continue;
+        }
+
         if (spellInfo->Effects[0].Effect == SPELL_EFFECT_LEARN_SPELL)
             continue;
 

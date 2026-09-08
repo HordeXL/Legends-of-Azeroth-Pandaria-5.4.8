@@ -2588,12 +2588,13 @@ bool ShouldDelayGroupPveAoe(PlayerbotAI* botAI, Player* bot,
         center = bot;
 
     uint32 affectedAttackers = 0;
+    bool const guidedStarfall = spellInfo->Id == 48505 && bot->HasAura(146655);
     bool packHeldByTank = true;
     // Do not use the cached "attackers" value: it deliberately excludes the
     // idle enemies that an area spell could accidentally pull. Visit the live
     // neighbourhood, including neutral attackable NPCs and extended radii
     // (CalcRadius above applies spell mods such as Mannoroth's Fury).
-    Position const* areaCenter = destination ? destination :
+    Position const* areaCenter = spellInfo->Id == 48505 ? static_cast<Position const*>(bot) : destination ? destination :
         static_cast<Position const*>(scriptedArea ? spellTarget : center);
     float const searchRange = bot->GetExactDist(areaCenter) + effectRadius + 5.0f;
     std::list<Unit*> nearbyUnits;
@@ -2608,6 +2609,12 @@ bool ShouldDelayGroupPveAoe(PlayerbotAI* botAI, Player* bot,
 
         if (unit->GetExactDist(areaCenter) > effectRadius + unit->GetCombatReach() &&
             bot->GetDistance(unit) > effectRadius)
+            continue;
+
+        // Match spell_dru_starfall_damage: Guided Stars cannot hit enemies
+        // without this caster's Moonfire/Sunfire. Do not veto safe Starfall
+        // because an unrelated, undotted pack happens to be in its radius.
+        if (guidedStarfall && !unit->HasAura(8921, bot->GetGUID()) && !unit->HasAura(93402, bot->GetGUID()))
             continue;
 
         if (unit->HasBreakableByDamageCrowdControlAura())
@@ -2685,7 +2692,7 @@ bool PlayerbotAI::IsGroupPveTauntAllowed(SpellInfo const* spellInfo, Unit* targe
     if (!PlayerBotSpec::IsTank(bot, true))
         return false;
 
-    if (Player* mainTank = PlayerBotSpec::GetDiamondMarkedTank(bot))
+    if (Player* mainTank = PlayerBotSpec::GetGroupPvePullTank(bot))
     {
         // Re-evaluate every cast: death permits takeover immediately and
         // resurrection/remarking restores the designated tank's ownership.

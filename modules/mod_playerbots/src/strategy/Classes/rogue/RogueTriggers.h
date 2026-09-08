@@ -10,7 +10,7 @@
 
 class PlayerbotAI;
 
-enum class RoguePveAbility { Poison, ShadowDance, Ambush, Premeditation, BurstOfSpeed };
+enum class RoguePveAbility { Poison, ShadowDance, Ambush, Premeditation, BurstOfSpeed, OpenCombat };
 
 class RoguePveAoeTrigger : public MediumAoeTrigger
 {

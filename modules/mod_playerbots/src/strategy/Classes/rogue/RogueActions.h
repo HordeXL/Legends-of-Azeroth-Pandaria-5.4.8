@@ -132,6 +132,13 @@ public:
     EnvenomAction(PlayerbotAI* ai) : CastMeleeSpellAction(ai, "envenom") {}
 };
 
+class PveRogueOpenCombatAction : public Action
+{
+public:
+    PveRogueOpenCombatAction(PlayerbotAI* ai) : Action(ai, "pve rogue open combat") {}
+    bool Execute(Event event) override;
+};
+
 // MoP Assassination execute. CanCastSpell handles the target-health
 // requirement, so keeping it high in the default list is inexpensive above
 // 35% and makes the specialization use its strongest execute below it.

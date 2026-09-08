@@ -62,7 +62,7 @@ if ($CheckDbc) {
     }
     $spellDbc = Read-Dbc 'Spell.dbc'
     $strings = 20 + $spellDbc.Count * $spellDbc.Size
-    $spellIds = @{}; $spellNames = @{}
+    $spellIds = @{}; $spellNames = @{}; $spellShapes = @{}
     for ($i = 0; $i -lt $spellDbc.Count; $i++) {
         $offset = 20 + $i * $spellDbc.Size
         $id = [BitConverter]::ToUInt32($spellDbc.Bytes, $offset)
@@ -71,6 +71,7 @@ if ($CheckDbc) {
         while ($spellDbc.Bytes[$end] -ne 0) { $end++ }
         $name = [Text.Encoding]::UTF8.GetString($spellDbc.Bytes, $start, $end - $start)
         $spellIds[$id] = $name; $spellNames[$name] = $true
+        $spellShapes[$id] = [BitConverter]::ToUInt32($spellDbc.Bytes, $offset + 80)
     }
     $glyphDbc = Read-Dbc 'GlyphProperties.dbc'; $majorSpells = @{}
     for ($i = 0; $i -lt $glyphDbc.Count; $i++) {
@@ -87,7 +88,7 @@ if ($CheckDbc) {
     foreach ($id in $majorIds) { if (!$majorSpells.ContainsKey($id)) { throw "Unknown MoP major glyph effect $id" } }
 
     $states = Get-Content "$strategy/triggers/PveRotationTriggerContext.h" -Raw
-    $stateIds = [regex]::Matches($states, 'new PveSpellStateTrigger\(ai, (\d+)') |
+    $stateIds = [regex]::Matches($states, 'new Pve(?:SpellState|ShamanShield)Trigger\(ai, (\d+)') |
         ForEach-Object { [uint32]$_.Groups[1].Value } | Sort-Object -Unique
     foreach ($id in $stateIds) { if (!$spellIds.ContainsKey($id)) { throw "Unknown MoP rotation spell $id" } }
 
@@ -97,5 +98,18 @@ if ($CheckDbc) {
     foreach ($target in $targets) {
         if (!$spellNames.ContainsKey($target.Groups[1].Value)) { throw "Unknown MoP spell alias target: $($target.Groups[1].Value)" }
     }
-    "DBC PASS: $($majorIds.Count) major glyph effects, $($stateIds.Count) rotation spell IDs, $($targets.Count) spell aliases."
+    $shapeDbc = Read-Dbc 'SpellShapeshift.dbc'; $shapeMasks = @{}
+    for ($i = 0; $i -lt $shapeDbc.Count; $i++) {
+        $offset = 20 + $i * $shapeDbc.Size
+        # DBCfmt "nixixx": field 1 -> StancesNot, field 3 -> Stances.
+        $shapeMasks[[BitConverter]::ToUInt32($shapeDbc.Bytes, $offset)] =
+            [BitConverter]::ToUInt32($shapeDbc.Bytes, $offset + 12)
+    }
+    $formCases = @(@(33876,1), @(33878,16), @(77758,16), @(106830,1), @(779,16), @(62078,1))
+    foreach ($case in $formCases) {
+        if ($shapeMasks[$spellShapes[[uint32]$case[0]]] -ne $case[1]) {
+            throw "Unexpected MoP druid form mask for spell $($case[0])"
+        }
+    }
+    "DBC PASS: $($majorIds.Count) major glyph effects, $($stateIds.Count) rotation spell IDs, $($targets.Count) spell aliases, $($formCases.Count) druid form masks."
 }

@@ -88,6 +88,8 @@ NextAction** DpsRogueStrategy::getDefaultActions()
 void DpsRogueStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 {
     MeleeCombatStrategy::InitTriggers(triggers);
+    triggers.push_back(new TriggerNode("pve rogue open combat", NextAction::array(0,
+        new NextAction("pve rogue open combat", ACTION_HIGH + 10), nullptr)));
 
     triggers.push_back(new TriggerNode("pve deadly poison",
         NextAction::array(0, new NextAction("deadly poison", ACTION_HIGH + 10), nullptr)));
@@ -230,6 +232,8 @@ NextAction** StealthedRogueStrategy::getDefaultActions()
 
 void StealthedRogueStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 {
+    triggers.push_back(new TriggerNode("pve rogue open combat", NextAction::array(0,
+        new NextAction("pve rogue open combat", ACTION_HIGH + 10), nullptr)));
     triggers.push_back(new TriggerNode("combo points available",
                                        NextAction::array(0, new NextAction("eviscerate", ACTION_HIGH), nullptr)));
     triggers.push_back(

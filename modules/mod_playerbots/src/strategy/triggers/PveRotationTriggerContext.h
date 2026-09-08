@@ -46,6 +46,19 @@ public:
     }
 };
 
+class PveShamanShieldTrigger : public Trigger
+{
+public:
+    PveShamanShieldTrigger(PlayerbotAI* ai, uint32 spell) : Trigger(ai, "pve shaman shield", 1), spell(spell) {}
+    bool IsActive() override
+    {
+        uint32 desired = bot->GetSpecialization() == SPEC_SHAMAN_RESTORATION ? 52127 : 324;
+        return botAI->IsGroupPveActivity() && spell == desired && bot->HasSpell(spell) && !bot->HasAura(spell);
+    }
+private:
+    uint32 spell;
+};
+
 // Only restore audited MoP conditions. Do not enable legacy PvP interrupts,
 // fears, obsolete buffs or the old 'aoe heal' value (which is not registered).
 template<class T> class GroupPveTrigger : public T
@@ -194,8 +207,8 @@ public:
         creators["cat form"] = [](PlayerbotAI* ai) -> Trigger* { return new PveSpellStateTrigger(ai, 768, PveSpellStateTrigger::MissingSelf); };
         creators["bear form"] = [](PlayerbotAI* ai) -> Trigger* { return new PveSpellStateTrigger(ai, 5487, PveSpellStateTrigger::MissingSelf); };
         creators["flame shock"] = [](PlayerbotAI* ai) -> Trigger* { return new PveSpellStateTrigger(ai, 8050, PveSpellStateTrigger::MissingDot); };
-        creators["lightning shield"] = [](PlayerbotAI* ai) -> Trigger* { return new PveSpellStateTrigger(ai, 324, PveSpellStateTrigger::MissingSelf); };
-        creators["water shield"] = [](PlayerbotAI* ai) -> Trigger* { return new PveSpellStateTrigger(ai, 52127, PveSpellStateTrigger::MissingSelf); };
+        creators["lightning shield"] = [](PlayerbotAI* ai) -> Trigger* { return new PveShamanShieldTrigger(ai, 324); };
+        creators["water shield"] = [](PlayerbotAI* ai) -> Trigger* { return new PveShamanShieldTrigger(ai, 52127); };
         creators["no stings"] = [](PlayerbotAI* ai) -> Trigger* { return new PveSpellStateTrigger(ai, 1978, PveSpellStateTrigger::MissingDot); };
         creators["black arrow"] = [](PlayerbotAI* ai) -> Trigger* { return new PveSpellStateTrigger(ai, 3674, PveSpellStateTrigger::MissingDot); };
         creators["rapid fire"] = [](PlayerbotAI* ai) -> Trigger* { return new PveSpellStateTrigger(ai, 3045, PveSpellStateTrigger::Ready); };

@@ -294,7 +294,8 @@ void AiFactory::AddDefaultCombatStrategies(Player* player, PlayerbotAI* const fa
         case CLASS_SHAMAN:
         {
             if (spec == Specializations::SPEC_SHAMAN_ELEMENTAL)
-                engine->addStrategiesNoInit("caster", "caster aoe", "bmana", nullptr);
+                engine->addStrategiesNoInit("caster", "caster aoe",
+                    facade->IsGroupPveActivity() ? "bdps" : "bmana", nullptr);
             else if (spec == Specializations::SPEC_SHAMAN_RESTORATION)
                 engine->addStrategiesNoInit("heal", "bmana", nullptr);
             else
@@ -514,7 +515,8 @@ void AiFactory::AddDefaultNonCombatStrategies(Player* player, PlayerbotAI* const
             nonCombatEngine->addStrategiesNoInit("bdps", "dps assist", "pet", nullptr);
             break;
         case CLASS_SHAMAN:
-            if (tab == Specializations::SPEC_SHAMAN_ELEMENTAL || tab == Specializations::SPEC_SHAMAN_RESTORATION)
+            if (tab == Specializations::SPEC_SHAMAN_RESTORATION ||
+                (tab == Specializations::SPEC_SHAMAN_ELEMENTAL && !facade->IsGroupPveActivity()))
                 nonCombatEngine->addStrategy("bmana", false);
             else
                 nonCombatEngine->addStrategy("bdps", false);

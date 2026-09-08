@@ -69,6 +69,7 @@ public:
         creators["pve premeditation"] = [](PlayerbotAI* ai) -> Trigger* { return new RoguePveAbilityTrigger(ai, "pve premeditation", RoguePveAbility::Premeditation); };
         creators["pve burst of speed"] = [](PlayerbotAI* ai) -> Trigger* { return new RoguePveAbilityTrigger(ai, "pve burst of speed", RoguePveAbility::BurstOfSpeed); };
         creators["pve rogue aoe"] = [](PlayerbotAI* ai) -> Trigger* { return new RoguePveAoeTrigger(ai); };
+        creators["pve rogue open combat"] = [](PlayerbotAI* ai) -> Trigger* { return new RoguePveAbilityTrigger(ai, "pve rogue open combat", RoguePveAbility::OpenCombat); };
     }
 
 private:
@@ -118,6 +119,7 @@ public:
         creators["shadow dance"] = [](PlayerbotAI* ai) -> Action* { return new CastBuffSpellAction(ai, "shadow dance"); };
         creators["premeditation"] = [](PlayerbotAI* ai) -> Action* { return new CastSpellAction(ai, "premeditation"); };
         creators["burst of speed"] = [](PlayerbotAI* ai) -> Action* { return new CastBuffSpellAction(ai, "burst of speed"); };
+        creators["pve rogue open combat"] = [](PlayerbotAI* ai) -> Action* { return new PveRogueOpenCombatAction(ai); };
     }
 
 private:
