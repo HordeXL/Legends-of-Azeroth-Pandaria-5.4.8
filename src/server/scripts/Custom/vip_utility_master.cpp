@@ -1,6 +1,7 @@
 #include "ScriptPCH.h"
 #include "Chat.h"
 #include "ScriptedGossip.h"
+#include "SpellMgr.h"
 
 namespace
 {
@@ -53,7 +54,7 @@ namespace
     {
         "Learn all weapon skills.",
         ACTION_LEARN_WEAPONS,
-        { 196, 197, 198, 199, 200, 201, 202, 227, 256, 264, 266, 1180, 5009, 5011, 15590 }
+        { 196, 197, 198, 199, 200, 201, 202, 227, 264, 266, 1180, 5009, 5011, 15590 }
     };
 
     VipSpellGroup const ArmorGroup =
@@ -85,7 +86,7 @@ namespace
     void LearnSpells(Player* player, VipSpellGroup const& group)
     {
         for (uint32 spellId : group.Spells)
-            if (!player->HasSpell(spellId))
+            if (sSpellMgr->GetSpellInfo(spellId) && !player->HasSpell(spellId))
                 player->LearnSpell(spellId, false);
 
         if (group.SkillId && player->HasSkill(group.SkillId))
