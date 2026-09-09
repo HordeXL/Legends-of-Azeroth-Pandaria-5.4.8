@@ -30,6 +30,10 @@ EndScriptData */
 #include "SpellInfo.h"
 #include "Player.h"
 #include "Pet.h"
+#include "ClassSpellCommandPolicy.h"
+#include <algorithm>
+#include <map>
+#include <set>
 
 class learn_commandscript : public CommandScript
 {
@@ -40,7 +44,8 @@ public:
     {
         static std::vector<ChatCommand> learnAllMyCommandTable =
         {
-            { "class",      SEC_GAMEMASTER, false, &HandleLearnAllMyClassCommand,       },
+            { "class",      SEC_GAMEMASTER, false, &HandleLearnAllMyClassCommand,
+                "Syntax: .learn all my class\nLearn your class spells, all own-class talents, and active specialization spells (GM testing)." },
             { "pettalents", SEC_GAMEMASTER, false, &HandleLearnAllMyPetTalentsCommand,  },
             { "spells",     SEC_GAMEMASTER, false, &HandleLearnAllMySpellsCommand,      },
             { "talents",    SEC_GAMEMASTER, false, &HandleLearnAllMyTalentsCommand,     },
@@ -63,10 +68,27 @@ public:
             { "",           SEC_GAMEMASTER, false,  &HandleLearnCommand,                },
         };
 
+        static std::vector<ChatCommand> unlearnAllMyCommandTable =
+        {
+            { "class",      SEC_GAMEMASTER, false, &HandleUnLearnAllMyClassCommand,
+                "Syntax: .unlearn all my class\nUnlearn your class spells and own-class talents in both specs. Preserve shared skills and glyph unlocks." },
+        };
+
+        static std::vector<ChatCommand> unlearnAllCommandTable =
+        {
+            { "my",         SEC_GAMEMASTER, false, unlearnAllMyCommandTable             },
+        };
+
+        static std::vector<ChatCommand> unlearnCommandTable =
+        {
+            { "all",        SEC_GAMEMASTER, false, unlearnAllCommandTable               },
+            { "",           SEC_GAMEMASTER, false, &HandleUnLearnCommand,               },
+        };
+
         static std::vector<ChatCommand> commandTable =
         {
             { "learn",      SEC_GAMEMASTER, false,  learnCommandTable                   },
-            { "unlearn",    SEC_GAMEMASTER, false,  &HandleUnLearnCommand,              },
+            { "unlearn",    SEC_GAMEMASTER, false,  unlearnCommandTable                 },
         };
         return commandTable;
     }
@@ -137,10 +159,139 @@ public:
         return true;
     }
 
-    static bool HandleLearnAllMyClassCommand(ChatHandler* handler, char const* /*args*/)
+    // Some glyph unlocks and shared skills use a class spell family. A family
+    // match alone must not erase professions, racial abilities or glyph unlocks.
+    static bool IsProtectedClassCommandSpell(Player* player, uint32 spellId)
     {
+        if (SpellInfo const* spell = sSpellMgr->GetSpellInfo(spellId))
+            if (spell->IsAccountWide() || spell->HasAura(SPELL_AURA_MOUNTED))
+                return true;
+
+        if (auto glyphs = sSpellMgr->GetGlyphsForClass(player->GetClass()))
+            if (std::find(glyphs->begin(), glyphs->end(), spellId) != glyphs->end())
+                return true;
+
+        auto bounds = sSpellMgr->GetSkillLineAbilityMapBounds(spellId);
+        for (auto it = bounds.first; it != bounds.second; ++it)
+        {
+            SkillLineAbilityEntry const* ability = it->second;
+            SkillLineEntry const* skill = sSkillLineStore.LookupEntry(ability->skillId);
+            if (!skill)
+                continue;
+            if (skill->categoryId != SKILL_CATEGORY_CLASS)
+                return true;
+        }
+        return false;
+    }
+
+    static bool HandleLearnAllMyClassCommand(ChatHandler* handler, char const* args)
+    {
+        if (*args)
+            return false;
+        Player* player = handler->GetSession()->GetPlayer();
+        // Reapply native class-skill rewards too: some baseline passives have
+        // SpellLevel=0 and are deliberately skipped by the broad GM spell scan.
+        for (uint32 i = 0; i < sSkillLineStore.GetNumRows(); ++i)
+        {
+            SkillLineEntry const* skill = sSkillLineStore.LookupEntry(i);
+            if (skill && skill->categoryId == SKILL_CATEGORY_CLASS && player->HasSkill(skill->id))
+                player->LearnSkillRewardedSpells(skill->id, player->GetPureSkillValue(skill->id));
+        }
         HandleLearnAllMySpellsCommand(handler, "");
         HandleLearnAllMyTalentsCommand(handler, "");
+        player->LearnSpecializationSpells();
+        player->SaveToDB();
+        return true;
+    }
+
+    static bool HandleUnLearnAllMyClassCommand(ChatHandler* handler, char const* args)
+    {
+        if (*args)
+            return false;
+
+        Player* player = handler->GetSession()->GetPlayer();
+        if (player->IsInCombat())
+        {
+            handler->SendSysMessage("Leave combat before unlearning your class spells.");
+            return false;
+        }
+
+        ChrClassesEntry const* classEntry = sChrClassesStore.LookupEntry(player->GetClass());
+        if (!classEntry)
+            return false;
+
+        // Generic-family abilities still have owners in class skill lines,
+        // specialization records or Talent.dbc. Family-only filtering misses
+        // e.g. Pandemic, Soul Shards, Path of Frost and armor specializations.
+        std::map<uint32, uint32> owners;
+        for (uint32 i = 0; i < sSkillLineAbilityStore.GetNumRows(); ++i)
+        {
+            SkillLineAbilityEntry const* ability = sSkillLineAbilityStore.LookupEntry(i);
+            if (!ability)
+                continue;
+            SkillLineEntry const* skill = sSkillLineStore.LookupEntry(ability->skillId);
+            if (!skill || skill->categoryId != SKILL_CATEGORY_CLASS)
+                continue;
+            owners[ability->spellId] |= ability->classmask;
+            if (!ability->classmask && player->HasSkill(ability->skillId) &&
+                (!ability->racemask || (ability->racemask & player->GetRaceMask())))
+                owners[ability->spellId] |= player->GetClassMask();
+        }
+        for (uint32 i = 0; i < sSpecializationSpellsStore.GetNumRows(); ++i)
+        {
+            SpecializationSpellsEntry const* entry = sSpecializationSpellsStore.LookupEntry(i);
+            if (!entry)
+                continue;
+            ChrSpecializationEntry const* spec = sChrSpecializationStore.LookupEntry(entry->SpecializationId);
+            if (spec && spec->classId > 0 && spec->classId < MAX_CLASSES)
+                owners[entry->SpellId] |= uint32(1) << (spec->classId - 1);
+        }
+        for (uint32 i = 0; i < sTalentStore.GetNumRows(); ++i)
+        {
+            TalentEntry const* talent = sTalentStore.LookupEntry(i);
+            if (talent && talent->PlayerClass > 0 && talent->PlayerClass < MAX_CLASSES)
+                owners[talent->SpellId] |= uint32(1) << (talent->PlayerClass - 1);
+        }
+
+        // Snapshot IDs before RemoveSpell recursively changes the spell map.
+        // Include passive/level-zero class spells, but never another class's
+        // family or common skills. This is not a cross-class corruption reset.
+        std::set<uint32> spells;
+        for (auto const& entry : player->GetSpellMap())
+        {
+            if (entry.second->state == PLAYERSPELL_REMOVED || entry.second->state == PLAYERSPELL_TEMPORARY)
+                continue;
+            SpellInfo const* spell = sSpellMgr->GetSpellInfo(entry.first);
+            if (spell && ClassSpellCommandPolicy::Select(player->GetClassMask(), classEntry->spellfamily,
+                spell->SpellFamilyName, owners[entry.first], IsProtectedClassCommandSpell(player, entry.first)))
+                spells.insert(entry.first);
+        }
+
+        // Talent ownership comes from Talent.dbc: some talents have generic
+        // spell families. Clear both saved spec maps so a spec switch cannot
+        // restore talents that this command explicitly removed.
+        for (uint32 i = 0; i < sTalentStore.GetNumRows(); ++i)
+        {
+            TalentEntry const* talent = sTalentStore.LookupEntry(i);
+            if (!talent || talent->PlayerClass != player->GetClass())
+                continue;
+            spells.insert(talent->SpellId);
+            for (uint8 spec = 0; spec < MAX_TALENT_SPECS; ++spec)
+            {
+                auto talents = player->GetTalentMap(spec);
+                auto it = talents->find(talent->SpellId);
+                if (it != talents->end())
+                    it->second->state = PLAYERSPELL_REMOVED;
+            }
+        }
+
+        for (uint32 spellId : spells)
+            player->RemoveSpell(spellId, false, false);
+
+        player->RemoveInvalidSpellActionButtons();
+        player->SendTalentsInfoData();
+        player->SaveToDB();
+        handler->SendSysMessage("Your class spells and talents have been unlearned. Shared skills and glyph unlocks were preserved.");
         return true;
     }
 
@@ -171,6 +322,9 @@ public:
 
             // skip other spell families
             if (spellInfo->SpellFamilyName != family)
+                continue;
+
+            if (IsProtectedClassCommandSpell(handler->GetSession()->GetPlayer(), spellInfo->Id))
                 continue;
 
             // skip spells with first rank learned as talent (and all talents then also)
@@ -228,6 +382,7 @@ public:
             player->AddTalent(spellId, player->GetActiveSpec(), true);
         }
 
+        player->SendTalentsInfoData();
         handler->SendSysMessage(LANG_COMMAND_LEARN_CLASS_TALENTS);
         return true;
     }
