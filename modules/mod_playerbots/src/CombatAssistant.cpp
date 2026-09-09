@@ -13,6 +13,7 @@
 #include "Group.h"
 #include "Map.h"
 #include "Player.h"
+#include "PlayerbotAI.h"
 #include "PlayerbotAIConfig.h"
 #include "PlayerbotSpec.h"
 #include "ScriptMgr.h"
@@ -23,6 +24,7 @@
 #include "ThreatManager.h"
 #include "WorldSession.h"
 #include "DynamicObject.h"
+#include "Timer.h"
 
 #include <list>
 #include <sstream>
@@ -78,14 +80,9 @@ struct CombatAoeState
     bool UseAoe = false;
 };
 
-struct CombatAssistantPlayerState
+struct CombatAssistantPlayerState : AfflictionRotationRuntime
 {
     uint32 UpdateTimer = 0;
-    uint32 DamageWindowTimer = 0;
-    float DamageWindowStartPct = 100.0f;
-    float RecentDamagePct = 0.0f;
-    ObjectGuid HauntTarget;
-    uint32 HauntPendingTimer = 0;
     std::string LastPayload;
 };
 
@@ -98,7 +95,10 @@ bool UsesAfflictionAssistant(Player* player)
         !player->InBattleground() && !player->InArena();
 }
 
-Spell* PrepareCheckedSpell(Player* player, uint32 spellId, Unit* target, bool cast)
+bool IsAfflictionProtectedAlly(Player* player, Unit* target);
+
+Spell* PrepareCheckedSpell(Player* player, uint32 spellId, Unit* target, bool cast,
+    AfflictionRotationRuntime* runtime = nullptr, PlayerbotAI* botAI = nullptr, bool* started = nullptr)
 {
     if (!player || !target)
         return nullptr;
@@ -147,6 +147,21 @@ Spell* PrepareCheckedSpell(Player* player, uint32 spellId, Unit* target, bool ca
     if (!spellInfo || player->GetGlobalCooldownMgr().HasGlobalCooldown(spellInfo))
         return nullptr;
 
+    // The shared player cast path does not go through PlayerbotAI::CastSpell.
+    // Reapply bot engagement and area guards here, after resolving overrides,
+    // both for recommendation probes and immediately before the actual cast.
+    if (botAI)
+    {
+        if (player->HasUnitState(UNIT_STATE_LOST_CONTROL | UNIT_STATE_IN_FLIGHT) ||
+            player->IsFlying() || botAI->IsInVehicle()) return nullptr;
+        if (target != player && player->IsValidAttackTarget(target) &&
+            (IsAfflictionProtectedAlly(player, target) || target->HasBreakableByDamageCrowdControlAura() ||
+             !botAI->CanLfgAutoQueueEngage(target) || !GroupPveCombat::DamageAllowed(player, target)))
+            return nullptr;
+        if (!botAI->IsGroupPveOpeningSpellAllowed(spellInfo, target) ||
+            !botAI->IsGroupPveAreaSpellSafe(spellInfo, target)) return nullptr;
+    }
+
     Spell* channel = affliction ? player->GetCurrentSpell(CURRENT_CHANNELED_SPELL) : nullptr;
     bool const damageChannel = channel && (channel->GetSpellInfo()->Id == AfflictionAssistant::MaleficGrasp ||
         channel->GetSpellInfo()->Id == AfflictionAssistant::DrainSoul);
@@ -156,11 +171,11 @@ Spell* PrepareCheckedSpell(Player* player, uint32 spellId, Unit* target, bool ca
             return nullptr;
         // Validate before interrupting; range, mana, GCD and cooldown failures
         // must leave the current channel intact. Actual casts remain untriggered.
-        Spell* probe = PrepareCheckedSpell(player, spellId, target, false);
+        Spell* probe = PrepareCheckedSpell(player, spellId, target, false, runtime, botAI);
         if (!probe) return nullptr;
         delete probe;
         player->InterruptSpell(CURRENT_CHANNELED_SPELL);
-        return PrepareCheckedSpell(player, spellId, target, true);
+        return PrepareCheckedSpell(player, spellId, target, true, runtime, botAI, started);
     }
     Spell* spell = new Spell(player, spellInfo,
         !cast && damageChannel ? TRIGGERED_IGNORE_CAST_IN_PROGRESS : TRIGGERED_NONE);
@@ -182,7 +197,7 @@ Spell* PrepareCheckedSpell(Player* player, uint32 spellId, Unit* target, bool ca
     {
         if (affliction && spellId == AfflictionAssistant::Haunt)
         {
-            CombatAssistantPlayerState& state = CombatAssistantStates[player->GetGUID().GetCounter()];
+            AfflictionRotationRuntime& state = runtime ? *runtime : CombatAssistantStates[player->GetGUID().GetCounter()];
             state.HauntTarget = target->GetGUID();
             state.HauntPendingTimer = spellInfo->CalcCastTime(player->GetLevel(), spell) + 500;
             if (spellInfo->Speed > 0)
@@ -192,6 +207,7 @@ Spell* PrepareCheckedSpell(Player* player, uint32 spellId, Unit* target, bool ca
         targets.SetUnitTarget(target);
         if (spellInfo->ExplicitTargetMask & TARGET_FLAG_DEST_LOCATION)
             targets.SetDst(*target);
+        if (started) *started = true;
         spell->prepare(&targets);
         return nullptr;
     }
@@ -199,9 +215,9 @@ Spell* PrepareCheckedSpell(Player* player, uint32 spellId, Unit* target, bool ca
     return spell;
 }
 
-bool CanCast(Player* player, uint32 spellId, Unit* target)
+bool CanCast(Player* player, uint32 spellId, Unit* target, PlayerbotAI* botAI = nullptr)
 {
-    Spell* spell = PrepareCheckedSpell(player, spellId, target, false);
+    Spell* spell = PrepareCheckedSpell(player, spellId, target, false, nullptr, botAI);
     if (!spell)
         return false;
 
@@ -304,7 +320,7 @@ bool HasMovementLossOfControl(Player* player)
     return player->HasRootAura() || player->HasDecreaseSpeedAura();
 }
 
-void UpdateRecentDamage(Player* player, CombatAssistantPlayerState& state, uint32 diff)
+void UpdateRecentDamage(Player* player, AfflictionRotationRuntime& state, uint32 diff)
 {
     float const healthPct = player->GetHealthPct();
     if (!state.DamageWindowTimer)
@@ -1163,7 +1179,7 @@ uint32 AfflictionCastTime(Player* player, uint32 spellId)
     return info->CalcCastTime(player->GetLevel(), &probe);
 }
 
-AfflictionAssistant::State AfflictionPlayerState(Player* player)
+AfflictionAssistant::State AfflictionPlayerState(Player* player, AfflictionRotationRuntime const* runtime = nullptr)
 {
     using namespace AfflictionAssistant;
     State state;
@@ -1183,8 +1199,13 @@ AfflictionAssistant::State AfflictionPlayerState(Player* player)
         state.NextTapHealthCostPct = std::max(0, tap->Effects[EFFECT_0].CalcValue(player));
         state.NextTapAbsorbPct = std::max(0, tap->Effects[EFFECT_2].CalcValue(player));
     }
-    auto const recent = CombatAssistantStates.find(player->GetGUID().GetCounter());
-    state.TakingDamage = recent != CombatAssistantStates.end() && recent->second.RecentDamagePct > 0;
+    if (runtime)
+        state.TakingDamage = runtime->RecentDamagePct > 0;
+    else
+    {
+        auto const recent = CombatAssistantStates.find(player->GetGUID().GetCounter());
+        state.TakingDamage = recent != CombatAssistantStates.end() && recent->second.RecentDamagePct > 0;
+    }
     return state;
 }
 
@@ -1207,7 +1228,8 @@ void ReportAfflictionGlyphs(ChatHandler* handler, Player* player)
     handler->SendSysMessage("Soulstone: select a dead group member and press the assistant. Minor glyphs use native game effects; the assistant does not mount, swim or activate gateways for you.");
 }
 
-CombatRecommendation SelectAfflictionRecommendation(Player* player)
+CombatRecommendation SelectAfflictionRecommendation(Player* player, Unit* selected,
+    AfflictionRotationRuntime& runtime, PlayerbotAI* botAI = nullptr)
 {
     using namespace AfflictionAssistant;
     if (HasHardLossOfControl(player))
@@ -1217,8 +1239,7 @@ CombatRecommendation SelectAfflictionRecommendation(Player* player)
         if (CombatRecommendation escape = RecommendFirstNamed(player, player,
             GetCrowdControlBreaks(player->GetClass()), "ESCAPE_CC")) return escape;
     }
-    Unit* selected = player->GetSelectedUnit();
-    State state = AfflictionPlayerState(player);
+    State state = AfflictionPlayerState(player, &runtime);
     state.SelectedGroupMember = IsAfflictionProtectedAlly(player, selected);
     if (state.Casting) return {};
     // Resurrection is an explicit target choice, never an automatic raid target switch.
@@ -1230,14 +1251,15 @@ CombatRecommendation SelectAfflictionRecommendation(Player* player)
         if (state.SelectedDeadAlly)
         {
             state.ResurrectionPending = ally->IsRessurectRequested();
-            Action const action = Select(state, [&](Action const& candidate)
+            AfflictionAssistant::Action const action = Select(state, [&](AfflictionAssistant::Action const& candidate)
                 { return CanCast(player, candidate.Spell, ally); });
             return action ? CombatRecommendation{action.Spell, ally, action.Reason} : CombatRecommendation{};
         }
     }
     if (state.SelectedGroupMember || !selected || !selected->IsAlive() || !player->IsValidAttackTarget(selected) ||
         selected->HasBreakableByDamageCrowdControlAura()) return {};
-    if (TargetIsCasting(selected))
+    // Bots already use the group interrupt coordinator before their rotation.
+    if (!botAI && TargetIsCasting(selected))
         if (CombatRecommendation interrupt = RecommendFirstNamed(player, selected,
             GetInterruptSpells(player->GetClass()), "INTERRUPT")) return interrupt;
     if (player->GetHealthPct() < 15.0f)
@@ -1250,12 +1272,12 @@ CombatRecommendation SelectAfflictionRecommendation(Player* player)
     state.DarkSoulActive = player->HasAura(DarkSoul);
     state.SoulburnActive = player->HasAura(Soulburn);
     state.CanSoulburnSwap = player->HasSpell(141931) && player->HasSpell(SoulSwap) &&
-        CanCast(player, Corruption, selected);
+        CanCast(player, Corruption, selected, botAI);
     state.CanSoulburnSeed = player->HasSpell(86664) && player->HasSpell(Seed) &&
-        CanCast(player, Seed, selected);
+        CanCast(player, Seed, selected, botAI);
 
     bool allowSecondary = true;
-    if (GetCombatAssistantGroup(player) && (player->GetMap()->IsDungeon() || player->GetMap()->IsRaid()))
+    if (GetCombatAssistantGroup(player) && (botAI || player->GetMap()->IsDungeon() || player->GetMap()->IsRaid()))
         allowSecondary = GroupPveCombat::AoeReady(player, selected);
 
     // Use the greater explosion radius, with a conservative floor if spell
@@ -1326,8 +1348,7 @@ CombatRecommendation SelectAfflictionRecommendation(Player* player)
             if (haunt->Speed > 0)
                 hauntTravelTime = uint32(1000 * player->GetDistance(target) / haunt->Speed);
         snapshot.HauntLead = HauntRefreshLead(AfflictionCastTime(player, Haunt), hauntTravelTime);
-        CombatAssistantPlayerState const& pending = CombatAssistantStates[player->GetGUID().GetCounter()];
-        if (pending.HauntPendingTimer && pending.HauntTarget == target->GetGUID())
+        if (runtime.HauntPendingTimer && runtime.HauntTarget == target->GetGUID())
             snapshot.HauntRemaining = std::max(snapshot.HauntRemaining, snapshot.HauntLead + 1);
         snapshot.SeedRemaining = std::max(AfflictionAuraRemaining(player, target, Seed),
             AfflictionAuraRemaining(player, target, SoulburnSeed));
@@ -1344,10 +1365,10 @@ CombatRecommendation SelectAfflictionRecommendation(Player* player)
             state.JustTicked = effect->GetTickNumber() > 0 && effect->GetAmplitude() > 0 &&
                 effect->GetAmplitude() - effect->GetPeriodicTimer() <= 250;
     }
-    Action const action = Select(state, [&](Action const& candidate)
+    AfflictionAssistant::Action const action = Select(state, [&](AfflictionAssistant::Action const& candidate)
     {
         Unit* target = candidate.TargetIndex < 0 ? player : targets[candidate.TargetIndex];
-        return CanCast(player, candidate.Spell, target);
+        return CanCast(player, candidate.Spell, target, botAI);
     });
     if (!action) return {};
     return {action.Spell, action.TargetIndex < 0 ? player : targets[action.TargetIndex], action.Reason};
@@ -1359,7 +1380,8 @@ CombatRecommendation SelectRecommendation(Player* player)
         return {};
 
     if (UsesAfflictionAssistant(player))
-        return SelectAfflictionRecommendation(player);
+        return SelectAfflictionRecommendation(player, player->GetSelectedUnit(),
+            CombatAssistantStates[player->GetGUID().GetCounter()]);
 
     if (player->GetClass() == CLASS_PALADIN &&
         player->GetTalentSpecialization() == SPEC_PALADIN_RETRIBUTION)
@@ -1549,6 +1571,33 @@ public:
         PushRecommendation(player, false);
     }
 };
+}
+
+bool UsesAfflictionBotRotation(PlayerbotAI* botAI)
+{
+    return botAI && botAI->IsGroupPveActivity() && UsesAfflictionAssistant(botAI->GetBot());
+}
+
+bool RunAfflictionBotRotation(PlayerbotAI* botAI, Unit* target, AfflictionRotationRuntime& runtime)
+{
+    if (!UsesAfflictionBotRotation(botAI)) return false;
+    Player* player = botAI->GetBot();
+    if (!player->IsAlive() || !player->IsInWorld() || player->IsBeingTeleported() ||
+        !target || !target->IsAlive() || !target->IsInWorld() || target->GetMap() != player->GetMap() ||
+        IsAfflictionProtectedAlly(player, target) || !IsAfflictionEngaged(player, target) ||
+        !botAI->CanLfgAutoQueueEngage(target) || !GroupPveCombat::DamageAllowed(player, target)) return false;
+
+    uint32 const now = getMSTime();
+    uint32 const elapsed = runtime.LastUpdate ? getMSTimeDiff(runtime.LastUpdate, now) : 0;
+    runtime.LastUpdate = now;
+    runtime.HauntPendingTimer = runtime.HauntPendingTimer > elapsed ? runtime.HauntPendingTimer - elapsed : 0;
+    UpdateRecentDamage(player, runtime, elapsed);
+    CombatRecommendation const recommendation = SelectAfflictionRecommendation(player, target, runtime, botAI);
+    if (!recommendation) return false;
+    if (!strcmp(recommendation.Reason, "CHANNELING")) return true;
+    bool started = false;
+    PrepareCheckedSpell(player, recommendation.SpellId, recommendation.Target, true, &runtime, botAI, &started);
+    return started;
 }
 
 void AddSC_playerbots_combat_assistant()

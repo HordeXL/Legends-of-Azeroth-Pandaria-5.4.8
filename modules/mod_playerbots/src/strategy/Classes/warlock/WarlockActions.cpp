@@ -9,6 +9,22 @@
 #include "Playerbots.h"
 #include "DynamicObject.h"
 
+bool AfflictionRotationAction::isUseful()
+{
+    Unit* target = GetTarget();
+    return UsesAfflictionBotRotation(botAI) && bot->IsAlive() && target && target->IsAlive() &&
+        target->IsInWorld() && target->GetMap() == bot->GetMap();
+}
+
+bool AfflictionRotationAction::Execute(Event /*event*/)
+{
+    bool const result = RunAfflictionBotRotation(botAI, GetTarget(), runtime);
+    // Revisit channels often enough to observe the same post-tick window as
+    // the player's button. Normal GCD/cast checks still throttle actual casts.
+    botAI->SetNextCheckDelay(100);
+    return result;
+}
+
 bool CastRainOfFireAction::isUseful()
 {
     if (botAI->IsGroupPveActivity())
