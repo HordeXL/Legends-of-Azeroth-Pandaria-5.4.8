@@ -203,7 +203,6 @@ public:
     static bool HandleLearnAllMyTalentsCommand(ChatHandler* handler, char const* /*args*/)
     {
         Player* player = handler->GetSession()->GetPlayer();
-        uint32 classMask = player->GetClassMask();
 
         for (uint32 i = 0; i < sTalentStore.GetNumRows(); ++i)
         {
@@ -211,7 +210,7 @@ public:
             if (!talentInfo)
                 continue;
 
-            if (talentInfo->PlayerClass == player->GetClass())
+            if (talentInfo->PlayerClass != player->GetClass())
                 continue;
 
             // search highest talent rank
