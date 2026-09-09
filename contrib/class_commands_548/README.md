@@ -11,8 +11,15 @@ of the selected target. They are not commands to run on a selected player/bot.
 `learn` restores native class-skill rewards, learns the class spell list and
 **all 18 own-class talents**, and restores the active specialization's spells.
 This preserves the historical GM all-talents behavior; it is not a normal PvE
-talent build. `.learn all my spells` remains available when only the class spell
-list is wanted. Other-class talents are excluded using Talent.dbc ownership.
+talent build. Other-class talents are excluded using Talent.dbc ownership.
+
+`.learn all my spells` restores level-appropriate baseline class-skill spells
+and the **active specialization's spells**, including generic-family and
+level-zero passives. It does not add, remove or select talents in either spec.
+Direct talent spells are excluded even when present in baseline skill data
+(e.g. Hunter Intimidation and Paladin Sacred Shield). No specialization spells
+are granted when no specialization is selected. Existing extra spells from
+earlier GM commands are not removed by this learning command.
 
 `unlearn` identifies known class spells through class-skill masks,
 specialization ownership and talent ownership, using the class spell family
@@ -41,7 +48,10 @@ Automated ownership regression (run from a Visual Studio developer shell):
 The test runs the production selection policy against the local 5.4.8 DBCs
 for all 11 classes: every talent, every available player specialization spell,
 and shared skill/glyph/mount exclusions. It includes regressions for generic
-spell families, shared class abilities and DK's flying mount. This validates
+spell families, shared class abilities and DK's flying mount. The learning
+policy is also checked for all 34 player specs at levels 1, 10 and 90, excluding
+every talent and inactive-spec spell and covering Affliction's core abilities.
+This validates
 spell selection, not live character state transitions. One stale Affliction
 specialization record references missing spell 117197 and is skipped, matching
 the core's missing-spell handling.
@@ -59,3 +69,6 @@ Manual validation on a disposable GM character:
    Grasp, Drain Soul, baseline spells and passives. Choose a normal talent build
    before using this test character for ordinary PvE.
 5. Verify `.unlearn <ID> all` still works and class-unlearn is refused in combat.
+6. With a normal six-talent build, run `.learn all my spells` twice. Verify both
+   saved talent maps are unchanged, active-spec spells are restored, and no
+   talents or inactive-spec abilities are newly granted. Repeat below level 90.

@@ -55,8 +55,16 @@ int main(int argc, char** argv)
             specClasses[row[0]] = row[2];
         for (auto const& row : ReadDBC(directory, "SpellClassOptions"))
             optionFamilies[row[0]] = row[6];
+        std::map<std::uint32_t, std::uint32_t> levelRecords, spellLevels;
+        std::map<std::uint32_t, std::set<std::uint32_t>> spellSpecs;
+        std::set<std::uint32_t> talentIds;
+        for (auto const& row : ReadDBC(directory, "SpellLevels"))
+            levelRecords[row[0]] = row[5];
         for (auto const& row : ReadDBC(directory, "Spell"))
+        {
             families[row[0]] = optionFamilies[row[14]];
+            spellLevels[row[0]] = levelRecords[row[18]];
+        }
         for (auto const& row : abilities)
         {
             if (skillCategories[row[1]] == 7)
@@ -66,9 +74,15 @@ int main(int argc, char** argv)
         }
         for (auto const& row : specSpells)
             if (auto owner = specClasses[row[1]])
+            {
                 owners[row[2]] |= std::uint32_t(1) << (owner - 1);
+                spellSpecs[row[2]].insert(row[1]);
+            }
         for (auto const& row : talents)
+        {
             owners[row[4]] |= std::uint32_t(1) << (row[8] - 1);
+            talentIds.insert(row[4]);
+        }
         for (auto const& row : ReadDBC(directory, "SpellEffect"))
             if (row[4] == 78 || row[2] == 74) // Mounted aura or glyph unlock.
                 protectedSpells.insert(row[27]);
@@ -126,6 +140,62 @@ int main(int argc, char** argv)
         Check(!ClassSpellCommandPolicy::Select(256, 5, 0, 0, false), "Unknown generic spell must survive");
         Check(!ClassSpellCommandPolicy::Select(256, 5, 5, 4, false), "Explicit foreign ownership must beat family");
         Check(ClassSpellCommandPolicy::Select(256, 5, 5, 0, false), "Internal class-family fallback lost");
+
+        // Exercise the actual learning policy separately: learn-my-spells must
+        // not use GM learn-all-talents semantics. Drive it with each real spec,
+        // including generic/level-zero abilities and talents listed as baseline
+        // skills (Hunter Intimidation and Paladin Sacred Shield).
+        auto learnable = [&](std::uint32_t cls, std::uint32_t spec, std::uint32_t level)
+        {
+            std::uint32_t mask = std::uint32_t(1) << (cls - 1);
+            std::set<std::uint32_t> classSkills, baseline, active, result;
+            for (auto const& row : abilities)
+                if (skillCategories[row[1]] == 7 && (row[4] & mask))
+                    classSkills.insert(row[1]);
+            for (auto const& row : abilities)
+                if (classSkills.count(row[1]) && (!row[4] || (row[4] & mask)))
+                    baseline.insert(row[2]);
+            for (auto const& row : specSpells)
+                if (row[1] == spec)
+                    active.insert(row[2]);
+            auto candidates = baseline;
+            candidates.insert(active.begin(), active.end());
+            candidates.insert(talentIds.begin(), talentIds.end());
+            for (auto spell : candidates)
+                if (spellLevels.count(spell) && ClassSpellCommandPolicy::Learn(level, spellLevels[spell],
+                    talentIds.count(spell) != 0, baseline.count(spell) != 0,
+                    active.count(spell) != 0, !spellSpecs[spell].empty()))
+                    result.insert(spell);
+            return result;
+        };
+        unsigned playerSpecs = 0;
+        for (auto const& spec : specClasses)
+            if (classFamilies.count(spec.second))
+            {
+                ++playerSpecs;
+                for (auto level : {1u, 10u, 90u})
+                {
+                    auto result = learnable(spec.second, spec.first, level);
+                    for (auto talent : talentIds)
+                        Check(!result.count(talent), "Learn-my-spells granted a talent: " + std::to_string(talent));
+                    for (auto spell : result)
+                    {
+                        Check(spellLevels[spell] <= level, "Learned a spell above player level");
+                        Check(spellSpecs[spell].empty() || spellSpecs[spell].count(spec.first), "Learned inactive-spec spell");
+                    }
+                }
+            }
+        Check(playerSpecs == 34, "Expected 34 player specializations");
+        auto affliction = learnable(9, 265, 90);
+        for (auto spell : {686u, 172u, 1454u, 980u, 30108u, 103103u, 1120u, 117198u, 131973u, 86091u})
+            Check(affliction.count(spell) != 0, "Affliction restoration missed " + std::to_string(spell));
+        for (auto spell : {116858u, 103958u, 109260u, 108415u})
+            Check(!affliction.count(spell), "Affliction learned an off-spec/foreign/talent spell");
+        Check(!learnable(3, 253, 90).count(19577), "Hunter Intimidation bypassed talent choice");
+        Check(!learnable(2, 65, 90).count(20925), "Paladin Sacred Shield bypassed talent choice");
+        auto noSpec = learnable(9, 0, 90);
+        Check(noSpec.count(686) && !noSpec.count(103103), "No-spec character received specialization spells");
+        std::cout << "Learn-my-spells checked for 34 specs at levels 1, 10 and 90.\n";
         std::cout << checks << " production-policy checks passed against local DBC data.\n";
         std::cout << missingSpellRows << " stale specialization rows skipped (missing Spell.dbc entry).\n";
         return 0;

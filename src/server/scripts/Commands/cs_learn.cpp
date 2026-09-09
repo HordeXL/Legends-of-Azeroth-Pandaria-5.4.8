@@ -47,7 +47,8 @@ public:
             { "class",      SEC_GAMEMASTER, false, &HandleLearnAllMyClassCommand,
                 "Syntax: .learn all my class\nLearn your class spells, all own-class talents, and active specialization spells (GM testing)." },
             { "pettalents", SEC_GAMEMASTER, false, &HandleLearnAllMyPetTalentsCommand,  },
-            { "spells",     SEC_GAMEMASTER, false, &HandleLearnAllMySpellsCommand,      },
+            { "spells",     SEC_GAMEMASTER, false, &HandleLearnAllMySpellsCommand,
+                "Syntax: .learn all my spells\nRestore your level-appropriate class and active specialization spells without learning talents." },
             { "talents",    SEC_GAMEMASTER, false, &HandleLearnAllMyTalentsCommand,     },
             { "glyphs",     SEC_GAMEMASTER, false, &HandleLearnAllMyGlyphsCommand,      },
         };
@@ -189,17 +190,8 @@ public:
         if (*args)
             return false;
         Player* player = handler->GetSession()->GetPlayer();
-        // Reapply native class-skill rewards too: some baseline passives have
-        // SpellLevel=0 and are deliberately skipped by the broad GM spell scan.
-        for (uint32 i = 0; i < sSkillLineStore.GetNumRows(); ++i)
-        {
-            SkillLineEntry const* skill = sSkillLineStore.LookupEntry(i);
-            if (skill && skill->categoryId == SKILL_CATEGORY_CLASS && player->HasSkill(skill->id))
-                player->LearnSkillRewardedSpells(skill->id, player->GetPureSkillValue(skill->id));
-        }
         HandleLearnAllMySpellsCommand(handler, "");
         HandleLearnAllMyTalentsCommand(handler, "");
-        player->LearnSpecializationSpells();
         player->SaveToDB();
         return true;
     }
@@ -295,49 +287,55 @@ public:
         return true;
     }
 
-    static bool HandleLearnAllMySpellsCommand(ChatHandler* handler, char const* /*args*/)
+    static bool HandleLearnAllMySpellsCommand(ChatHandler* handler, char const* args)
     {
-        ChrClassesEntry const* classEntry = sChrClassesStore.LookupEntry(handler->GetSession()->GetPlayer()->GetClass());
-        if (!classEntry)
-            return true;
-        uint32 family = classEntry->spellfamily;
+        if (*args)
+            return false;
+        Player* player = handler->GetSession()->GetPlayer();
+        std::set<uint32> baseline;
+        std::set<uint32> activeSpec;
 
+        // Use the same owned class skills and race/class masks as native skill
+        // rewards, rather than scanning unrelated spells with a matching family.
         for (uint32 i = 0; i < sSkillLineAbilityStore.GetNumRows(); ++i)
         {
             SkillLineAbilityEntry const* entry = sSkillLineAbilityStore.LookupEntry(i);
             if (!entry)
                 continue;
-
-            SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(entry->spellId);
-            if (!spellInfo)
+            SkillLineEntry const* skill = sSkillLineStore.LookupEntry(entry->skillId);
+            if (!skill || skill->categoryId != SKILL_CATEGORY_CLASS || !player->HasSkill(entry->skillId))
                 continue;
-
-            // skip server-side/triggered spells
-            if (spellInfo->SpellLevel == 0)
+            if (entry->classmask && !(entry->classmask & player->GetClassMask()))
                 continue;
-
-            // skip wrong class/race skills
-            if (!handler->GetSession()->GetPlayer()->IsSpellFitByClassAndRace(spellInfo->Id))
+            if (entry->racemask && !(entry->racemask & player->GetRaceMask()))
                 continue;
-
-            // skip other spell families
-            if (spellInfo->SpellFamilyName != family)
+            if (player->GetPureSkillValue(entry->skillId) < entry->req_skill_value)
                 continue;
-
-            if (IsProtectedClassCommandSpell(handler->GetSession()->GetPlayer(), spellInfo->Id))
-                continue;
-
-            // skip spells with first rank learned as talent (and all talents then also)
-            if (GetTalentSpellCost(spellInfo->GetFirstRankSpell()->Id) > 0)
-                continue;
-
-            // skip broken spells
-            if (!SpellMgr::IsSpellValid(spellInfo, handler->GetSession()->GetPlayer(), false))
-                continue;
-
-            handler->GetSession()->GetPlayer()->LearnSpell(spellInfo->Id, false);
+            baseline.insert(entry->spellId);
         }
 
+        if (auto spells = dbc::GetSpecializetionSpells(player->GetTalentSpecialization()))
+            activeSpec.insert(spells->begin(), spells->end());
+
+        std::set<uint32> candidates = baseline;
+        candidates.insert(activeSpec.begin(), activeSpec.end());
+        for (uint32 spellId : candidates)
+        {
+            SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
+            if (!spellInfo)
+                continue;
+            bool talent = GetTalentSpellCost(spellId) > 0 ||
+                GetTalentSpellCost(spellInfo->GetFirstRankSpell()->Id) > 0;
+            if (!ClassSpellCommandPolicy::Learn(player->GetLevel(), spellInfo->SpellLevel, talent,
+                baseline.count(spellId) != 0, activeSpec.count(spellId) != 0, !spellInfo->SpecializationIdList.empty()))
+                continue;
+
+            if (!SpellMgr::IsSpellValid(spellInfo, player, false))
+                continue;
+            player->LearnSpell(spellId, true);
+        }
+
+        player->SaveToDB();
         handler->SendSysMessage(LANG_COMMAND_LEARN_CLASS_SPELLS);
         return true;
     }
