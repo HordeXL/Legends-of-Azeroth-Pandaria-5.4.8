@@ -10,6 +10,15 @@
 #include "Playerbots.h"
 #include "SpellHistory.h"
 
+bool CastAspectOfTheHawkAction::isUseful()
+{
+    // SpellIdValue upgrades the old action label to Iron Hawk. A name-based
+    // buff check still searches for plain Hawk and endlessly recasts the
+    // already active replacement. Check the actual desired aura instead.
+    uint32 const aspect = bot->HasSpell(109260) ? 109260 : 13165;
+    return bot->HasSpell(aspect) && !bot->HasAura(aspect) && CastSpellAction::isUseful();
+}
+
 std::string const CastKillCommandAction::GetTargetName()
 {
     return botAI->IsGroupPveActivity() ? "current target" : "pet target";

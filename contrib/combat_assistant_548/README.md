@@ -123,6 +123,11 @@ arenas. It also works solo on world training dummies. Bot rotations are separate
   secondaries respect the shared three-second pull opening and tank collection.
   Seed also checks idle/CC neighbours in a conservative splash radius (at least
   15 yards). The scan cannot predict enemies entering the explosion later.
+- Group members and their pets are excluded from automatic damage targeting,
+  even when mind control temporarily makes them hostile. A hostile group
+  member near the selected target also vetoes Seed. Explicit Soulstone on a
+  dead friendly group member remains available. This prevents new automatic
+  applications; it does not remove existing DoTs or alter manual spell casts.
 - Life Tap below 15% mana requires over 45% health; maintenance below 30% mana
   requires over 65% health when unglyphed, plus enough health for the actual
   spell cost. Glyph of Life Tap uses the absorb-aware rules below instead.

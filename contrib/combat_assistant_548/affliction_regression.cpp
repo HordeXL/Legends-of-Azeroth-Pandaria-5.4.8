@@ -44,6 +44,24 @@ int main()
     state = maintained(); state.Casting = true;
     check(!select(state), "do not restart an in-progress cast");
 
+    for (unsigned shards = 0; shards <= 4; ++shards)
+    {
+        state = maintained(3); state.SelectedGroupMember = true;
+        state.Shards = shards; state.Targets[0].Dots = {};
+        state.CanSoulburnSwap = true;
+        check(!select(state, {Soulburn, SoulSwap}), "no automatic DoTs or Soulburn against a hostile group member");
+        state.SeedSafe = true; state.CanSoulburnSeed = true; state.SoulburnActive = true;
+        check(!select(state, {Soulburn, Seed}), "prepared Seed cannot target a hostile group member");
+        state.Targets[0].Execute = true;
+        check(!select(state), "do not execute a low-health group member");
+    }
+    state = State{}; state.SelectedGroupMember = true; state.SelectedDeadAlly = true;
+    check(select(state, {Soulstone}).Spell == Soulstone, "group-target protection preserves explicit Soulstone");
+    state = maintained(); state.SelectedGroupMember = true;
+    check(!select(state), "mind-control target change stops new damage recommendations");
+    state.SelectedGroupMember = false;
+    check(select(state).Spell == MaleficGrasp, "returning to the boss resumes normal recommendations");
+
     for (unsigned d = 0; d < 3; ++d)
     {
         uint32_t const spells[] = {Agony, Corruption, UnstableAffliction};

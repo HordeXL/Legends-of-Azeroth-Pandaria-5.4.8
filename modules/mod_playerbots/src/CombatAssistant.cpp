@@ -1130,6 +1130,17 @@ int AfflictionAuraRemaining(Player* player, Unit* target, uint32 auraId)
     return aura ? std::max(0, aura->GetDuration()) : 0;
 }
 
+bool IsAfflictionProtectedAlly(Player* player, Unit* target)
+{
+    if (!target) return false;
+    // Check membership rather than faction: Sha's Aggressive Behavior changes
+    // faction directly, and does not necessarily provide a charm-owner link.
+    Player* member = target->ToPlayer();
+    if (!member) member = target->GetCharmerOrOwnerPlayerOrPlayerItself();
+    Group* group = GetCombatAssistantGroup(player);
+    return member && (member == player || (group && group->IsMember(member->GetGUID())));
+}
+
 bool IsAfflictionEngaged(Player* player, Unit* target)
 {
     if (!target || !target->IsAlive() || !target->IsInWorld() ||
@@ -1208,6 +1219,7 @@ CombatRecommendation SelectAfflictionRecommendation(Player* player)
     }
     Unit* selected = player->GetSelectedUnit();
     State state = AfflictionPlayerState(player);
+    state.SelectedGroupMember = IsAfflictionProtectedAlly(player, selected);
     if (state.Casting) return {};
     // Resurrection is an explicit target choice, never an automatic raid target switch.
     if (Player* ally = selected ? selected->ToPlayer() : nullptr)
@@ -1223,7 +1235,7 @@ CombatRecommendation SelectAfflictionRecommendation(Player* player)
             return action ? CombatRecommendation{action.Spell, ally, action.Reason} : CombatRecommendation{};
         }
     }
-    if (!selected || !selected->IsAlive() || !player->IsValidAttackTarget(selected) ||
+    if (state.SelectedGroupMember || !selected || !selected->IsAlive() || !player->IsValidAttackTarget(selected) ||
         selected->HasBreakableByDamageCrowdControlAura()) return {};
     if (TargetIsCasting(selected))
         if (CombatRecommendation interrupt = RecommendFirstNamed(player, selected,
@@ -1264,6 +1276,13 @@ CombatRecommendation SelectAfflictionRecommendation(Player* player)
     {
         if (!enemy || !enemy->IsAlive() || !player->IsValidAttackTarget(enemy) ||
             !selected->IsWithinDistInMap(enemy, splashRadius)) continue;
+        if (IsAfflictionProtectedAlly(player, enemy))
+        {
+            // Do not multidot a mind-controlled ally or place a Seed whose
+            // explosion could spread Corruption to that ally.
+            safeSplash = false;
+            continue;
+        }
         bool const engaged = IsAfflictionEngaged(player, enemy);
         bool const controlled = enemy->HasBreakableByDamageCrowdControlAura();
         bool const collected = !GetCombatAssistantGroup(player) || GroupPveCombat::IsCollected(player, enemy);

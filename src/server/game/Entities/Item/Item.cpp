@@ -1912,7 +1912,10 @@ void Item::AddToUpdate()
 
 void Item::RemoveFromUpdate()
 {
-    Player* owner = ObjectAccessor::FindPlayer(GetOwnerGUID());   // player can be out of world - logout, teleport to cross-server
+    // Player::RemoveFromWorld removes the player before its inventory. The
+    // owner is still registered and retains its map while items leave the
+    // update set, even though FindPlayer's IsInWorld filter would reject it.
+    Player* owner = ObjectAccessor::FindConnectedPlayer(GetOwnerGUID());
     if (!owner)
     {
         TC_LOG_ERROR("shitlog", "Item::RemoveFromUpdate - owner not found, guid %u, entry %u, owner %u\n",

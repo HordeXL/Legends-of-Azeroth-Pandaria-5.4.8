@@ -84,6 +84,7 @@ struct State
     float NextTapHealthCostPct = 15;
     bool TakingDamage = false;
     bool SelectedDeadAlly = false;
+    bool SelectedGroupMember = false;
     bool ResurrectionPending = false;
     unsigned Shards = 0; // whole shards, not the core's units of 100
     bool InCombat = false;
@@ -132,7 +133,9 @@ Action Select(State const& state, CanUse canUse)
             state.Glyphs[GlyphSoulstone] ? "SOULSTONE_GLYPH" : "SOULSTONE_REZ"};
         return !state.ResurrectionPending && canUse(resurrection) ? resurrection : Action{};
     }
-    if (state.Targets.empty()) return {};
+    // A temporarily hostile raid member is not a normal PvE damage target.
+    // Keep explicit Soulstone resurrection above this guard.
+    if (state.SelectedGroupMember || state.Targets.empty()) return {};
     std::vector<Action> actions;
     auto add = [&](uint32_t spell, int target, char const* reason)
     { actions.push_back({spell, target, reason}); };
