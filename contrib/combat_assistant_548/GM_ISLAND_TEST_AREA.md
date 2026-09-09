@@ -11,10 +11,18 @@ It uses entry 70245, which is attackable, has substantial health and uses
 | `.tele GMTest1` | One isolated dummy, for single-target rotation | 4000114 |
 | `.tele GMTest3` | Three dummies in a compact triangle, for multidot | 4000115–4000117 |
 
-The stations are over 70 yards apart. The existing GM Island raid dummy is
-over 25 yards from the nearest new dummy. Heights were sampled from the
-server's extracted terrain; the cells have no terrain holes. Teleports put
-the player in front of each station, facing its targets.
+The follow-up update `2026_09_09_04_world_gm_test4_clear_placement.sql`
+moves the four-target station out of a tree to a clear area beside the guild
+house and updates `GMTest4`. Its four targets remain in a 4-yard square,
+at least 45 yards from the other training dummies. The other two stations
+remain unchanged. The existing GM Island raid dummy is over 25 yards from
+the nearest new dummy.
+
+Heights were sampled from the server's extracted terrain. The corrected
+four-target station and its approach corridor were also checked against
+every model bound in `0001_01_01.vmtile`, with a 3-yard clearance margin;
+terrain heights alone do not detect trees or buildings. Teleports put the
+player in front of each station, facing its targets.
 
 The update inserts only missing reserved GUIDs and teleport names, so it can
 run again without duplicating the area. A pre-existing conflicting GUID/name
