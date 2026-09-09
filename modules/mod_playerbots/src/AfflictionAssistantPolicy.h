@@ -15,8 +15,40 @@ enum SpellId : uint32_t
     DrainSoul = 1120, LifeTap = 1454, DarkSoul = 113860,
     Soulburn = 74434, SoulSwap = 86121, SoulburnSwap = 119678,
     Seed = 27243, SoulburnSeed = 114790, FelFlame = 77799,
-    UnendingResolve = 104773
+    UnendingResolve = 104773, Soulstone = 20707
 };
+
+enum GlyphSlot : unsigned
+{
+    GlyphUA, GlyphSoulstone, GlyphLifeTap, GlyphNightmares,
+    GlyphUnendingBreath, GlyphGateway, GlyphEternalResolve,
+    GlyphSiphonLife, GlyphHealthstone, GlyphCount
+};
+struct GlyphInfo { uint32_t Aura; char const* Name; };
+static std::array<GlyphInfo, GlyphCount> const GlyphCatalog = {{
+    {56233, "Unstable Affliction"}, {56231, "Soulstone"}, {63320, "Life Tap"},
+    {56232, "Nightmares"}, {58079, "Unending Breath"}, {135557, "Gateway Attunement"},
+    {148683, "Eternal Resolve"}, {56218, "Siphon Life"}, {56224, "Healthstone"}
+}};
+using GlyphProfile = std::array<bool, GlyphCount>;
+template<class HasAura>
+GlyphProfile ReadGlyphs(HasAura hasAura)
+{
+    GlyphProfile result{};
+    for (unsigned i = 0; i < GlyphCount; ++i) result[i] = hasAura(GlyphCatalog[i].Aura);
+    return result;
+}
+
+inline int DotRefreshLead(unsigned castTime, unsigned globalCooldown)
+{
+    // A cast-time DoT lands before its GCD ends when Glyph of UA is active.
+    return static_cast<int>(castTime ? castTime : globalCooldown) + 250;
+}
+
+inline int HauntRefreshLead(unsigned castTime, unsigned travelTime)
+{
+    return static_cast<int>(castTime + travelTime) + 500;
+}
 
 struct Dot
 {
@@ -46,6 +78,14 @@ struct State
     std::vector<Target> Targets; // selected enemy first, then engaged secondary enemies
     float Health = 100;
     float Mana = 100;
+    GlyphProfile Glyphs{};
+    float HealAbsorbPct = 0;
+    float NextTapAbsorbPct = 15;
+    float NextTapHealthCostPct = 15;
+    bool TakingDamage = false;
+    bool SelectedDeadAlly = false;
+    bool SelectedGroupMember = false;
+    bool ResurrectionPending = false;
     unsigned Shards = 0; // whole shards, not the core's units of 100
     bool InCombat = false;
     bool Pandemic = false;
@@ -68,17 +108,42 @@ struct Action
     explicit operator bool() const { return Spell != 0; }
 };
 
+inline bool CanLifeTap(State const& state, bool critical)
+{
+    if (state.Health <= 15) return false; // the core's spell check, even with glyph
+    if (!state.Glyphs[GlyphLifeTap])
+        return state.Health > (critical ? 45 : 65) &&
+            state.Health - state.NextTapHealthCostPct > (critical ? 30 : 50);
+
+    // Glyphed taps cost future healing, not current health. Permit low-health
+    // recovery when not taking damage, but bound the projected absorb stack.
+    float const projected = state.HealAbsorbPct + state.NextTapAbsorbPct;
+    if (state.TakingDamage)
+        return state.Health > (critical ? 40 : 65) && projected <= (critical ? 30 : 15);
+    return state.Health > (critical ? 15 : 40) && projected <= (critical ? 60 : 30);
+}
+
 template<class CanUse>
 Action Select(State const& state, CanUse canUse)
 {
-    if (state.Casting || state.Targets.empty()) return {};
+    if (state.Casting) return {};
+    if (state.SelectedDeadAlly)
+    {
+        Action const resurrection = {Soulstone, 0,
+            state.Glyphs[GlyphSoulstone] ? "SOULSTONE_GLYPH" : "SOULSTONE_REZ"};
+        return !state.ResurrectionPending && canUse(resurrection) ? resurrection : Action{};
+    }
+    // A temporarily hostile raid member is not a normal PvE damage target.
+    // Keep explicit Soulstone resurrection above this guard.
+    if (state.SelectedGroupMember || state.Targets.empty()) return {};
     std::vector<Action> actions;
     auto add = [&](uint32_t spell, int target, char const* reason)
     { actions.push_back({spell, target, reason}); };
-    if (state.InCombat && state.Health <= 40)
+    if (state.InCombat && state.Health <= 40 && !state.Glyphs[GlyphEternalResolve])
         add(UnendingResolve, -1, "BURST_DEFENSE");
-    if (state.Mana < 15 && state.Health > 45)
-        add(LifeTap, -1, "RESTORE_MANA");
+    char const* const tapReason = state.Glyphs[GlyphLifeTap] ? "RESTORE_MANA_GLYPH" : "RESTORE_MANA";
+    if (state.Mana < 15 && CanLifeTap(state, true))
+        add(LifeTap, -1, tapReason);
 
     Target const& primary = state.Targets.front();
     bool urgent = false;
@@ -109,6 +174,16 @@ Action Select(State const& state, CanUse canUse)
         if (due >= 2) { swapTarget = static_cast<int>(i); break; }
     }
     bool const seedDue = state.SeedSafe && primary.SeedRemaining <= 0;
+    bool const hauntDue = primary.HauntRemaining <= primary.HauntLead && state.Shards > 0 &&
+        (state.Shards >= 2 || state.DarkSoulActive || primary.Execute);
+    bool urgentDot = false;
+    for (unsigned i = 0; i < targetCount; ++i)
+        for (Dot const& dot : state.Targets[i].Dots) urgentDot = urgentDot || dot.Urgent();
+    // Do not spend Haunt's landing window on an optional Pandemic refresh or
+    // a fresh Soulburn setup. Missing/expiring DoTs, an already prepared
+    // Soulburn and the four-target Seed rotation retain their priority.
+    bool const earlyHaunt = hauntDue && !urgentDot && !state.SeedSafe && !state.SoulburnActive;
+    if (earlyHaunt) add(Haunt, 0, "HAUNT");
     if (state.SoulburnActive)
     {
         if (seedDue && state.CanSoulburnSeed) add(Seed, 0, "SOULBURN_SEED");
@@ -133,11 +208,10 @@ Action Select(State const& state, CanUse canUse)
 
     // Reserve the last shard outside execute/burst; cooldown and cost checks
     // are still performed by the normal spell engine for every candidate.
-    if (primary.HauntRemaining <= primary.HauntLead && state.Shards > 0 &&
-        (state.Shards >= 2 || state.DarkSoulActive || primary.Execute))
+    if (hauntDue && !earlyHaunt)
         add(Haunt, 0, "HAUNT");
-    if (state.Mana < 30 && state.Health > 65)
-        add(LifeTap, -1, "RESTORE_MANA");
+    if (state.Mana < 30 && CanLifeTap(state, false))
+        add(LifeTap, -1, tapReason);
     add(primary.Execute ? DrainSoul : MaleficGrasp, 0,
         primary.Execute ? "EXECUTE" : "CHANNEL_DAMAGE");
     add(FelFlame, 0, "MOVING_DAMAGE");

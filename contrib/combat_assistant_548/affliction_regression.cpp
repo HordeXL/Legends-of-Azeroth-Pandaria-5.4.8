@@ -44,6 +44,24 @@ int main()
     state = maintained(); state.Casting = true;
     check(!select(state), "do not restart an in-progress cast");
 
+    for (unsigned shards = 0; shards <= 4; ++shards)
+    {
+        state = maintained(3); state.SelectedGroupMember = true;
+        state.Shards = shards; state.Targets[0].Dots = {};
+        state.CanSoulburnSwap = true;
+        check(!select(state, {Soulburn, SoulSwap}), "no automatic DoTs or Soulburn against a hostile group member");
+        state.SeedSafe = true; state.CanSoulburnSeed = true; state.SoulburnActive = true;
+        check(!select(state, {Soulburn, Seed}), "prepared Seed cannot target a hostile group member");
+        state.Targets[0].Execute = true;
+        check(!select(state), "do not execute a low-health group member");
+    }
+    state = State{}; state.SelectedGroupMember = true; state.SelectedDeadAlly = true;
+    check(select(state, {Soulstone}).Spell == Soulstone, "group-target protection preserves explicit Soulstone");
+    state = maintained(); state.SelectedGroupMember = true;
+    check(!select(state), "mind-control target change stops new damage recommendations");
+    state.SelectedGroupMember = false;
+    check(select(state).Spell == MaleficGrasp, "returning to the boss resumes normal recommendations");
+
     for (unsigned d = 0; d < 3; ++d)
     {
         uint32_t const spells[] = {Agony, Corruption, UnstableAffliction};
@@ -78,6 +96,36 @@ int main()
     check(select(state).Spell == Haunt, "last shard allowed during execute");
     state.Shards = 0;
     check(select(state).Spell == DrainSoul, "execute regenerates shards");
+
+    check(HauntRefreshLead(700, 1000) == 2200, "Haunt lead includes logged one-second missile flight");
+    check(HauntRefreshLead(700, 0) == 1200, "instant missile keeps cast and input margin");
+    state = maintained(); state.Shards = 2;
+    state.Targets[0].HauntRemaining = 2000;
+    state.Targets[0].HauntLead = HauntRefreshLead(700, 1000);
+    state.Targets[0].Dots[2].Remaining = 6000;
+    check(select(state).Spell == Haunt, "renew ranged Haunt before optional Pandemic UA");
+    state.Targets[0].Dots[1].Remaining = 8000;
+    state.CanSoulburnSwap = true;
+    check(select(state, {Soulburn}).Spell == Haunt, "do not spend due Haunt shard on optional Soulburn setup");
+    check(select(state, {Soulburn}, {Haunt}).Spell == Soulburn, "unavailable Haunt permits useful fallback");
+    state.SoulburnActive = true;
+    check(select(state, {Soulburn, SoulSwap}).Spell == SoulSwap, "consume prepared Soulburn before Haunt");
+    state.SoulburnActive = false; state.CanSoulburnSwap = false;
+    state.Targets[0].Dots[0].Remaining = 500;
+    check(select(state).Spell == Agony, "urgent primary DoT still precedes Haunt");
+    state = maintained(3); state.Shards = 2;
+    state.Targets[1].Dots[1].Remaining = 0;
+    check(select(state).Spell == Corruption && select(state).TargetIndex == 1,
+        "missing secondary DoT still precedes Haunt");
+    state = maintained(); state.Shards = 2; state.SeedSafe = true;
+    check(select(state, {Seed}).Spell == Seed, "four-target Seed priority remains unchanged");
+    state = maintained(); state.Shards = 1;
+    state.Targets[0].HauntRemaining = 0;
+    check(select(state).Spell == MaleficGrasp, "log gap with one shard keeps reserve outside burst");
+    state.Shards = 0;
+    check(select(state).Spell == MaleficGrasp, "log gap without shards cannot cast Haunt");
+    state.Shards = 2;
+    check(select(state).Spell == Haunt, "new shard allows Haunt to resume after reserve gap");
 
     state = maintained(); state.Mana = 10;
     check(select(state).Spell == LifeTap, "recover critical mana");
@@ -148,5 +196,81 @@ int main()
     state = maintained();
     check(select(state, {}, {MaleficGrasp}).Spell == FelFlame, "moving fallback when channel is not castable");
     check(!Select(state, [](Action const&) { return false; }), "GCD/range/LoS failures produce no cast");
+
+    // Effective glyphs are re-read, including removal and non-rotational minors.
+    std::set<uint32_t> activeGlyphs = {56233, 56231, 63320, 56232, 58079, 135557};
+    auto readGlyphs = [&]() { return ReadGlyphs([&](uint32_t id) { return activeGlyphs.count(id) != 0; }); };
+    auto glyphs = readGlyphs();
+    for (unsigned i = 0; i < 6; ++i) check(glyphs[i], "recognize each selected major/minor glyph");
+    check(!glyphs[GlyphEternalResolve], "do not infer an unequipped glyph");
+    activeGlyphs.erase(63320);
+    check(!readGlyphs()[GlyphLifeTap], "glyph removal changes next snapshot");
+    activeGlyphs.insert(63320);
+    check(readGlyphs()[GlyphLifeTap], "glyph insertion changes next snapshot");
+
+    state = maintained(); state.Glyphs = readGlyphs(); state.Health = 20; state.Mana = 10;
+    check(select(state).Spell == LifeTap, "glyphed recovery below old health floor when not taking damage");
+    check(!std::strcmp(select(state).Reason, "RESTORE_MANA_GLYPH"), "show glyph-aware mana recovery reason");
+    state.Health = 15;
+    check(select(state).Spell != LifeTap, "glyph respects core 15 percent health restriction");
+    state.Health = 100; state.HealAbsorbPct = 45;
+    check(select(state).Spell == LifeTap, "critical glyphed recovery up to projected absorb limit");
+    state.HealAbsorbPct = 46;
+    check(select(state).Spell != LifeTap, "block excessive accumulated healing absorb");
+    state.HealAbsorbPct = 0;
+    check(select(state).Spell == LifeTap, "absorbed heals or expiry permit recovery again");
+    state.Mana = 25; state.HealAbsorbPct = 15;
+    check(select(state).Spell == LifeTap, "maintenance permits bounded absorb stack");
+    state.HealAbsorbPct = 16;
+    check(select(state).Spell != LifeTap, "maintenance uses lower absorb limit");
+    state.HealAbsorbPct = 0; state.Health = 40;
+    check(select(state).Spell != LifeTap, "maintenance retains a health reserve with glyph");
+    state.Health = 41;
+    check(select(state).Spell == LifeTap, "glyph permits maintenance below old 65 percent floor");
+    state.TakingDamage = true;
+    check(select(state).Spell != LifeTap, "incoming damage tightens maintenance threshold");
+    state.Health = 70;
+    check(select(state).Spell == LifeTap, "one small absorb allowed with sufficient health under pressure");
+    state.HealAbsorbPct = 1;
+    check(select(state).Spell != LifeTap, "avoid extending heal absorb during incoming damage");
+    state.Mana = 10; state.HealAbsorbPct = 15;
+    check(select(state).Spell == LifeTap, "urgent mana uses bounded higher pressure limit");
+    state.HealAbsorbPct = 16;
+    check(select(state).Spell != LifeTap, "urgent recovery respects pressure absorb cap");
+    state.HealAbsorbPct = 0; state.Health = 40;
+    check(select(state).Spell != LifeTap, "do not block healing while taking damage at low health");
+    state.Health = 41;
+    check(select(state).Spell == LifeTap, "pressure health boundary permits urgent mana");
+    state.Glyphs[GlyphLifeTap] = false;
+    check(select(state).Spell != LifeTap, "removing glyph restores health-cost guard");
+    state.Health = 46; state.NextTapHealthCostPct = 20;
+    check(select(state).Spell != LifeTap, "normal tap accounts for actual health cost");
+    state = maintained(); state.Glyphs[GlyphLifeTap] = true;
+    state.Mana = 10; state.NextTapAbsorbPct = 20; state.HealAbsorbPct = 45;
+    check(select(state).Spell != LifeTap, "read next absorb amount instead of assuming fixed cost");
+
+    state = maintained(); state.Health = 30; state.Glyphs[GlyphEternalResolve] = true;
+    check(select(state, {UnendingResolve}).Spell == MaleficGrasp, "Eternal Resolve skips disabled active ability");
+    state.Glyphs[GlyphEternalResolve] = false;
+    check(select(state, {UnendingResolve}).Spell == UnendingResolve, "removing Eternal Resolve restores active defense");
+    check(DotRefreshLead(1500, 1500) == 1750, "normal UA cast lead");
+    check(DotRefreshLead(1125, 1500) == 1375, "UA glyph shortens completion lead below GCD");
+    check(DotRefreshLead(750, 1000) == 1000, "UA haste and glyph combine in native cast time");
+    check(DotRefreshLead(0, 1000) == 1250, "instant DoT retains GCD input margin");
+
+    state = State{}; state.SelectedDeadAlly = true;
+    check(select(state, {Soulstone}).Spell == Soulstone, "explicit dead group target permits Soulstone");
+    state.Glyphs[GlyphSoulstone] = true;
+    check(!std::strcmp(select(state, {Soulstone}).Reason, "SOULSTONE_GLYPH"), "show glyphed resurrection");
+    state.ResurrectionPending = true;
+    check(!select(state, {Soulstone}), "do not repeat resurrection while confirmation is pending");
+    state.ResurrectionPending = false; state.Casting = true;
+    check(!select(state, {Soulstone}), "do not restart Soulstone cast");
+    state.Casting = false;
+    check(!select(state), "unknown or unavailable Soulstone is not offered");
+    state.SelectedDeadAlly = false;
+    check(!select(state, {Soulstone}), "no automatic resurrection target selection");
+    state = maintained(); state.Glyphs = readGlyphs();
+    check(select(state, {Soulstone}).Spell == MaleficGrasp, "utility glyphs do not insert utility casts into DPS");
     std::cout << "Affliction assistant: " << checks << " checks passed\n";
 }

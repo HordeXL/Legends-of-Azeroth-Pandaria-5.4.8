@@ -97,6 +97,7 @@ class CastAspectOfTheHawkAction : public CastBuffSpellAction
 {
 public:
     CastAspectOfTheHawkAction(PlayerbotAI* botAI) : CastBuffSpellAction(botAI, "aspect of the hawk") {}
+    bool isUseful() override;
 };
 
 class CastAspectOfTheMonkeyAction : public CastBuffSpellAction
