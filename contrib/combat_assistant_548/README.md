@@ -120,7 +120,9 @@ arenas. It also works solo on world training dummies. Bot rotations are separate
   Seed also checks idle/CC neighbours in a conservative splash radius (at least
   15 yards). The scan cannot predict enemies entering the explosion later.
 - Life Tap below 15% mana requires over 45% health; maintenance below 30% mana
-  requires over 65% health. Moving casts respect the core's cast-while-walking
+  requires over 65% health when unglyphed, plus enough health for the actual
+  spell cost. Glyph of Life Tap uses the absorb-aware rules below instead.
+  Moving casts respect the core's cast-while-walking
   auras, with Fel Flame as an available fallback.
 
 Normal casts, including cooldown/resource/GCD/range/LoS checks, remain in effect.
@@ -129,6 +131,41 @@ the actual replacement is always untriggered. Other channels remain manual.
 Pet choice/control, trinket-proc snapshot optimization, target time-to-die
 prediction, and normal Soul Swap inhale/exhale transfer are not automated by
 this priority. These are not claims of theoretical maximum DPS.
+
+### Glyph recognition
+
+Every recommendation reads the active glyph auras; changing glyphs needs no
+assistant profile reset. `.combatassist status` lists Unstable Affliction,
+Soulstone, Life Tap, Nightmares, Unending Breath, Gateway Attunement, Eternal
+Resolve, Siphon Life and Healthstone, even with no enemy selected. It also shows
+native UA cast time, remaining healing absorb as a percentage of maximum health
+and the Life Tap health/absorb guards. Normal mana/GCD/cooldown checks still apply.
+
+- UA refresh lead uses the core's cast time, including glyph and haste. Instant
+  Soulburn/Soul Swap continues to use its own spell path.
+- Glyphed Life Tap reads live healing absorbs, including partial consumption and
+  expiry, and the next tap's absorb amount from spell data. Without recent health
+  loss, urgent recovery requires over 15% health and at most 60% projected absorb;
+  maintenance requires over 40% health and at most 30% absorb. Following recent
+  health loss, the limits become over 40%/65% health and at most 30%/15% projected
+  absorb respectively. These are initial policy thresholds, not predictions of
+  encounter damage. The core still rejects Life Tap at 15% health or below.
+- Select a dead, friendly group member and press the assistant for Soulstone.
+  Its normal resurrection and glyph effects come from the spell engine. Range,
+  LoS, cooldown and battle-res restrictions remain active. There is no automatic
+  resurrection target selection, pre-buffing of living allies, cast restarting,
+  or repeat offer while the ally is awaiting resurrection acceptance.
+- Eternal Resolve suppresses the disabled active Unending Resolve recommendation.
+  Removing it restores the normal active defensive priority.
+- Siphon Life, Healthstone and the three minor glyphs use their native effects.
+  Healthstone use remains manual; no mounting, swimming or gateway activation
+  is added to the damage rotation.
+
+When using the staged `Build/affliction-glyphs/worldserver.exe` build, stop the
+server normally, run `contrib/combat_assistant_548/install_staged_server.ps1`,
+then start it normally and `/reload` the client. The installer refuses to replace
+a running server, backs up the previous executable/PDB and verifies copied hashes.
+It never stops or starts a server itself.
 
 ### Training-dummy validation
 

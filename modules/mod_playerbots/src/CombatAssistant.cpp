@@ -123,6 +123,8 @@ Spell* PrepareCheckedSpell(Player* player, uint32 spellId, Unit* target, bool ca
         return nullptr;
 
     bool const affliction = UsesAfflictionAssistant(player);
+    if (affliction && spellId == AfflictionAssistant::UnendingResolve && player->HasAura(148683))
+        return nullptr; // Eternal Resolve replaces the active button with a passive effect.
     SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(knownRank);
     if (affliction && spellInfo)
     {
@@ -1142,6 +1144,58 @@ bool IsAfflictionEngaged(Player* player, Unit* target)
         (target->CanHaveThreatList() && target->GetThreatManager().getThreat(player) > 0.0f);
 }
 
+uint32 AfflictionCastTime(Player* player, uint32 spellId)
+{
+    SpellInfo const* info = sSpellMgr->GetSpellInfo(spellId);
+    if (!info) return 0;
+    Spell probe(player, info, TRIGGERED_NONE);
+    return info->CalcCastTime(player->GetLevel(), &probe);
+}
+
+AfflictionAssistant::State AfflictionPlayerState(Player* player)
+{
+    using namespace AfflictionAssistant;
+    State state;
+    // Read effective glyph auras every request: changing glyphs needs no cached profile reset.
+    state.Glyphs = ReadGlyphs([&](uint32 aura) { return player->HasAura(aura); });
+    state.Casting = player->GetCurrentSpell(CURRENT_GENERIC_SPELL) != nullptr;
+    state.Health = player->GetHealthPct();
+    state.Mana = player->GetMaxPower(POWER_MANA) ?
+        100.0f * player->GetPower(POWER_MANA) / player->GetMaxPower(POWER_MANA) : 0;
+    // Include all remaining healing absorbs, not only an unconsumed Life Tap stack.
+    // The live aura amount shrinks as heals consume it and disappears on expiry.
+    if (player->GetMaxHealth())
+        for (AuraEffect const* effect : player->GetAuraEffectsByType(SPELL_AURA_SCHOOL_HEAL_ABSORB))
+            state.HealAbsorbPct += 100.0f * std::max(0.0f, effect->GetFloatAmount()) / player->GetMaxHealth();
+    if (SpellInfo const* tap = sSpellMgr->GetSpellInfo(LifeTap))
+    {
+        state.NextTapHealthCostPct = std::max(0, tap->Effects[EFFECT_0].CalcValue(player));
+        state.NextTapAbsorbPct = std::max(0, tap->Effects[EFFECT_2].CalcValue(player));
+    }
+    auto const recent = CombatAssistantStates.find(player->GetGUID().GetCounter());
+    state.TakingDamage = recent != CombatAssistantStates.end() && recent->second.RecentDamagePct > 0;
+    return state;
+}
+
+void ReportAfflictionGlyphs(ChatHandler* handler, Player* player)
+{
+    using namespace AfflictionAssistant;
+    State const state = AfflictionPlayerState(player);
+    std::ostringstream report;
+    report << "Affliction glyphs: ";
+    for (unsigned i = 0; i < GlyphCount; ++i)
+    {
+        if (i) report << "; ";
+        report << GlyphCatalog[i].Name << '=' << (state.Glyphs[i] ? "ON" : "off");
+    }
+    handler->SendSysMessage(report.str().c_str());
+    handler->PSendSysMessage("UA cast: %u ms. Healing absorb: %.1f%% HP; next glyphed Life Tap: +%.1f%%. Recent health loss: %s. Life Tap allowed: critical=%s, maintenance=%s.",
+        AfflictionCastTime(player, UnstableAffliction), state.HealAbsorbPct, state.NextTapAbsorbPct,
+        state.TakingDamage ? "yes" : "no", CanLifeTap(state, true) ? "yes" : "no",
+        CanLifeTap(state, false) ? "yes" : "no");
+    handler->SendSysMessage("Soulstone: select a dead group member and press the assistant. Minor glyphs use native game effects; the assistant does not mount, swim or activate gateways for you.");
+}
+
 CombatRecommendation SelectAfflictionRecommendation(Player* player)
 {
     using namespace AfflictionAssistant;
@@ -1153,6 +1207,22 @@ CombatRecommendation SelectAfflictionRecommendation(Player* player)
             GetCrowdControlBreaks(player->GetClass()), "ESCAPE_CC")) return escape;
     }
     Unit* selected = player->GetSelectedUnit();
+    State state = AfflictionPlayerState(player);
+    if (state.Casting) return {};
+    // Resurrection is an explicit target choice, never an automatic raid target switch.
+    if (Player* ally = selected ? selected->ToPlayer() : nullptr)
+    {
+        Group* group = GetCombatAssistantGroup(player);
+        state.SelectedDeadAlly = !ally->IsAlive() && group && group->IsMember(ally->GetGUID()) &&
+            ally->GetMap() == player->GetMap() && player->IsFriendlyTo(ally);
+        if (state.SelectedDeadAlly)
+        {
+            state.ResurrectionPending = ally->IsRessurectRequested();
+            Action const action = Select(state, [&](Action const& candidate)
+                { return CanCast(player, candidate.Spell, ally); });
+            return action ? CombatRecommendation{action.Spell, ally, action.Reason} : CombatRecommendation{};
+        }
+    }
     if (!selected || !selected->IsAlive() || !player->IsValidAttackTarget(selected) ||
         selected->HasBreakableByDamageCrowdControlAura()) return {};
     if (TargetIsCasting(selected))
@@ -1162,12 +1232,6 @@ CombatRecommendation SelectAfflictionRecommendation(Player* player)
         if (CombatRecommendation heal = RecommendNamed(player, player, "Dark Regeneration", "EMERGENCY_HEAL"))
             return heal;
 
-    State state;
-    state.Casting = player->GetCurrentSpell(CURRENT_GENERIC_SPELL) != nullptr;
-    if (state.Casting) return {};
-    state.Health = player->GetHealthPct();
-    state.Mana = player->GetMaxPower(POWER_MANA) ?
-        100.0f * player->GetPower(POWER_MANA) / player->GetMaxPower(POWER_MANA) : 0;
     state.Shards = player->GetPower(POWER_SOUL_SHARDS) / 100;
     state.InCombat = IsAfflictionEngaged(player, selected);
     state.Pandemic = player->HasAura(131973);
@@ -1220,7 +1284,12 @@ CombatRecommendation SelectAfflictionRecommendation(Player* player)
         targets.push_back(enemy);
     }
     std::array<uint32, 3> const auras = {{Agony, CorruptionAura, UnstableAffliction}};
+    std::array<uint32, 3> const dotSpells = {{Agony, Corruption, UnstableAffliction}};
     float const castSpeed = player->GetFloatValue(UNIT_FIELD_MOD_CASTING_SPEED);
+    std::array<int, 3> castLeads;
+    for (unsigned d = 0; d < dotSpells.size(); ++d)
+        castLeads[d] = DotRefreshLead(AfflictionCastTime(player, dotSpells[d]),
+            std::max(1000, int(1500 * castSpeed)));
     for (Unit* target : targets)
     {
         Target snapshot;
@@ -1229,11 +1298,11 @@ CombatRecommendation SelectAfflictionRecommendation(Player* player)
             snapshot.Dots[d].Remaining = AfflictionAuraRemaining(player, target, auras[d]);
             if (SpellInfo const* info = sSpellMgr->GetSpellInfo(auras[d]))
                 snapshot.Dots[d].BaseDuration = player->CalcSpellDuration(info);
-            // Cast/GCD plus a small input margin, scaled for haste.
-            snapshot.Dots[d].CastLead = std::max(1000, int(1500 * castSpeed)) + 250;
+            // The normal cast-time calculation includes UA's glyph and haste.
+            snapshot.Dots[d].CastLead = castLeads[d];
         }
         snapshot.HauntRemaining = AfflictionAuraRemaining(player, target, Haunt);
-        snapshot.HauntLead = std::max(1000, int(1500 * castSpeed)) + 500;
+        snapshot.HauntLead = AfflictionCastTime(player, Haunt) + 500;
         CombatAssistantPlayerState const& pending = CombatAssistantStates[player->GetGUID().GetCounter()];
         if (pending.HauntPendingTimer && pending.HauntTarget == target->GetGUID())
             snapshot.HauntRemaining = std::max(snapshot.HauntRemaining, snapshot.HauntLead + 1);
@@ -1395,6 +1464,8 @@ public:
             return true;
         }
 
+        if (status && UsesAfflictionAssistant(player))
+            ReportAfflictionGlyphs(handler, player);
         CombatRecommendation const recommendation = SelectRecommendation(player);
         if (!recommendation)
         {
