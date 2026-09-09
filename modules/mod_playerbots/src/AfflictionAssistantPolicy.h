@@ -45,6 +45,11 @@ inline int DotRefreshLead(unsigned castTime, unsigned globalCooldown)
     return static_cast<int>(castTime ? castTime : globalCooldown) + 250;
 }
 
+inline int HauntRefreshLead(unsigned castTime, unsigned travelTime)
+{
+    return static_cast<int>(castTime + travelTime) + 500;
+}
+
 struct Dot
 {
     int Remaining = 0;
@@ -166,6 +171,16 @@ Action Select(State const& state, CanUse canUse)
         if (due >= 2) { swapTarget = static_cast<int>(i); break; }
     }
     bool const seedDue = state.SeedSafe && primary.SeedRemaining <= 0;
+    bool const hauntDue = primary.HauntRemaining <= primary.HauntLead && state.Shards > 0 &&
+        (state.Shards >= 2 || state.DarkSoulActive || primary.Execute);
+    bool urgentDot = false;
+    for (unsigned i = 0; i < targetCount; ++i)
+        for (Dot const& dot : state.Targets[i].Dots) urgentDot = urgentDot || dot.Urgent();
+    // Do not spend Haunt's landing window on an optional Pandemic refresh or
+    // a fresh Soulburn setup. Missing/expiring DoTs, an already prepared
+    // Soulburn and the four-target Seed rotation retain their priority.
+    bool const earlyHaunt = hauntDue && !urgentDot && !state.SeedSafe && !state.SoulburnActive;
+    if (earlyHaunt) add(Haunt, 0, "HAUNT");
     if (state.SoulburnActive)
     {
         if (seedDue && state.CanSoulburnSeed) add(Seed, 0, "SOULBURN_SEED");
@@ -190,8 +205,7 @@ Action Select(State const& state, CanUse canUse)
 
     // Reserve the last shard outside execute/burst; cooldown and cost checks
     // are still performed by the normal spell engine for every candidate.
-    if (primary.HauntRemaining <= primary.HauntLead && state.Shards > 0 &&
-        (state.Shards >= 2 || state.DarkSoulActive || primary.Execute))
+    if (hauntDue && !earlyHaunt)
         add(Haunt, 0, "HAUNT");
     if (state.Mana < 30 && CanLifeTap(state, false))
         add(LifeTap, -1, tapReason);

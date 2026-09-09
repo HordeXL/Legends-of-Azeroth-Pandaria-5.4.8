@@ -1302,7 +1302,11 @@ CombatRecommendation SelectAfflictionRecommendation(Player* player)
             snapshot.Dots[d].CastLead = castLeads[d];
         }
         snapshot.HauntRemaining = AfflictionAuraRemaining(player, target, Haunt);
-        snapshot.HauntLead = AfflictionCastTime(player, Haunt) + 500;
+        uint32 hauntTravelTime = 0;
+        if (SpellInfo const* haunt = sSpellMgr->GetSpellInfo(Haunt))
+            if (haunt->Speed > 0)
+                hauntTravelTime = uint32(1000 * player->GetDistance(target) / haunt->Speed);
+        snapshot.HauntLead = HauntRefreshLead(AfflictionCastTime(player, Haunt), hauntTravelTime);
         CombatAssistantPlayerState const& pending = CombatAssistantStates[player->GetGUID().GetCounter()];
         if (pending.HauntPendingTimer && pending.HauntTarget == target->GetGUID())
             snapshot.HauntRemaining = std::max(snapshot.HauntRemaining, snapshot.HauntLead + 1);

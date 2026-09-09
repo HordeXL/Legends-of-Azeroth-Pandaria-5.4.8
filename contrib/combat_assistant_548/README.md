@@ -107,7 +107,11 @@ arenas. It also works solo on world training dummies. Bot rotations are separate
   action-bar overrides resolved through the same active auras as client casts.
 - Reserve the last Soul Shard outside burst/execute, maintain Haunt when shards
   allow, and suppress duplicate Haunts while the previous cast/projectile is in
-  flight. Display whole shards (the core stores 100 units per shard).
+  flight. Its refresh lead includes cast time, distance-based missile travel
+  and a 500 ms input margin. On one to three targets, an affordable due Haunt
+  precedes optional Pandemic refreshes and fresh Soulburn setup when no DoT is
+  urgent. Expiring/missing DoTs, prepared Soulburn and Seed mode keep priority.
+  Display whole shards (the core stores 100 units per shard).
 - Use Malefic Grasp above 20% and Drain Soul in the core's below-20% execute state.
   Repeated presses preserve the existing channel. Routine replacements wait
   until shortly after a tick; urgent DoTs, target changes and execute can pre-empt

@@ -79,6 +79,36 @@ int main()
     state.Shards = 0;
     check(select(state).Spell == DrainSoul, "execute regenerates shards");
 
+    check(HauntRefreshLead(700, 1000) == 2200, "Haunt lead includes logged one-second missile flight");
+    check(HauntRefreshLead(700, 0) == 1200, "instant missile keeps cast and input margin");
+    state = maintained(); state.Shards = 2;
+    state.Targets[0].HauntRemaining = 2000;
+    state.Targets[0].HauntLead = HauntRefreshLead(700, 1000);
+    state.Targets[0].Dots[2].Remaining = 6000;
+    check(select(state).Spell == Haunt, "renew ranged Haunt before optional Pandemic UA");
+    state.Targets[0].Dots[1].Remaining = 8000;
+    state.CanSoulburnSwap = true;
+    check(select(state, {Soulburn}).Spell == Haunt, "do not spend due Haunt shard on optional Soulburn setup");
+    check(select(state, {Soulburn}, {Haunt}).Spell == Soulburn, "unavailable Haunt permits useful fallback");
+    state.SoulburnActive = true;
+    check(select(state, {Soulburn, SoulSwap}).Spell == SoulSwap, "consume prepared Soulburn before Haunt");
+    state.SoulburnActive = false; state.CanSoulburnSwap = false;
+    state.Targets[0].Dots[0].Remaining = 500;
+    check(select(state).Spell == Agony, "urgent primary DoT still precedes Haunt");
+    state = maintained(3); state.Shards = 2;
+    state.Targets[1].Dots[1].Remaining = 0;
+    check(select(state).Spell == Corruption && select(state).TargetIndex == 1,
+        "missing secondary DoT still precedes Haunt");
+    state = maintained(); state.Shards = 2; state.SeedSafe = true;
+    check(select(state, {Seed}).Spell == Seed, "four-target Seed priority remains unchanged");
+    state = maintained(); state.Shards = 1;
+    state.Targets[0].HauntRemaining = 0;
+    check(select(state).Spell == MaleficGrasp, "log gap with one shard keeps reserve outside burst");
+    state.Shards = 0;
+    check(select(state).Spell == MaleficGrasp, "log gap without shards cannot cast Haunt");
+    state.Shards = 2;
+    check(select(state).Spell == Haunt, "new shard allows Haunt to resume after reserve gap");
+
     state = maintained(); state.Mana = 10;
     check(select(state).Spell == LifeTap, "recover critical mana");
     state.Health = 45;
