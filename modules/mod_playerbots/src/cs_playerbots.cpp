@@ -44,6 +44,7 @@
 #include <algorithm>
 #include <array>
 #include <limits>
+#include <list>
 #include <map>
 #include <set>
 #include <sstream>
@@ -414,7 +415,7 @@ enum class WorldBossStagedState : uint8
 WorldBossStagedState WorldBossStageState = WorldBossStagedState::Idle;
 uint32 WorldBossStageRequester = 0;
 uint32 WorldBossStageCaller = 0;
-uint32 WorldBossStageBoss = 0;
+ObjectGuid WorldBossStageBoss;
 uint32 WorldBossStageBossEntry = 0;
 uint32 WorldBossStageGroup = 0;
 uint32 WorldBossStageRaidSize = 0;
@@ -4945,11 +4946,52 @@ enum WorldBossCallerRaidMask : uint8
 
 struct WorldBossCallerConfig
 {
+    // Zero selects the one attackable Celestial in the court at menu/Call time.
     uint32 BossEntry = 0;
     float SearchRadius = 0.0f;
     uint8 RaidSizeMask = 0;
     bool StrategyReady = false;
 };
+
+bool IsCelestialWorldBoss(uint32 entry)
+{
+    return entry >= 71952 && entry <= 71955;
+}
+
+bool IsActiveCelestialWorldBoss(Creature const* boss)
+{
+    // The Timeless Isle scripts set faction 31 on arrival in the arena, then
+    // remove NON_ATTACKABLE after the introduction. Corner/outro bosses use 35.
+    return boss && IsCelestialWorldBoss(boss->GetEntry()) && boss->IsInWorld() &&
+        boss->IsAlive() && boss->GetFaction() == 31 && !boss->IsInEvadeMode() &&
+        !boss->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NON_ATTACKABLE_2 |
+            UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_IMMUNE_TO_PC);
+}
+
+bool UpdateWorldBossDefeatTimer(Creature const* boss, bool encounterStarted,
+    uint32& defeatedTimer)
+{
+    // These four bosses survive lethal damage: their DamageTaken handlers
+    // switch to friendly faction 35, stop combat, and despawn after 13 seconds.
+    // Evade/wipe keeps faction 31. Never infer victory from a missing creature.
+    bool defeated = encounterStarted && boss && (!boss->IsAlive() ||
+        (IsCelestialWorldBoss(boss->GetEntry()) && boss->GetFaction() == 35 &&
+            !boss->IsInCombat()));
+    if (!defeated && !defeatedTimer)
+        return false;
+
+    // Latch a positively observed victory through the subsequent despawn.
+    defeatedTimer += 1000;
+    return defeatedTimer >= 10000;
+}
+
+bool IsStagedCelestialUnavailable(Creature const* boss, uint32 bossEntry)
+{
+    // A reset/evade can temporarily prevent attacks while keeping this same
+    // Celestial in the arena. Only loss of this spawn or its turn cancels staging.
+    return IsCelestialWorldBoss(bossEntry) &&
+        (!boss || !boss->IsAlive() || boss->GetFaction() != 31);
+}
 
 bool LoadWorldBossCallerConfig(Creature* caller, WorldBossCallerConfig& config)
 {
@@ -4968,14 +5010,42 @@ bool LoadWorldBossCallerConfig(Creature* caller, WorldBossCallerConfig& config)
     config.SearchRadius = fields[1].GetFloat();
     config.RaidSizeMask = fields[2].GetUInt8();
     config.StrategyReady = fields[3].GetBool();
-    return GetSupportedWorldBossName(config.BossEntry) && config.SearchRadius > 0.0f;
+    return (config.BossEntry == 0 || GetSupportedWorldBossName(config.BossEntry)) &&
+        config.SearchRadius > 0.0f;
 }
 
 Creature* FindConfiguredWorldBoss(Creature* caller, WorldBossCallerConfig const& config,
-    bool aliveOnly = true)
+    WorldObject const* viewer = nullptr)
 {
-    return caller ? caller->FindNearestCreature(
-        config.BossEntry, config.SearchRadius, aliveOnly) : nullptr;
+    if (!caller)
+        return nullptr;
+    if (config.BossEntry && !IsCelestialWorldBoss(config.BossEntry))
+        return caller->FindNearestCreature(config.BossEntry, config.SearchRadius, true);
+
+    Creature* activeBoss = nullptr;
+    for (uint32 entry = 71952; entry <= 71955; ++entry)
+    {
+        if (config.BossEntry && config.BossEntry != entry)
+            continue;
+        std::list<Creature*> candidates;
+        caller->GetCreatureListWithEntryInGrid(candidates, entry, config.SearchRadius);
+        for (Creature* candidate : candidates)
+        {
+            if (!IsActiveCelestialWorldBoss(candidate) || !caller->InSamePhase(candidate) ||
+                (viewer && !viewer->InSamePhase(candidate)))
+                continue;
+            // Do not guess if a duplicate/abnormal spawn makes selection ambiguous.
+            if (activeBoss)
+                return nullptr;
+            activeBoss = candidate;
+        }
+    }
+    return activeBoss;
+}
+
+bool WorldBossCallerSelectionMatches(Creature const* boss, uint32 menuBossGuid)
+{
+    return boss && boss->GetGUID().GetCounter() == menuBossGuid;
 }
 
 char const* WorldBossStagedStateName()
@@ -5023,6 +5093,11 @@ bool StartWorldBossStage(Player* requester, Creature* caller, Creature* boss,
     if (!requester || !caller || !boss)
     {
         error = "requester, caller, or boss is missing";
+        return false;
+    }
+    if (IsCelestialWorldBoss(boss->GetEntry()) && !IsActiveCelestialWorldBoss(boss))
+    {
+        error = "the selected Celestial is no longer attackable; reopen the caller menu";
         return false;
     }
     if (WorldBossStageState != WorldBossStagedState::Idle)
@@ -5211,7 +5286,7 @@ bool StartWorldBossStage(Player* requester, Creature* caller, Creature* boss,
 
     WorldBossStageRequester = requester->GetGUID().GetCounter();
     WorldBossStageCaller = caller->GetDBTableGUIDLow();
-    WorldBossStageBoss = boss->GetGUID().GetCounter();
+    WorldBossStageBoss = boss->GetGUID();
     WorldBossStageBossEntry = boss->GetEntry();
     WorldBossStageGroup = 0;
     WorldBossStageRaidSize = raidSize;
@@ -5292,29 +5367,37 @@ void ShowWorldBossCallerMenu(Player* player, Creature* caller)
         return;
     }
 
-    char const* bossName = GetSupportedWorldBossName(config.BossEntry);
-    if (config.RaidSizeMask & WORLD_BOSS_CALLER_RAID_10)
+    Creature* boss = FindConfiguredWorldBoss(caller, config, player);
+    char const* bossName = boss ? GetSupportedWorldBossName(boss->GetEntry()) :
+        (config.BossEntry ? GetSupportedWorldBossName(config.BossEntry) : "Celestial Court");
+    uint32 menuBossGuid = boss ? boss->GetGUID().GetCounter() : 0;
+    if (!config.BossEntry || IsCelestialWorldBoss(config.BossEntry))
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT,
+            boss ? std::string("Active boss: ") + bossName :
+                "Waiting for one attackable Celestial - refresh status",
+            GOSSIP_SENDER_MAIN, WORLD_BOSS_CALLER_STATUS);
+    if (boss && (config.RaidSizeMask & WORLD_BOSS_CALLER_RAID_10))
         AddGossipItemFor(player, GOSSIP_ICON_CHAT,
             std::string("Preview 10-player pool for ") + bossName,
-            GOSSIP_SENDER_MAIN, WORLD_BOSS_CALLER_PREVIEW_10);
-    if (config.RaidSizeMask & WORLD_BOSS_CALLER_RAID_25)
+            menuBossGuid, WORLD_BOSS_CALLER_PREVIEW_10);
+    if (boss && (config.RaidSizeMask & WORLD_BOSS_CALLER_RAID_25))
         AddGossipItemFor(player, GOSSIP_ICON_CHAT,
             std::string("Preview 25-player pool for ") + bossName,
-            GOSSIP_SENDER_MAIN, WORLD_BOSS_CALLER_PREVIEW_25);
+            menuBossGuid, WORLD_BOSS_CALLER_PREVIEW_25);
 
     AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Encounter status",
         GOSSIP_SENDER_MAIN, WORLD_BOSS_CALLER_STATUS);
     AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Rebuff living staged raid",
         GOSSIP_SENDER_MAIN, WORLD_BOSS_CALLER_REBUFF);
 
-    if (config.RaidSizeMask & WORLD_BOSS_CALLER_RAID_10)
+    if (boss && (config.RaidSizeMask & WORLD_BOSS_CALLER_RAID_10))
         AddGossipItemFor(player, GOSSIP_ICON_CHAT,
-            "Call 10 (PvE build, cloak, group and summon)",
-            GOSSIP_SENDER_MAIN, WORLD_BOSS_CALLER_STAGE_10);
-    if (config.RaidSizeMask & WORLD_BOSS_CALLER_RAID_25)
+            std::string("Call 10 for ") + bossName + " (PvE build, cloak, group and summon)",
+            menuBossGuid, WORLD_BOSS_CALLER_STAGE_10);
+    if (boss && (config.RaidSizeMask & WORLD_BOSS_CALLER_RAID_25))
         AddGossipItemFor(player, GOSSIP_ICON_CHAT,
-            "Call 25 (PvE build, cloak, group and summon)",
-            GOSSIP_SENDER_MAIN, WORLD_BOSS_CALLER_STAGE_25);
+            std::string("Call 25 for ") + bossName + " (PvE build, cloak, group and summon)",
+            menuBossGuid, WORLD_BOSS_CALLER_STAGE_25);
     AddGossipItemFor(player, GOSSIP_ICON_CHAT,
         WorldBossStageState == WorldBossStagedState::Idle ?
             "Dismiss staged raid (none active)" : "Dismiss staged raid",
@@ -5336,6 +5419,7 @@ struct npc_world_boss_bot_caller : public ScriptedAI
     bool OnGossipSelect(Player* player, uint32 /*menuId*/, uint32 gossipListId) override
     {
         uint32 action = player->PlayerTalkClass->GetGossipOptionAction(gossipListId);
+        uint32 menuBossGuid = player->PlayerTalkClass->GetGossipOptionSender(gossipListId);
         WorldBossCallerConfig config;
         ChatHandler handler(player->GetSession());
         if (!LoadWorldBossCallerConfig(me, config))
@@ -5346,8 +5430,9 @@ struct npc_world_boss_bot_caller : public ScriptedAI
             return true;
         }
 
-        char const* bossName = GetSupportedWorldBossName(config.BossEntry);
-        Creature* aliveBoss = FindConfiguredWorldBoss(me, config, true);
+        Creature* aliveBoss = FindConfiguredWorldBoss(me, config, player);
+        uint32 bossEntry = aliveBoss ? aliveBoss->GetEntry() : config.BossEntry;
+        char const* bossName = bossEntry ? GetSupportedWorldBossName(bossEntry) : "Celestial Court";
         if (action == WORLD_BOSS_CALLER_STATUS)
         {
             uint32 onlineBots = 0;
@@ -5374,12 +5459,16 @@ struct npc_world_boss_bot_caller : public ScriptedAI
 
             handler.PSendSysMessage(
                 "Boss Bot Caller: %s (entry %u), active-nearby=%s, strategy=%s, staged-state=%s, staged-bots=%u, online=%u, alive=%u, grouped=%u, nearby-player=%u, buffed=%u, raid-group=%u, elapsed=%us.",
-                bossName, config.BossEntry, aliveBoss ? "yes" : "no",
+                bossName, bossEntry, aliveBoss ? "yes" : "no",
                 config.StrategyReady ? "audited" : "not ready",
                 WorldBossStagedStateName(), uint32(WorldBossStagedBots.size()),
                 onlineBots, aliveBots, groupedBots, nearbyBots,
                 uint32(WorldBossStageBuffedBots.size()), WorldBossStageGroup,
                 WorldBossStageElapsed / 1000);
+            if (WorldBossStageBossEntry)
+                handler.PSendSysMessage("Staged raid is bound to %s (entry %u, creature %u).",
+                    GetSupportedWorldBossName(WorldBossStageBossEntry), WorldBossStageBossEntry,
+                    WorldBossStageBoss.GetCounter());
             if (WorldBossStageState == WorldBossStagedState::Cleanup &&
                 !WorldBossStageCleanupReason.empty())
                 handler.PSendSysMessage("Cleanup reason: %s.",
@@ -5429,11 +5518,10 @@ struct npc_world_boss_bot_caller : public ScriptedAI
                 ShowWorldBossCallerMenu(player, me);
                 return true;
             }
-            if (!aliveBoss)
+            if (!WorldBossCallerSelectionMatches(aliveBoss, menuBossGuid))
             {
-                handler.PSendSysMessage(
-                    "%s is not alive within %.0f yards; no bots were logged in.",
-                    bossName, config.SearchRadius);
+                handler.SendSysMessage(
+                    "The selected boss changed or is unavailable. Review the refreshed menu and Call again; no bots were logged in.");
                 ShowWorldBossCallerMenu(player, me);
                 return true;
             }
@@ -5443,9 +5531,9 @@ struct npc_world_boss_bot_caller : public ScriptedAI
                 handler.PSendSysMessage("Call %u staging refused: %s.", raidSize, error.c_str());
             else
                 handler.PSendSysMessage(
-                    "Call %u staged %u bots for login. After all are ready they will be revived, "
+                    "Call %u for %s staged %u bots for login. After all are ready they will be revived, "
                     "given a PvE build and role cloak, grouped and summoned around you.",
-                    raidSize, uint32(WorldBossStagedBots.size()));
+                    raidSize, bossName, uint32(WorldBossStagedBots.size()));
             ShowWorldBossCallerMenu(player, me);
             return true;
         }
@@ -5470,11 +5558,10 @@ struct npc_world_boss_bot_caller : public ScriptedAI
             return true;
         }
 
-        if (!aliveBoss)
+        if (!WorldBossCallerSelectionMatches(aliveBoss, menuBossGuid))
         {
-            handler.PSendSysMessage(
-                "%s is not alive within %.0f yards of this caller; preview was not run.",
-                bossName, config.SearchRadius);
+            handler.SendSysMessage(
+                "The selected boss changed or is unavailable. Review the refreshed menu and preview again.");
             ShowWorldBossCallerMenu(player, me);
             return true;
         }
@@ -5504,6 +5591,18 @@ void UpdateWorldBossStagedRaid(uint32 diff)
 
     Player* requester = WorldBossStageRequester ? ObjectAccessor::FindConnectedPlayer(
         ObjectGuid::Create<HighGuid::Player>(WorldBossStageRequester)) : nullptr;
+
+    if (requester && (WorldBossStageState == WorldBossStagedState::WaitForBots ||
+        WorldBossStageState == WorldBossStagedState::WaitForTeleport) &&
+        IsStagedCelestialUnavailable(requester->IsInWorld() ?
+            ObjectAccessor::GetCreature(*requester, WorldBossStageBoss) : nullptr,
+            WorldBossStageBossEntry))
+    {
+        BeginWorldBossStageCleanup("selected Celestial became unavailable during staging");
+        ChatHandler(requester->GetSession()).SendSysMessage(
+            "The selected Celestial is no longer available. Staging was cancelled; reopen the caller for the next boss.");
+        return;
+    }
 
     if (WorldBossStageState == WorldBossStagedState::WaitForBots)
     {
@@ -5973,16 +6072,18 @@ void UpdateWorldBossStagedRaid(uint32 diff)
             }
         }
 
-        // FindNearestCreature's final argument is an exact alive-state filter,
-        // not an "include dead" switch.  Looking up only `false` made a live
-        // world boss invisible to the coordinator, so encounter start and wipe
-        // recovery could never be armed. Resolve the living spawn first and
-        // fall back to its corpse only for the post-kill cleanup path.
-        Creature* boss = requester->FindNearestCreature(
-            WorldBossStageBossEntry, 500.0f, true);
-        if (!boss)
-            boss = requester->FindNearestCreature(
-                WorldBossStageBossEntry, 500.0f, false);
+        // Bind lifecycle handling to the exact spawn selected at Call time.
+        // Never retarget a staged raid to the next Celestial or a nearby copy.
+        Creature* boss = requester->IsInWorld() ?
+            ObjectAccessor::GetCreature(*requester, WorldBossStageBoss) : nullptr;
+        if (!WorldBossStageEncounterStarted && boss &&
+            IsStagedCelestialUnavailable(boss, WorldBossStageBossEntry))
+        {
+            BeginWorldBossStageCleanup("selected Celestial rotated before the raid engaged");
+            ChatHandler(requester->GetSession()).SendSysMessage(
+                "The selected Celestial's turn has ended. The staged raid is being dismissed; Call again for the next boss.");
+            return;
+        }
 
         // A raid marker is persistent even when its player dies.  Without
         // moving MEMBER_FLAG_MAINTANK, PlayerBotSpec::IsMainTank keeps
@@ -6058,33 +6159,21 @@ void UpdateWorldBossStagedRaid(uint32 diff)
             }
         }
 
-        if (boss && boss->IsAlive() && boss->IsInCombat())
+        if (!WorldBossStageBossDefeatedTimer && boss && boss->IsAlive() && boss->IsInCombat())
         {
             WorldBossStageEncounterStarted = true;
             WorldBossStageWipePending = false;
-            WorldBossStageBossDefeatedTimer = 0;
         }
-        else if (WorldBossStageEncounterStarted && boss && !boss->IsAlive())
+        if (UpdateWorldBossDefeatTimer(boss, WorldBossStageEncounterStarted,
+            WorldBossStageBossDefeatedTimer))
         {
-            WorldBossStageBossDefeatedTimer += 1000;
-            if (WorldBossStageBossDefeatedTimer >= 10000)
-            {
-                ChatHandler(requester->GetSession()).SendSysMessage(
-                    "World boss defeated. The staged raid will now be dismissed safely.");
-                BeginWorldBossStageCleanup("world boss defeated");
-                return;
-            }
+            ChatHandler(requester->GetSession()).SendSysMessage(
+                "World boss defeated. The staged raid will now be dismissed safely.");
+            BeginWorldBossStageCleanup("world boss defeated");
+            return;
         }
-        else if (boss && boss->IsAlive())
-        {
-            // A released player can be moved to a graveyard farther than the
-            // local 500-yard lookup while the rest of the raid is still
-            // fighting. Never interpret an absent boss as a defeated boss:
-            // doing so used to dismiss the raid before corpse runback could
-            // finish. Only a positively observed dead creature starts the
-            // automatic post-kill cleanup timer.
-            WorldBossStageBossDefeatedTimer = 0;
-        }
+        if (WorldBossStageBossDefeatedTimer)
+            return;
 
         if (WorldBossStageEncounterStarted && aliveMembers == 0)
             WorldBossStageWipePending = true;
@@ -6308,7 +6397,7 @@ void UpdateWorldBossStagedRaid(uint32 diff)
     WorldBossStageState = WorldBossStagedState::Idle;
     WorldBossStageRequester = 0;
     WorldBossStageCaller = 0;
-    WorldBossStageBoss = 0;
+    WorldBossStageBoss.Clear();
     WorldBossStageBossEntry = 0;
     WorldBossStageGroup = 0;
     WorldBossStageRaidSize = 0;
