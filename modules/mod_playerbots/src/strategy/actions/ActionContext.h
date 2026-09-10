@@ -35,6 +35,7 @@ public:
         creators["move to mana tide"] = &ActionContext::move_to_mana_tide;
         creators["avoid aoe"] = &ActionContext::avoid_aoe;
         creators["boss mechanics"] = &ActionContext::boss_mechanics;
+        creators["combat formation move"] = &ActionContext::combat_formation_move;
         creators["flee to master"] = &ActionContext::flee_to_master;
         creators["guard"] = &ActionContext::guard;
         creators["runaway"] = &ActionContext::runaway;
@@ -80,6 +81,7 @@ private:
     static Action* move_to_mana_tide(PlayerbotAI* botAI) { return new MoveToManaTideAction(botAI); }
     static Action* avoid_aoe(PlayerbotAI* botAI) { return new AvoidAoeAction(botAI); }
     static Action* boss_mechanics(PlayerbotAI* botAI) { return new BossMechanicsAction(botAI); }
+    static Action* combat_formation_move(PlayerbotAI* botAI) { return new CombatFormationMoveAction(botAI); }
     static Action* flee_to_master(PlayerbotAI* botAI) { return new FleeToMasterAction(botAI); }
     static Action* guard(PlayerbotAI* botAI) { return new GuardAction(botAI); }
     static Action* stay(PlayerbotAI* botAI) { return new StayAction(botAI); }

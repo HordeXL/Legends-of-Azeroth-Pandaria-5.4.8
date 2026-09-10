@@ -1027,7 +1027,7 @@ bool MovementAction::Move(float angle, float distance)
 }
 
 // just calculates average position of group and runs away from that position
-bool MovementAction::MoveFromGroup(float distance)
+bool MovementAction::MoveFromGroup(float distance, MovementPriority priority)
 {
     if (Group* group = bot->GetGroup())
     {
@@ -1054,9 +1054,36 @@ bool MovementAction::MoveFromGroup(float distance)
         {
             x /= count;
             y /= count;
-            // x and y are now average position of the group members
-            float angle = bot->GetAngle(x, y) + M_PI;
-            return Move(angle, distance - closestDist);
+            // x and y are now the average position of the group members. If
+            // the compact pack occupies the same point, use a stable personal
+            // sector instead of sending everyone along the same escape line.
+            float awayX = bot->GetPositionX() - x;
+            float awayY = bot->GetPositionY() - y;
+            float awayLength = std::sqrt(awayX * awayX + awayY * awayY);
+            float angle = 0.0f;
+            if (awayLength < 0.5f)
+                angle = float(bot->GetGUID().GetCounter() % 16) *
+                    float(M_PI / 8.0);
+            else
+                angle = std::atan2(awayY, awayX);
+
+            float const moveDistance = distance - closestDist;
+            float destinationX = bot->GetPositionX() +
+                std::cos(angle) * moveDistance;
+            float destinationY = bot->GetPositionY() +
+                std::sin(angle) * moveDistance;
+            float destinationZ = bot->GetMapWaterOrGroundLevel(
+                destinationX, destinationY, bot->GetPositionZ());
+            if (destinationZ == -100000.0f || destinationZ == -200000.0f)
+                destinationZ = bot->GetPositionZ();
+            if (!bot->GetMap()->CheckCollisionAndGetValidCoords(bot,
+                    bot->GetPositionX(), bot->GetPositionY(),
+                    bot->GetPositionZ(), destinationX, destinationY,
+                    destinationZ, false))
+                return false;
+
+            return MoveTo(mapId, destinationX, destinationY, destinationZ,
+                false, false, true, true, priority, true);
         }
     }
     return false;
@@ -1913,11 +1940,11 @@ bool BossMechanicsAction::Execute(Event /*event*/)
             }
             break;
         case Reaction::SpreadShaDominateWarning:
-            return MoveFromGroup(18.0f);
+            return MoveFromGroup(18.0f, MovementPriority::MOVEMENT_FORCED);
         case Reaction::SpreadStormCloud:
-            return MoveFromGroup(30.0f);
+            return MoveFromGroup(30.0f, MovementPriority::MOVEMENT_FORCED);
         case Reaction::SpreadOondastaBeam:
-            return MoveFromGroup(22.0f);
+            return MoveFromGroup(22.0f, MovementPriority::MOVEMENT_FORCED);
         case Reaction::MaintainOondastaOffTank:
             if (Creature* oondasta = bot->FindNearestCreature(69161, 200.0f, true))
             {
@@ -1975,7 +2002,7 @@ bool BossMechanicsAction::Execute(Event /*event*/)
                     return MoveTo(tank, 4.0f, MovementPriority::MOVEMENT_FORCED);
             break;
         case Reaction::SpreadOrdosBurningSoul:
-            return MoveFromGroup(20.0f);
+            return MoveFromGroup(20.0f, MovementPriority::MOVEMENT_FORCED);
         case Reaction::MoveChiJiBeacon:
             if (Creature* beacon = bot->FindNearestCreature(71978, 100.0f, true))
                 return MoveTo(beacon, 3.0f, MovementPriority::MOVEMENT_FORCED);
@@ -2048,7 +2075,7 @@ bool BossMechanicsAction::Execute(Event /*event*/)
                 }
             break;
         case Reaction::SpreadXuenLightning:
-            return MoveFromGroup(22.0f);
+            return MoveFromGroup(22.0f, MovementPriority::MOVEMENT_FORCED);
         case Reaction::AvoidNiuzaoCharge:
             if (Creature* niuzao = bot->FindNearestCreature(NiuzaoEntry, 200.0f, true))
             {

@@ -429,6 +429,7 @@ float WorldBossStageZ = 0.0f;
 std::map<uint32, WorldBossStagedCandidate> WorldBossStagedBots;
 std::string WorldBossStageCleanupReason;
 std::set<uint32> WorldBossStageBuffedBots;
+std::map<uint32, uint32> WorldBossStagePetSummonAttempts;
 bool WorldBossStageFollowingRequester = false;
 bool WorldBossStageEncounterStarted = false;
 bool WorldBossStageWipePending = false;
@@ -5082,6 +5083,7 @@ bool RequestWorldBossRebuff(Player* requester, std::string& error)
     }
 
     WorldBossStageBuffedBots.clear();
+    WorldBossStagePetSummonAttempts.clear();
     TC_LOG_INFO("server",
         "WorldBoss rebuff requested requester=%u group=%u boss=%u bots=%u",
         WorldBossStageRequester, WorldBossStageGroup, WorldBossStageBossEntry,
@@ -5300,6 +5302,7 @@ bool StartWorldBossStage(Player* requester, Creature* caller, Creature* boss,
     WorldBossStageZ = 0.0f;
     WorldBossStageCleanupReason.clear();
     WorldBossStageBuffedBots.clear();
+    WorldBossStagePetSummonAttempts.clear();
     WorldBossStageFollowingRequester = false;
     WorldBossStageEncounterStarted = false;
     WorldBossStageWipePending = false;
@@ -5970,6 +5973,7 @@ void UpdateWorldBossStagedRaid(uint32 diff)
         WorldBossStageState = WorldBossStagedState::Grouped;
         WorldBossStageElapsed = 0;
         WorldBossStageBuffedBots.clear();
+        WorldBossStagePetSummonAttempts.clear();
         WorldBossStageFollowingRequester = false;
         WorldBossStageEncounterStarted = false;
         WorldBossStageWipePending = false;
@@ -6006,6 +6010,7 @@ void UpdateWorldBossStagedRaid(uint32 diff)
 
         uint32 aliveMembers = requester->IsAlive() ? 1 : 0;
         bool stagedPersistentPetsReady = true;
+        bool stagedPreparationIdle = true;
         for (auto const& staged : WorldBossStagedBots)
         {
             Player* bot = sRandomPlayerbotMgr->GetPlayerBot(
@@ -6047,11 +6052,14 @@ void UpdateWorldBossStagedRaid(uint32 diff)
             if (bot->IsAlive() && expectsPersistentPet &&
                 !bot->GetGuardianPet())
                 stagedPersistentPetsReady = false;
+            else if (bot->GetGuardianPet())
+                WorldBossStagePetSummonAttempts.erase(staged.first);
 
             // Warlock demons are summoned by a real class action rather than
             // BotFactory. Finish that cast before marking the warlock's raid
             // preparation complete or releasing the compact follow pack.
-            if (!WorldBossStageEncounterStarted && bot->IsAlive() &&
+            if (!WorldBossStageFollowingRequester &&
+                !WorldBossStageEncounterStarted && bot->IsAlive() &&
                 !bot->IsInCombat() && bot->GetClass() == CLASS_WARLOCK &&
                 !bot->GetGuardianPet())
             {
@@ -6062,13 +6070,25 @@ void UpdateWorldBossStagedRaid(uint32 diff)
                         botAI->SetMaster(requester);
                         botAI->ChangeStrategy("-follow,+stay", BOT_STATE_NON_COMBAT);
                         botAI->ChangeStrategy("+avoid aoe,+formation", BOT_STATE_COMBAT);
-                        if (botAI->DoSpecificAction("summon observer", Event(), true))
+                        auto attempt = WorldBossStagePetSummonAttempts.find(
+                            staged.first);
+                        bool const mayRetry =
+                            attempt == WorldBossStagePetSummonAttempts.end() ||
+                            uint32(WorldBossStageElapsed - attempt->second) >= 8000;
+                        if (mayRetry && botAI->DoSpecificAction(
+                                "summon observer", Event(), true))
+                        {
+                            WorldBossStagePetSummonAttempts[staged.first] =
+                                WorldBossStageElapsed;
                             TC_LOG_INFO("server",
                                 "WorldBoss preparation pet summon raid=%u boss=%u name=%s guid=%u action=summon observer",
                                 WorldBossStageGroup, WorldBossStageBossEntry,
                                 bot->GetName().c_str(), staged.first);
+                        }
                     }
                 }
+                if (bot->IsNonMeleeSpellCasted(true, false, true))
+                    stagedPreparationIdle = false;
                 continue;
             }
 
@@ -6077,7 +6097,8 @@ void UpdateWorldBossStagedRaid(uint32 diff)
             // raid buff, while a second paladin can still contribute the other
             // blessing. Classes without a preparation action are marked done
             // immediately instead of being retried forever.
-            if (!WorldBossStageEncounterStarted && bot->IsAlive() &&
+            if (!WorldBossStageFollowingRequester &&
+                !WorldBossStageEncounterStarted && bot->IsAlive() &&
                 !bot->IsInCombat() &&
                 !WorldBossStageBuffedBots.count(staged.first))
             {
@@ -6113,11 +6134,16 @@ void UpdateWorldBossStagedRaid(uint32 diff)
                 if (complete)
                     WorldBossStageBuffedBots.insert(staged.first);
             }
+
+            if (bot->IsAlive() &&
+                bot->IsNonMeleeSpellCasted(true, false, true))
+                stagedPreparationIdle = false;
         }
 
         if (!WorldBossStageFollowingRequester &&
+            stagedPreparationIdle &&
             ((WorldBossStageBuffedBots.size() == WorldBossStagedBots.size() &&
-                stagedPersistentPetsReady) || WorldBossStageElapsed >= 12000))
+                stagedPersistentPetsReady) || WorldBossStageElapsed >= 30000))
         {
             for (auto const& staged : WorldBossStagedBots)
             {
@@ -6131,10 +6157,11 @@ void UpdateWorldBossStagedRaid(uint32 diff)
             ChatHandler(requester->GetSession()).SendSysMessage(
                 "World-boss raid buffs are ready. The compact raid will now follow you until the boss is engaged.");
             TC_LOG_INFO("server",
-                "WorldBoss pre-pull follow enabled requester=%u group=%u boss=%u bots=%u buffed=%u elapsed=%u",
+                "WorldBoss pre-pull follow enabled requester=%u group=%u boss=%u bots=%u buffed=%u pets-ready=%u elapsed=%u",
                 WorldBossStageRequester, WorldBossStageGroup,
                 WorldBossStageBossEntry, uint32(WorldBossStagedBots.size()),
-                uint32(WorldBossStageBuffedBots.size()), WorldBossStageElapsed);
+                uint32(WorldBossStageBuffedBots.size()),
+                stagedPersistentPetsReady ? 1u : 0u, WorldBossStageElapsed);
         }
 
         // Bind lifecycle handling to the exact spawn selected at Call time.
@@ -6324,6 +6351,7 @@ void UpdateWorldBossStagedRaid(uint32 diff)
                     resetMainTank->GetGUID(), 0);
             }
             WorldBossStageBuffedBots.clear();
+            WorldBossStagePetSummonAttempts.clear();
             WorldBossStageFollowingRequester = false;
             WorldBossStageEncounterStarted = false;
             WorldBossStageWipePending = false;
@@ -6498,6 +6526,7 @@ void UpdateWorldBossStagedRaid(uint32 diff)
     WorldBossStageZ = 0.0f;
     WorldBossStageCleanupReason.clear();
     WorldBossStageBuffedBots.clear();
+    WorldBossStagePetSummonAttempts.clear();
     WorldBossStageFollowingRequester = false;
     WorldBossStageEncounterStarted = false;
     WorldBossStageWipePending = false;

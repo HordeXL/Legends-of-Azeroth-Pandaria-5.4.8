@@ -46,7 +46,8 @@ protected:
     bool MoveNear(uint32 mapId, float x, float y, float z, float distance = sPlayerbotAIConfig->contactDistance, MovementPriority priority = MovementPriority::MOVEMENT_NORMAL);
     bool MoveNear(WorldObject* target, float distance = sPlayerbotAIConfig->contactDistance, MovementPriority priority = MovementPriority::MOVEMENT_NORMAL);
     bool MoveAway(Unit* target, float distance = sPlayerbotAIConfig->fleeDistance, bool backwards = false);
-    bool MoveFromGroup(float distance);
+    bool MoveFromGroup(float distance,
+        MovementPriority priority = MovementPriority::MOVEMENT_NORMAL);
     bool Move(float angle, float distance);
     bool Flee(Unit* target);
     bool FleePosition(Position pos, float radius, uint32 minInterval = 1000);
