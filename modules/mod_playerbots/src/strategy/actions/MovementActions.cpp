@@ -1644,11 +1644,26 @@ BossMechanicsAction::Reaction BossMechanicsAction::GetReaction() const
             return Reaction::MoveChiJiBeacon;
     }
 
-    // Xuen's Crackling Lightning is a chain spell in boss_xuen.cpp. A marked
-    // target must create room from the raid while its effect aura is active.
-    if ((bot->HasAura(144633) || bot->HasAura(144635)) && bot->GetGroup() &&
-        bot->FindNearestCreature(71953, 200.0f, true))
-        return Reaction::SpreadXuenLightning;
+    // Xuen's local selector launches eight Chi Barrage missiles (144642 ->
+    // 144644) at raid members. Each missile has an area hit after travel time,
+    // so a stacked raid is struck once for every nearby missile. Crackling
+    // Lightning (144635 -> 144633) behaves the same way over its ten-second
+    // boss aura. React to the boss cast/aura before damage lands; neither
+    // effect applies a warning aura to the selected player.
+    if (Creature* xuen = bot->FindNearestCreature(71953, 200.0f, true))
+    {
+        bool incomingAreaDamage = xuen->HasAura(144635);
+        if (Spell* spell = xuen->GetCurrentSpell(CURRENT_GENERIC_SPELL))
+            if (spell->GetSpellInfo() &&
+                (spell->GetSpellInfo()->Id == 144642 ||
+                 spell->GetSpellInfo()->Id == 144635))
+                incomingAreaDamage = true;
+
+        bool const activeTank = PlayerBotSpec::IsTank(bot, true) &&
+            xuen->GetVictim() == bot;
+        if (incomingAreaDamage && bot->GetGroup() && !activeTank)
+            return Reaction::SpreadXuenLightning;
+    }
 
     // Niuzao's charge aura (144608/144609) drives the boss across the arena.
     // Moving away from him is a conservative pathing-safe response; Massive
@@ -1819,7 +1834,7 @@ bool BossMechanicsAction::Execute(Event /*event*/)
                 return MoveAway(chiJi, 30.0f);
             break;
         case Reaction::SpreadXuenLightning:
-            return MoveFromGroup(14.0f);
+            return MoveFromGroup(22.0f);
         case Reaction::FleeNiuzaoCharge:
             if (Creature* niuzao = bot->FindNearestCreature(71954, 200.0f, true))
                 return MoveAway(niuzao, 35.0f);
@@ -1899,6 +1914,14 @@ bool CombatFormationMoveAction::isUseful()
         bot->GetCombatReach() - target->GetCombatReach());
     float const minimumRange = std::min(14.0f,
         std::max(8.0f, sPlayerbotAIConfig->spellDistance - 10.0f));
+
+    // Xuen fires several area missiles at different ranged players. Keep
+    // staged ranged/healers apart before the cast begins so one missile does
+    // not multiply across the entire raid.
+    if (bot->HasWorldBossStagingAccess() && target->GetEntry() == 71953)
+        if (NearestGroupMember(12.0f))
+            return true;
+
     return edgeDistance < minimumRange;
 }
 
@@ -1913,6 +1936,13 @@ bool CombatFormationMoveAction::Execute(Event /*event*/)
         target->GetVictim() == bot || !PlayerBotSpec::IsRanged(bot, true))
     {
         return false;
+    }
+
+    if (bot->HasWorldBossStagingAccess() && target->GetEntry() == 71953 &&
+        NearestGroupMember(12.0f) && MoveFromGroup(14.0f))
+    {
+        lastMoveTimer = getMSTime();
+        return true;
     }
 
     float const desiredRange = std::min(24.0f,
@@ -2090,7 +2120,42 @@ Player* CombatFormationMoveAction::NearestGroupMember(float dis)
     return result;
 }
 
-bool TankFaceAction::Execute(Event event)
+bool TankFaceAction::isUseful()
+{
+    if (getMSTime() - moveInterval < lastMoveTimer ||
+        !botAI->IsGroupPveActivity() || !bot->IsInCombat() ||
+        !PlayerBotSpec::IsTank(bot, true) || !bot->GetGroup() ||
+        bot->IsNonMeleeSpellCasted(true, false, true))
+        return false;
+
+    Unit* target = AI_VALUE(Unit*, "current target");
+    if (!target || !target->IsInWorld() || !target->IsAlive() ||
+        target->GetMapId() != bot->GetMapId() ||
+        !bot->IsValidAttackTarget(target) ||
+        !bot->IsWithinMeleeRange(target) ||
+        !AI_VALUE2(bool, "has aggro", "current target"))
+        return false;
+
+    // Boss Caller tanks turn a moving boss as soon as taunt succeeds. Other
+    // group-PvE tanks retain the older stationary-target restriction.
+    if (target->isMoving() && !bot->HasWorldBossStagingAccess())
+        return false;
+
+    float const averageAngle = AverageGroupAngle(target, false);
+    if (averageAngle == 0.0f && !bot->HasWorldBossStagingAccess())
+        return false;
+
+    float deltaAngle = Position::NormalizeOrientation(
+        averageAngle - target->GetAngle(bot));
+    if (deltaAngle > M_PI)
+        deltaAngle -= 2.0f * M_PI;
+
+    float const tolerable = bot->HasWorldBossStagingAccess() ?
+        float(M_PI * 5.0 / 6.0) : float(M_PI_2);
+    return std::fabs(deltaAngle) <= tolerable;
+}
+
+bool TankFaceAction::Execute(Event /*event*/)
 {
     Unit* target = AI_VALUE(Unit*, "current target");
     if (!target)
@@ -2099,7 +2164,8 @@ bool TankFaceAction::Execute(Event event)
     if (!bot->GetGroup())
         return false;
 
-    if (!bot->IsWithinMeleeRange(target) || target->isMoving())
+    if (!bot->IsWithinMeleeRange(target) ||
+        (target->isMoving() && !bot->HasWorldBossStagingAccess()))
         return false;
 
     if (!AI_VALUE2(bool, "has aggro", "current target"))
@@ -2107,17 +2173,50 @@ bool TankFaceAction::Execute(Event event)
 
     float averageAngle = AverageGroupAngle(target, true);
 
-    if (averageAngle == 0.0f)
+    if (bot->HasWorldBossStagingAccess())
+        averageAngle = AverageGroupAngle(target, false);
+
+    if (averageAngle == 0.0f && !bot->HasWorldBossStagingAccess())
         return false;
 
     float deltaAngle = Position::NormalizeOrientation(averageAngle - target->GetAngle(bot));
     if (deltaAngle > M_PI)
         deltaAngle -= 2.0f * M_PI; // -PI..PI
 
-    float tolerable = M_PI_2;
+    float tolerable = bot->HasWorldBossStagingAccess() ?
+        float(M_PI * 5.0 / 6.0) : float(M_PI_2);
 
     if (fabs(deltaAngle) > tolerable)
         return false;
+
+    if (bot->HasWorldBossStagingAccess())
+    {
+        // The boss faces its victim. Put the active tank directly opposite
+        // the raid's average direction, leaving the boss's back toward every
+        // healer and damage dealer as soon as tank ownership is established.
+        float const tankAngle = Position::NormalizeOrientation(
+            averageAngle + float(M_PI));
+        float const dist = std::max(bot->GetExactDist(target),
+            bot->GetMeleeRange(target) / 2.0f) - bot->GetCombatReach() -
+            target->GetCombatReach();
+        float x = target->GetPositionX();
+        float y = target->GetPositionY();
+        float z = target->GetPositionZ();
+        target->GetNearPoint(bot, x, y, z, 0.0f,
+            std::max(0.5f, dist), tankAngle);
+        if (!bot->GetMap()->CheckCollisionAndGetValidCoords(bot,
+                bot->GetPositionX(), bot->GetPositionY(),
+                bot->GetPositionZ(), x, y, z))
+            return false;
+
+        if (MoveTo(bot->GetMapId(), x, y, z, false, false, false, true,
+                MovementPriority::MOVEMENT_FORCED))
+        {
+            lastMoveTimer = getMSTime();
+            return true;
+        }
+        return false;
+    }
 
     float goodAngle1 = Position::NormalizeOrientation(averageAngle + M_PI * 3 / 5);
     float goodAngle2 = Position::NormalizeOrientation(averageAngle - M_PI * 3 / 5);

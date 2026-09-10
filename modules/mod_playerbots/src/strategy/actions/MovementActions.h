@@ -109,6 +109,7 @@ class TankFaceAction : public CombatFormationMoveAction
 public:
     TankFaceAction(PlayerbotAI* botAI) : CombatFormationMoveAction(botAI, "tank face") {}
 
+    bool isUseful() override;
     bool Execute(Event event) override;
 };
 

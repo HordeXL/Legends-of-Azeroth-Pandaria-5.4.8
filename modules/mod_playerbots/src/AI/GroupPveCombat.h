@@ -8,6 +8,7 @@ public:
     static bool IsEngaged(Player* player, Unit* target);
     static bool IsCollected(Player* player, Unit* target);
     static Unit* OpeningTarget(Player* player);
+    static Unit* ActiveWorldBossTarget(Player* player);
     static bool AoeReady(Player* player, Unit* target);
     static bool DamageAllowed(Player* player, Unit* target);
     static bool NeedsRescue(Player* player, Unit* target);

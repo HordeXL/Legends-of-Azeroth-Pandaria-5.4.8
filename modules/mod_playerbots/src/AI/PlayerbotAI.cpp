@@ -666,6 +666,13 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
     if (!CanUpdateAI())
         return;
 
+    // A Boss Caller raid has one explicit encounter target. Publish it to
+    // every bot as soon as any group member starts the fight. The ordinary
+    // three-second pull gate still controls damage timing, while this removes
+    // the failure mode where only bots which happened to acquire the boss in
+    // the brief opening window ever entered their combat rotation.
+    TryWorldBossEngagement();
+
     if (TryGroupPveTankRescue())
     {
         YieldThread(GetReactDelay());
@@ -747,6 +754,69 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
     // Update internal AI
     UpdateAIInternal(elapsed, minimal);
     YieldThread();
+}
+
+bool PlayerbotAI::TryWorldBossEngagement()
+{
+    if (!bot || !bot->HasWorldBossStagingAccess() ||
+        bot->IsWorldBossStagingCleanup() || !bot->IsAlive() ||
+        !bot->IsInWorld() || bot->IsBeingTeleported() || !bot->GetGroup())
+        return false;
+
+    Unit* worldBoss = GroupPveCombat::ActiveWorldBossTarget(bot);
+    if (!worldBoss)
+        return false;
+
+    Value<Unit*>* targetValue =
+        _aiObjectContext->GetValue<Unit*>("current target");
+    Unit* target = targetValue ? targetValue->Get() : nullptr;
+
+    // Keep a valid add target selected by source-backed encounter mechanics.
+    // Otherwise all roles converge on the exact boss already fighting this
+    // managed raid.
+    if (!target || !target->IsAlive() || !target->IsInWorld() ||
+        target->GetMap() != bot->GetMap() ||
+        !bot->IsValidAttackTarget(target) ||
+        !GroupPveCombat::IsEngaged(bot, target))
+    {
+        Unit* oldTarget = target;
+        target = worldBoss;
+        if (targetValue)
+            targetValue->Set(target);
+        _aiObjectContext->GetValue<Unit*>("old target")->Set(oldTarget);
+        _aiObjectContext->GetValue<ObjectGuid>("pull target")->Set(
+            target->GetGUID());
+        bot->SetSelection(target->GetGUID());
+        bot->SetTarget(target->GetGUID());
+
+        TC_LOG_INFO("server",
+            "WorldBoss combat target acquired bot=%s guid=%u entry=%u target-guid=%u role=%s",
+            bot->GetName().c_str(), bot->GetGUID().GetCounter(),
+            target->GetEntry(), target->GetGUID().GetCounter(),
+            PlayerBotSpec::IsTank(bot, true) ? "tank" :
+                (PlayerBotSpec::IsHeal(bot, true) ? "healer" : "damage"));
+    }
+
+    if (_currentState != BOT_STATE_COMBAT)
+        ChangeEngine(BOT_STATE_COMBAT);
+
+    // Healers join the combat engine immediately so they can react to the
+    // first raid damage, but do not waste a global cooldown or mana attacking.
+    if (PlayerBotSpec::IsHeal(bot, true))
+        return true;
+
+    if (!PlayerBotSpec::IsTank(bot, true) &&
+        GroupPveCombat::OpeningTarget(bot))
+        return true;
+
+    if (bot->GetVictim() != target)
+    {
+        bool const melee = PlayerBotSpec::IsMelee(bot, true) ||
+            bot->IsWithinMeleeRange(target);
+        bot->Attack(target, melee);
+    }
+
+    return true;
 }
 
 void PlayerbotAI::UpdateAIInternal([[maybe_unused]] uint32 elapsed, bool minimal)

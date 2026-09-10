@@ -205,6 +205,7 @@ public:
     bool IsGroupPveAreaSpellSafe(SpellInfo const* spellInfo, Unit* target);
     bool IsGroupPveTauntAllowed(SpellInfo const* spellInfo, Unit* target);
     bool IsGroupPveOpeningSpellAllowed(SpellInfo const* spellInfo, Unit* target);
+    bool TryWorldBossEngagement();
     bool TryGroupPveTankRescue();
 
     bool CanMove();

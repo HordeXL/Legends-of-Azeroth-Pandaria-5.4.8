@@ -406,6 +406,70 @@ Unit* GroupPveCombat::OpeningTarget(Player* player)
     return guid ? ObjectAccessor::GetUnit(*player, guid) : nullptr;
 }
 
+Unit* GroupPveCombat::ActiveWorldBossTarget(Player* player)
+{
+    if (!player || !player->HasWorldBossStagingAccess() ||
+        player->IsWorldBossStagingCleanup())
+        return nullptr;
+
+    Group* group = GetActiveGroup(player);
+    if (!group || !player->IsInWorld())
+        return nullptr;
+
+    auto isSupportedWorldBoss = [](Unit* target)
+    {
+        if (!target)
+            return false;
+
+        switch (target->GetEntry())
+        {
+            case 56439: // Sha of Anger alternate entry
+            case 60491: // Sha of Anger
+            case 62346: // Galleon
+            case 69099: // Nalak
+            case 69161: // Oondasta
+            case 71952: // Chi-Ji
+            case 71953: // Xuen
+            case 71954: // Niuzao
+            case 71955: // Yu'lon
+            case 72057: // Ordos
+                return true;
+            default:
+                return false;
+        }
+    };
+    auto engagedBoss = [&](Unit* target) -> Unit*
+    {
+        return isSupportedWorldBoss(target) && IsEngaged(player, target) ?
+            target : nullptr;
+    };
+
+    // Prefer the marked tank's victim so a scripted temporary boss target
+    // cannot make different raid members select different enemies.
+    if (Player* tank = PlayerBotSpec::GetGroupPvePullTank(player))
+        if (Unit* target = engagedBoss(tank->GetVictim()))
+            return target;
+
+    // The real player may start the pull before the bot tank has reached the
+    // boss. Every staged bot observes that same group combat relation and can
+    // therefore join immediately instead of relying on a short opening timer.
+    for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+    {
+        Player* member = ref->GetSource();
+        if (!member || !member->IsAlive() || !member->IsInWorld() ||
+            member->GetMap() != player->GetMap())
+            continue;
+
+        if (Unit* target = engagedBoss(member->GetVictim()))
+            return target;
+        for (Unit* attacker : member->getAttackers())
+            if (Unit* target = engagedBoss(attacker))
+                return target;
+    }
+
+    return nullptr;
+}
+
 bool GroupPveCombat::AoeReady(Player* player, Unit* target)
 {
     return IsEngaged(player, target) &&
