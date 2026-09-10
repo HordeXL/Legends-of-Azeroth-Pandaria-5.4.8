@@ -49,6 +49,15 @@ HEAL_PARTY_ACTION(CastGreaterHealingWaveOnPartyAction, "greater healing wave", 4
                   HealingManaEfficiency::MEDIUM);
 BUFF_ACTION(CastAscendanceAction, "ascendance");
 
+class CastPveAscendanceAction : public CastBuffSpellAction
+{
+public:
+    CastPveAscendanceAction(PlayerbotAI* botAI)
+        : CastBuffSpellAction(botAI, "ascendance") {}
+
+    bool isUseful() override;
+};
+
 class CastChainHealAction : public HealPartyMemberAction
 {
 public:

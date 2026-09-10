@@ -55,7 +55,15 @@ bool AttackMyTargetAction::Execute(Event event)
 bool AttackAction::Attack(Unit* target, bool with_pet /*true*/)
 {
     if (botAI->IsGroupPveActivity() && !PlayerBotSpec::IsTank(bot, true))
-        if (Unit* opening = GroupPveCombat::OpeningTarget(bot)) target = opening;
+        if (Unit* opening = GroupPveCombat::OpeningTarget(bot))
+        {
+            // World-boss damage rotations are held for the same opening
+            // window, but melee/auto-attack actions can reach this path
+            // directly.  Keep them stopped while the raid spreads.
+            if (bot->HasWorldBossStagingAccess())
+                return false;
+            target = opening;
+        }
     // Request-driven LFG bots assist the real player; they never initiate a
     // dungeon pull merely because their autonomous target scan saw an NPC.
     if (!botAI->CanLfgAutoQueueEngage(target))

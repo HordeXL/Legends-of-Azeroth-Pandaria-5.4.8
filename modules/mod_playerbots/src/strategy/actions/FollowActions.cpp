@@ -12,6 +12,23 @@
 
 bool FollowAction::Execute(Event event)
 {
+    if (bot->HasWorldBossStagingAccess() &&
+        !bot->IsWorldBossStagingCleanup() &&
+        !bot->IsWorldBossStagingEncounterStarted())
+    {
+        Player* master = GetMaster();
+        if (!master || !master->IsInWorld() ||
+            master->GetMap() != bot->GetMap() || !CanDeadFollow(master) ||
+            bot->GetDistance(master) <= 4.0f ||
+            bot->IsNonMeleeSpellCasted(true, false, true))
+            return false;
+
+        // All pre-pull bots share one compact point behind the requester.
+        // This avoids the roster-wide angular formation and remains still
+        // while the requester is standing and the raid is buffing.
+        return Follow(master, 2.0f, static_cast<float>(M_PI));
+    }
+
     if (botAI->IsLfgAutoQueueControlled() && botAI->IsGroupPveActivity())
     {
         Player* master = GetMaster();
@@ -59,6 +76,18 @@ bool FollowAction::Execute(Event event)
 
 bool FollowAction::isUseful()
 {
+    if (bot->HasWorldBossStagingAccess() &&
+        !bot->IsWorldBossStagingCleanup() &&
+        !bot->IsWorldBossStagingEncounterStarted())
+    {
+        Player* master = GetMaster();
+        return master && master != bot && master->IsInWorld() &&
+            master->GetMap() == bot->GetMap() && CanDeadFollow(master) &&
+            !master->HasUnitState(UNIT_STATE_IN_FLIGHT) &&
+            !bot->IsNonMeleeSpellCasted(true, false, true) &&
+            bot->GetDistance(master) > 4.0f;
+    }
+
     if (botAI->IsLfgAutoQueueControlled() && botAI->IsGroupPveActivity())
     {
         Player* master = GetMaster();

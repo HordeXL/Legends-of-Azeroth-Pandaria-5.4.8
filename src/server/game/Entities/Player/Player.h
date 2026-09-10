@@ -3153,8 +3153,24 @@ public:
     // owns and stages this player. It must never be persisted.
     bool HasWorldBossStagingAccess() const { return m_worldBossStagingState.load() != 0; }
     bool IsWorldBossStagingCleanup() const { return m_worldBossStagingState.load() == 2; }
-    void SetWorldBossStagingAccess(bool enabled) { m_worldBossStagingState.store(enabled ? 1 : 0); }
+    bool IsWorldBossStagingEncounterStarted() const { return m_worldBossStagingState.load() == 3; }
+    uint32 GetWorldBossStagingFirstContact() const { return m_worldBossStagingFirstContact.load(); }
+    void NoteWorldBossStagingFirstContact(uint32 firstContact)
+    {
+        uint32 expected = 0;
+        m_worldBossStagingFirstContact.compare_exchange_strong(expected, firstContact);
+    }
+    void SetWorldBossStagingAccess(bool enabled)
+    {
+        m_worldBossStagingFirstContact.store(0);
+        m_worldBossStagingState.store(enabled ? 1 : 0);
+    }
     void BeginWorldBossStagingCleanup() { m_worldBossStagingState.store(2); }
+    void BeginWorldBossStagingEncounter(uint32 firstContact)
+    {
+        NoteWorldBossStagingFirstContact(firstContact);
+        m_worldBossStagingState.store(3);
+    }
 
     // A world-thread playerbot coordinator must pause map-thread AI before it
     // removes the bot from a group, teleports it, or destroys its session.
@@ -3726,6 +3742,7 @@ protected:
     bool hasForcedMovement_;
     // 0 = unmanaged, 1 = active caller raid, 2 = cleanup with bot AI paused.
     std::atomic<uint8> m_worldBossStagingState{ 0 };
+    std::atomic<uint32> m_worldBossStagingFirstContact{ 0 };
     std::atomic<bool> m_playerbotCleanupPending{ false };
     std::atomic<bool> m_playerbotLootDisabled{ false };
 

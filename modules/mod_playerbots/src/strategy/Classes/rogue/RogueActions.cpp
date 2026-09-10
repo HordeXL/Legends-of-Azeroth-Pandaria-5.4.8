@@ -22,14 +22,33 @@ bool HasRogueFinisherPoints(Player* bot, Unit* target)
 
 bool CastEviscerateAction::isUseful()
 {
-    return HasRogueFinisherPoints(bot, GetTarget()) && CastMeleeSpellAction::isUseful();
+    Unit* target = GetTarget();
+    bool const revealingReady = bot->GetSpecialization() !=
+        Specializations::SPEC_ROGUE_COMBAT ||
+        (target && target->HasAura(84617, bot->GetGUID()));
+    return revealingReady && HasRogueFinisherPoints(bot, target) &&
+        CastMeleeSpellAction::isUseful();
 }
 
 bool CastRuptureAction::isUseful()
 {
     Unit* target = GetTarget();
-    return target && target == bot->GetComboTarget() && bot->GetComboPoints() >= 4 &&
+    bool const revealingReady = bot->GetSpecialization() !=
+        Specializations::SPEC_ROGUE_COMBAT ||
+        (target && target->HasAura(84617, bot->GetGUID()));
+    return revealingReady && target && target == bot->GetComboTarget() &&
+        bot->GetComboPoints() >= 4 &&
         CastDebuffSpellAction::isUseful();
+}
+
+bool CastRevealingStrikeAction::isUseful()
+{
+    if (bot->GetSpecialization() != Specializations::SPEC_ROGUE_COMBAT)
+        return false;
+
+    Unit* target = GetTarget();
+    return target && !target->HasAura(84617, bot->GetGUID()) &&
+        CastMeleeDebuffSpellAction::isUseful();
 }
 
 bool CastSliceAndDiceAction::isUseful()

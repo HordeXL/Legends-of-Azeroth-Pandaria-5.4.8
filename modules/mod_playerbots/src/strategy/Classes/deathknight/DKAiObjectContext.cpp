@@ -93,6 +93,9 @@ public:
         creators["raise ally"] = &DeathKnightAiObjectContextInternal::raise_ally;
         creators["army of the dead"] = &DeathKnightAiObjectContextInternal::army_of_the_dead;
         creators["summon gargoyle"] = &DeathKnightAiObjectContextInternal::summon_gargoyle;
+        creators["dark transformation"] = [](PlayerbotAI* ai) -> Action* {
+            return new CastDarkTransformationAction(ai);
+        };
         creators["anti magic shell"] = &DeathKnightAiObjectContextInternal::anti_magic_shell;
         creators["anti magic zone"] = &DeathKnightAiObjectContextInternal::anti_magic_zone;
         creators["ghoul frenzy"] = &DeathKnightAiObjectContextInternal::ghoul_frenzy;

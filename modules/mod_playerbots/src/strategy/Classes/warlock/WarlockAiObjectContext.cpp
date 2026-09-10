@@ -193,6 +193,7 @@ public:
         
         // -- Affliction
         creators["soul burn"] = &WarlockAiObjectContextInternal::soul_burn;
+        creators["affliction rotation"] = &WarlockAiObjectContextInternal::affliction_rotation;
         creators["dark soul: misery"] = &WarlockAiObjectContextInternal::dark_soul_misery;
         creators["malefic grasp"] = &WarlockAiObjectContextInternal::malefic_grasp;
         creators["agony"] = &WarlockAiObjectContextInternal::curse_of_agony;
@@ -227,6 +228,7 @@ public:
 
 private:
     // -- generic
+    static Action* affliction_rotation(PlayerbotAI* botAI) { return new AfflictionRotationAction(botAI); }
     static Action* summon_imp(PlayerbotAI* botAI) { return new CastSummonImpAction(botAI); }
     static Action* summon_succubus(PlayerbotAI* botAI) { return new CastSummonSuccubusAction(botAI); }
     static Action* summon_voidwalker(PlayerbotAI* botAI) { return new CastSummonVoidwalkerAction(botAI); }

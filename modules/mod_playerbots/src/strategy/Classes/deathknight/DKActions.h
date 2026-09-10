@@ -164,6 +164,16 @@ public:
     bool isUseful() override;
 };
 
+class CastDarkTransformationAction : public CastSpellAction
+{
+public:
+    CastDarkTransformationAction(PlayerbotAI* botAI)
+        : CastSpellAction(botAI, "dark transformation") {}
+
+    std::string const GetTargetName() override { return "pet target"; }
+    bool isUseful() override;
+};
+
 class CastGhoulFrenzyAction : public CastBuffSpellAction
 {
 public:

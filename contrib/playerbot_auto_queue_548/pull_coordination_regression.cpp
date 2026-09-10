@@ -25,10 +25,11 @@ struct Ref { Player* p; Ref* nextRef=nullptr; Player* GetSource(){return p;} Ref
 using GroupReference=Ref;
 struct Group { std::vector<Ref> refs; bool IsMember(unsigned); Ref* GetFirstMember(){return refs.empty()?nullptr:&refs[0];} };
 struct Player:Unit {
- Group* group=nullptr; bool tank=false,known=true,cooldown=false,lost=false,canCast=true; unsigned cls=CLASS_WARRIOR; float distance=5;
+ Group* group=nullptr; bool tank=false,staged=false,known=true,cooldown=false,lost=false,canCast=true; unsigned cls=CLASS_WARRIOR; float distance=5;
  AI* ai=nullptr;
  Player(){owner=this;attackable=false;}
  bool IsValidAttackTarget(Unit* u){return u && u->attackable;} float GetDistance(Unit*){return distance;}
+ bool HasWorldBossStagingAccess(){return staged;}
  bool HasUnitState(unsigned){return lost;} unsigned GetClass(){return cls;}
  bool HasSpell(unsigned){return known;} bool HasSpellCooldown(unsigned){return cooldown;}
 };
@@ -67,12 +68,18 @@ int main()
  mob.victim=&dps;check(GroupPveCombat::IsEngaged(&main,&mob),"DPS-initiated pull authorizes tanks");
  state.Observe(0,{100,101});now=0;
  check(GroupPveCombat::DamageAllowed(&dps,&mob),"opening single target permitted");
+ dps.staged=true;
+ check(!GroupPveCombat::DamageAllowed(&dps,&mob),"staged damage waits while raid forms");
+ dps.staged=false;
  add.victim=&dps;check(!GroupPveCombat::DamageAllowed(&dps,&add),"opening spread damage waits");
  check(GroupPveCombat::DamageAllowed(&main,&add),"tank rescue does not wait");
  check(!GroupPveCombat::AoeReady(&dps,&mob),"DPS AoE and pet gate initially closed");
  check(GroupPveCombat::AoeReady(&main,&mob),"tank collection AoE immediate");
  now=2999;check(!GroupPveCombat::AoeReady(&dps,&mob),"2999ms still waiting");
  now=3000;check(GroupPveCombat::AoeReady(&dps,&mob),"DPS aggro does not block collected pack after 3s");
+ dps.staged=true;
+ check(GroupPveCombat::DamageAllowed(&dps,&mob),"staged damage starts when formation window ends");
+ dps.staged=false;
  check(GroupPveCombat::DamageAllowed(&dps,&add),"spread damage allowed after opening");
  main.distance=off.distance=30;check(!GroupPveCombat::AoeReady(&dps,&mob),"3s alone does not permit distant pack");
  off.distance=4;check(GroupPveCombat::AoeReady(&dps,&mob),"either tank can collect");

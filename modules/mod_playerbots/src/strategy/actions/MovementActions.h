@@ -96,11 +96,14 @@ public:
     bool Execute(Event event) override;
 
 protected:
+    bool GetWorldBossFormationPosition(Unit* target, float& x, float& y,
+        float& z, float& tolerance);
     Position AverageGroupPos(float dis = sPlayerbotAIConfig->sightDistance, bool ranged = false, bool self = false);
     Player* NearestGroupMember(float dis = sPlayerbotAIConfig->sightDistance);
     float AverageGroupAngle(Unit* from, bool ranged = false, bool self = false);
     Position GetNearestPosition(const std::vector<Position>& positions);
     int lastMoveTimer = 0;
+    uint32 lastLoggedWorldBossContact = 0;
     int moveInterval;
 };
 
@@ -109,6 +112,7 @@ class TankFaceAction : public CombatFormationMoveAction
 public:
     TankFaceAction(PlayerbotAI* botAI) : CombatFormationMoveAction(botAI, "tank face") {}
 
+    bool isUseful() override;
     bool Execute(Event event) override;
 };
 
@@ -183,9 +187,10 @@ private:
         StackOrdosMagmaCrush,
         SpreadOrdosBurningSoul,
         MoveChiJiBeacon,
-        FleeChiJiCraneRush,
+        AvoidChiJiFirestorm,
+        AvoidChiJiBlazingNova,
         SpreadXuenLightning,
-        FleeNiuzaoCharge,
+        AvoidNiuzaoCharge,
         AvoidYuLonJadefireBreath
     };
 

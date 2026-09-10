@@ -13,6 +13,7 @@ public:
 
     std::string const getName() override { return "affli"; }
     void InitTriggers(std::vector<TriggerNode*>& triggers) override;
+    void InitMultipliers(std::vector<Multiplier*>& multipliers) override;
     NextAction** getDefaultActions() override;
     uint32 GetType() const override { return GenericWarlockStrategy::GetType() | STRATEGY_TYPE_DPS; }
 };

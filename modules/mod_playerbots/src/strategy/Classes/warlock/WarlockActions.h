@@ -8,6 +8,7 @@
 
 #include "GenericSpellActions.h"
 #include "Playerbots.h"
+#include "CombatAssistant.h"
 
 class PlayerbotAI;
 class Unit;
@@ -145,6 +146,19 @@ public:
 };
 
 // -- Affliction
+class AfflictionRotationAction : public Action
+{
+public:
+    AfflictionRotationAction(PlayerbotAI* botAI) : Action(botAI, "affliction rotation") {}
+    bool isUseful() override;
+    bool Execute(Event event) override;
+    std::string const GetTargetName() override { return "current target"; }
+    ActionThreatType getThreatType() override { return ActionThreatType::Single; }
+
+private:
+    AfflictionRotationRuntime runtime;
+};
+
 SPELL_ACTION(CastSoulBurnAction, "soul burn");
 class CastDarkSoulMiseryAction : public CastBuffSpellAction
 {

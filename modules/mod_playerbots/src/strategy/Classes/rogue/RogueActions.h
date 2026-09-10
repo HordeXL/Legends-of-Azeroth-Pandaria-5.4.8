@@ -120,6 +120,15 @@ public:
     CastKillingSpreeAction(PlayerbotAI* botAI) : CastMeleeSpellAction(botAI, "killing spree") {}
 };
 
+class CastRevealingStrikeAction : public CastMeleeDebuffSpellAction
+{
+public:
+    CastRevealingStrikeAction(PlayerbotAI* botAI)
+        : CastMeleeDebuffSpellAction(botAI, "revealing strike", true) {}
+
+    bool isUseful() override;
+};
+
 class CastKickOnEnemyHealerAction : public CastSpellOnEnemyHealerAction
 {
 public:

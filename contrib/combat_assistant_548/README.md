@@ -96,7 +96,10 @@ emergency rule is included.
 ## Affliction PvE priority
 
 Affliction has a dedicated player-controlled priority outside battlegrounds and
-arenas. It also works solo on world training dummies. Bot rotations are separate.
+arenas. It also works solo on world training dummies. Group PvE Affliction bots
+now use this same selector and normal cast path, with their own runtime state
+and additional bot engagement/area checks. Solo bots and PvP keep their existing
+rotations. See `doc/playerbot-affliction-shared-rotation.md` for integration and tests.
 
 - Read only this warlock's Agony, Corruption (aura 146739, cast spell 172), and
   Unstable Affliction. Refresh within the base-duration Pandemic window; without

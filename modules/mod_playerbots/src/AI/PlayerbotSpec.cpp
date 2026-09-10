@@ -394,7 +394,11 @@ PvePullState<ObjectGuid> ObserveGroupPull(Player* player)
         if (uint32(now - it->second.seen) > 60000u) it = records.erase(it); else ++it;
     auto& record = records[Key(group->GetGUID(), player->GetMapId(), player->GetInstanceId())];
     record.seen = now;
-    record.state.Observe(now, engaged);
+    if (player->HasWorldBossStagingAccess() && !engaged.empty())
+        player->NoteWorldBossStagingFirstContact(now);
+    uint32 firstContact = player->HasWorldBossStagingAccess() ?
+        player->GetWorldBossStagingFirstContact() : 0;
+    record.state.Observe(now, engaged, firstContact);
     return record.state;
 }
 }
@@ -404,6 +408,70 @@ Unit* GroupPveCombat::OpeningTarget(Player* player)
     if (!player) return nullptr;
     ObjectGuid guid = ObserveGroupPull(player).OpeningTarget(getMSTime());
     return guid ? ObjectAccessor::GetUnit(*player, guid) : nullptr;
+}
+
+Unit* GroupPveCombat::ActiveWorldBossTarget(Player* player)
+{
+    if (!player || !player->HasWorldBossStagingAccess() ||
+        player->IsWorldBossStagingCleanup())
+        return nullptr;
+
+    Group* group = GetActiveGroup(player);
+    if (!group || !player->IsInWorld())
+        return nullptr;
+
+    auto isSupportedWorldBoss = [](Unit* target)
+    {
+        if (!target)
+            return false;
+
+        switch (target->GetEntry())
+        {
+            case 56439: // Sha of Anger alternate entry
+            case 60491: // Sha of Anger
+            case 62346: // Galleon
+            case 69099: // Nalak
+            case 69161: // Oondasta
+            case 71952: // Chi-Ji
+            case 71953: // Xuen
+            case 71954: // Niuzao
+            case 71955: // Yu'lon
+            case 72057: // Ordos
+                return true;
+            default:
+                return false;
+        }
+    };
+    auto engagedBoss = [&](Unit* target) -> Unit*
+    {
+        return isSupportedWorldBoss(target) && IsEngaged(player, target) ?
+            target : nullptr;
+    };
+
+    // Prefer the marked tank's victim so a scripted temporary boss target
+    // cannot make different raid members select different enemies.
+    if (Player* tank = PlayerBotSpec::GetGroupPvePullTank(player))
+        if (Unit* target = engagedBoss(tank->GetVictim()))
+            return target;
+
+    // The real player may start the pull before the bot tank has reached the
+    // boss. Every staged bot observes that same group combat relation and can
+    // therefore join immediately instead of relying on a short opening timer.
+    for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+    {
+        Player* member = ref->GetSource();
+        if (!member || !member->IsAlive() || !member->IsInWorld() ||
+            member->GetMap() != player->GetMap())
+            continue;
+
+        if (Unit* target = engagedBoss(member->GetVictim()))
+            return target;
+        for (Unit* attacker : member->getAttackers())
+            if (Unit* target = engagedBoss(attacker))
+                return target;
+    }
+
+    return nullptr;
 }
 
 bool GroupPveCombat::AoeReady(Player* player, Unit* target)
@@ -418,6 +486,16 @@ bool GroupPveCombat::DamageAllowed(Player* player, Unit* target)
     if (!IsEngaged(player, target)) return false;
     if (PlayerBotSpec::IsTank(player, true)) return true;
     Unit* opening = OpeningTarget(player);
+
+    // A staged raid uses the opening window to leave the compact follow
+    // stack and take its encounter slots.  Selecting the opening target is
+    // not enough: direct class rotations can cast without first issuing an
+    // AttackAction, so explicitly suppress their damage until that window
+    // has elapsed.  Tanks remain free to establish and turn the boss, while
+    // healer casts on friendly targets never enter this hostile-target path.
+    if (player->HasWorldBossStagingAccess() && opening)
+        return false;
+
     return !opening || opening == target;
 }
 

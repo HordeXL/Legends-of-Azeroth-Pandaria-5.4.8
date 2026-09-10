@@ -9,6 +9,8 @@
 #include "PlayerbotAIConfig.h"
 #include "Playerbots.h"
 #include "ServerFacade.h"
+#include "Spell.h"
+#include "SpellInfo.h"
 
 #include "Log.h"
 
@@ -27,6 +29,32 @@ bool ReachTargetAction::isUseful()
     Unit* target = GetTarget();
     if (WaitForTankPull(target))
         return false;
+
+    // Niuzao's Charge aura lasts for the complete perimeter circuit. Chasing
+    // the moving boss scatters melee across the arena; hold the safe position
+    // and resume normal reach movement when the circuit ends.
+    if (target && target->GetEntry() == 71954)
+    {
+        bool charging = target->HasAura(144608);
+        if (Spell* spell = target->GetCurrentSpell(CURRENT_GENERIC_SPELL))
+            charging = charging || (spell->GetSpellInfo() &&
+                spell->GetSpellInfo()->Id == 144608);
+        if (charging)
+            return false;
+    }
+
+    // Chi-Ji's Crane Rush repeatedly sends Blazing Nova children out from
+    // the boss. Do not let ordinary melee/spell reach movement override the
+    // forced lane dodge and immediately chase back into the next child.
+    if (target && target->GetEntry() == 71952)
+    {
+        bool craneRush = target->HasAura(144470);
+        if (Spell* spell = target->GetCurrentSpell(CURRENT_GENERIC_SPELL))
+            craneRush = craneRush || (spell->GetSpellInfo() &&
+                spell->GetSpellInfo()->Id == 144470);
+        if (craneRush || bot->FindNearestCreature(71990, 120.0f, true))
+            return false;
+    }
 
     // float dis = distance + CONTACT_DISTANCE;
     return target &&
