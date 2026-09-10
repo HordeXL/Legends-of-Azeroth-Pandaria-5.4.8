@@ -84,6 +84,9 @@ public:
         creators["riposte"] = &RogueAiObjectContextInternal::riposte;
         creators["mutilate"] = &RogueAiObjectContextInternal::mutilate;
         creators["sinister strike"] = &RogueAiObjectContextInternal::sinister_strike;
+        creators["revealing strike"] = [](PlayerbotAI* ai) -> Action* {
+            return new CastRevealingStrikeAction(ai);
+        };
         creators["gouge"] = &RogueAiObjectContextInternal::gouge;
         creators["kidney shot"] = &RogueAiObjectContextInternal::kidney_shot;
         creators["rupture"] = &RogueAiObjectContextInternal::rupture;

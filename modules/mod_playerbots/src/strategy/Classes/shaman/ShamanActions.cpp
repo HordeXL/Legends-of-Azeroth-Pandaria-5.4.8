@@ -11,6 +11,7 @@
 #include <initializer_list>
 
 #include "Group.h"
+#include "Creature.h"
 #include "Playerbots.h"
 #include "SpellHistory.h"
 #include "Totem.h"
@@ -24,6 +25,20 @@ bool CastEarthShockAction::isUseful()
         if (!shield || shield->GetCharges() < 6) return false;
     }
     return CastSpellAction::isUseful();
+}
+
+bool CastPveAscendanceAction::isUseful()
+{
+    if (bot->GetSpecialization() != SPEC_SHAMAN_ELEMENTAL ||
+        !botAI->IsGroupPveActivity())
+    {
+        return false;
+    }
+
+    Creature* target = AI_VALUE(Unit*, "current target") ?
+        AI_VALUE(Unit*, "current target")->ToCreature() : nullptr;
+    return target && (target->IsDungeonBoss() || target->isWorldBoss()) &&
+        CastBuffSpellAction::isUseful();
 }
 
 namespace

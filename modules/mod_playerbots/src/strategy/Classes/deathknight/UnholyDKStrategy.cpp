@@ -80,6 +80,7 @@ NextAction** UnholyDKStrategy::getDefaultActions()
     return NextAction::array(
         0, new NextAction("unholy presence", ACTION_DEFAULT + 0.9f),
         new NextAction("soul reaper", ACTION_DEFAULT + 0.8f),
+        new NextAction("dark transformation", ACTION_DEFAULT + 0.7f),
         new NextAction("summon gargoyle", ACTION_DEFAULT + 0.6f),
         new NextAction("scourge strike", ACTION_DEFAULT + 0.5f),
         new NextAction("festering strike", ACTION_DEFAULT + 0.45f),

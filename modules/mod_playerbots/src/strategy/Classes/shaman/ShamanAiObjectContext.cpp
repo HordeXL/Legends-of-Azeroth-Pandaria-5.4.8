@@ -131,6 +131,9 @@ public:
         creators["healing surge on party"] = &ShamanAiObjectContextInternal::healing_surge_on_party;
         creators["greater healing wave on party"] = &ShamanAiObjectContextInternal::greater_healing_wave_on_party;
         creators["ascendance"] = &ShamanAiObjectContextInternal::ascendance;
+        creators["pve ascendance"] = [](PlayerbotAI* ai) -> Action* {
+            return new CastPveAscendanceAction(ai);
+        };
         creators["healing tide totem"] = &ShamanAiObjectContextInternal::healing_tide_totem;
         creators["spirit link totem"] = &ShamanAiObjectContextInternal::spirit_link_totem;
         creators["earth shield"] = &ShamanAiObjectContextInternal::earth_shield;

@@ -54,6 +54,24 @@ bool CastSummonGargoyleAction::isUseful()
         CastSpellAction::isUseful();
 }
 
+bool CastDarkTransformationAction::isUseful()
+{
+    if (bot->GetSpecialization() !=
+        Specializations::SPEC_DEATH_KNIGHT_UNHOLY)
+    {
+        return false;
+    }
+
+    Unit* pet = GetTarget();
+    Aura* playerStacks = bot->GetAura(91342);
+    Aura* petStacks = pet ? pet->GetAura(91342) : nullptr;
+    bool const ready = bot->HasAura(93426) ||
+        (playerStacks && playerStacks->GetStackAmount() >= 5) ||
+        (petStacks && petStacks->GetStackAmount() >= 5);
+    return pet && pet->IsAlive() && ready && !pet->HasAura(63560) &&
+        CastSpellAction::isUseful();
+}
+
 bool CastEmpowerRuneWeaponAction::isUseful()
 {
     return !IsGroupPveTrash(botAI, AI_VALUE(Unit*, "current target")) &&
