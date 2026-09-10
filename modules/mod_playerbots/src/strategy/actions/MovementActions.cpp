@@ -68,6 +68,10 @@ namespace
 {
 constexpr uint32 NiuzaoEntry = 71954;
 constexpr uint32 NiuzaoChargeSpell = 144608;
+constexpr uint32 ChiJiEntry = 71952;
+constexpr uint32 ChiJiCraneRushSpell = 144470;
+constexpr uint32 ChiJiFirestormEntry = 71971;
+constexpr uint32 ChiJiChildEntry = 71990;
 
 bool IsNiuzaoChargeActive(Unit const* target)
 {
@@ -82,6 +86,79 @@ bool IsNiuzaoChargeActive(Unit const* target)
             spell->GetSpellInfo()->Id == NiuzaoChargeSpell;
 
     return false;
+}
+
+bool IsChiJiCraneRushActive(Unit const* target)
+{
+    if (!target || target->GetEntry() != ChiJiEntry)
+        return false;
+
+    if (target->HasAura(ChiJiCraneRushSpell))
+        return true;
+
+    if (Spell* spell = target->GetCurrentSpell(CURRENT_GENERIC_SPELL))
+        return spell->GetSpellInfo() &&
+            spell->GetSpellInfo()->Id == ChiJiCraneRushSpell;
+
+    return false;
+}
+
+Creature* FindThreateningChiJiChild(Player* bot, Creature* chiJi)
+{
+    if (!bot || !chiJi)
+        return nullptr;
+
+    std::list<Creature*> children;
+    bot->GetCreatureListWithEntryInGrid(children, ChiJiChildEntry, 120.0f);
+
+    Creature* best = nullptr;
+    float bestScore = FLT_MAX;
+    for (Creature* child : children)
+    {
+        if (!child || !child->IsAlive() || !child->IsInWorld() ||
+            child->GetMap() != bot->GetMap())
+            continue;
+
+        float pathX = child->GetPositionX() - chiJi->GetPositionX();
+        float pathY = child->GetPositionY() - chiJi->GetPositionY();
+        float childProgress = std::sqrt(pathX * pathX + pathY * pathY);
+        if (childProgress < 0.5f)
+        {
+            pathX = std::cos(child->GetOrientation());
+            pathY = std::sin(child->GetOrientation());
+            childProgress = 0.0f;
+        }
+        else
+        {
+            pathX /= childProgress;
+            pathY /= childProgress;
+        }
+
+        float const botX = bot->GetPositionX() - chiJi->GetPositionX();
+        float const botY = bot->GetPositionY() - chiJi->GetPositionY();
+        float const botProgress = botX * pathX + botY * pathY;
+        float const lateral = -botX * pathY + botY * pathX;
+        float const directDistance = bot->GetExactDist2d(child);
+
+        // A child waits half a second, then travels radially out from Chi-Ji
+        // with Blazing Nova active. Detect its lane before it reaches the bot;
+        // merely checking an aura on the player reacts after the 200k hit.
+        bool const crossingSoon = botProgress > -5.0f &&
+            childProgress <= botProgress + 24.0f &&
+            childProgress >= botProgress - 14.0f &&
+            std::abs(lateral) < 14.0f;
+        if (!crossingSoon && directDistance >= 16.0f)
+            continue;
+
+        float const score = directDistance + std::abs(lateral) * 0.5f;
+        if (score < bestScore)
+        {
+            bestScore = score;
+            best = child;
+        }
+    }
+
+    return best;
 }
 
 // Temporary, targeted pre-pull tracing. Record the action that actually
@@ -1650,14 +1727,21 @@ BossMechanicsAction::Reaction BossMechanicsAction::GetReaction() const
                 return Reaction::StackOrdosMagmaCrush;
     }
 
-    // Chi-Ji, local boss_chi_ji.cpp: Beacon of Hope (entry 71978) is the
-    // intended recovery location. Injured players move into it; Crane Rush
-    // (144470/144495) is handled by leaving the boss rather than standing in
-    // its repeated damage path.
-    if (bot->FindNearestCreature(71952, 200.0f, true))
+    // Chi-Ji, local boss_chi_ji.cpp: Firestorm is a creature-backed floor
+    // hazard, so the generic dynamic-object scan cannot see it. During Crane
+    // Rush, Children of Chi-Ji cast Blazing Nova and fly radially outwards.
+    // The combat log shows that one child can repeatedly hit a stacked group;
+    // step across its lane before it arrives.
+    if (Creature* chiJi = bot->FindNearestCreature(ChiJiEntry, 200.0f, true))
     {
-        if ((bot->HasAura(144470) || bot->HasAura(144495)))
-            return Reaction::FleeChiJiCraneRush;
+        // The last children remain dangerous for a few seconds after the
+        // boss aura ends, so key the dodge from the actual moving summon.
+        if (FindThreateningChiJiChild(bot, chiJi))
+            return Reaction::AvoidChiJiBlazingNova;
+        if (Creature* firestorm =
+                bot->FindNearestCreature(ChiJiFirestormEntry, 18.0f, true))
+            if (bot->GetExactDist2d(firestorm) < 16.0f)
+                return Reaction::AvoidChiJiFirestorm;
         if (bot->GetHealthPct() < 70.0f &&
             bot->FindNearestCreature(71978, 100.0f, true))
             return Reaction::MoveChiJiBeacon;
@@ -1883,9 +1967,72 @@ bool BossMechanicsAction::Execute(Event /*event*/)
             if (Creature* beacon = bot->FindNearestCreature(71978, 100.0f, true))
                 return MoveTo(beacon, 3.0f, MovementPriority::MOVEMENT_FORCED);
             break;
-        case Reaction::FleeChiJiCraneRush:
-            if (Creature* chiJi = bot->FindNearestCreature(71952, 200.0f, true))
-                return MoveAway(chiJi, 30.0f);
+        case Reaction::AvoidChiJiFirestorm:
+            if (Creature* firestorm =
+                    bot->FindNearestCreature(ChiJiFirestormEntry, 18.0f, true))
+            {
+                float awayX = bot->GetPositionX() - firestorm->GetPositionX();
+                float awayY = bot->GetPositionY() - firestorm->GetPositionY();
+                float distance = std::sqrt(awayX * awayX + awayY * awayY);
+                if (distance < 0.5f)
+                {
+                    float const angle = float(bot->GetGUID().GetCounter() % 16) *
+                        float(M_PI / 8.0);
+                    awayX = std::cos(angle);
+                    awayY = std::sin(angle);
+                    distance = 1.0f;
+                }
+                float const correction = 19.0f - distance;
+                float x = bot->GetPositionX() + awayX / distance * correction;
+                float y = bot->GetPositionY() + awayY / distance * correction;
+                float z = bot->GetPositionZ();
+                if (!bot->GetMap()->CheckCollisionAndGetValidCoords(bot,
+                        bot->GetPositionX(), bot->GetPositionY(),
+                        bot->GetPositionZ(), x, y, z, false))
+                    return false;
+                return MoveTo(bot->GetMapId(), x, y, z, false, false, true,
+                    true, MovementPriority::MOVEMENT_FORCED, true);
+            }
+            break;
+        case Reaction::AvoidChiJiBlazingNova:
+            if (Creature* chiJi =
+                    bot->FindNearestCreature(ChiJiEntry, 200.0f, true))
+                if (Creature* child = FindThreateningChiJiChild(bot, chiJi))
+                {
+                    float pathX = child->GetPositionX() - chiJi->GetPositionX();
+                    float pathY = child->GetPositionY() - chiJi->GetPositionY();
+                    float pathLength = std::sqrt(pathX * pathX + pathY * pathY);
+                    if (pathLength < 0.5f)
+                    {
+                        pathX = std::cos(child->GetOrientation());
+                        pathY = std::sin(child->GetOrientation());
+                    }
+                    else
+                    {
+                        pathX /= pathLength;
+                        pathY /= pathLength;
+                    }
+
+                    float const perpendicularX = -pathY;
+                    float const perpendicularY = pathX;
+                    float const botX = bot->GetPositionX() - chiJi->GetPositionX();
+                    float const botY = bot->GetPositionY() - chiJi->GetPositionY();
+                    float const lateral = botX * perpendicularX +
+                        botY * perpendicularY;
+                    float const side = std::abs(lateral) > 0.5f ?
+                        (lateral > 0.0f ? 1.0f : -1.0f) :
+                        (bot->GetGUID().GetCounter() % 2 ? 1.0f : -1.0f);
+                    float const correction = side * 17.0f - lateral;
+                    float x = bot->GetPositionX() + perpendicularX * correction;
+                    float y = bot->GetPositionY() + perpendicularY * correction;
+                    float z = bot->GetPositionZ();
+                    if (!bot->GetMap()->CheckCollisionAndGetValidCoords(bot,
+                            bot->GetPositionX(), bot->GetPositionY(),
+                            bot->GetPositionZ(), x, y, z, false))
+                        return false;
+                    return MoveTo(bot->GetMapId(), x, y, z, false, false,
+                        true, true, MovementPriority::MOVEMENT_FORCED, true);
+                }
             break;
         case Reaction::SpreadXuenLightning:
             return MoveFromGroup(22.0f);
@@ -1986,7 +2133,9 @@ bool CombatFormationMoveAction::isUseful()
     // Keep the raid at its current safe points while Niuzao runs his circuit.
     // Recomputing slots around a moving boss makes ranged players chase him
     // and drags the whole formation around the arena edge.
-    if (IsNiuzaoChargeActive(target))
+    if (IsNiuzaoChargeActive(target) || IsChiJiCraneRushActive(target) ||
+        (target->GetEntry() == ChiJiEntry &&
+         bot->FindNearestCreature(ChiJiChildEntry, 120.0f, true)))
         return false;
 
     // Kiting an enemy that is already attacking this bot separates the pack
@@ -2049,7 +2198,9 @@ bool CombatFormationMoveAction::Execute(Event /*event*/)
         return false;
     }
 
-    if (IsNiuzaoChargeActive(target))
+    if (IsNiuzaoChargeActive(target) || IsChiJiCraneRushActive(target) ||
+        (target->GetEntry() == ChiJiEntry &&
+         bot->FindNearestCreature(ChiJiChildEntry, 120.0f, true)))
         return false;
 
     if (bot->HasWorldBossStagingAccess())
@@ -2067,10 +2218,18 @@ bool CombatFormationMoveAction::Execute(Event /*event*/)
             return false;
         }
 
+        bool const firstFormationMove = lastMoveTimer == 0;
         if (MoveTo(bot->GetMapId(), x, y, z, false, false, true, true,
-                MovementPriority::MOVEMENT_COMBAT, true))
+                MovementPriority::MOVEMENT_FORCED, true))
         {
             lastMoveTimer = getMSTime();
+            if (firstFormationMove)
+                TC_LOG_INFO("server",
+                    "WorldBoss formation move bot=%s guid=%u role=%s target=%u slot=(%.2f,%.2f,%.2f) distance=%.2f",
+                    bot->GetName().c_str(), bot->GetGUID().GetCounter(),
+                    PlayerBotSpec::IsTank(bot, true) ? "tank" :
+                        (PlayerBotSpec::IsHeal(bot, true) ? "healer" : "damage"),
+                    target->GetEntry(), x, y, z, bot->GetExactDist2d(x, y));
             return true;
         }
         return false;
@@ -2180,11 +2339,17 @@ bool CombatFormationMoveAction::GetWorldBossFormationPosition(Unit* target,
     uint32 const ringIndex = rank % perRing;
     uint32 const ringCount = std::min(perRing, count - ring * perRing);
     float const halfArc = melee ? float(M_PI * 5.0 / 18.0) :
-        float(M_PI * 4.0 / 9.0);
+        float(M_PI * 2.0 / 3.0);
     float offset = 0.0f;
     if (ringCount > 1)
-        offset = -halfArc + 2.0f * halfArc * float(ringIndex) /
-            float(ringCount - 1);
+    {
+        // Stagger successive ranged rings so an inner and outer slot do not
+        // share the same line from the boss. The wider 240-degree arc also
+        // keeps neighbouring ranged slots outside ordinary splash radius.
+        float const step = 2.0f * halfArc / float(perRing);
+        offset = -halfArc + step *
+            (float(ringIndex) + (melee || !(ring & 1u) ? 0.0f : 0.5f));
+    }
 
     float centerDistance;
     if (melee)
@@ -2197,10 +2362,10 @@ bool CombatFormationMoveAction::GetWorldBossFormationPosition(Unit* target,
     }
     else
     {
-        // Eight positions across 160 degrees give roughly ten yards between
-        // neighbours. The second row is still inside ordinary 40-yard spell
-        // and Mana Tide ranges but is far enough away to avoid splash overlap.
-        centerDistance = 25.0f + 10.0f * float(ring);
+        // Eight staggered positions across 240 degrees keep roughly 13 yards
+        // between neighbours. The outer row remains inside ordinary 40-yard
+        // spell range once the boss's combat reach is included.
+        centerDistance = 26.0f + 10.0f * float(ring);
         tolerance = 2.0f;
     }
 

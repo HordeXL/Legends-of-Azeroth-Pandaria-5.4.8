@@ -186,7 +186,8 @@ private:
         StackOrdosMagmaCrush,
         SpreadOrdosBurningSoul,
         MoveChiJiBeacon,
-        FleeChiJiCraneRush,
+        AvoidChiJiFirestorm,
+        AvoidChiJiBlazingNova,
         SpreadXuenLightning,
         AvoidNiuzaoCharge,
         AvoidYuLonJadefireBreath

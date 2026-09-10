@@ -43,6 +43,19 @@ bool ReachTargetAction::isUseful()
             return false;
     }
 
+    // Chi-Ji's Crane Rush repeatedly sends Blazing Nova children out from
+    // the boss. Do not let ordinary melee/spell reach movement override the
+    // forced lane dodge and immediately chase back into the next child.
+    if (target && target->GetEntry() == 71952)
+    {
+        bool craneRush = target->HasAura(144470);
+        if (Spell* spell = target->GetCurrentSpell(CURRENT_GENERIC_SPELL))
+            craneRush = craneRush || (spell->GetSpellInfo() &&
+                spell->GetSpellInfo()->Id == 144470);
+        if (craneRush || bot->FindNearestCreature(71990, 120.0f, true))
+            return false;
+    }
+
     // float dis = distance + CONTACT_DISTANCE;
     return target &&
         !bot->IsWithinCombatRange(target, distance);  // sServerFacade->IsDistanceGreaterThan(AI_VALUE2(float,
