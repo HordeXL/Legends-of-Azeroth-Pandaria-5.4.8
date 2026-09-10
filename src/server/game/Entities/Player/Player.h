@@ -3153,8 +3153,10 @@ public:
     // owns and stages this player. It must never be persisted.
     bool HasWorldBossStagingAccess() const { return m_worldBossStagingState.load() != 0; }
     bool IsWorldBossStagingCleanup() const { return m_worldBossStagingState.load() == 2; }
+    bool IsWorldBossStagingEncounterStarted() const { return m_worldBossStagingState.load() == 3; }
     void SetWorldBossStagingAccess(bool enabled) { m_worldBossStagingState.store(enabled ? 1 : 0); }
     void BeginWorldBossStagingCleanup() { m_worldBossStagingState.store(2); }
+    void BeginWorldBossStagingEncounter() { m_worldBossStagingState.store(3); }
 
     // A world-thread playerbot coordinator must pause map-thread AI before it
     // removes the bot from a group, teleports it, or destroys its session.

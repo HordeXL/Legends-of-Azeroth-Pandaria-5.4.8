@@ -612,7 +612,8 @@ float MovementAction::GetFollowAngle()
 
 bool MoveRandomAction::isUseful()
 {
-    return !botAI->IsLfgAutoQueueControlled();
+    return !botAI->IsLfgAutoQueueControlled() &&
+        !bot->HasWorldBossStagingAccess();
 }
 
 bool MovementAction::IsMovingAllowed(WorldObject* target)
@@ -1911,7 +1912,9 @@ bool CombatFormationMoveAction::isUseful()
         return false;
     }
 
-    Unit* target = AI_VALUE(Unit*, "current target");
+    Unit* target = bot->HasWorldBossStagingAccess() ?
+        GroupPveCombat::ActiveWorldBossTarget(bot) :
+        AI_VALUE(Unit*, "current target");
     if (!target || !target->IsInWorld() || !target->IsAlive() ||
         target->GetMapId() != bot->GetMapId() || !bot->IsValidAttackTarget(target))
     {
@@ -1926,6 +1929,12 @@ bool CombatFormationMoveAction::isUseful()
 
     if (bot->HasWorldBossStagingAccess())
     {
+        // Assembly and buffing stay compact at the requester. The caller
+        // changes this phase only after the selected boss receives the first
+        // attack, and retains it for the rest of that pull.
+        if (!bot->IsWorldBossStagingEncounterStarted())
+            return false;
+
         // Stay at an active Mana Tide until mana has recovered. Otherwise a
         // ranged formation slot outside the totem aura would pull the bot
         // away immediately after it reached the totem.
@@ -1962,7 +1971,9 @@ bool CombatFormationMoveAction::Execute(Event /*event*/)
     if (bot->IsNonMeleeSpellCasted(true, false, true))
         return false;
 
-    Unit* target = AI_VALUE(Unit*, "current target");
+    Unit* target = bot->HasWorldBossStagingAccess() ?
+        GroupPveCombat::ActiveWorldBossTarget(bot) :
+        AI_VALUE(Unit*, "current target");
     if (!target || !target->IsInWorld() || !target->IsAlive() ||
         target->GetMapId() != bot->GetMapId() || !bot->IsValidAttackTarget(target) ||
         target->GetVictim() == bot)
@@ -1972,6 +1983,9 @@ bool CombatFormationMoveAction::Execute(Event /*event*/)
 
     if (bot->HasWorldBossStagingAccess())
     {
+        if (!bot->IsWorldBossStagingEncounterStarted())
+            return false;
+
         float x = 0.0f;
         float y = 0.0f;
         float z = 0.0f;

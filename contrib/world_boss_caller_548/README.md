@@ -32,7 +32,12 @@ bosses.
 
 Call/Preview menus carry the displayed creature's GUID counter. If selection
 changes before a click, the caller refreshes the menu and requires a new click.
-Call 10/25 still prepares the usual PvE raid and summons bots around the player.
+Call 10/25 prepares the usual PvE raid and summons every bot on the requester's
+known-valid ground position. Bots hold there while preparation buffs are cast,
+then follow in one compact pack. They do not use roster-angle offsets or random
+movement before the pull. The selected boss's first combat starts the persistent
+rear-half combat formation; incidental targets cannot start or anchor that
+formation. Wipe recovery returns the bots to the same compact preparation flow.
 The coordinator retains the full selected creature GUID throughout the session,
 including login, summon, combat, wipe recovery, and dismissal. It does not switch
 an existing raid to the next boss. If that Celestial becomes unavailable during

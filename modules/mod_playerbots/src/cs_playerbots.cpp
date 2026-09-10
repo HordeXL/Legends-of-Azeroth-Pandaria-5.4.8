@@ -22,6 +22,7 @@
 #include "GameObject.h"
 #include "Group.h"
 #include "GroupMgr.h"
+#include "GroupPveCombat.h"
 #include "ItemPrototype.h"
 #include "LFGMgr.h"
 #include "ObjectAccessor.h"
@@ -428,6 +429,7 @@ float WorldBossStageZ = 0.0f;
 std::map<uint32, WorldBossStagedCandidate> WorldBossStagedBots;
 std::string WorldBossStageCleanupReason;
 std::set<uint32> WorldBossStageBuffedBots;
+bool WorldBossStageFollowingRequester = false;
 bool WorldBossStageEncounterStarted = false;
 bool WorldBossStageWipePending = false;
 uint32 WorldBossStageBossDefeatedTimer = 0;
@@ -5298,6 +5300,7 @@ bool StartWorldBossStage(Player* requester, Creature* caller, Creature* boss,
     WorldBossStageZ = 0.0f;
     WorldBossStageCleanupReason.clear();
     WorldBossStageBuffedBots.clear();
+    WorldBossStageFollowingRequester = false;
     WorldBossStageEncounterStarted = false;
     WorldBossStageWipePending = false;
     WorldBossStageBossDefeatedTimer = 0;
@@ -5874,21 +5877,16 @@ void UpdateWorldBossStagedRaid(uint32 diff)
         WorldBossStageY = requester->GetPositionY();
         WorldBossStageZ = requester->GetPositionZ();
 
-        for (size_t index = 0; index < bots.size(); ++index)
+        for (Player* bot : bots)
         {
-            Player* bot = bots[index];
-            uint32 ring = uint32(index / 8);
-            uint32 ringIndex = uint32(index % 8);
-            uint32 ringCount = std::min<uint32>(8,
-                uint32(bots.size()) - ring * 8);
-            float distance = 6.0f + float(ring * 4);
-            float angle = requester->GetOrientation() +
-                float(2.0 * M_PI * ringIndex / ringCount);
+            // The requester's exact position is known to be valid ground.
+            // Stack the temporary raid there instead of projecting large
+            // rings that can cross stairs, ledges, or another terrain layer.
+            // The staged follow action keeps this compact until the selected
+            // boss actually enters combat.
             float x = WorldBossStageX;
             float y = WorldBossStageY;
             float z = WorldBossStageZ;
-            requester->GetNearPoint(bot, x, y, z, bot->GetObjectSize(),
-                distance, angle);
             // Nalak's zone normally rejects characters that have not completed
             // the Isle of Thunder introduction. These temporary raid members
             // are owned by this coordinator and must remain eligible only for
@@ -5973,6 +5971,7 @@ void UpdateWorldBossStagedRaid(uint32 diff)
         WorldBossStageState = WorldBossStagedState::Grouped;
         WorldBossStageElapsed = 0;
         WorldBossStageBuffedBots.clear();
+        WorldBossStageFollowingRequester = false;
         WorldBossStageEncounterStarted = false;
         WorldBossStageWipePending = false;
         WorldBossStageBossDefeatedTimer = 0;
@@ -6058,10 +6057,13 @@ void UpdateWorldBossStagedRaid(uint32 diff)
                     if (!botAI->IsRealPlayer())
                     {
                         botAI->SetMaster(requester);
-                        // Keep the summon rings intact while preparation
+                        // Stay in a compact follow pack while preparation
                         // buffs are cast. Combat movement starts only after
                         // the selected boss is engaged.
-                        botAI->ChangeStrategy("-follow,+stay", BOT_STATE_NON_COMBAT);
+                        botAI->ChangeStrategy(
+                            WorldBossStageFollowingRequester ?
+                                "+follow,-stay" : "-follow,+stay",
+                            BOT_STATE_NON_COMBAT);
                         botAI->ChangeStrategy("+avoid aoe,+formation", BOT_STATE_COMBAT);
                         char const* castAction = nullptr;
                         if (CastAutomaticPreparationBuff(bot, botAI,
@@ -6079,6 +6081,28 @@ void UpdateWorldBossStagedRaid(uint32 diff)
                 if (complete)
                     WorldBossStageBuffedBots.insert(staged.first);
             }
+        }
+
+        if (!WorldBossStageFollowingRequester &&
+            (WorldBossStageBuffedBots.size() == WorldBossStagedBots.size() ||
+                WorldBossStageElapsed >= 5000))
+        {
+            for (auto const& staged : WorldBossStagedBots)
+            {
+                Player* bot = sRandomPlayerbotMgr->GetPlayerBot(
+                    ObjectGuid::Create<HighGuid::Player>(staged.first));
+                if (bot)
+                    if (PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot))
+                        botAI->ChangeStrategy("+follow,-stay", BOT_STATE_NON_COMBAT);
+            }
+            WorldBossStageFollowingRequester = true;
+            ChatHandler(requester->GetSession()).SendSysMessage(
+                "World-boss raid buffs are ready. The compact raid will now follow you until the boss is engaged.");
+            TC_LOG_INFO("server",
+                "WorldBoss pre-pull follow enabled requester=%u group=%u boss=%u bots=%u buffed=%u elapsed=%u",
+                WorldBossStageRequester, WorldBossStageGroup,
+                WorldBossStageBossEntry, uint32(WorldBossStagedBots.size()),
+                uint32(WorldBossStageBuffedBots.size()), WorldBossStageElapsed);
         }
 
         // Bind lifecycle handling to the exact spawn selected at Call time.
@@ -6168,8 +6192,31 @@ void UpdateWorldBossStagedRaid(uint32 diff)
             }
         }
 
-        if (!WorldBossStageBossDefeatedTimer && boss && boss->IsAlive() && boss->IsInCombat())
+        bool stagedRaidEngagedBoss = false;
+        if (!WorldBossStageBossDefeatedTimer && boss && boss->IsAlive() &&
+            boss->IsInCombat())
         {
+            for (auto const& staged : WorldBossStagedBots)
+            {
+                Player* bot = sRandomPlayerbotMgr->GetPlayerBot(
+                    ObjectGuid::Create<HighGuid::Player>(staged.first));
+                if (bot && GroupPveCombat::ActiveWorldBossTarget(bot) == boss)
+                {
+                    stagedRaidEngagedBoss = true;
+                    break;
+                }
+            }
+        }
+
+        if (stagedRaidEngagedBoss)
+        {
+            if (!WorldBossStageEncounterStarted)
+            {
+                for (auto const& staged : WorldBossStagedBots)
+                    if (Player* bot = sRandomPlayerbotMgr->GetPlayerBot(
+                            ObjectGuid::Create<HighGuid::Player>(staged.first)))
+                        bot->BeginWorldBossStagingEncounter();
+            }
             WorldBossStageEncounterStarted = true;
             WorldBossStageWipePending = false;
         }
@@ -6194,7 +6241,6 @@ void UpdateWorldBossStagedRaid(uint32 diff)
         if (WorldBossStageWipePending && requester->IsAlive() && boss &&
             boss->IsAlive() && !boss->IsInCombat())
         {
-            size_t index = 0;
             for (auto const& staged : WorldBossStagedBots)
             {
                 Player* bot = sRandomPlayerbotMgr->GetPlayerBot(
@@ -6202,21 +6248,17 @@ void UpdateWorldBossStagedRaid(uint32 diff)
                 if (!bot)
                     continue;
                 PrepareWorldBossBotForSummon(bot);
-                uint32 ring = uint32(index / 8);
-                uint32 ringIndex = uint32(index % 8);
-                uint32 ringCount = std::min<uint32>(8,
-                    uint32(WorldBossStagedBots.size()) - ring * 8);
-                float distance = 6.0f + float(ring * 4);
-                float angle = requester->GetOrientation() +
-                    float(2.0 * M_PI * ringIndex / ringCount);
                 float x = requester->GetPositionX();
                 float y = requester->GetPositionY();
                 float z = requester->GetPositionZ();
-                requester->GetNearPoint(bot, x, y, z, bot->GetObjectSize(),
-                    distance, angle);
+                bot->SetWorldBossStagingAccess(true);
+                if (PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot))
+                {
+                    botAI->SetMaster(requester);
+                    botAI->ChangeStrategy("-follow,+stay", BOT_STATE_NON_COMBAT);
+                }
                 bot->TeleportTo(requester->GetMapId(), x, y, z,
                     requester->GetOrientation());
-                ++index;
             }
 
             // A clean pull starts with the requester's tank role again when
@@ -6249,6 +6291,7 @@ void UpdateWorldBossStagedRaid(uint32 diff)
                     resetMainTank->GetGUID(), 0);
             }
             WorldBossStageBuffedBots.clear();
+            WorldBossStageFollowingRequester = false;
             WorldBossStageEncounterStarted = false;
             WorldBossStageWipePending = false;
             WorldBossStageBossDefeatedTimer = 0;
@@ -6422,6 +6465,7 @@ void UpdateWorldBossStagedRaid(uint32 diff)
     WorldBossStageZ = 0.0f;
     WorldBossStageCleanupReason.clear();
     WorldBossStageBuffedBots.clear();
+    WorldBossStageFollowingRequester = false;
     WorldBossStageEncounterStarted = false;
     WorldBossStageWipePending = false;
     WorldBossStageBossDefeatedTimer = 0;
