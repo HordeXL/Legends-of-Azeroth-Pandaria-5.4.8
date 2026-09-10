@@ -6212,10 +6212,11 @@ void UpdateWorldBossStagedRaid(uint32 diff)
         {
             if (!WorldBossStageEncounterStarted)
             {
+                uint32 const firstContact = getMSTime();
                 for (auto const& staged : WorldBossStagedBots)
                     if (Player* bot = sRandomPlayerbotMgr->GetPlayerBot(
                             ObjectGuid::Create<HighGuid::Player>(staged.first)))
-                        bot->BeginWorldBossStagingEncounter();
+                        bot->BeginWorldBossStagingEncounter(firstContact);
             }
             WorldBossStageEncounterStarted = true;
             WorldBossStageWipePending = false;

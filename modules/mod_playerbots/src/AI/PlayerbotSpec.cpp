@@ -394,7 +394,11 @@ PvePullState<ObjectGuid> ObserveGroupPull(Player* player)
         if (uint32(now - it->second.seen) > 60000u) it = records.erase(it); else ++it;
     auto& record = records[Key(group->GetGUID(), player->GetMapId(), player->GetInstanceId())];
     record.seen = now;
-    record.state.Observe(now, engaged);
+    if (player->HasWorldBossStagingAccess() && !engaged.empty())
+        player->NoteWorldBossStagingFirstContact(now);
+    uint32 firstContact = player->HasWorldBossStagingAccess() ?
+        player->GetWorldBossStagingFirstContact() : 0;
+    record.state.Observe(now, engaged, firstContact);
     return record.state;
 }
 }

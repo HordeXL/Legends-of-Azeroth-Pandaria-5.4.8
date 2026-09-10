@@ -85,5 +85,10 @@ int main(){
  gate.Observe(4500,{});check(!gate.Ready(9000),"combat end resets");
  gate.Observe(0xfffffff0u,{5});check(!gate.Ready(2983),"wrap waits full 2999ms");
  check(gate.Ready(2984),"wrap releases at 3000ms");
+ PvePullState<unsigned> stagedGate;
+ stagedGate.Observe(6500,{5},4100);check(!stagedGate.Ready(7000),"staged pull keeps first-contact delay while forming");
+ check(stagedGate.Ready(7100),"formation time consumes staged first-contact delay");
+ stagedGate.Observe(7200,{});stagedGate.Observe(8000,{6},4100);
+ check(stagedGate.Ready(8000),"staged target reacquisition cannot restart first-contact clock");
  std::cout<<"PASS "<<checks<<" checks; typed Pestilence lookup and pet pull delay\n";
 }
