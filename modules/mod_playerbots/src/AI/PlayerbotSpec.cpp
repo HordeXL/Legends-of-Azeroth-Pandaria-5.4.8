@@ -486,6 +486,16 @@ bool GroupPveCombat::DamageAllowed(Player* player, Unit* target)
     if (!IsEngaged(player, target)) return false;
     if (PlayerBotSpec::IsTank(player, true)) return true;
     Unit* opening = OpeningTarget(player);
+
+    // A staged raid uses the opening window to leave the compact follow
+    // stack and take its encounter slots.  Selecting the opening target is
+    // not enough: direct class rotations can cast without first issuing an
+    // AttackAction, so explicitly suppress their damage until that window
+    // has elapsed.  Tanks remain free to establish and turn the boss, while
+    // healer casts on friendly targets never enter this hostile-target path.
+    if (player->HasWorldBossStagingAccess() && opening)
+        return false;
+
     return !opening || opening == target;
 }
 

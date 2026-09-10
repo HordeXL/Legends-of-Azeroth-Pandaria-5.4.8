@@ -103,6 +103,7 @@ protected:
     float AverageGroupAngle(Unit* from, bool ranged = false, bool self = false);
     Position GetNearestPosition(const std::vector<Position>& positions);
     int lastMoveTimer = 0;
+    uint32 lastLoggedWorldBossContact = 0;
     int moveInterval;
 };
 

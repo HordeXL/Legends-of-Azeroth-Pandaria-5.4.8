@@ -2110,7 +2110,10 @@ bool CombatFormationMoveAction::isUseful()
         return false;
     }
 
-    if (!botAI->IsGroupPveActivity() || !bot->IsInCombat())
+    if (!botAI->IsGroupPveActivity() ||
+        (!bot->IsInCombat() &&
+            !(bot->HasWorldBossStagingAccess() &&
+                bot->IsWorldBossStagingEncounterStarted())))
     {
         return false;
     }
@@ -2218,18 +2221,23 @@ bool CombatFormationMoveAction::Execute(Event /*event*/)
             return false;
         }
 
-        bool const firstFormationMove = lastMoveTimer == 0;
+        uint32 const firstContact = bot->GetWorldBossStagingFirstContact();
+        bool const firstFormationMove = firstContact &&
+            firstContact != lastLoggedWorldBossContact;
         if (MoveTo(bot->GetMapId(), x, y, z, false, false, true, true,
                 MovementPriority::MOVEMENT_FORCED, true))
         {
             lastMoveTimer = getMSTime();
             if (firstFormationMove)
+            {
+                lastLoggedWorldBossContact = firstContact;
                 TC_LOG_INFO("server",
                     "WorldBoss formation move bot=%s guid=%u role=%s target=%u slot=(%.2f,%.2f,%.2f) distance=%.2f",
                     bot->GetName().c_str(), bot->GetGUID().GetCounter(),
                     PlayerBotSpec::IsTank(bot, true) ? "tank" :
                         (PlayerBotSpec::IsHeal(bot, true) ? "healer" : "damage"),
                     target->GetEntry(), x, y, z, bot->GetExactDist2d(x, y));
+            }
             return true;
         }
         return false;
