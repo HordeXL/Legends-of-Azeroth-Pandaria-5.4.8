@@ -72,6 +72,8 @@ constexpr uint32 ChiJiEntry = 71952;
 constexpr uint32 ChiJiCraneRushSpell = 144470;
 constexpr uint32 ChiJiFirestormEntry = 71971;
 constexpr uint32 ChiJiChildEntry = 71990;
+constexpr uint32 YuLonEntry = 71955;
+constexpr uint32 YuLonJadefireBlazeEntry = 72016;
 
 bool IsNiuzaoChargeActive(Unit const* target)
 {
@@ -1810,14 +1812,25 @@ BossMechanicsAction::Reaction BossMechanicsAction::GetReaction() const
         }
     }
 
-    // Yu'lon's Jadefire Breath (144530) is a frontal attack in the local
-    // 5.4.8 boss script. Non-tanks move behind her while the cast is visible;
-    // the active tank keeps the boss facing away from the raid.
-    if (Creature* yulon = bot->FindNearestCreature(71955, 200.0f, true))
+    // Yu'lon's Jadefire Blaze (entry 72016, aura 144537 -> damage 144538)
+    // is a creature-backed floor hazard in the local script. It is invisible
+    // to the generic AreaTrigger/DynamicObject scan, so leave the actual
+    // summon before considering the boss's frontal breath positioning.
+    if (Creature* yulon = bot->FindNearestCreature(YuLonEntry, 200.0f, true))
+    {
+        if (Creature* blaze = bot->FindNearestCreature(
+                YuLonJadefireBlazeEntry, 22.0f, true))
+            if (bot->GetExactDist2d(blaze) < 16.0f)
+                return Reaction::AvoidYuLonJadefireBlaze;
+
+        // Jadefire Breath (144530) is a frontal attack. Non-tanks move behind
+        // Yu'lon while the cast is visible; the active tank keeps her facing
+        // away from the raid.
         if (!PlayerBotSpec::IsTank(bot, true) || yulon->GetVictim() != bot)
             if (Spell* spell = yulon->GetCurrentSpell(CURRENT_GENERIC_SPELL))
                 if (spell->GetSpellInfo() && spell->GetSpellInfo()->Id == 144530)
                     return Reaction::AvoidYuLonJadefireBreath;
+    }
 
     return Reaction::None;
 }
@@ -2064,8 +2077,37 @@ bool BossMechanicsAction::Execute(Event /*event*/)
                     true, MovementPriority::MOVEMENT_FORCED, true);
             }
             break;
+        case Reaction::AvoidYuLonJadefireBlaze:
+            if (Creature* blaze = bot->FindNearestCreature(
+                    YuLonJadefireBlazeEntry, 22.0f, true))
+            {
+                float awayX = bot->GetPositionX() - blaze->GetPositionX();
+                float awayY = bot->GetPositionY() - blaze->GetPositionY();
+                float distance = std::sqrt(awayX * awayX + awayY * awayY);
+                if (distance < 0.5f)
+                {
+                    float const angle = float(bot->GetGUID().GetCounter() % 16) *
+                        float(M_PI / 8.0);
+                    awayX = std::cos(angle);
+                    awayY = std::sin(angle);
+                    distance = 1.0f;
+                }
+
+                float const correction = 19.0f - distance;
+                float x = bot->GetPositionX() + awayX / distance * correction;
+                float y = bot->GetPositionY() + awayY / distance * correction;
+                float z = bot->GetPositionZ();
+                if (!bot->GetMap()->CheckCollisionAndGetValidCoords(bot,
+                        bot->GetPositionX(), bot->GetPositionY(),
+                        bot->GetPositionZ(), x, y, z, false))
+                    return false;
+
+                return MoveTo(bot->GetMapId(), x, y, z, false, false, true,
+                    true, MovementPriority::MOVEMENT_FORCED, true);
+            }
+            break;
         case Reaction::AvoidYuLonJadefireBreath:
-            if (Creature* yulon = bot->FindNearestCreature(71955, 200.0f, true))
+            if (Creature* yulon = bot->FindNearestCreature(YuLonEntry, 200.0f, true))
             {
                 float x = yulon->GetPositionX();
                 float y = yulon->GetPositionY();

@@ -5738,7 +5738,6 @@ void UpdateWorldBossStagedRaid(uint32 diff)
                 return;
             }
             bool expectsPersistentPet = bot->GetClass() == CLASS_HUNTER ||
-                bot->GetClass() == CLASS_WARLOCK ||
                 bot->GetSpecialization() == SPEC_MAGE_FROST;
             if (Guardian* guardian = bot->GetGuardianPet())
             {
@@ -6006,6 +6005,7 @@ void UpdateWorldBossStagedRaid(uint32 diff)
         }
 
         uint32 aliveMembers = requester->IsAlive() ? 1 : 0;
+        bool stagedPersistentPetsReady = true;
         for (auto const& staged : WorldBossStagedBots)
         {
             Player* bot = sRandomPlayerbotMgr->GetPlayerBot(
@@ -6041,12 +6041,44 @@ void UpdateWorldBossStagedRaid(uint32 diff)
             if (bot->IsAlive())
                 ++aliveMembers;
 
+            bool const expectsPersistentPet = bot->GetClass() == CLASS_HUNTER ||
+                bot->GetClass() == CLASS_WARLOCK ||
+                bot->GetSpecialization() == SPEC_MAGE_FROST;
+            if (bot->IsAlive() && expectsPersistentPet &&
+                !bot->GetGuardianPet())
+                stagedPersistentPetsReady = false;
+
+            // Warlock demons are summoned by a real class action rather than
+            // BotFactory. Finish that cast before marking the warlock's raid
+            // preparation complete or releasing the compact follow pack.
+            if (!WorldBossStageEncounterStarted && bot->IsAlive() &&
+                !bot->IsInCombat() && bot->GetClass() == CLASS_WARLOCK &&
+                !bot->GetGuardianPet())
+            {
+                if (PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot))
+                {
+                    if (!botAI->IsRealPlayer())
+                    {
+                        botAI->SetMaster(requester);
+                        botAI->ChangeStrategy("-follow,+stay", BOT_STATE_NON_COMBAT);
+                        botAI->ChangeStrategy("+avoid aoe,+formation", BOT_STATE_COMBAT);
+                        if (botAI->DoSpecificAction("summon observer", Event(), true))
+                            TC_LOG_INFO("server",
+                                "WorldBoss preparation pet summon raid=%u boss=%u name=%s guid=%u action=summon observer",
+                                WorldBossStageGroup, WorldBossStageBossEntry,
+                                bot->GetName().c_str(), staged.first);
+                    }
+                }
+                continue;
+            }
+
             // Use the real class actions already shared with Arena/BG
             // preparation. Their own aura checks prevent recasting the same
             // raid buff, while a second paladin can still contribute the other
             // blessing. Classes without a preparation action are marked done
             // immediately instead of being retried forever.
-            if (bot->IsAlive() && !bot->IsInCombat() &&
+            if (!WorldBossStageEncounterStarted && bot->IsAlive() &&
+                !bot->IsInCombat() &&
                 !WorldBossStageBuffedBots.count(staged.first))
             {
                 std::vector<char const*> actions =
@@ -6084,8 +6116,8 @@ void UpdateWorldBossStagedRaid(uint32 diff)
         }
 
         if (!WorldBossStageFollowingRequester &&
-            (WorldBossStageBuffedBots.size() == WorldBossStagedBots.size() ||
-                WorldBossStageElapsed >= 5000))
+            ((WorldBossStageBuffedBots.size() == WorldBossStagedBots.size() &&
+                stagedPersistentPetsReady) || WorldBossStageElapsed >= 12000))
         {
             for (auto const& staged : WorldBossStagedBots)
             {

@@ -191,6 +191,7 @@ private:
         AvoidChiJiBlazingNova,
         SpreadXuenLightning,
         AvoidNiuzaoCharge,
+        AvoidYuLonJadefireBlaze,
         AvoidYuLonJadefireBreath
     };
 

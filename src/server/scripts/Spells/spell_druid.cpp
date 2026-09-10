@@ -3330,10 +3330,7 @@ class spell_dru_shooting_stars_proc : public AuraScript
             for (auto&& itr : *list)
                 AddTarget(itr->GetUnitOwner());
         if (uniqueTargets.empty())
-        {
-            TC_LOG_ERROR("misc", "spell_dru_shooting_stars_proc::CheckProc - Shit happened! GUID: %u", druid->GetGUID().GetCounter());
             return false;
-        }
         size_t targetCount = uniqueTargets.size();
         uniqueTargets.clear();
         float chance = GetSpellInfo()->ProcChance;
