@@ -275,6 +275,33 @@ void BotFactory::InitPet()
         }
     }*/
 
+    // Recover a valid active-slot hunter pet when the character's current-pet
+    // field was cleared. Without this pass, a hunter with full active slots
+    // cannot load an existing pet or allocate a replacement.
+    if (!pet && bot->GetClass() == CLASS_HUNTER)
+    {
+        for (uint8 slot = 0; slot < PET_SLOT_ACTIVE_LAST; ++slot)
+        {
+            uint32 petId = bot->GetPetIdBySlot(slot);
+            if (!petId)
+                continue;
+
+            Pet* recoveredPet = new Pet(bot);
+            if (recoveredPet->LoadPetFromDB(PET_LOAD_BY_ID, petId))
+            {
+                pet = recoveredPet;
+                bot->SetCurrentPetId(petId);
+                bot->PetSpellInitialize();
+                TC_LOG_INFO("playerbots",
+                    "Recovered active hunter pet for bot %s guid=%u pet=%u slot=%u",
+                    bot->GetName().c_str(), bot->GetGUID().GetCounter(),
+                    petId, uint32(slot));
+                break;
+            }
+            delete recoveredPet;
+        }
+    }
+
     // Older BotFactory pet creation saved hunter pets before registering an
     // active slot. Those rows consequently have slot 255 and are ignored by
     // Player::LoadPetList; a hunter then whistles Call Pet 1 every five

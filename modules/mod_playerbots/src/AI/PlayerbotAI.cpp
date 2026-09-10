@@ -853,13 +853,21 @@ bool PlayerbotAI::TryWorldBossEngagement()
     if (_currentState != BOT_STATE_COMBAT)
         ChangeEngine(BOT_STATE_COMBAT);
 
+    // Spend the staged raid's three-second damage hold actually taking the
+    // assigned encounter slots. Relying on the ordinary combat action order
+    // left the compact follow pack stationary on the observed Yu'lon pull.
+    // This action is forced only while OpeningTarget is active; afterward the
+    // normal healer and damage priorities resume immediately.
+    if (!PlayerBotSpec::IsTank(bot, true) &&
+        GroupPveCombat::OpeningTarget(bot))
+    {
+        DoSpecificAction("combat formation move", Event(), true);
+        return true;
+    }
+
     // Healers join the combat engine immediately so they can react to the
     // first raid damage, but do not waste a global cooldown or mana attacking.
     if (PlayerBotSpec::IsHeal(bot, true))
-        return true;
-
-    if (!PlayerBotSpec::IsTank(bot, true) &&
-        GroupPveCombat::OpeningTarget(bot))
         return true;
 
     if (bot->GetVictim() != target)

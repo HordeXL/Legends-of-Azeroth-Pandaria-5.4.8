@@ -597,6 +597,11 @@ m_spellValue(new SpellValue(m_spellInfo)), m_researchData(NULL)
     }
 
     m_spellSchoolMask = info->GetSchoolMask();           // Can be override for some spell (wand shoot for example)
+    // CheckPower and packet construction are also used by spell probes which
+    // do not necessarily pass through prepare() or CheckPetCast() first.
+    // Keep those paths deterministic instead of reading an uninitialized
+    // enum value.
+    m_powerType = m_spellInfo->GetPowerType(m_caster, &m_powerEntryIndex);
 
     if (m_attackType == RANGED_ATTACK)
         // wand case
