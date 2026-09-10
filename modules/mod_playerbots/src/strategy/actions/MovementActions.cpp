@@ -66,6 +66,24 @@
 
 namespace
 {
+constexpr uint32 NiuzaoEntry = 71954;
+constexpr uint32 NiuzaoChargeSpell = 144608;
+
+bool IsNiuzaoChargeActive(Unit const* target)
+{
+    if (!target || target->GetEntry() != NiuzaoEntry)
+        return false;
+
+    if (target->HasAura(NiuzaoChargeSpell))
+        return true;
+
+    if (Spell* spell = target->GetCurrentSpell(CURRENT_GENERIC_SPELL))
+        return spell->GetSpellInfo() &&
+            spell->GetSpellInfo()->Id == NiuzaoChargeSpell;
+
+    return false;
+}
+
 // Temporary, targeted pre-pull tracing. Record the action that actually
 // submitted movement, rather than inferring it from a combat flag or class.
 void TraceManagedPveMovement(PlayerbotAI* ai, char const* action,
@@ -1681,12 +1699,32 @@ BossMechanicsAction::Reaction BossMechanicsAction::GetReaction() const
         }
     }
 
-    // Niuzao's charge aura (144608/144609) drives the boss across the arena.
-    // Moving away from him is a conservative pathing-safe response; Massive
-    // Quake and other persistent floor effects remain covered by avoid aoe.
-    if (Creature* niuzao = bot->FindNearestCreature(71954, 200.0f, true))
-        if (niuzao->HasAura(144608) || bot->HasAura(144609))
-            return Reaction::FleeNiuzaoCharge;
+    // Niuzao's charge (144608 -> 144609) runs around the arena perimeter.
+    // The aura remains for the full circuit, so repeatedly moving away from
+    // the creature sends bots out of the arena and removes their uptime. Step
+    // sideways only while the bot is still inside the current charge lane.
+    if (Creature* niuzao = bot->FindNearestCreature(NiuzaoEntry, 200.0f, true))
+    {
+        if (IsNiuzaoChargeActive(niuzao))
+        {
+            float const orientation = niuzao->GetOrientation();
+            float const dx = bot->GetPositionX() - niuzao->GetPositionX();
+            float const dy = bot->GetPositionY() - niuzao->GetPositionY();
+            float const forward = dx * std::cos(orientation) +
+                dy * std::sin(orientation);
+            float const lateral = -dx * std::sin(orientation) +
+                dy * std::cos(orientation);
+
+            // During the warning cast, clear the lane ahead of Niuzao. Once
+            // he is moving, react only when his current segment comes near.
+            bool const preparing = !niuzao->HasAura(NiuzaoChargeSpell);
+            bool const threatened = std::abs(lateral) < 14.0f &&
+                ((preparing && forward > -8.0f && forward < 55.0f) ||
+                 (!preparing && bot->GetExactDist2d(niuzao) < 30.0f));
+            if (threatened)
+                return Reaction::AvoidNiuzaoCharge;
+        }
+    }
 
     // Yu'lon's Jadefire Breath (144530) is a frontal attack in the local
     // 5.4.8 boss script. Non-tanks move behind her while the cast is visible;
@@ -1851,9 +1889,33 @@ bool BossMechanicsAction::Execute(Event /*event*/)
             break;
         case Reaction::SpreadXuenLightning:
             return MoveFromGroup(22.0f);
-        case Reaction::FleeNiuzaoCharge:
-            if (Creature* niuzao = bot->FindNearestCreature(71954, 200.0f, true))
-                return MoveAway(niuzao, 35.0f);
+        case Reaction::AvoidNiuzaoCharge:
+            if (Creature* niuzao = bot->FindNearestCreature(NiuzaoEntry, 200.0f, true))
+            {
+                float const orientation = niuzao->GetOrientation();
+                float const perpendicularX = -std::sin(orientation);
+                float const perpendicularY = std::cos(orientation);
+                float const dx = bot->GetPositionX() - niuzao->GetPositionX();
+                float const dy = bot->GetPositionY() - niuzao->GetPositionY();
+                float const lateral = dx * perpendicularX + dy * perpendicularY;
+                float const side = std::abs(lateral) > 0.5f ?
+                    (lateral > 0.0f ? 1.0f : -1.0f) :
+                    (bot->GetGUID().GetCounter() % 2 ? 1.0f : -1.0f);
+                float const correction = side * 18.0f - lateral;
+                float x = bot->GetPositionX() + perpendicularX * correction;
+                float y = bot->GetPositionY() + perpendicularY * correction;
+                float z = bot->GetPositionZ();
+
+                if (!bot->GetMap()->CheckCollisionAndGetValidCoords(bot,
+                        bot->GetPositionX(), bot->GetPositionY(),
+                        bot->GetPositionZ(), x, y, z, false))
+                {
+                    return false;
+                }
+
+                return MoveTo(bot->GetMapId(), x, y, z, false, false, true,
+                    true, MovementPriority::MOVEMENT_FORCED, true);
+            }
             break;
         case Reaction::AvoidYuLonJadefireBreath:
             if (Creature* yulon = bot->FindNearestCreature(71955, 200.0f, true))
@@ -1921,6 +1983,12 @@ bool CombatFormationMoveAction::isUseful()
         return false;
     }
 
+    // Keep the raid at its current safe points while Niuzao runs his circuit.
+    // Recomputing slots around a moving boss makes ranged players chase him
+    // and drags the whole formation around the arena edge.
+    if (IsNiuzaoChargeActive(target))
+        return false;
+
     // Kiting an enemy that is already attacking this bot separates the pack
     // from the tank and may pull more trash. Hold position until aggro is
     // recovered; defensive actions remain available to the class strategy.
@@ -1980,6 +2048,9 @@ bool CombatFormationMoveAction::Execute(Event /*event*/)
     {
         return false;
     }
+
+    if (IsNiuzaoChargeActive(target))
+        return false;
 
     if (bot->HasWorldBossStagingAccess())
     {

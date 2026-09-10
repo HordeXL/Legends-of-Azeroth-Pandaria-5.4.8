@@ -188,7 +188,7 @@ private:
         MoveChiJiBeacon,
         FleeChiJiCraneRush,
         SpreadXuenLightning,
-        FleeNiuzaoCharge,
+        AvoidNiuzaoCharge,
         AvoidYuLonJadefireBreath
     };
 
