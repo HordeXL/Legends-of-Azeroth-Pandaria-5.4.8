@@ -96,6 +96,8 @@ public:
     bool Execute(Event event) override;
 
 protected:
+    bool GetWorldBossFormationPosition(Unit* target, float& x, float& y,
+        float& z, float& tolerance);
     Position AverageGroupPos(float dis = sPlayerbotAIConfig->sightDistance, bool ranged = false, bool self = false);
     Player* NearestGroupMember(float dis = sPlayerbotAIConfig->sightDistance);
     float AverageGroupAngle(Unit* from, bool ranged = false, bool self = false);

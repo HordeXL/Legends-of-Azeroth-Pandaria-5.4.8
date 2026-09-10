@@ -5894,6 +5894,12 @@ void UpdateWorldBossStagedRaid(uint32 diff)
             // are owned by this coordinator and must remain eligible only for
             // the lifetime of the staged call.
             bot->SetWorldBossStagingAccess(true);
+            if (PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot))
+            {
+                botAI->SetMaster(requester);
+                botAI->ChangeStrategy("-follow,+stay", BOT_STATE_NON_COMBAT);
+                botAI->ChangeStrategy("+avoid aoe,+formation", BOT_STATE_COMBAT);
+            }
             if (!bot->TeleportTo(WorldBossStageMap, x, y, z,
                 requester->GetOrientation()))
             {
@@ -6052,8 +6058,11 @@ void UpdateWorldBossStagedRaid(uint32 diff)
                     if (!botAI->IsRealPlayer())
                     {
                         botAI->SetMaster(requester);
-                        botAI->ChangeStrategy("+follow", BOT_STATE_NON_COMBAT);
-                        botAI->ChangeStrategy("+avoid aoe", BOT_STATE_COMBAT);
+                        // Keep the summon rings intact while preparation
+                        // buffs are cast. Combat movement starts only after
+                        // the selected boss is engaged.
+                        botAI->ChangeStrategy("-follow,+stay", BOT_STATE_NON_COMBAT);
+                        botAI->ChangeStrategy("+avoid aoe,+formation", BOT_STATE_COMBAT);
                         char const* castAction = nullptr;
                         if (CastAutomaticPreparationBuff(bot, botAI,
                             &castAction))
@@ -6193,14 +6202,18 @@ void UpdateWorldBossStagedRaid(uint32 diff)
                 if (!bot)
                     continue;
                 PrepareWorldBossBotForSummon(bot);
+                uint32 ring = uint32(index / 8);
+                uint32 ringIndex = uint32(index % 8);
+                uint32 ringCount = std::min<uint32>(8,
+                    uint32(WorldBossStagedBots.size()) - ring * 8);
+                float distance = 6.0f + float(ring * 4);
                 float angle = requester->GetOrientation() +
-                    float(2.0 * M_PI * index /
-                        std::max<size_t>(1, WorldBossStagedBots.size()));
+                    float(2.0 * M_PI * ringIndex / ringCount);
                 float x = requester->GetPositionX();
                 float y = requester->GetPositionY();
                 float z = requester->GetPositionZ();
                 requester->GetNearPoint(bot, x, y, z, bot->GetObjectSize(),
-                    8.0f, angle);
+                    distance, angle);
                 bot->TeleportTo(requester->GetMapId(), x, y, z,
                     requester->GetOrientation());
                 ++index;

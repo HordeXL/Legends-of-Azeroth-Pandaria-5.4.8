@@ -1662,7 +1662,22 @@ BossMechanicsAction::Reaction BossMechanicsAction::GetReaction() const
         bool const activeTank = PlayerBotSpec::IsTank(bot, true) &&
             xuen->GetVictim() == bot;
         if (incomingAreaDamage && bot->GetGroup() && !activeTank)
-            return Reaction::SpreadXuenLightning;
+        {
+            // Assigned world-boss slots already provide the required spread.
+            // Use emergency movement only if two living raid members are
+            // still close enough for their missiles to overlap.
+            for (GroupReference* ref = bot->GetGroup()->GetFirstMember(); ref;
+                ref = ref->next())
+            {
+                Player* member = ref->GetSource();
+                if (member && member != bot && member->IsAlive() &&
+                    member->GetMap() == bot->GetMap() &&
+                    bot->GetExactDist2d(member) < 9.0f)
+                {
+                    return Reaction::SpreadXuenLightning;
+                }
+            }
+        }
     }
 
     // Niuzao's charge aura (144608/144609) drives the boss across the arena.
@@ -1885,8 +1900,7 @@ bool CombatFormationMoveAction::isUseful()
         return false;
     }
 
-    if (!botAI->IsGroupPveActivity() || !bot->IsInCombat() ||
-        !PlayerBotSpec::IsRanged(bot, true))
+    if (!botAI->IsGroupPveActivity() || !bot->IsInCombat())
     {
         return false;
     }
@@ -1910,17 +1924,35 @@ bool CombatFormationMoveAction::isUseful()
     if (target->GetVictim() == bot)
         return false;
 
+    if (bot->HasWorldBossStagingAccess())
+    {
+        // Stay at an active Mana Tide until mana has recovered. Otherwise a
+        // ranged formation slot outside the totem aura would pull the bot
+        // away immediately after it reached the totem.
+        if (ManaTideCoordination::IsManaBeneficiary(bot) &&
+            bot->GetPowerPct(POWER_MANA) < sPlayerbotAIConfig->mediumMana &&
+            ManaTideCoordination::FindActiveGroupTotem(bot))
+        {
+            return false;
+        }
+
+        float x = 0.0f;
+        float y = 0.0f;
+        float z = 0.0f;
+        float tolerance = 0.0f;
+        if (!GetWorldBossFormationPosition(target, x, y, z, tolerance))
+            return false;
+
+        return bot->GetExactDist2d(x, y) > tolerance;
+    }
+
+    if (!PlayerBotSpec::IsRanged(bot, true))
+        return false;
+
     float const edgeDistance = std::max(0.0f, bot->GetExactDist2d(target) -
         bot->GetCombatReach() - target->GetCombatReach());
     float const minimumRange = std::min(14.0f,
         std::max(8.0f, sPlayerbotAIConfig->spellDistance - 10.0f));
-
-    // Xuen fires several area missiles at different ranged players. Keep
-    // staged ranged/healers apart before the cast begins so one missile does
-    // not multiply across the entire raid.
-    if (bot->HasWorldBossStagingAccess() && target->GetEntry() == 71953)
-        if (NearestGroupMember(12.0f))
-            return true;
 
     return edgeDistance < minimumRange;
 }
@@ -1933,17 +1965,34 @@ bool CombatFormationMoveAction::Execute(Event /*event*/)
     Unit* target = AI_VALUE(Unit*, "current target");
     if (!target || !target->IsInWorld() || !target->IsAlive() ||
         target->GetMapId() != bot->GetMapId() || !bot->IsValidAttackTarget(target) ||
-        target->GetVictim() == bot || !PlayerBotSpec::IsRanged(bot, true))
+        target->GetVictim() == bot)
     {
         return false;
     }
 
-    if (bot->HasWorldBossStagingAccess() && target->GetEntry() == 71953 &&
-        NearestGroupMember(12.0f) && MoveFromGroup(14.0f))
+    if (bot->HasWorldBossStagingAccess())
     {
-        lastMoveTimer = getMSTime();
-        return true;
+        float x = 0.0f;
+        float y = 0.0f;
+        float z = 0.0f;
+        float tolerance = 0.0f;
+        if (!GetWorldBossFormationPosition(target, x, y, z, tolerance) ||
+            bot->GetExactDist2d(x, y) <= tolerance)
+        {
+            return false;
+        }
+
+        if (MoveTo(bot->GetMapId(), x, y, z, false, false, true, true,
+                MovementPriority::MOVEMENT_COMBAT, true))
+        {
+            lastMoveTimer = getMSTime();
+            return true;
+        }
+        return false;
     }
+
+    if (!PlayerBotSpec::IsRanged(bot, true))
+        return false;
 
     float const desiredRange = std::min(24.0f,
         std::max(16.0f, sPlayerbotAIConfig->spellDistance - 4.0f));
@@ -1999,6 +2048,96 @@ bool CombatFormationMoveAction::Execute(Event /*event*/)
     }
 
     return false;
+}
+
+bool CombatFormationMoveAction::GetWorldBossFormationPosition(Unit* target,
+    float& x, float& y, float& z, float& tolerance)
+{
+    Group* group = bot->GetGroup();
+    if (!target || !group || !bot->HasWorldBossStagingAccess())
+        return false;
+
+    // The boss faces its active victim. Every other staged bot receives a
+    // stable slot in the rear hemisphere, so melee never shares the tank's
+    // frontal arc and ranged missile targets cannot collapse into one pile.
+    bool const melee = PlayerBotSpec::IsMelee(bot, true) &&
+        !PlayerBotSpec::IsHeal(bot, true);
+    uint32 rank = 0;
+    uint32 count = 0;
+    bool found = false;
+    for (Group::MemberSlot const& slot : group->GetMemberSlots())
+    {
+        Player* member = ObjectAccessor::FindPlayer(slot.guid);
+        if (!member || !member->HasWorldBossStagingAccess() ||
+            member->GetMap() != bot->GetMap() ||
+            member == target->GetVictim())
+        {
+            continue;
+        }
+
+        bool const memberMelee = PlayerBotSpec::IsMelee(member, true) &&
+            !PlayerBotSpec::IsHeal(member, true);
+        if (memberMelee != melee)
+            continue;
+
+        if (member == bot)
+        {
+            rank = count;
+            found = true;
+        }
+        ++count;
+    }
+    if (!found || !count)
+        return false;
+
+    uint32 const perRing = melee ? 4u : 8u;
+    uint32 const ring = rank / perRing;
+    uint32 const ringIndex = rank % perRing;
+    uint32 const ringCount = std::min(perRing, count - ring * perRing);
+    float const halfArc = melee ? float(M_PI * 5.0 / 18.0) :
+        float(M_PI * 4.0 / 9.0);
+    float offset = 0.0f;
+    if (ringCount > 1)
+        offset = -halfArc + 2.0f * halfArc * float(ringIndex) /
+            float(ringCount - 1);
+
+    float centerDistance;
+    if (melee)
+    {
+        // Two shallow rows remain inside melee reach while leaving room for
+        // characters to avoid occupying the same point.
+        centerDistance = std::max(1.5f,
+            bot->GetMeleeRange(target) - 1.0f - float(ring) * 0.35f);
+        tolerance = 1.0f;
+    }
+    else
+    {
+        // Eight positions across 160 degrees give roughly ten yards between
+        // neighbours. The second row is still inside ordinary 40-yard spell
+        // and Mana Tide ranges but is far enough away to avoid splash overlap.
+        centerDistance = 25.0f + 10.0f * float(ring);
+        tolerance = 2.0f;
+    }
+
+    // Use the tank's position rather than the creature's momentary facing.
+    // Bosses may briefly turn toward a spell target, which must not make the
+    // whole raid swap sides and run through the frontal arc.
+    float const front = target->GetVictim() ?
+        target->GetAngle(target->GetVictim()) : target->GetOrientation();
+    float const rear = Position::NormalizeOrientation(front + float(M_PI));
+    float const angle = Position::NormalizeOrientation(rear + offset);
+    x = target->GetPositionX() + std::cos(angle) * centerDistance;
+    y = target->GetPositionY() + std::sin(angle) * centerDistance;
+    z = target->GetPositionZ();
+
+    if (!bot->GetMap()->CheckCollisionAndGetValidCoords(bot,
+            bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(),
+            x, y, z, false))
+    {
+        return false;
+    }
+
+    return target->IsWithinLOS(x, y, z) && bot->IsWithinLOS(x, y, z);
 }
 
 Position CombatFormationMoveAction::AverageGroupPos(float dis, bool ranged, bool self)
