@@ -171,9 +171,9 @@ public:
     bool IsActive() override;
 };
 
-// Coordinates the mutually exclusive 30% raid-haste effects during the final
-// burn phase of a PvE boss. Lower provider priorities win, while healthPct
-// provides a delayed fallback when the preferred provider is unavailable.
+// Coordinates the mutually exclusive 30% raid-haste effects during a PvE boss
+// burn phase. Lower provider priorities win. healthPct is the small-group
+// fallback threshold; full 25-player raids open the shared window at 70%.
 class PveRaidHasteTrigger : public Trigger
 {
 public:

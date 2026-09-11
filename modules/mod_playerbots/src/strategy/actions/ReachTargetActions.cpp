@@ -43,16 +43,37 @@ bool ReachTargetAction::isUseful()
             return false;
     }
 
+    // During a staged Yu'lon fight, direct reach movement repeatedly chooses
+    // the shortest line through a pool, then competes with the opposite
+    // hazard-escape command. Non-tanks must let the formation and
+    // boss-mechanics actions choose safe intermediate points.
+    if (target && target->GetEntry() == 71955 &&
+        bot->HasWorldBossStagingAccess() && target->GetVictim() != bot)
+        return false;
+
     // Chi-Ji's Crane Rush repeatedly sends Blazing Nova children out from
     // the boss. Do not let ordinary melee/spell reach movement override the
     // forced lane dodge and immediately chase back into the next child.
     if (target && target->GetEntry() == 71952)
     {
+        // Do not chase Chi-Ji out of Beacon of Hope while Blazing Song is
+        // imminent or active. Boss mechanics moves tanks and damage dealers
+        // into the shield and ordinary reach resumes after it despawns.
+        if (bot->FindNearestCreature(71978, 120.0f, true))
+            return false;
+
         bool craneRush = target->HasAura(144470);
         if (Spell* spell = target->GetCurrentSpell(CURRENT_GENERIC_SPELL))
             craneRush = craneRush || (spell->GetSpellInfo() &&
                 spell->GetSpellInfo()->Id == 144470);
         if (craneRush || bot->FindNearestCreature(71990, 120.0f, true))
+            return false;
+
+        // Firestorm's floor summon (71971, ten-yard damage radius) persists
+        // after the forced dodge. If ordinary melee reach resumes while the
+        // summon is still beside the bot, it walks straight back into the
+        // same hazard and repeats that cycle on every formation update.
+        if (bot->FindNearestCreature(71971, 24.0f, true))
             return false;
     }
 
@@ -63,6 +84,21 @@ bool ReachTargetAction::isUseful()
 }
 
 std::string const ReachTargetAction::GetTargetName() { return "current target"; }
+
+bool ReachMeleeAction::isUseful()
+{
+    Unit* target = GetTarget();
+    // Chi-Ji's encounter formation selects a reachable point at the edge of
+    // the boss's melee circle and routes around Firestorms. The generic
+    // center-directed chase would override it, walk into a vortex, and make
+    // different melee classes stop at visibly different depths in the boss.
+    // The active tank remains on ordinary chase/tank-facing logic.
+    if (target && target->GetEntry() == 71952 &&
+        bot->HasWorldBossStagingAccess() && target->GetVictim() != bot)
+        return false;
+
+    return ReachTargetAction::isUseful();
+}
 
 CastReachTargetSpellAction::CastReachTargetSpellAction(PlayerbotAI* botAI, std::string const spell, float distance)
     : CastSpellAction(botAI, spell), distance(distance)

@@ -6119,15 +6119,43 @@ void UpdateWorldBossStagedRaid(uint32 diff)
                             BOT_STATE_NON_COMBAT);
                         botAI->ChangeStrategy("+avoid aoe,+formation", BOT_STATE_COMBAT);
                         char const* castAction = nullptr;
-                        if (CastAutomaticPreparationBuff(bot, botAI,
-                            &castAction))
+                        bool const casted = CastAutomaticPreparationBuff(
+                            bot, botAI, &castAction);
+                        if (casted)
                         {
-                            complete = true;
                             TC_LOG_INFO("server",
                                 "WorldBoss preparation buff cast raid=%u boss=%u name=%s guid=%u action=%s",
                                 WorldBossStageGroup, WorldBossStageBossEntry,
                                 bot->GetName().c_str(), staged.first,
                                 castAction);
+                        }
+
+                        // A successful cast is not the completion signal: a
+                        // paladin, warrior, or monk can still owe a second
+                        // raid-buff category. Conversely, when another class
+                        // already supplied an equivalent buff every action can
+                        // correctly return false, which previously held the
+                        // whole raid for the fixed 30-second timeout. Finish
+                        // when no raid-wide action remains missing and this
+                        // bot has no personal preparation cast left to make.
+                        if (!casted)
+                        {
+                            // Give personal auras/forms a few normal AI/GCD
+                            // updates before treating a false action result as
+                            // "already satisfied" rather than "not ready yet".
+                            complete = WorldBossStageElapsed >= 3000;
+                            for (char const* action : actions)
+                            {
+                                SpellGroup const buffGroup =
+                                    GetPreparationRaidBuffGroup(action);
+                                if (buffGroup != SPELL_GROUP_NONE &&
+                                    IsPreparationRaidBuffMissing(bot,
+                                        buffGroup))
+                                {
+                                    complete = false;
+                                    break;
+                                }
+                            }
                         }
                     }
                 }

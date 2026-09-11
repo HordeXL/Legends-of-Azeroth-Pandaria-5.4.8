@@ -180,6 +180,12 @@ class boss_chi_ji : public CreatureScript
                         break;
                     case NPC_BEACON_OF_HOPE:
                         summon->CastSpell(summon, SPELL_BEACON_OF_HOPE, false);
+                        // Blazing Song is only safe when its shelter really
+                        // exists. Schedule it from the successful summon,
+                        // not merely from the attempt to cast the beacon.
+                        // Half a second preserves the original timing after
+                        // Beacon of Hope's roughly two-second cast.
+                        events.ScheduleEvent(EVENT_BLAZING_SONG, 500);
                         break;
                 }
             }
@@ -295,13 +301,21 @@ class boss_chi_ji : public CreatureScript
                         {
                             Talk(SAY_SPELL);
 
-                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, CasterSpecTargetSelector()))
-                                DoCast(target, SPELL_BEACON_OF_HOPE_SUMM);
-                            else if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 40.0f, true))
+                            Unit* target = SelectTarget(SELECT_TARGET_RANDOM,
+                                0, CasterSpecTargetSelector());
+                            // The caster selector has no distance limit. A
+                            // ranged formation near maximum spell range can
+                            // therefore be selected even when Beacon of Hope
+                            // itself cannot reach it. Fall back to any player
+                            // safely inside the summon spell's cast range.
+                            if (!target || !me->IsWithinDistInMap(target, 30.0f))
+                                target = SelectTarget(SELECT_TARGET_RANDOM, 0,
+                                    30.0f, true);
+
+                            if (target)
                                 DoCast(target, SPELL_BEACON_OF_HOPE_SUMM);
 
                             events.ScheduleEvent(EVENT_BEACON_OF_HOPE, 50000);
-                            events.ScheduleEvent(EVENT_BLAZING_SONG, 2.5 * IN_MILLISECONDS);
                             break;
                         }
                         case EVENT_INSPIRING_SONG:

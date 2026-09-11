@@ -105,6 +105,11 @@ protected:
     Position GetNearestPosition(const std::vector<Position>& positions);
     int lastMoveTimer = 0;
     uint32 lastLoggedWorldBossContact = 0;
+    uint32 worldBossFormationContact = 0;
+    uint32 worldBossFormationTarget = 0;
+    float worldBossFormationAnchor = 0.0f;
+    bool hasWorldBossFormationAnchor = false;
+    bool worldBossFormationEstablished = false;
     int moveInterval;
 };
 
@@ -193,10 +198,20 @@ private:
         SpreadXuenLightning,
         AvoidNiuzaoCharge,
         AvoidYuLonJadefireBlaze,
-        AvoidYuLonJadefireBreath
+        AvoidYuLonJadefireBreath,
+        MoveYuLonJadefireWallGap,
+        StopYuLonRunSpeed
     };
 
     Reaction GetReaction() const;
+    uint32 niuzaoDodgeLockUntil = 0;
+    float niuzaoDodgeX = 0.0f;
+    float niuzaoDodgeY = 0.0f;
+    float niuzaoDodgeZ = 0.0f;
+    uint32 chiJiDodgeLockUntil = 0;
+    float chiJiDodgeX = 0.0f;
+    float chiJiDodgeY = 0.0f;
+    float chiJiDodgeZ = 0.0f;
 };
 
 class RunAwayAction : public MovementAction

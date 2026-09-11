@@ -336,7 +336,7 @@ namespace
         {
             case PveRaidHasteTrigger::PROVIDER_TIME_WARP:
                 return member->GetClass() == CLASS_MAGE && member->HasSpell(SPELL_TIME_WARP) &&
-                    memberAI->CanCastSpell(SPELL_TIME_WARP, member);
+                    !member->HasSpellCooldown(SPELL_TIME_WARP);
             case PveRaidHasteTrigger::PROVIDER_ANCIENT_HYSTERIA:
                 if (member->GetClass() == CLASS_HUNTER)
                     if (Pet* pet = member->GetPet())
@@ -346,9 +346,14 @@ namespace
             case PveRaidHasteTrigger::PROVIDER_SHAMAN:
                 if (member->GetClass() != CLASS_SHAMAN)
                     return false;
-                if (member->HasSpell(SPELL_HEROISM) && memberAI->CanCastSpell(SPELL_HEROISM, member))
+                // Provider election must survive a momentary GCD or movement
+                // check. The selected bot's own trigger still requires
+                // CanCastSpell before actually casting.
+                if (member->HasSpell(SPELL_HEROISM) &&
+                    !member->HasSpellCooldown(SPELL_HEROISM))
                     return true;
-                return member->HasSpell(SPELL_BLOODLUST) && memberAI->CanCastSpell(SPELL_BLOODLUST, member);
+                return member->HasSpell(SPELL_BLOODLUST) &&
+                    !member->HasSpellCooldown(SPELL_BLOODLUST);
         }
 
         return false;
@@ -361,10 +366,19 @@ bool PveRaidHasteTrigger::IsActive()
         HasRaidHasteLockout(bot))
         return false;
 
+    Group* group = bot->GetGroup();
+    // A full 25-player raid kills these world bosses too quickly for the old
+    // execute-phase thresholds. Open one shared haste window at 70% for that
+    // raid size; ten-player and other smaller groups retain their original
+    // provider thresholds (Time Warp 15, Hysteria 14, Shaman 12).
+    float const burnHealthPct = group && group->GetMembersCount() >= 25 ?
+        70.0f : healthPct;
+
     Unit* target = AI_VALUE(Unit*, "current target");
     Creature* creature = target ? target->ToCreature() : nullptr;
     if (!creature || !creature->IsAlive() ||
-        (!creature->IsDungeonBoss() && !creature->isWorldBoss()) || creature->GetHealthPct() > healthPct)
+        (!creature->IsDungeonBoss() && !creature->isWorldBoss()) ||
+        creature->GetHealthPct() > burnHealthPct)
         return false;
 
     if (petSpell)
@@ -377,9 +391,28 @@ bool PveRaidHasteTrigger::IsActive()
     else if (!bot->HasSpell(spellId) || !botAI->CanCastSpell(spellId, bot))
         return false;
 
-    Group* group = bot->GetGroup();
     if (!group)
         return true;
+
+    // A dead and resurrected provider can lose its personal lockout while the
+    // rest of the raid still has Sated/Exhaustion/Temporal Displacement. The
+    // combat log then shows a second haste cast a few seconds after the first.
+    // Treat a lockout on the majority of nearby living members as proof that
+    // this encounter's raid-haste window has already been used.
+    uint32 nearbyMembers = 0;
+    uint32 lockedMembers = 0;
+    for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+    {
+        Player* member = ref->GetSource();
+        if (!member || !member->IsAlive() || member->GetMap() != bot->GetMap() ||
+            bot->GetDistance(member) > 100.0f)
+            continue;
+        ++nearbyMembers;
+        if (HasRaidHasteLockout(member))
+            ++lockedMembers;
+    }
+    if (nearbyMembers > 1 && lockedMembers * 2 >= nearbyMembers)
+        return false;
 
     // Prefer Time Warp, then Ancient Hysteria, and leave the Shaman cooldown
     // as the final fallback. Within one provider type the lowest GUID is the

@@ -41,7 +41,14 @@ void TCSoapThread(const std::string& host, uint16 port)
     if (!soap_valid_socket(soap_bind(&soap, host.c_str(), port, 100)))
     {
         TC_LOG_ERROR("network.soap", "Couldn't bind to %s:%d", host.c_str(), port);
-        exit(-1);
+        // Never run process-wide static destruction from the SOAP worker.
+        // In particular, a second worldserver instance can already own this
+        // port while MapUpdater threads are active; exit() from here then
+        // destroys their joinable std::threads and calls std::terminate.
+        // Ask the main world loop to perform its ordered shutdown instead.
+        soap_done(&soap);
+        World::StopNow(ERROR_EXIT_CODE);
+        return;
     }
 
     TC_LOG_INFO("network.soap", "Bound to http://%s:%d", host.c_str(), port);

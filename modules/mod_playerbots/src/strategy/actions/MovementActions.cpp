@@ -26,6 +26,7 @@
 #include "ManaTideCoordination.h"
 #include "MotionMaster.h"
 #include "MoveSplineInitArgs.h"
+#include "MoveSpline.h"
 #include "MovementGenerator.h"
 #include "ObjectDefines.h"
 #include "ObjectGuid.h"
@@ -72,8 +73,571 @@ constexpr uint32 ChiJiEntry = 71952;
 constexpr uint32 ChiJiCraneRushSpell = 144470;
 constexpr uint32 ChiJiFirestormEntry = 71971;
 constexpr uint32 ChiJiChildEntry = 71990;
+constexpr uint32 ChiJiBeaconEntry = 71978;
 constexpr uint32 YuLonEntry = 71955;
 constexpr uint32 YuLonJadefireBlazeEntry = 72016;
+constexpr uint32 YuLonJadefireWallEntry = 72020;
+constexpr float CelestialCourtCenterX = -650.03f;
+constexpr float CelestialCourtCenterY = -5016.83f;
+constexpr float YuLonTankMaximumCenterDistance = 82.0f;
+constexpr uint32 RunSpeedMarkerSpell = 96223;
+constexpr uint32 BurningRushSpell = 111400;
+
+bool TryActivateYuLonRunSpeed(PlayerbotAI* ai, Player* bot)
+{
+    if (!ai || !bot || bot->HasAura(RunSpeedMarkerSpell))
+        return false;
+
+    // Direct MoP self speed buffs. HasSpell plus the normal cast path retain
+    // talent, cooldown, resource, stance and CheckCast requirements, so a bot
+    // can only use an ability it legitimately owns. Direction-dependent
+    // teleports and leaps are excluded because they can land in another pool.
+    for (uint32 spellId :
+        { 2983u,    // Sprint
+          137573u,  // Burst of Speed
+          1850u,    // Dash
+          106898u,  // Stampeding Roar
+          85499u,   // Speed of Light
+          108843u,  // Blazing Speed
+          116841u,  // Tiger's Lust
+          96268u,   // Death's Advance
+          68992u,   // Darkflight
+          BurningRushSpell })
+    {
+        if (!bot->HasSpell(spellId) || bot->HasAura(spellId))
+            continue;
+        // Burning Rush costs 4% maximum health each second. Keep a reserve
+        // for incidental Blaze or Wall damage when the warlock is injured.
+        if (spellId == BurningRushSpell && bot->GetHealthPct() < 45.0f)
+            continue;
+        if (ai->CastSpell(spellId, bot))
+            return true;
+    }
+
+    return false;
+}
+
+bool TryActivateYuLonCrossingDefense(PlayerbotAI* ai, Player* bot)
+{
+    if (!ai || !bot)
+        return false;
+
+    // Only use an emergency pool crossing when a class mitigation or
+    // immunity is already active or can be activated legitimately. These
+    // are instant, self-targeted MoP abilities which still allow movement.
+    // HasSpell and CastSpell retain the normal cooldown, resource, stance,
+    // talent and CheckCast restrictions.
+    for (uint32 spellId :
+        { 871u,     // Shield Wall
+          118038u,  // Die by the Sword
+          498u,     // Divine Protection
+          642u,     // Divine Shield
+          19263u,   // Deterrence
+          31224u,   // Cloak of Shadows
+          47585u,   // Dispersion
+          17u,      // Power Word: Shield
+          48707u,   // Anti-Magic Shell
+          48792u,   // Icebound Fortitude
+          108271u,  // Astral Shift
+          30823u,   // Shamanistic Rage
+          11426u,   // Ice Barrier
+          104773u,  // Unending Resolve
+          108416u,  // Sacrificial Pact
+          122783u,  // Diffuse Magic
+          115203u,  // Fortifying Brew
+          22812u,   // Barkskin
+          61336u }) // Survival Instincts
+    {
+        if (bot->HasAura(spellId))
+            return true;
+    }
+
+    for (uint32 spellId :
+        { 871u, 118038u, 498u, 642u, 19263u, 31224u, 47585u, 17u,
+          48707u, 48792u, 108271u, 30823u, 11426u, 104773u, 108416u,
+          122783u, 115203u, 22812u, 61336u })
+        if (bot->HasSpell(spellId) && ai->CastSpell(spellId, bot))
+            return true;
+
+    return false;
+}
+
+bool CanContinueWorldBossAttack(Player* bot, Unit* target)
+{
+    if (!bot || !target || !bot->IsWithinLOSInMap(target))
+        return false;
+
+    bool const melee = PlayerBotSpec::IsMelee(bot, true) &&
+        !PlayerBotSpec::IsHeal(bot, true);
+    if (melee)
+        return bot->IsWithinMeleeRange(target);
+
+    float const edgeDistance = std::max(0.0f,
+        bot->GetExactDist2d(target) - bot->GetCombatReach() -
+        target->GetCombatReach());
+    return edgeDistance <= sPlayerbotAIConfig->spellDistance - 2.0f;
+}
+
+bool GetThreateningYuLonWallGap(Player* bot, float& x, float& y, float& z,
+    bool& alreadyAligned)
+{
+    alreadyAligned = false;
+    if (!bot)
+        return false;
+
+    std::list<Creature*> wallList;
+    bot->GetCreatureListWithEntryInGrid(
+        wallList, YuLonJadefireWallEntry, 200.0f);
+    std::vector<Creature*> walls;
+    for (Creature* wall : wallList)
+        if (wall && wall->IsAlive() && wall->IsInWorld() &&
+            wall->GetMap() == bot->GetMap())
+            walls.push_back(wall);
+    if (walls.size() < 4)
+        return false;
+
+    float const orientation = walls.front()->GetOrientation();
+    float const forwardX = std::cos(orientation);
+    float const forwardY = std::sin(orientation);
+    float const lateralX = -forwardY;
+    float const lateralY = forwardX;
+    auto lateralPosition = [lateralX, lateralY](Creature const* wall)
+    {
+        return wall->GetPositionX() * lateralX +
+            wall->GetPositionY() * lateralY;
+    };
+    std::sort(walls.begin(), walls.end(),
+        [&lateralPosition](Creature const* left, Creature const* right)
+        {
+            return lateralPosition(left) < lateralPosition(right);
+        });
+
+    float largestGap = 0.0f;
+    float gapLeft = 0.0f;
+    float gapRight = 0.0f;
+    for (size_t i = 1; i < walls.size(); ++i)
+    {
+        float const left = lateralPosition(walls[i - 1]);
+        float const right = lateralPosition(walls[i]);
+        if (right - left > largestGap)
+        {
+            largestGap = right - left;
+            gapLeft = left;
+            gapRight = right;
+        }
+    }
+    // Normal adjacent segments are 36 yards apart; the omitted segment makes
+    // the only internal opening roughly 72 yards wide.
+    if (largestGap < 50.0f)
+        return false;
+
+    float wallForward = 0.0f;
+    for (Creature* wall : walls)
+        wallForward += wall->GetPositionX() * forwardX +
+            wall->GetPositionY() * forwardY;
+    wallForward /= float(walls.size());
+    float const botForward = bot->GetPositionX() * forwardX +
+        bot->GetPositionY() * forwardY;
+    float const secondsAheadDistance = botForward - wallForward;
+    if (secondsAheadDistance < -6.0f || secondsAheadDistance > 90.0f)
+        return false;
+
+    float const botLateral = bot->GetPositionX() * lateralX +
+        bot->GetPositionY() * lateralY;
+    // A missing segment leaves a roughly 72-yard center-to-center opening.
+    // Do not force everybody to its exact center: the nearest point at least
+    // 22 yards from either live segment is already safely inside the gap and
+    // can save a far-side player about 20 yards of lateral travel.
+    float const safeLeft = gapLeft + 22.0f;
+    float const safeRight = gapRight - 22.0f;
+    float const targetLateral = std::max(safeLeft,
+        std::min(safeRight, botLateral));
+    float const correction = targetLateral - botLateral;
+    alreadyAligned = std::abs(correction) <= 3.0f;
+    x = bot->GetPositionX() + lateralX * correction;
+    y = bot->GetPositionY() + lateralY * correction;
+    z = bot->GetPositionZ();
+    return true;
+}
+
+bool IsXuenAreaDamageActive(Unit const* target)
+{
+    if (!target || target->GetEntry() != 71953)
+        return false;
+
+    if (target->HasAura(144635))
+        return true;
+
+    if (Spell* spell = target->GetCurrentSpell(CURRENT_GENERIC_SPELL))
+        return spell->GetSpellInfo() &&
+            (spell->GetSpellInfo()->Id == 144642 ||
+             spell->GetSpellInfo()->Id == 144635);
+
+    return false;
+}
+
+bool IsPositionNearCreatureEntry(Player* bot, uint32 entry, float searchRange,
+    float minimumDistance, float x, float y)
+{
+    if (!bot)
+        return false;
+
+    std::list<Creature*> hazards;
+    bot->GetCreatureListWithEntryInGrid(hazards, entry, searchRange);
+    float const minimumDistanceSq = minimumDistance * minimumDistance;
+    for (Creature* hazard : hazards)
+    {
+        if (!hazard || !hazard->IsAlive() || !hazard->IsInWorld() ||
+            hazard->GetMap() != bot->GetMap())
+            continue;
+
+        float const dx = x - hazard->GetPositionX();
+        float const dy = y - hazard->GetPositionY();
+        if (dx * dx + dy * dy < minimumDistanceSq)
+            return true;
+    }
+
+    return false;
+}
+
+bool IsSegmentNearCreatureEntry(Player* bot, uint32 entry, float searchRange,
+    float minimumDistance, float fromX, float fromY, float toX, float toY)
+{
+    if (!bot)
+        return false;
+
+    std::list<Creature*> hazards;
+    bot->GetCreatureListWithEntryInGrid(hazards, entry, searchRange);
+    float const segmentX = toX - fromX;
+    float const segmentY = toY - fromY;
+    float const segmentLengthSq = segmentX * segmentX + segmentY * segmentY;
+    float const minimumDistanceSq = minimumDistance * minimumDistance;
+    for (Creature* hazard : hazards)
+    {
+        if (!hazard || !hazard->IsAlive() || !hazard->IsInWorld() ||
+            hazard->GetMap() != bot->GetMap())
+            continue;
+
+        float projection = 0.0f;
+        if (segmentLengthSq > 0.01f)
+        {
+            projection = ((hazard->GetPositionX() - fromX) * segmentX +
+                (hazard->GetPositionY() - fromY) * segmentY) /
+                segmentLengthSq;
+            projection = std::max(0.0f, std::min(1.0f, projection));
+        }
+        float const closestX = fromX + segmentX * projection;
+        float const closestY = fromY + segmentY * projection;
+        float const dx = closestX - hazard->GetPositionX();
+        float const dy = closestY - hazard->GetPositionY();
+        if (dx * dx + dy * dy < minimumDistanceSq)
+            return true;
+    }
+
+    return false;
+}
+
+bool FindHazardAvoidingWaypoint(Player* bot, uint32 entry, float searchRange,
+    float pathClearance, float destinationX, float destinationY,
+    float& waypointX, float& waypointY, float& waypointZ)
+{
+    if (!bot)
+        return false;
+
+    std::list<Creature*> hazards;
+    bot->GetCreatureListWithEntryInGrid(hazards, entry, searchRange);
+    hazards.remove_if([bot](Creature* hazard)
+    {
+        return !hazard || !hazard->IsAlive() || !hazard->IsInWorld() ||
+            hazard->GetMap() != bot->GetMap();
+    });
+    if (hazards.empty())
+        return false;
+
+    auto pointIsNearHazard = [&hazards](float x, float y,
+        float clearance)
+    {
+        float const clearanceSq = clearance * clearance;
+        for (Creature* hazard : hazards)
+        {
+            float const dx = x - hazard->GetPositionX();
+            float const dy = y - hazard->GetPositionY();
+            if (dx * dx + dy * dy < clearanceSq)
+                return true;
+        }
+        return false;
+    };
+    auto segmentIsNearHazard = [&hazards](float fromX, float fromY,
+        float toX, float toY, float clearance)
+    {
+        float const segmentX = toX - fromX;
+        float const segmentY = toY - fromY;
+        float const segmentLengthSq = segmentX * segmentX +
+            segmentY * segmentY;
+        float const clearanceSq = clearance * clearance;
+        for (Creature* hazard : hazards)
+        {
+            // A bot which is already clipped by a pool must be allowed to
+            // leave its radius. The part of that route inside the starting
+            // pool is unavoidable; every other pool and the endpoint still
+            // have to remain clear.
+            float const startDx = fromX - hazard->GetPositionX();
+            float const startDy = fromY - hazard->GetPositionY();
+            if (startDx * startDx + startDy * startDy < clearanceSq)
+                continue;
+
+            float projection = 0.0f;
+            if (segmentLengthSq > 0.01f)
+            {
+                projection = ((hazard->GetPositionX() - fromX) * segmentX +
+                    (hazard->GetPositionY() - fromY) * segmentY) /
+                    segmentLengthSq;
+                projection = std::max(0.0f,
+                    std::min(1.0f, projection));
+            }
+            float const closestX = fromX + segmentX * projection;
+            float const closestY = fromY + segmentY * projection;
+            float const dx = closestX - hazard->GetPositionX();
+            float const dy = closestY - hazard->GetPositionY();
+            if (dx * dx + dy * dy < clearanceSq)
+                return true;
+        }
+        return false;
+    };
+
+    float bestRemainingDistance = FLT_MAX;
+    bool found = false;
+    float const phase = float(bot->GetGUID().GetCounter() % 32) *
+        float(M_PI / 16.0);
+    for (float const stepDistance :
+        { 8.0f, 12.0f, 18.0f, 24.0f, 32.0f })
+    {
+        for (uint32 i = 0; i < 32; ++i)
+        {
+            float const angle = phase + float(i) * float(M_PI / 16.0);
+            float candidateX = bot->GetPositionX() +
+                std::cos(angle) * stepDistance;
+            float candidateY = bot->GetPositionY() +
+                std::sin(angle) * stepDistance;
+            float candidateZ = bot->GetPositionZ();
+            if (pointIsNearHazard(candidateX, candidateY,
+                    std::max(13.0f, pathClearance)) ||
+                segmentIsNearHazard(bot->GetPositionX(), bot->GetPositionY(),
+                    candidateX, candidateY, pathClearance))
+                continue;
+            if (!bot->GetMap()->CheckCollisionAndGetValidCoords(bot,
+                    bot->GetPositionX(), bot->GetPositionY(),
+                    bot->GetPositionZ(), candidateX, candidateY, candidateZ,
+                    false))
+                continue;
+
+            float const dx = candidateX - destinationX;
+            float const dy = candidateY - destinationY;
+            float const remainingDistance = std::sqrt(dx * dx + dy * dy);
+            if (remainingDistance >= bestRemainingDistance)
+                continue;
+
+            found = true;
+            bestRemainingDistance = remainingDistance;
+            waypointX = candidateX;
+            waypointY = candidateY;
+            waypointZ = candidateZ;
+        }
+        if (found)
+            return true;
+    }
+
+    return false;
+}
+
+bool FindSafePositionFromCreatureHazards(Player* bot, uint32 entry,
+    float searchRange, float minimumDistance, float& x, float& y, float& z,
+    bool preferDestination = false, float preferredX = 0.0f,
+    float preferredY = 0.0f, float maximumCenterDistance = FLT_MAX,
+    float centerX = 0.0f, float centerY = 0.0f,
+    bool allowHazardCrossing = false)
+{
+    if (!bot)
+        return false;
+
+    std::list<Creature*> hazards;
+    bot->GetCreatureListWithEntryInGrid(hazards, entry, searchRange);
+    hazards.remove_if([bot](Creature* hazard)
+    {
+        return !hazard || !hazard->IsAlive() || !hazard->IsInWorld() ||
+            hazard->GetMap() != bot->GetMap();
+    });
+    if (hazards.empty())
+        return false;
+
+    // Pools can overlap. Moving directly away from only the closest one can
+    // place the bot inside its neighbour, so sample reachable points and
+    // require clearance from every live summon. Start with short rings: the
+    // previous 19/34-yard exclusion combined with a first 12-yard step left
+    // no valid point when Yu'lon dropped eight pools across the raid, causing
+    // the action to fail and the bot to remain in the damage. A 13-yard
+    // clearance covers the scripted ground effect with a practical margin.
+    float const phase = float(bot->GetGUID().GetCounter() % 32) *
+        float(M_PI / 16.0);
+    for (float const moveDistance :
+        { 8.0f, 12.0f, 16.0f, 22.0f, 30.0f, 40.0f, 52.0f })
+    {
+        bool found = false;
+        float bestScore = -FLT_MAX;
+        float bestX = 0.0f;
+        float bestY = 0.0f;
+        float bestZ = bot->GetPositionZ();
+        for (uint32 i = 0; i < 32; ++i)
+        {
+            float const angle = phase + float(i) * float(M_PI / 16.0);
+            float candidateX = bot->GetPositionX() +
+                std::cos(angle) * moveDistance;
+            float candidateY = bot->GetPositionY() +
+                std::sin(angle) * moveDistance;
+            float candidateZ = bot->GetPositionZ();
+            float const centerDx = candidateX - centerX;
+            float const centerDy = candidateY - centerY;
+            if (maximumCenterDistance < FLT_MAX &&
+                centerDx * centerDx + centerDy * centerDy >
+                maximumCenterDistance * maximumCenterDistance)
+                continue;
+
+            float clearance = FLT_MAX;
+            bool pathClear = true;
+            for (Creature* hazard : hazards)
+            {
+                float const dx = candidateX - hazard->GetPositionX();
+                float const dy = candidateY - hazard->GetPositionY();
+                clearance = std::min(clearance, std::sqrt(dx * dx + dy * dy));
+
+                // Crossing a pool which contains the start point is required
+                // to escape it. Do not, however, accept a straight route
+                // which intersects a different pool on its way to an
+                // otherwise safe destination.
+                float const startDx = bot->GetPositionX() -
+                    hazard->GetPositionX();
+                float const startDy = bot->GetPositionY() -
+                    hazard->GetPositionY();
+                if (startDx * startDx + startDy * startDy <
+                    minimumDistance * minimumDistance)
+                    continue;
+
+                float const segmentX = candidateX - bot->GetPositionX();
+                float const segmentY = candidateY - bot->GetPositionY();
+                float const segmentLengthSq = segmentX * segmentX +
+                    segmentY * segmentY;
+                float projection = ((hazard->GetPositionX() -
+                    bot->GetPositionX()) * segmentX +
+                    (hazard->GetPositionY() - bot->GetPositionY()) *
+                    segmentY) / std::max(0.01f, segmentLengthSq);
+                projection = std::max(0.0f, std::min(1.0f, projection));
+                float const closestX = bot->GetPositionX() +
+                    segmentX * projection;
+                float const closestY = bot->GetPositionY() +
+                    segmentY * projection;
+                float const pathDx = closestX - hazard->GetPositionX();
+                float const pathDy = closestY - hazard->GetPositionY();
+                if (!allowHazardCrossing &&
+                    pathDx * pathDx + pathDy * pathDy <
+                    minimumDistance * minimumDistance)
+                {
+                    pathClear = false;
+                    break;
+                }
+            }
+            if (!pathClear || clearance < minimumDistance)
+                continue;
+            if (!bot->GetMap()->CheckCollisionAndGetValidCoords(bot,
+                    bot->GetPositionX(), bot->GetPositionY(),
+                    bot->GetPositionZ(), candidateX, candidateY, candidateZ,
+                    false))
+                continue;
+
+            // When the wall is advancing, leave the pool on the side which
+            // also approaches its opening. This prevents a successful pool
+            // dodge from sending the bot away from the only safe wall lane.
+            float score = clearance;
+            if (preferDestination)
+            {
+                float const preferredDx = candidateX - preferredX;
+                float const preferredDy = candidateY - preferredY;
+                score = -std::sqrt(preferredDx * preferredDx +
+                    preferredDy * preferredDy);
+            }
+            if (score <= bestScore)
+                continue;
+
+            found = true;
+            bestScore = score;
+            bestX = candidateX;
+            bestY = candidateY;
+            bestZ = candidateZ;
+        }
+        if (found)
+        {
+            x = bestX;
+            y = bestY;
+            z = bestZ;
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool IsYuLonMeleeAreaBlocked(Player* bot, Creature* yulon)
+{
+    if (!bot || !yulon)
+        return false;
+
+    std::list<Creature*> hazards;
+    bot->GetCreatureListWithEntryInGrid(
+        hazards, YuLonJadefireBlazeEntry, 120.0f);
+    hazards.remove_if([bot](Creature* hazard)
+    {
+        return !hazard || !hazard->IsAlive() || !hazard->IsInWorld() ||
+            hazard->GetMap() != bot->GetMap();
+    });
+    if (hazards.empty())
+        return false;
+
+    // Check a five-point arc behind the boss, where melee formation slots
+    // need to stand. One clipped edge still leaves room to attack; move the
+    // boss only when the middle is covered or most of the rear arc is lost.
+    uint32 blocked = 0;
+    bool middleBlocked = false;
+    float const rearDistance = std::max(6.0f,
+        yulon->GetCombatReach() + 3.0f);
+    for (int32 index = -2; index <= 2; ++index)
+    {
+        float const angle = Position::NormalizeOrientation(
+            yulon->GetOrientation() + float(M_PI) +
+            float(index) * float(M_PI / 12.0));
+        float const x = yulon->GetPositionX() +
+            std::cos(angle) * rearDistance;
+        float const y = yulon->GetPositionY() +
+            std::sin(angle) * rearDistance;
+        bool pointBlocked = false;
+        for (Creature* hazard : hazards)
+        {
+            float const dx = x - hazard->GetPositionX();
+            float const dy = y - hazard->GetPositionY();
+            if (dx * dx + dy * dy < 13.0f * 13.0f)
+            {
+                pointBlocked = true;
+                break;
+            }
+        }
+        if (pointBlocked)
+        {
+            ++blocked;
+            if (index == 0)
+                middleBlocked = true;
+        }
+    }
+
+    return middleBlocked || blocked >= 3;
+}
 
 bool IsNiuzaoChargeActive(Unit const* target)
 {
@@ -88,6 +652,48 @@ bool IsNiuzaoChargeActive(Unit const* target)
             spell->GetSpellInfo()->Id == NiuzaoChargeSpell;
 
     return false;
+}
+
+bool GetNiuzaoChargeDirection(Creature* niuzao, float& forwardX,
+    float& forwardY, float& remainingDistance)
+{
+    if (!niuzao)
+        return false;
+
+    bool const charging = niuzao->HasAura(NiuzaoChargeSpell);
+    float destinationX = -740.79f;
+    float destinationY = -5019.06f;
+    if (charging && niuzao->movespline &&
+        niuzao->movespline->Initialized() && !niuzao->movespline->Finalized())
+    {
+        G3D::Vector3 const destination =
+            niuzao->movespline->FinalDestination();
+        destinationX = destination.x;
+        destinationY = destination.y;
+    }
+    else if (charging)
+    {
+        forwardX = std::cos(niuzao->GetOrientation());
+        forwardY = std::sin(niuzao->GetOrientation());
+        remainingDistance = 30.0f;
+        return true;
+    }
+
+    forwardX = destinationX - niuzao->GetPositionX();
+    forwardY = destinationY - niuzao->GetPositionY();
+    remainingDistance = std::sqrt(forwardX * forwardX +
+        forwardY * forwardY);
+    if (remainingDistance < 0.5f)
+    {
+        forwardX = std::cos(niuzao->GetOrientation());
+        forwardY = std::sin(niuzao->GetOrientation());
+        remainingDistance = 30.0f;
+        return true;
+    }
+
+    forwardX /= remainingDistance;
+    forwardY /= remainingDistance;
+    return true;
 }
 
 bool IsChiJiCraneRushActive(Unit const* target)
@@ -148,8 +754,8 @@ Creature* FindThreateningChiJiChild(Player* bot, Creature* chiJi)
         bool const crossingSoon = botProgress > -5.0f &&
             childProgress <= botProgress + 24.0f &&
             childProgress >= botProgress - 14.0f &&
-            std::abs(lateral) < 14.0f;
-        if (!crossingSoon && directDistance >= 16.0f)
+            std::abs(lateral) < 11.5f;
+        if (!crossingSoon && directDistance >= 13.0f)
             continue;
 
         float const score = directDistance + std::abs(lateral) * 0.5f;
@@ -161,6 +767,214 @@ Creature* FindThreateningChiJiChild(Player* bot, Creature* chiJi)
     }
 
     return best;
+}
+
+float ScoreChiJiFirestormSafety(Player* bot, float x, float y);
+
+float GetGroupClearanceAt(Player* bot, float x, float y)
+{
+    if (!bot || !bot->GetGroup())
+        return 1000.0f;
+
+    float clearance = FLT_MAX;
+    for (GroupReference* ref = bot->GetGroup()->GetFirstMember(); ref;
+        ref = ref->next())
+    {
+        Player* member = ref->GetSource();
+        if (!member || member == bot || !member->IsAlive() ||
+            member->GetMap() != bot->GetMap())
+            continue;
+
+        float const dx = x - member->GetPositionX();
+        float const dy = y - member->GetPositionY();
+        clearance = std::min(clearance, std::sqrt(dx * dx + dy * dy));
+    }
+
+    return clearance == FLT_MAX ? 1000.0f : clearance;
+}
+
+bool GetChiJiBeaconPosition(Player* bot, Creature* beacon,
+    float& x, float& y, float& z)
+{
+    if (!bot || !beacon)
+        return false;
+
+    float bestScore = -FLT_MAX;
+    bool found = false;
+    // Stay well inside the Beacon of Hope area, but do not send the complete
+    // raid to one exact coordinate. Start each bot at a deterministic point
+    // on the ring, then retain the safest reachable candidate.
+    uint32 const first = bot->GetGUID().GetCounter() % 12u;
+    for (uint32 offset = 0; offset < 12u; ++offset)
+    {
+        uint32 const slot = (first + offset) % 12u;
+        float const angle = float(slot) * float(M_PI) / 6.0f;
+        float candidateX = beacon->GetPositionX() + std::cos(angle) * 3.5f;
+        float candidateY = beacon->GetPositionY() + std::sin(angle) * 3.5f;
+        float candidateZ = beacon->GetPositionZ();
+        if (!bot->GetMap()->CheckCollisionAndGetValidCoords(bot,
+                bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(),
+                candidateX, candidateY, candidateZ, false))
+            continue;
+
+        float const firestormClearance = ScoreChiJiFirestormSafety(
+            bot, candidateX, candidateY);
+        if (firestormClearance == -FLT_MAX)
+            continue;
+
+        float const move = bot->GetExactDist2d(candidateX, candidateY);
+        float const separation = GetGroupClearanceAt(
+            bot, candidateX, candidateY);
+        float const score = std::min(firestormClearance, 30.0f) * 2.0f +
+            std::min(separation, 8.0f) - move * 0.05f;
+        if (!found || score > bestScore)
+        {
+            bestScore = score;
+            x = candidateX;
+            y = candidateY;
+            z = candidateZ;
+            found = true;
+        }
+    }
+
+    // Blazing Song is lethal. If every ring point overlaps a Firestorm,
+    // reaching the beacon is still safer than remaining outside its shield.
+    if (!found)
+    {
+        x = beacon->GetPositionX();
+        y = beacon->GetPositionY();
+        z = beacon->GetPositionZ();
+        found = bot->GetMap()->CheckCollisionAndGetValidCoords(bot,
+            bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(),
+            x, y, z, false);
+    }
+    return found;
+}
+
+float ScoreChiJiFirestormSafety(Player* bot, float x, float y)
+{
+    if (!bot)
+        return -FLT_MAX;
+
+    std::list<Creature*> firestorms;
+    bot->GetCreatureListWithEntryInGrid(
+        firestorms, ChiJiFirestormEntry, 120.0f);
+
+    float clearance = FLT_MAX;
+    bool found = false;
+    for (Creature* firestorm : firestorms)
+    {
+        if (!firestorm || !firestorm->IsAlive() || !firestorm->IsInWorld() ||
+            firestorm->GetMap() != bot->GetMap())
+            continue;
+
+        float const dx = x - firestorm->GetPositionX();
+        float const dy = y - firestorm->GetPositionY();
+        float const candidateDistance = std::sqrt(dx * dx + dy * dy);
+        float const currentDistance = bot->GetExactDist2d(firestorm);
+        float const awayX = bot->GetPositionX() - firestorm->GetPositionX();
+        float const awayY = bot->GetPositionY() - firestorm->GetPositionY();
+        float const moveX = x - bot->GetPositionX();
+        float const moveY = y - bot->GetPositionY();
+        bool const movingToward = awayX * moveX + awayY * moveY < -0.25f;
+
+        // Never dodge a bird into Firestorm. If this is the Firestorm the bot
+        // has just escaped, also reject the side which moves back toward it,
+        // even when that candidate happens to remain barely outside the DBC
+        // damage radius.
+        if (candidateDistance < 19.0f ||
+            (currentDistance < 24.0f && movingToward))
+        {
+            return -FLT_MAX;
+        }
+
+        clearance = std::min(clearance, candidateDistance);
+        found = true;
+    }
+
+    return found ? clearance : 1000.0f;
+}
+
+float ScoreChiJiDodgePosition(Player* bot, Creature* chiJi, float x, float y)
+{
+    if (!bot || !chiJi)
+        return -FLT_MAX;
+
+    float const firestormClearance = ScoreChiJiFirestormSafety(bot, x, y);
+    if (firestormClearance == -FLT_MAX)
+        return -FLT_MAX;
+
+    std::list<Creature*> children;
+    bot->GetCreatureListWithEntryInGrid(children, ChiJiChildEntry, 120.0f);
+
+    // Score against every child that can still cross the candidate point.
+    // Looking only at the nearest lane makes a bot step directly into the
+    // neighbouring lane and reverse direction on its next AI tick.
+    float clearance = FLT_MAX;
+    bool found = false;
+    for (Creature* child : children)
+    {
+        if (!child || !child->IsAlive() || !child->IsInWorld() ||
+            child->GetMap() != bot->GetMap())
+            continue;
+
+        float pathX = child->GetPositionX() - chiJi->GetPositionX();
+        float pathY = child->GetPositionY() - chiJi->GetPositionY();
+        float const childProgress = std::sqrt(pathX * pathX + pathY * pathY);
+        if (childProgress < 0.5f)
+        {
+            pathX = std::cos(child->GetOrientation());
+            pathY = std::sin(child->GetOrientation());
+        }
+        else
+        {
+            pathX /= childProgress;
+            pathY /= childProgress;
+        }
+
+        float const candidateX = x - chiJi->GetPositionX();
+        float const candidateY = y - chiJi->GetPositionY();
+        float const candidateProgress = candidateX * pathX + candidateY * pathY;
+        if (candidateProgress < -5.0f ||
+            childProgress > candidateProgress + 30.0f ||
+            childProgress < candidateProgress - 10.0f)
+            continue;
+
+        float const lateral = std::abs(-candidateX * pathY + candidateY * pathX);
+        float const directX = x - child->GetPositionX();
+        float const directY = y - child->GetPositionY();
+        float const direct = std::sqrt(directX * directX + directY * directY);
+        clearance = std::min(clearance, std::min(lateral, direct));
+        found = true;
+    }
+
+    float const childClearance = found ? clearance : 1000.0f;
+    // Bird-lane clearance remains the primary score. Firestorm clearance is
+    // a bounded tie-breaker after unsafe/toward-vortex candidates were
+    // rejected above.
+    return childClearance + std::min(firestormClearance, 40.0f) * 0.01f;
+}
+
+bool IsPositionInsideChiJiFirestorm(Player* bot, float x, float y)
+{
+    if (!bot)
+        return false;
+
+    std::list<Creature*> firestorms;
+    bot->GetCreatureListWithEntryInGrid(firestorms, ChiJiFirestormEntry, 120.0f);
+    for (Creature* firestorm : firestorms)
+    {
+        if (!firestorm || !firestorm->IsAlive() || !firestorm->IsInWorld() ||
+            firestorm->GetMap() != bot->GetMap())
+            continue;
+        float const dx = x - firestorm->GetPositionX();
+        float const dy = y - firestorm->GetPositionY();
+        // Spell 144462 has a ten-yard DBC radius. Keep extra room for movement
+        // interpolation and the next server update.
+        if (dx * dx + dy * dy < 16.0f * 16.0f)
+            return true;
+    }
+    return false;
 }
 
 // Temporary, targeted pre-pull tracing. Record the action that actually
@@ -1763,6 +2577,22 @@ BossMechanicsAction::Reaction BossMechanicsAction::GetReaction() const
     // step across its lane before it arrives.
     if (Creature* chiJi = bot->FindNearestCreature(ChiJiEntry, 200.0f, true))
     {
+        // Beacon of Hope is the only intended answer to the lethal Blazing
+        // Song. Move the complete raid as soon as the beacon is summoned;
+        // the old health-percent condition sent only already-injured bots and
+        // allowed ordinary formation/chase movement to keep everyone else out.
+        if (Creature* beacon = bot->FindNearestCreature(
+                ChiJiBeaconEntry, 120.0f, true))
+        {
+            if (bot->GetExactDist2d(beacon) > 7.0f)
+                return Reaction::MoveChiJiBeacon;
+
+            // Already inside the shield: hold this point while the ordinary
+            // formation and reach actions remain suppressed, but allow
+            // healing and damage casts to continue during Blazing Song.
+            return Reaction::None;
+        }
+
         // The last children remain dangerous for a few seconds after the
         // boss aura ends, so key the dodge from the actual moving summon.
         if (FindThreateningChiJiChild(bot, chiJi))
@@ -1771,9 +2601,6 @@ BossMechanicsAction::Reaction BossMechanicsAction::GetReaction() const
                 bot->FindNearestCreature(ChiJiFirestormEntry, 18.0f, true))
             if (bot->GetExactDist2d(firestorm) < 16.0f)
                 return Reaction::AvoidChiJiFirestorm;
-        if (bot->GetHealthPct() < 70.0f &&
-            bot->FindNearestCreature(71978, 100.0f, true))
-            return Reaction::MoveChiJiBeacon;
     }
 
     // Xuen's local selector launches eight Chi Barrage missiles (144642 ->
@@ -1784,27 +2611,51 @@ BossMechanicsAction::Reaction BossMechanicsAction::GetReaction() const
     // effect applies a warning aura to the selected player.
     if (Creature* xuen = bot->FindNearestCreature(71953, 200.0f, true))
     {
-        bool incomingAreaDamage = xuen->HasAura(144635);
-        if (Spell* spell = xuen->GetCurrentSpell(CURRENT_GENERIC_SPELL))
-            if (spell->GetSpellInfo() &&
-                (spell->GetSpellInfo()->Id == 144642 ||
-                 spell->GetSpellInfo()->Id == 144635))
-                incomingAreaDamage = true;
+        bool const incomingAreaDamage = IsXuenAreaDamageActive(xuen);
 
         bool const activeTank = PlayerBotSpec::IsTank(bot, true) &&
             xuen->GetVictim() == bot;
         if (incomingAreaDamage && bot->GetGroup() && !activeTank)
         {
+            // Xuen's selector first removes tanks and melee and uses up to
+            // eight ranged/healers. It falls back to the whole raid only
+            // when fewer than eight preferred targets exist. Mirror that
+            // choice here: otherwise the packed melee group repeatedly
+            // retreats even though none of them can receive the spell in a
+            // normal 25-player roster.
+            auto isPreferredTarget = [](Player* player)
+            {
+                return player && !PlayerBotSpec::IsTank(player, true) &&
+                    (!PlayerBotSpec::IsMelee(player, true) ||
+                     PlayerBotSpec::IsHeal(player, true));
+            };
+            uint32 preferredCount = 0;
+            for (GroupReference* ref = bot->GetGroup()->GetFirstMember(); ref;
+                ref = ref->next())
+            {
+                Player* member = ref->GetSource();
+                if (member && member->IsAlive() &&
+                    member->GetMap() == bot->GetMap() &&
+                    isPreferredTarget(member))
+                    ++preferredCount;
+            }
+            bool const preferredOnly = preferredCount >= 8u;
+            if (preferredOnly && !isPreferredTarget(bot))
+                return Reaction::None;
+
             // Assigned world-boss slots already provide the required spread.
             // Use emergency movement only if two living raid members are
-            // still close enough for their missiles to overlap.
+            // still close enough for their missiles to overlap. When the
+            // preferred pool is large enough, ignore melee here too: they
+            // are not selected and stand at a separate inner boss arc.
             for (GroupReference* ref = bot->GetGroup()->GetFirstMember(); ref;
                 ref = ref->next())
             {
                 Player* member = ref->GetSource();
                 if (member && member != bot && member->IsAlive() &&
                     member->GetMap() == bot->GetMap() &&
-                    bot->GetExactDist2d(member) < 9.0f)
+                    (!preferredOnly || isPreferredTarget(member)) &&
+                    bot->GetExactDist2d(member) < 12.0f)
                 {
                     return Reaction::SpreadXuenLightning;
                 }
@@ -1820,20 +2671,29 @@ BossMechanicsAction::Reaction BossMechanicsAction::GetReaction() const
     {
         if (IsNiuzaoChargeActive(niuzao))
         {
-            float const orientation = niuzao->GetOrientation();
+            if (getMSTime() < niuzaoDodgeLockUntil &&
+                bot->GetExactDist2d(niuzaoDodgeX, niuzaoDodgeY) > 2.0f)
+                return Reaction::AvoidNiuzaoCharge;
+
+            float forwardX = 0.0f;
+            float forwardY = 0.0f;
+            float remainingDistance = 0.0f;
+            if (!GetNiuzaoChargeDirection(niuzao, forwardX, forwardY,
+                    remainingDistance))
+                return Reaction::None;
             float const dx = bot->GetPositionX() - niuzao->GetPositionX();
             float const dy = bot->GetPositionY() - niuzao->GetPositionY();
-            float const forward = dx * std::cos(orientation) +
-                dy * std::sin(orientation);
-            float const lateral = -dx * std::sin(orientation) +
-                dy * std::cos(orientation);
+            float const forward = dx * forwardX + dy * forwardY;
+            float const lateral = -dx * forwardY + dy * forwardX;
 
             // During the warning cast, clear the lane ahead of Niuzao. Once
-            // he is moving, react only when his current segment comes near.
+            // moving, use the spline destination rather than creature facing:
+            // MoveCharge does not reliably rotate Niuzao to the travel line.
+            // The old orientation check missed the entire first 90-yard run.
             bool const preparing = !niuzao->HasAura(NiuzaoChargeSpell);
             bool const threatened = std::abs(lateral) < 14.0f &&
-                ((preparing && forward > -8.0f && forward < 55.0f) ||
-                 (!preparing && bot->GetExactDist2d(niuzao) < 30.0f));
+                forward > -12.0f &&
+                forward < remainingDistance + (preparing ? 25.0f : 12.0f);
             if (threatened)
                 return Reaction::AvoidNiuzaoCharge;
         }
@@ -1845,15 +2705,45 @@ BossMechanicsAction::Reaction BossMechanicsAction::GetReaction() const
     // summon before considering the boss's frontal breath positioning.
     if (Creature* yulon = bot->FindNearestCreature(YuLonEntry, 200.0f, true))
     {
+        bool const activeTank = PlayerBotSpec::IsTank(bot, true) &&
+            yulon->GetVictim() == bot;
+
+        float wallGapX = 0.0f;
+        float wallGapY = 0.0f;
+        float wallGapZ = 0.0f;
+        bool wallGapAligned = false;
+        bool const wallThreatening = GetThreateningYuLonWallGap(bot,
+            wallGapX, wallGapY, wallGapZ, wallGapAligned);
+
+        // Once an advancing wall requires lateral movement, reaching its
+        // opening outranks the pool dodge. Otherwise entering a pool on the
+        // only route makes the pool action pull the bot backwards, and the
+        // two reactions alternate until the wall arrives.
+        if (wallThreatening && !wallGapAligned)
+            return Reaction::MoveYuLonJadefireWallGap;
+
         if (Creature* blaze = bot->FindNearestCreature(
                 YuLonJadefireBlazeEntry, 22.0f, true))
-            if (bot->GetExactDist2d(blaze) < 16.0f)
+            // Start leaving before the visible edge reaches the bot. Waiting
+            // until the damage radius is already occupied costs several
+            // ticks when multiple pools overlap or block the direct route.
+            if (bot->GetExactDist2d(blaze) < 15.0f)
                 return Reaction::AvoidYuLonJadefireBlaze;
+
+        // The tank can be personally safe while the entire rear melee arc is
+        // covered. Pull Yu'lon forward until both the tank point and enough
+        // space behind the boss are clear, then the melee formation follows.
+        if (activeTank && IsYuLonMeleeAreaBlocked(bot, yulon))
+            return Reaction::AvoidYuLonJadefireBlaze;
+
+        if (bot->HasAura(BurningRushSpell) &&
+            (!wallThreatening || wallGapAligned))
+            return Reaction::StopYuLonRunSpeed;
 
         // Jadefire Breath (144530) is a frontal attack. Non-tanks move behind
         // Yu'lon while the cast is visible; the active tank keeps her facing
         // away from the raid.
-        if (!PlayerBotSpec::IsTank(bot, true) || yulon->GetVictim() != bot)
+        if (!activeTank)
             if (Spell* spell = yulon->GetCurrentSpell(CURRENT_GENERIC_SPELL))
                 if (spell->GetSpellInfo() && spell->GetSpellInfo()->Id == 144530)
                     return Reaction::AvoidYuLonJadefireBreath;
@@ -1869,7 +2759,28 @@ bool BossMechanicsAction::isUseful()
 
 bool BossMechanicsAction::Execute(Event /*event*/)
 {
-    switch (GetReaction())
+    Reaction const reaction = GetReaction();
+
+    // Survival movement must pre-empt an in-progress cast. Waiting for a
+    // Firestorm tick or an approaching Blazing Nova lane to finish the cast
+    // is too late; once the bot has crossed the safe boundary GetReaction()
+    // becomes None and ordinary damage/healing actions are immediately free
+    // to resume while the bot holds that safe point.
+    if ((reaction == Reaction::AvoidChiJiFirestorm ||
+         reaction == Reaction::AvoidChiJiBlazingNova ||
+         reaction == Reaction::MoveChiJiBeacon ||
+         reaction == Reaction::SpreadXuenLightning ||
+         reaction == Reaction::AvoidNiuzaoCharge ||
+         reaction == Reaction::AvoidYuLonJadefireBlaze ||
+         reaction == Reaction::AvoidYuLonJadefireBreath ||
+         reaction == Reaction::MoveYuLonJadefireWallGap) &&
+        bot->IsNonMeleeSpellCasted(true))
+    {
+        bot->CastStop();
+        botAI->InterruptSpell();
+    }
+
+    switch (reaction)
     {
         case Reaction::ApproachNalak:
             if (Creature* nalak = bot->FindNearestCreature(69099, 200.0f, true))
@@ -2004,34 +2915,26 @@ bool BossMechanicsAction::Execute(Event /*event*/)
         case Reaction::SpreadOrdosBurningSoul:
             return MoveFromGroup(20.0f, MovementPriority::MOVEMENT_FORCED);
         case Reaction::MoveChiJiBeacon:
-            if (Creature* beacon = bot->FindNearestCreature(71978, 100.0f, true))
-                return MoveTo(beacon, 3.0f, MovementPriority::MOVEMENT_FORCED);
+            if (Creature* beacon = bot->FindNearestCreature(
+                    ChiJiBeaconEntry, 120.0f, true))
+            {
+                float x = 0.0f;
+                float y = 0.0f;
+                float z = bot->GetPositionZ();
+                if (GetChiJiBeaconPosition(bot, beacon, x, y, z))
+                    return MoveTo(bot->GetMapId(), x, y, z, false, false,
+                        true, true, MovementPriority::MOVEMENT_FORCED, true);
+            }
             break;
         case Reaction::AvoidChiJiFirestorm:
-            if (Creature* firestorm =
-                    bot->FindNearestCreature(ChiJiFirestormEntry, 18.0f, true))
             {
-                float awayX = bot->GetPositionX() - firestorm->GetPositionX();
-                float awayY = bot->GetPositionY() - firestorm->GetPositionY();
-                float distance = std::sqrt(awayX * awayX + awayY * awayY);
-                if (distance < 0.5f)
-                {
-                    float const angle = float(bot->GetGUID().GetCounter() % 16) *
-                        float(M_PI / 8.0);
-                    awayX = std::cos(angle);
-                    awayY = std::sin(angle);
-                    distance = 1.0f;
-                }
-                float const correction = 19.0f - distance;
-                float x = bot->GetPositionX() + awayX / distance * correction;
-                float y = bot->GetPositionY() + awayY / distance * correction;
+                float x = 0.0f;
+                float y = 0.0f;
                 float z = bot->GetPositionZ();
-                if (!bot->GetMap()->CheckCollisionAndGetValidCoords(bot,
-                        bot->GetPositionX(), bot->GetPositionY(),
-                        bot->GetPositionZ(), x, y, z, false))
-                    return false;
-                return MoveTo(bot->GetMapId(), x, y, z, false, false, true,
-                    true, MovementPriority::MOVEMENT_FORCED, true);
+                if (FindSafePositionFromCreatureHazards(bot,
+                        ChiJiFirestormEntry, 120.0f, 19.0f, x, y, z))
+                    return MoveTo(bot->GetMapId(), x, y, z, false, false,
+                        true, true, MovementPriority::MOVEMENT_FORCED, true);
             }
             break;
         case Reaction::AvoidChiJiBlazingNova:
@@ -2039,9 +2942,26 @@ bool BossMechanicsAction::Execute(Event /*event*/)
                     bot->FindNearestCreature(ChiJiEntry, 200.0f, true))
                 if (Creature* child = FindThreateningChiJiChild(bot, chiJi))
                 {
-                    float pathX = child->GetPositionX() - chiJi->GetPositionX();
-                    float pathY = child->GetPositionY() - chiJi->GetPositionY();
-                    float pathLength = std::sqrt(pathX * pathX + pathY * pathY);
+                    // Finish the short committed sidestep before selecting a
+                    // different child. Crane Rush creates many adjacent lanes;
+                    // changing lane every AI tick produces visible ping-pong
+                    // and leaves the bot inside both novas.
+                    if (getMSTime() < chiJiDodgeLockUntil &&
+                        bot->GetExactDist2d(chiJiDodgeX, chiJiDodgeY) > 2.0f &&
+                        ScoreChiJiFirestormSafety(bot, chiJiDodgeX,
+                            chiJiDodgeY) != -FLT_MAX &&
+                        ScoreChiJiDodgePosition(bot, chiJi, chiJiDodgeX,
+                            chiJiDodgeY) >= 12.0f)
+                        return MoveTo(bot->GetMapId(), chiJiDodgeX,
+                            chiJiDodgeY, chiJiDodgeZ, false, false, true, true,
+                            MovementPriority::MOVEMENT_FORCED, true);
+
+                    float pathX = child->GetPositionX() -
+                        chiJi->GetPositionX();
+                    float pathY = child->GetPositionY() -
+                        chiJi->GetPositionY();
+                    float const pathLength = std::sqrt(pathX * pathX +
+                        pathY * pathY);
                     if (pathLength < 0.5f)
                     {
                         pathX = std::cos(child->GetOrientation());
@@ -2053,42 +2973,123 @@ bool BossMechanicsAction::Execute(Event /*event*/)
                         pathY /= pathLength;
                     }
 
-                    float const perpendicularX = -pathY;
-                    float const perpendicularY = pathX;
-                    float const botX = bot->GetPositionX() - chiJi->GetPositionX();
-                    float const botY = bot->GetPositionY() - chiJi->GetPositionY();
-                    float const lateral = botX * perpendicularX +
-                        botY * perpendicularY;
-                    float const side = std::abs(lateral) > 0.5f ?
-                        (lateral > 0.0f ? 1.0f : -1.0f) :
-                        (bot->GetGUID().GetCounter() % 2 ? 1.0f : -1.0f);
-                    float const correction = side * 17.0f - lateral;
-                    float x = bot->GetPositionX() + perpendicularX * correction;
-                    float y = bot->GetPositionY() + perpendicularY * correction;
-                    float z = bot->GetPositionZ();
-                    if (!bot->GetMap()->CheckCollisionAndGetValidCoords(bot,
-                            bot->GetPositionX(), bot->GetPositionY(),
-                            bot->GetPositionZ(), x, y, z, false))
+                    float const currentCourtDistance = bot->GetExactDist2d(
+                        CelestialCourtCenterX, CelestialCourtCenterY);
+
+                    float bestX = 0.0f;
+                    float bestY = 0.0f;
+                    float bestZ = 0.0f;
+                    float bestScore = -FLT_MAX;
+                    float bestMove = FLT_MAX;
+                    float bestSeparation = -FLT_MAX;
+                    bool foundSafe = false;
+
+                    // The children travel radially. Move only across their
+                    // lane, never away along it. Test short relative steps,
+                    // rather than absolute offsets from the lane: an absolute
+                    // -16 target could make a bot already at +10 cross 26
+                    // yards and visually retreat with the whole raid.
+                    float const preferredSide =
+                        bot->GetGUID().GetCounter() % 2u ? 1.0f : -1.0f;
+                    for (float const moveDistance :
+                        { 4.0f, 6.0f, 8.0f, 10.0f, 12.0f, 14.0f,
+                          17.0f, 20.0f })
+                    {
+                        for (float const side :
+                            { preferredSide, -preferredSide })
+                        {
+                            float const lateralMove = side * moveDistance;
+                            float x = bot->GetPositionX() -
+                                pathY * lateralMove;
+                            float y = bot->GetPositionY() +
+                                pathX * lateralMove;
+                            float z = bot->GetPositionZ();
+                            if (!bot->GetMap()->CheckCollisionAndGetValidCoords(bot,
+                                    bot->GetPositionX(), bot->GetPositionY(),
+                                    bot->GetPositionZ(), x, y, z, false))
+                                continue;
+
+                            float const courtX = x - CelestialCourtCenterX;
+                            float const courtY = y - CelestialCourtCenterY;
+                            float const courtDistance = std::sqrt(
+                                courtX * courtX + courtY * courtY);
+                            if (courtDistance > 100.0f &&
+                                courtDistance > currentCourtDistance + 0.5f)
+                                continue;
+
+                            float const score = ScoreChiJiDodgePosition(
+                                bot, chiJi, x, y);
+                            float const move = bot->GetExactDist2d(x, y);
+                            float const separation = GetGroupClearanceAt(
+                                bot, x, y);
+                            bool const safe = score >= 12.0f;
+                            if ((safe && (!foundSafe ||
+                                    move < bestMove - 0.1f ||
+                                    (std::abs(move - bestMove) <= 0.1f &&
+                                     (separation > bestSeparation + 0.1f ||
+                                      (std::abs(separation - bestSeparation) <= 0.1f &&
+                                       score > bestScore))))) ||
+                                (!safe && !foundSafe &&
+                                    (score > bestScore + 0.1f ||
+                                     (std::abs(score - bestScore) <= 0.1f &&
+                                      move < bestMove))))
+                            {
+                                bestX = x;
+                                bestY = y;
+                                bestZ = z;
+                                bestScore = score;
+                                bestMove = move;
+                                bestSeparation = separation;
+                                foundSafe = safe;
+                            }
+                        }
+                    }
+
+                    if (bestScore == -FLT_MAX)
                         return false;
-                    return MoveTo(bot->GetMapId(), x, y, z, false, false,
-                        true, true, MovementPriority::MOVEMENT_FORCED, true);
+                    if (MoveTo(bot->GetMapId(), bestX, bestY, bestZ, false,
+                            false, true, true,
+                            MovementPriority::MOVEMENT_FORCED, true))
+                    {
+                        chiJiDodgeX = bestX;
+                        chiJiDodgeY = bestY;
+                        chiJiDodgeZ = bestZ;
+                        chiJiDodgeLockUntil = getMSTime() + 1200u;
+                        return true;
+                    }
+                    return false;
                 }
             break;
         case Reaction::SpreadXuenLightning:
-            return MoveFromGroup(22.0f, MovementPriority::MOVEMENT_FORCED);
+            // Crackling Lightning lasts for several ticks, but it does not
+            // require continuous running. Make only the short correction
+            // needed to clear a nearby player, then resume attacking while
+            // the normal ranged formation maintains the separation.
+            return MoveFromGroup(12.0f, MovementPriority::MOVEMENT_FORCED);
         case Reaction::AvoidNiuzaoCharge:
             if (Creature* niuzao = bot->FindNearestCreature(NiuzaoEntry, 200.0f, true))
             {
-                float const orientation = niuzao->GetOrientation();
-                float const perpendicularX = -std::sin(orientation);
-                float const perpendicularY = std::cos(orientation);
+                if (getMSTime() < niuzaoDodgeLockUntil &&
+                    bot->GetExactDist2d(niuzaoDodgeX, niuzaoDodgeY) > 2.0f)
+                    return MoveTo(bot->GetMapId(), niuzaoDodgeX,
+                        niuzaoDodgeY, niuzaoDodgeZ, false, false, true, true,
+                        MovementPriority::MOVEMENT_FORCED, true);
+
+                float forwardX = 0.0f;
+                float forwardY = 0.0f;
+                float remainingDistance = 0.0f;
+                if (!GetNiuzaoChargeDirection(niuzao, forwardX, forwardY,
+                        remainingDistance))
+                    return false;
+                float const perpendicularX = -forwardY;
+                float const perpendicularY = forwardX;
                 float const dx = bot->GetPositionX() - niuzao->GetPositionX();
                 float const dy = bot->GetPositionY() - niuzao->GetPositionY();
                 float const lateral = dx * perpendicularX + dy * perpendicularY;
                 float const side = std::abs(lateral) > 0.5f ?
                     (lateral > 0.0f ? 1.0f : -1.0f) :
                     (bot->GetGUID().GetCounter() % 2 ? 1.0f : -1.0f);
-                float const correction = side * 18.0f - lateral;
+                float const correction = side * 20.0f - lateral;
                 float x = bot->GetPositionX() + perpendicularX * correction;
                 float y = bot->GetPositionY() + perpendicularY * correction;
                 float z = bot->GetPositionZ();
@@ -2100,37 +3101,55 @@ bool BossMechanicsAction::Execute(Event /*event*/)
                     return false;
                 }
 
-                return MoveTo(bot->GetMapId(), x, y, z, false, false, true,
-                    true, MovementPriority::MOVEMENT_FORCED, true);
+                if (MoveTo(bot->GetMapId(), x, y, z, false, false, true,
+                        true, MovementPriority::MOVEMENT_FORCED, true))
+                {
+                    niuzaoDodgeX = x;
+                    niuzaoDodgeY = y;
+                    niuzaoDodgeZ = z;
+                    niuzaoDodgeLockUntil = getMSTime() + 2500u;
+                    return true;
+                }
+                return false;
             }
             break;
         case Reaction::AvoidYuLonJadefireBlaze:
-            if (Creature* blaze = bot->FindNearestCreature(
-                    YuLonJadefireBlazeEntry, 22.0f, true))
             {
-                float awayX = bot->GetPositionX() - blaze->GetPositionX();
-                float awayY = bot->GetPositionY() - blaze->GetPositionY();
-                float distance = std::sqrt(awayX * awayX + awayY * awayY);
-                if (distance < 0.5f)
-                {
-                    float const angle = float(bot->GetGUID().GetCounter() % 16) *
-                        float(M_PI / 8.0);
-                    awayX = std::cos(angle);
-                    awayY = std::sin(angle);
-                    distance = 1.0f;
-                }
-
-                float const correction = 19.0f - distance;
-                float x = bot->GetPositionX() + awayX / distance * correction;
-                float y = bot->GetPositionY() + awayY / distance * correction;
+                float x = 0.0f;
+                float y = 0.0f;
                 float z = bot->GetPositionZ();
-                if (!bot->GetMap()->CheckCollisionAndGetValidCoords(bot,
-                        bot->GetPositionX(), bot->GetPositionY(),
-                        bot->GetPositionZ(), x, y, z, false))
-                    return false;
-
-                return MoveTo(bot->GetMapId(), x, y, z, false, false, true,
-                    true, MovementPriority::MOVEMENT_FORCED, true);
+                Creature* yulon = bot->FindNearestCreature(
+                    YuLonEntry, 200.0f, true);
+                bool const activeTank = yulon &&
+                    PlayerBotSpec::IsTank(bot, true) &&
+                    yulon->GetVictim() == bot;
+                float wallGapX = 0.0f;
+                float wallGapY = 0.0f;
+                float wallGapZ = 0.0f;
+                bool wallGapAligned = false;
+                bool const wallThreatening = GetThreateningYuLonWallGap(bot,
+                    wallGapX, wallGapY, wallGapZ, wallGapAligned);
+                bool const preferDestination = wallThreatening || activeTank;
+                float const preferredX = wallThreatening ? wallGapX :
+                    CelestialCourtCenterX;
+                float const preferredY = wallThreatening ? wallGapY :
+                    CelestialCourtCenterY;
+                if (FindSafePositionFromCreatureHazards(bot,
+                        YuLonJadefireBlazeEntry, 120.0f,
+                        activeTank ? 16.0f : 13.0f, x, y, z,
+                        preferDestination, preferredX, preferredY,
+                        activeTank ? YuLonTankMaximumCenterDistance : FLT_MAX,
+                        CelestialCourtCenterX, CelestialCourtCenterY))
+                {
+                    // A long route around overlapping pools is just as lethal
+                    // as a distant wall opening. Use an available personal
+                    // movement cooldown for either escape, then stop it once
+                    // the bot has reached safety.
+                    if (bot->GetExactDist2d(x, y) > 8.0f)
+                        TryActivateYuLonRunSpeed(botAI, bot);
+                    return MoveTo(bot->GetMapId(), x, y, z, false, false,
+                        true, true, MovementPriority::MOVEMENT_FORCED, true);
+                }
             }
             break;
         case Reaction::AvoidYuLonJadefireBreath:
@@ -2146,6 +3165,76 @@ bool BossMechanicsAction::Execute(Event /*event*/)
                     true, MovementPriority::MOVEMENT_FORCED);
             }
             break;
+        case Reaction::MoveYuLonJadefireWallGap:
+            {
+                float x = 0.0f;
+                float y = 0.0f;
+                float z = bot->GetPositionZ();
+                bool alreadyAligned = false;
+                if (!GetThreateningYuLonWallGap(bot, x, y, z,
+                        alreadyAligned) || alreadyAligned)
+                    return false;
+
+                bool const destinationInBlaze =
+                    IsPositionNearCreatureEntry(bot,
+                        YuLonJadefireBlazeEntry, 120.0f, 13.0f, x, y);
+                bool const routeCrossesBlaze =
+                    IsSegmentNearCreatureEntry(bot,
+                        YuLonJadefireBlazeEntry, 120.0f, 13.0f,
+                        bot->GetPositionX(), bot->GetPositionY(), x, y);
+                if (destinationInBlaze || routeCrossesBlaze)
+                {
+                    float waypointX = 0.0f;
+                    float waypointY = 0.0f;
+                    float waypointZ = bot->GetPositionZ();
+                    if (!FindHazardAvoidingWaypoint(bot,
+                            YuLonJadefireBlazeEntry, 120.0f, 13.0f, x, y,
+                            waypointX, waypointY, waypointZ))
+                    {
+                        // Search wider escape rings before considering a
+                        // crossing, even if the detour temporarily increases
+                        // the remaining distance to the wall gap.
+                        bool const foundWideDetour =
+                            FindSafePositionFromCreatureHazards(bot,
+                                YuLonJadefireBlazeEntry, 120.0f, 13.0f,
+                                waypointX, waypointY, waypointZ, true, x, y);
+                        if (foundWideDetour)
+                        {
+                            x = waypointX;
+                            y = waypointY;
+                            z = waypointZ;
+                        }
+                        else
+                        {
+                            // If the wall is already advancing and its gap is
+                            // safe but every detour is sealed, crossing one
+                            // pool is preferable to certain wall damage. Do
+                            // it only under a legitimate class defensive. The
+                            // wall reaction remains highest priority, so the
+                            // bot commits to the gap instead of alternating
+                            // with an opposite pool-escape command.
+                            if (destinationInBlaze ||
+                                !TryActivateYuLonCrossingDefense(botAI, bot))
+                                return false;
+                        }
+                    }
+                    else
+                    {
+                        x = waypointX;
+                        y = waypointY;
+                        z = waypointZ;
+                    }
+                }
+
+                if (bot->GetExactDist2d(x, y) > 8.0f)
+                    TryActivateYuLonRunSpeed(botAI, bot);
+                return MoveTo(bot->GetMapId(), x, y, z, false, false, true,
+                    true, MovementPriority::MOVEMENT_FORCED, true);
+            }
+            break;
+        case Reaction::StopYuLonRunSpeed:
+            bot->RemoveAurasDueToSpell(BurningRushSpell);
+            return true;
         case Reaction::None:
             break;
     }
@@ -2206,9 +3295,21 @@ bool CombatFormationMoveAction::isUseful()
     // Recomputing slots around a moving boss makes ranged players chase him
     // and drags the whole formation around the arena edge.
     if (IsNiuzaoChargeActive(target) || IsChiJiCraneRushActive(target) ||
+        IsXuenAreaDamageActive(target) ||
         (target->GetEntry() == ChiJiEntry &&
-         bot->FindNearestCreature(ChiJiChildEntry, 120.0f, true)))
+         (bot->FindNearestCreature(ChiJiChildEntry, 120.0f, true) ||
+          bot->FindNearestCreature(ChiJiBeaconEntry, 120.0f, true))))
         return false;
+    if (target->GetEntry() == YuLonEntry)
+    {
+        float wallGapX = 0.0f;
+        float wallGapY = 0.0f;
+        float wallGapZ = 0.0f;
+        bool wallGapAligned = false;
+        if (GetThreateningYuLonWallGap(bot, wallGapX, wallGapY, wallGapZ,
+                wallGapAligned))
+            return false;
+    }
 
     // Kiting an enemy that is already attacking this bot separates the pack
     // from the tank and may pull more trash. Hold position until aggro is
@@ -2241,7 +3342,34 @@ bool CombatFormationMoveAction::isUseful()
         if (!GetWorldBossFormationPosition(target, x, y, z, tolerance))
             return false;
 
-        return bot->GetExactDist2d(x, y) > tolerance;
+        float const formationDistance = bot->GetExactDist2d(x, y);
+        if (formationDistance <= tolerance)
+        {
+            worldBossFormationEstablished = true;
+            return false;
+        }
+
+        // Once the opening formation was reached, a Yu'lon tank relocation
+        // should not make the whole raid chase perfect slots. A safe member
+        // who can still attack keeps casting from the current point; only an
+        // out-of-range member closes in on the boss's new position.
+        if (target->GetEntry() == YuLonEntry &&
+            worldBossFormationEstablished &&
+            !IsPositionNearCreatureEntry(bot, YuLonJadefireBlazeEntry,
+                120.0f, 13.0f, bot->GetPositionX(), bot->GetPositionY()) &&
+            CanContinueWorldBossAttack(bot, target))
+            return false;
+
+        // Once avoidance has moved a bot out of a persistent Firestorm, hold
+        // that safe point until the nearby summon disappears. Combat actions
+        // remain available outside its damage radius; only formation travel
+        // is suppressed so it cannot pull the bot back through the hazard.
+        if (target->GetEntry() == ChiJiEntry &&
+            (bot->FindNearestCreature(ChiJiFirestormEntry, 24.0f, true) ||
+             IsPositionInsideChiJiFirestorm(bot, x, y)) &&
+            CanContinueWorldBossAttack(bot, target))
+            return false;
+        return true;
     }
 
     if (!PlayerBotSpec::IsRanged(bot, true))
@@ -2271,9 +3399,21 @@ bool CombatFormationMoveAction::Execute(Event /*event*/)
     }
 
     if (IsNiuzaoChargeActive(target) || IsChiJiCraneRushActive(target) ||
+        IsXuenAreaDamageActive(target) ||
         (target->GetEntry() == ChiJiEntry &&
-         bot->FindNearestCreature(ChiJiChildEntry, 120.0f, true)))
+         (bot->FindNearestCreature(ChiJiChildEntry, 120.0f, true) ||
+          bot->FindNearestCreature(ChiJiBeaconEntry, 120.0f, true))))
         return false;
+    if (target->GetEntry() == YuLonEntry)
+    {
+        float wallGapX = 0.0f;
+        float wallGapY = 0.0f;
+        float wallGapZ = 0.0f;
+        bool wallGapAligned = false;
+        if (GetThreateningYuLonWallGap(bot, wallGapX, wallGapY, wallGapZ,
+                wallGapAligned))
+            return false;
+    }
 
     if (bot->HasWorldBossStagingAccess())
     {
@@ -2284,10 +3424,55 @@ bool CombatFormationMoveAction::Execute(Event /*event*/)
         float y = 0.0f;
         float z = 0.0f;
         float tolerance = 0.0f;
-        if (!GetWorldBossFormationPosition(target, x, y, z, tolerance) ||
-            bot->GetExactDist2d(x, y) <= tolerance)
+        if (!GetWorldBossFormationPosition(target, x, y, z, tolerance))
         {
             return false;
+        }
+        if (bot->GetExactDist2d(x, y) <= tolerance)
+        {
+            worldBossFormationEstablished = true;
+            return false;
+        }
+        if (target->GetEntry() == YuLonEntry &&
+            worldBossFormationEstablished &&
+            !IsPositionNearCreatureEntry(bot, YuLonJadefireBlazeEntry,
+                120.0f, 13.0f, bot->GetPositionX(), bot->GetPositionY()) &&
+            CanContinueWorldBossAttack(bot, target))
+            return false;
+        if (target->GetEntry() == ChiJiEntry &&
+            (bot->FindNearestCreature(ChiJiFirestormEntry, 24.0f, true) ||
+             IsPositionInsideChiJiFirestorm(bot, x, y)) &&
+            CanContinueWorldBossAttack(bot, target))
+            return false;
+        if (target->GetEntry() == YuLonEntry ||
+            target->GetEntry() == ChiJiEntry)
+        {
+            // If the newly computed slot is reachable only through a floor
+            // hazard, take a short safe tangent waypoint first. On the next
+            // formation update the same final slot is recomputed.
+            uint32 const hazardEntry = target->GetEntry() == YuLonEntry ?
+                YuLonJadefireBlazeEntry : ChiJiFirestormEntry;
+            float const clearance = target->GetEntry() == YuLonEntry ?
+                13.0f : 16.0f;
+            if (IsPositionNearCreatureEntry(bot, hazardEntry,
+                    120.0f, clearance, bot->GetPositionX(),
+                    bot->GetPositionY()))
+                return false;
+            if (IsSegmentNearCreatureEntry(bot, hazardEntry,
+                    120.0f, clearance, bot->GetPositionX(),
+                    bot->GetPositionY(), x, y))
+            {
+                float waypointX = 0.0f;
+                float waypointY = 0.0f;
+                float waypointZ = bot->GetPositionZ();
+                if (!FindHazardAvoidingWaypoint(bot,
+                        hazardEntry, 120.0f, clearance, x, y,
+                        waypointX, waypointY, waypointZ))
+                    return false;
+                x = waypointX;
+                y = waypointY;
+                z = waypointZ;
+            }
         }
 
         uint32 const firstContact = bot->GetWorldBossStagingFirstContact();
@@ -2411,21 +3596,31 @@ bool CombatFormationMoveAction::GetWorldBossFormationPosition(Unit* target,
     if (!found || !count)
         return false;
 
-    uint32 const perRing = melee ? 4u : 8u;
+    // Seven ranged players per row gives the common 10/25-player rosters a
+    // wider angular gap than eight tightly packed slots. Larger groups retain
+    // eight slots per row so they do not need an unsafe third row.
+    uint32 const perRing = melee ? 4u : (count <= 14u ? 7u : 8u);
     uint32 const ring = rank / perRing;
     uint32 const ringIndex = rank % perRing;
     uint32 const ringCount = std::min(perRing, count - ring * perRing);
     float const halfArc = melee ? float(M_PI * 5.0 / 18.0) :
-        float(M_PI * 2.0 / 3.0);
+        float(M_PI / 2.0);
     float offset = 0.0f;
     if (ringCount > 1)
     {
-        // Stagger successive ranged rings so an inner and outer slot do not
-        // share the same line from the boss. The wider 240-degree arc also
-        // keeps neighbouring ranged slots outside ordinary splash radius.
-        float const step = 2.0f * halfArc / float(perRing);
-        offset = -halfArc + step *
-            (float(ringIndex) + (melee || !(ring & 1u) ? 0.0f : 0.5f));
+        // Center every complete or partial ring on the approach direction.
+        // Starting at -halfArc while dividing by perRing left the average
+        // slot 12-15 degrees off center. When the live raid centroid was used
+        // as the next anchor, that bias made the complete formation rotate
+        // around the boss on every update.
+        float const step = 2.0f * halfArc / float(ringCount);
+        offset = (float(ringIndex) - (float(ringCount) - 1.0f) * 0.5f) * step;
+
+        // Do not align both ranged rows on the same radial lines. Half-slot
+        // staggering separates targeted ground and chain effects without
+        // making bots rotate after the formation has settled.
+        if (!melee && (ring & 1u))
+            offset = std::min(halfArc, offset + step * 0.5f);
     }
 
     float centerDistance;
@@ -2439,23 +3634,152 @@ bool CombatFormationMoveAction::GetWorldBossFormationPosition(Unit* target,
     }
     else
     {
-        // Eight staggered positions across 240 degrees keep roughly 13 yards
-        // between neighbours. The outer row remains inside ordinary 40-yard
-        // spell range once the boss's combat reach is included.
-        centerDistance = 26.0f + 10.0f * float(ring);
+        // Ranged and healers use a full rear semicircle at 30/39 yards. This
+        // leaves room around the melee group while retaining a small range
+        // reserve for boss movement; only players who actually lose spell
+        // range need to advance afterward.
+        centerDistance = 30.0f + 9.0f * float(ring);
         tolerance = 2.0f;
     }
 
-    // Use the tank's position rather than the creature's momentary facing.
-    // Bosses may briefly turn toward a spell target, which must not make the
-    // whole raid swap sides and run through the frontal arc.
-    float const front = target->GetVictim() ?
-        target->GetAngle(target->GetVictim()) : target->GetOrientation();
-    float const rear = Position::NormalizeOrientation(front + float(M_PI));
-    float const angle = Position::NormalizeOrientation(rear + offset);
+    // Capture the side from which the raid approached once per encounter.
+    // Formation is independent of boss facing after that: the raid keeps its
+    // fixed semicircle and the tank turns the boss's back toward it. A live
+    // centroid is a feedback loop because the centroid itself moves whenever
+    // the formation moves, producing the observed continuous orbit.
+    uint32 const firstContact = bot->GetWorldBossStagingFirstContact();
+    uint32 const targetGuid = target->GetGUID().GetCounter();
+    if (!hasWorldBossFormationAnchor ||
+        worldBossFormationContact != firstContact ||
+        worldBossFormationTarget != targetGuid)
+    {
+        float raidX = 0.0f;
+        float raidY = 0.0f;
+        uint32 raidCount = 0;
+        for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+        {
+            Player* member = ref->GetSource();
+            if (!member || !member->IsAlive() || member == target->GetVictim() ||
+                member->GetMap() != bot->GetMap())
+                continue;
+            raidX += member->GetPositionX();
+            raidY += member->GetPositionY();
+            ++raidCount;
+        }
+
+        float approach = Position::NormalizeOrientation(
+            target->GetOrientation() + float(M_PI));
+        if (raidCount)
+        {
+            raidX /= float(raidCount);
+            raidY /= float(raidCount);
+            float const deltaX = raidX - target->GetPositionX();
+            float const deltaY = raidY - target->GetPositionY();
+            if (deltaX * deltaX + deltaY * deltaY > 4.0f)
+                approach = Position::NormalizeOrientation(
+                    std::atan2(deltaY, deltaX));
+        }
+
+        worldBossFormationAnchor = approach;
+        worldBossFormationContact = firstContact;
+        worldBossFormationTarget = targetGuid;
+        hasWorldBossFormationAnchor = true;
+        worldBossFormationEstablished = false;
+    }
+
+    float const angle = Position::NormalizeOrientation(
+        worldBossFormationAnchor + offset);
     x = target->GetPositionX() + std::cos(angle) * centerDistance;
     y = target->GetPositionY() + std::sin(angle) * centerDistance;
     z = target->GetPositionZ();
+
+    // Yu'lon and Chi-Ji can be pulled away from accumulated floor hazards.
+    // Preserve each member's stable preferred slot when possible, but if it
+    // is covered choose the closest safe sector around the boss. Melee stays
+    // on the edge of the attack circle rather than chasing the boss center.
+    if (target->GetEntry() == YuLonEntry ||
+        target->GetEntry() == ChiJiEntry)
+    {
+        uint32 const hazardEntry = target->GetEntry() == YuLonEntry ?
+            YuLonJadefireBlazeEntry : ChiJiFirestormEntry;
+        float const hazardClearance = target->GetEntry() == YuLonEntry ?
+            13.0f : 16.0f;
+        std::list<Creature*> hazards;
+        bot->GetCreatureListWithEntryInGrid(
+            hazards, hazardEntry, 120.0f);
+        hazards.remove_if([this](Creature* hazard)
+        {
+            return !hazard || !hazard->IsAlive() || !hazard->IsInWorld() ||
+                hazard->GetMap() != bot->GetMap();
+        });
+        auto pointIsUnsafe = [&hazards, hazardClearance](float candidateX,
+            float candidateY)
+        {
+            for (Creature* hazard : hazards)
+            {
+                float const dx = candidateX - hazard->GetPositionX();
+                float const dy = candidateY - hazard->GetPositionY();
+                if (dx * dx + dy * dy <
+                    hazardClearance * hazardClearance)
+                    return true;
+            }
+            return false;
+        };
+
+        if (pointIsUnsafe(x, y))
+        {
+        bool foundSafeSlot = false;
+        float const innerDistance = melee ? centerDistance :
+            std::max(18.0f, centerDistance - 10.0f);
+        float const outerDistance = melee ? centerDistance + 1.5f :
+            centerDistance + 6.0f;
+        // Twelve 7.5-degree steps cover the complete rear semicircle. This
+        // lets melee use the open side when a wall and two Firestorms close
+        // the preferred approach, without sending them into the tank's
+        // frontal half of the boss.
+        uint32 const maximumSteps = 12u;
+        float const firstSign = bot->GetGUID().GetCounter() % 2 ? 1.0f : -1.0f;
+        for (float const candidateDistance :
+            { centerDistance, innerDistance, outerDistance })
+        {
+            for (uint32 step = 1; step <= maximumSteps && !foundSafeSlot;
+                ++step)
+            {
+                for (float const sign : { firstSign, -firstSign })
+                {
+                    float const candidateAngle =
+                        Position::NormalizeOrientation(angle + sign *
+                            float(step) * float(M_PI / 24.0));
+                    float candidateX = target->GetPositionX() +
+                        std::cos(candidateAngle) * candidateDistance;
+                    float candidateY = target->GetPositionY() +
+                        std::sin(candidateAngle) * candidateDistance;
+                    float candidateZ = target->GetPositionZ();
+                    if (pointIsUnsafe(candidateX, candidateY) ||
+                        !bot->GetMap()->CheckCollisionAndGetValidCoords(bot,
+                            bot->GetPositionX(), bot->GetPositionY(),
+                            bot->GetPositionZ(), candidateX, candidateY,
+                            candidateZ, false) ||
+                        !target->IsWithinLOS(candidateX, candidateY,
+                            candidateZ) ||
+                        !bot->IsWithinLOS(candidateX, candidateY,
+                            candidateZ))
+                        continue;
+
+                    x = candidateX;
+                    y = candidateY;
+                    z = candidateZ;
+                    foundSafeSlot = true;
+                    break;
+                }
+            }
+            if (foundSafeSlot)
+                break;
+        }
+        if (!foundSafeSlot)
+            return false;
+        }
+    }
 
     if (!bot->GetMap()->CheckCollisionAndGetValidCoords(bot,
             bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(),

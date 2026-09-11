@@ -42,6 +42,8 @@ class ReachMeleeAction : public ReachTargetAction
 {
 public:
     ReachMeleeAction(PlayerbotAI* botAI) : ReachTargetAction(botAI, "reach melee", sPlayerbotAIConfig->meleeDistance) {}
+
+    bool isUseful() override;
 };
 
 class ReachSpellAction : public ReachTargetAction
