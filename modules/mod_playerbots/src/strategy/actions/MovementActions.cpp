@@ -2572,7 +2572,7 @@ BossMechanicsAction::Reaction BossMechanicsAction::GetReaction() const
                 Player* member = ref->GetSource();
                 if (member && member != bot && member->IsAlive() &&
                     member->GetMap() == bot->GetMap() &&
-                    bot->GetExactDist2d(member) < 18.0f)
+                    bot->GetExactDist2d(member) < 12.0f)
                 {
                     return Reaction::SpreadXuenLightning;
                 }
@@ -2978,7 +2978,11 @@ bool BossMechanicsAction::Execute(Event /*event*/)
                 }
             break;
         case Reaction::SpreadXuenLightning:
-            return MoveFromGroup(24.0f, MovementPriority::MOVEMENT_FORCED);
+            // Crackling Lightning lasts for several ticks, but it does not
+            // require continuous running. Make only the short correction
+            // needed to clear a nearby player, then resume attacking while
+            // the normal ranged formation maintains the separation.
+            return MoveFromGroup(12.0f, MovementPriority::MOVEMENT_FORCED);
         case Reaction::AvoidNiuzaoCharge:
             if (Creature* niuzao = bot->FindNearestCreature(NiuzaoEntry, 200.0f, true))
             {
