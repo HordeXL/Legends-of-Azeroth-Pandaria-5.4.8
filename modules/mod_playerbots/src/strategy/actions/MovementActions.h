@@ -109,6 +109,7 @@ protected:
     uint32 worldBossFormationTarget = 0;
     float worldBossFormationAnchor = 0.0f;
     bool hasWorldBossFormationAnchor = false;
+    bool worldBossFormationEstablished = false;
     int moveInterval;
 };
 
@@ -197,7 +198,8 @@ private:
         SpreadXuenLightning,
         AvoidNiuzaoCharge,
         AvoidYuLonJadefireBlaze,
-        AvoidYuLonJadefireBreath
+        AvoidYuLonJadefireBreath,
+        MoveYuLonJadefireWallGap
     };
 
     Reaction GetReaction() const;
