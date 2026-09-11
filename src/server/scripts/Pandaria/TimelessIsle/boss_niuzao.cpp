@@ -356,7 +356,14 @@ class boss_niuzao : public CreatureScript
                     }
                 }
 
-                EnterEvadeIfOutOfCombatArea(diff);
+                // Charge follows a fixed five-point route around the court.
+                // One legitimate waypoint lies fractionally outside the
+                // shared 105-yard Celestial leash, so checking the leash
+                // during this scripted movement resets Niuzao mid-fight and
+                // makes the raid engage him a second time. Restore the normal
+                // boundary check as soon as the Charge aura is removed.
+                if (!me->HasAura(SPELL_NIUZAO_CHARGE))
+                    EnterEvadeIfOutOfCombatArea(diff);
                 DoMeleeAttackIfReady();
             }
         };
