@@ -344,7 +344,9 @@ bool FindHazardAvoidingWaypoint(Player* bot, uint32 entry, float searchRange,
 }
 
 bool FindSafePositionFromCreatureHazards(Player* bot, uint32 entry,
-    float searchRange, float minimumDistance, float& x, float& y, float& z)
+    float searchRange, float minimumDistance, float& x, float& y, float& z,
+    bool preferDestination = false, float preferredX = 0.0f,
+    float preferredY = 0.0f)
 {
     if (!bot)
         return false;
@@ -360,21 +362,25 @@ bool FindSafePositionFromCreatureHazards(Player* bot, uint32 entry,
         return false;
 
     // Pools can overlap. Moving directly away from only the closest one can
-    // place the bot inside its neighbour, so sample a small set of reachable
-    // points and require clearance from every live summon. Use the first ring
-    // with a valid point to leave damaging ground as quickly as possible.
-    float const phase = float(bot->GetGUID().GetCounter() % 24) *
-        float(M_PI / 12.0);
-    for (float const moveDistance : { 12.0f, 20.0f, 28.0f, 36.0f, 44.0f })
+    // place the bot inside its neighbour, so sample reachable points and
+    // require clearance from every live summon. Start with short rings: the
+    // previous 19/34-yard exclusion combined with a first 12-yard step left
+    // no valid point when Yu'lon dropped eight pools across the raid, causing
+    // the action to fail and the bot to remain in the damage. A 13-yard
+    // clearance covers the scripted ground effect with a practical margin.
+    float const phase = float(bot->GetGUID().GetCounter() % 32) *
+        float(M_PI / 16.0);
+    for (float const moveDistance :
+        { 8.0f, 12.0f, 16.0f, 22.0f, 30.0f, 40.0f, 52.0f })
     {
         bool found = false;
-        float bestClearance = -FLT_MAX;
+        float bestScore = -FLT_MAX;
         float bestX = 0.0f;
         float bestY = 0.0f;
         float bestZ = bot->GetPositionZ();
-        for (uint32 i = 0; i < 24; ++i)
+        for (uint32 i = 0; i < 32; ++i)
         {
-            float const angle = phase + float(i) * float(M_PI / 12.0);
+            float const angle = phase + float(i) * float(M_PI / 16.0);
             float candidateX = bot->GetPositionX() +
                 std::cos(angle) * moveDistance;
             float candidateY = bot->GetPositionY() +
@@ -387,7 +393,7 @@ bool FindSafePositionFromCreatureHazards(Player* bot, uint32 entry,
                 float const dy = candidateY - hazard->GetPositionY();
                 clearance = std::min(clearance, std::sqrt(dx * dx + dy * dy));
             }
-            if (clearance < minimumDistance || clearance <= bestClearance)
+            if (clearance < minimumDistance)
                 continue;
             if (!bot->GetMap()->CheckCollisionAndGetValidCoords(bot,
                     bot->GetPositionX(), bot->GetPositionY(),
@@ -395,8 +401,22 @@ bool FindSafePositionFromCreatureHazards(Player* bot, uint32 entry,
                     false))
                 continue;
 
+            // When the wall is advancing, leave the pool on the side which
+            // also approaches its opening. This prevents a successful pool
+            // dodge from sending the bot away from the only safe wall lane.
+            float score = clearance;
+            if (preferDestination)
+            {
+                float const preferredDx = candidateX - preferredX;
+                float const preferredDy = candidateY - preferredY;
+                score = -std::sqrt(preferredDx * preferredDx +
+                    preferredDy * preferredDy);
+            }
+            if (score <= bestScore)
+                continue;
+
             found = true;
-            bestClearance = clearance;
+            bestScore = score;
             bestX = candidateX;
             bestY = candidateY;
             bestZ = candidateZ;
@@ -2361,8 +2381,8 @@ BossMechanicsAction::Reaction BossMechanicsAction::GetReaction() const
         bool const activeTank = PlayerBotSpec::IsTank(bot, true) &&
             yulon->GetVictim() == bot;
         if (Creature* blaze = bot->FindNearestCreature(
-                YuLonJadefireBlazeEntry, 26.0f, true))
-            if (bot->GetExactDist2d(blaze) < 20.0f)
+                YuLonJadefireBlazeEntry, 20.0f, true))
+            if (bot->GetExactDist2d(blaze) < 13.0f)
                 return Reaction::AvoidYuLonJadefireBlaze;
 
         // The tank can be personally safe while the entire rear melee arc is
@@ -2677,9 +2697,16 @@ bool BossMechanicsAction::Execute(Event /*event*/)
                 bool const activeTank = yulon &&
                     PlayerBotSpec::IsTank(bot, true) &&
                     yulon->GetVictim() == bot;
+                float wallGapX = 0.0f;
+                float wallGapY = 0.0f;
+                float wallGapZ = 0.0f;
+                bool wallGapAligned = false;
+                bool const wallThreatening = GetThreateningYuLonWallGap(bot,
+                    wallGapX, wallGapY, wallGapZ, wallGapAligned);
                 if (FindSafePositionFromCreatureHazards(bot,
                         YuLonJadefireBlazeEntry, 120.0f,
-                        activeTank ? 34.0f : 19.0f, x, y, z))
+                        activeTank ? 16.0f : 13.0f, x, y, z,
+                        wallThreatening, wallGapX, wallGapY))
                     return MoveTo(bot->GetMapId(), x, y, z, false, false,
                         true, true, MovementPriority::MOVEMENT_FORCED, true);
             }
@@ -2708,16 +2735,16 @@ bool BossMechanicsAction::Execute(Event /*event*/)
                     return false;
 
                 if (IsPositionNearCreatureEntry(bot,
-                        YuLonJadefireBlazeEntry, 120.0f, 19.0f, x, y) ||
+                        YuLonJadefireBlazeEntry, 120.0f, 13.0f, x, y) ||
                     IsSegmentNearCreatureEntry(bot,
-                        YuLonJadefireBlazeEntry, 120.0f, 16.0f,
+                        YuLonJadefireBlazeEntry, 120.0f, 11.0f,
                         bot->GetPositionX(), bot->GetPositionY(), x, y))
                 {
                     float waypointX = 0.0f;
                     float waypointY = 0.0f;
                     float waypointZ = bot->GetPositionZ();
                     if (!FindHazardAvoidingWaypoint(bot,
-                            YuLonJadefireBlazeEntry, 120.0f, 16.0f, x, y,
+                            YuLonJadefireBlazeEntry, 120.0f, 11.0f, x, y,
                             waypointX, waypointY, waypointZ))
                         return false;
                     x = waypointX;
@@ -3192,7 +3219,7 @@ bool CombatFormationMoveAction::GetWorldBossFormationPosition(Unit* target,
             {
                 float const dx = candidateX - hazard->GetPositionX();
                 float const dy = candidateY - hazard->GetPositionY();
-                if (dx * dx + dy * dy < 19.0f * 19.0f)
+                if (dx * dx + dy * dy < 13.0f * 13.0f)
                     return true;
             }
             return false;

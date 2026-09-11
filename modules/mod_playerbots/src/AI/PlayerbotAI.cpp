@@ -688,6 +688,18 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
         return;
     }
 
+    // Encounter survival movement must be evaluated before the generic cast
+    // wait below. BossMechanicsAction cancels a cast for reactions which need
+    // immediate movement; reaching this action only through DoNextAction made
+    // casters finish their spell while standing in Jadefire Blaze or while a
+    // moving wall was already approaching.
+    if (bot->IsInCombat() &&
+        DoSpecificAction("boss mechanics", Event(), true))
+    {
+        YieldThread(GetReactDelay());
+        return;
+    }
+
     // Handle the current spell
     Spell* currentSpell = bot->GetCurrentSpell(CURRENT_GENERIC_SPELL);
     if (!currentSpell)
