@@ -2640,8 +2640,11 @@ BossMechanicsAction::Reaction BossMechanicsAction::GetReaction() const
             return Reaction::MoveYuLonJadefireWallGap;
 
         if (Creature* blaze = bot->FindNearestCreature(
-                YuLonJadefireBlazeEntry, 20.0f, true))
-            if (bot->GetExactDist2d(blaze) < 13.0f)
+                YuLonJadefireBlazeEntry, 22.0f, true))
+            // Start leaving before the visible edge reaches the bot. Waiting
+            // until the damage radius is already occupied costs several
+            // ticks when multiple pools overlap or block the direct route.
+            if (bot->GetExactDist2d(blaze) < 15.0f)
                 return Reaction::AvoidYuLonJadefireBlaze;
 
         // The tank can be personally safe while the entire rear melee arc is
@@ -3051,7 +3054,11 @@ bool BossMechanicsAction::Execute(Event /*event*/)
                         activeTank ? YuLonTankMaximumCenterDistance : FLT_MAX,
                         CelestialCourtCenterX, CelestialCourtCenterY))
                 {
-                    if (wallThreatening && bot->GetExactDist2d(x, y) > 8.0f)
+                    // A long route around overlapping pools is just as lethal
+                    // as a distant wall opening. Use an available personal
+                    // movement cooldown for either escape, then stop it once
+                    // the bot has reached safety.
+                    if (bot->GetExactDist2d(x, y) > 8.0f)
                         TryActivateYuLonRunSpeed(botAI, bot);
                     return MoveTo(bot->GetMapId(), x, y, z, false, false,
                         true, true, MovementPriority::MOVEMENT_FORCED, true);
@@ -3495,7 +3502,10 @@ bool CombatFormationMoveAction::GetWorldBossFormationPosition(Unit* target,
     if (!found || !count)
         return false;
 
-    uint32 const perRing = melee ? 4u : 8u;
+    // Seven ranged players per row gives the common 10/25-player rosters a
+    // wider angular gap than eight tightly packed slots. Larger groups retain
+    // eight slots per row so they do not need an unsafe third row.
+    uint32 const perRing = melee ? 4u : (count <= 14u ? 7u : 8u);
     uint32 const ring = rank / perRing;
     uint32 const ringIndex = rank % perRing;
     uint32 const ringCount = std::min(perRing, count - ring * perRing);
@@ -3511,6 +3521,12 @@ bool CombatFormationMoveAction::GetWorldBossFormationPosition(Unit* target,
         // around the boss on every update.
         float const step = 2.0f * halfArc / float(ringCount);
         offset = (float(ringIndex) - (float(ringCount) - 1.0f) * 0.5f) * step;
+
+        // Do not align both ranged rows on the same radial lines. Half-slot
+        // staggering separates targeted ground and chain effects without
+        // making bots rotate after the formation has settled.
+        if (!melee && (ring & 1u))
+            offset = std::min(halfArc, offset + step * 0.5f);
     }
 
     float centerDistance;
@@ -3524,10 +3540,11 @@ bool CombatFormationMoveAction::GetWorldBossFormationPosition(Unit* target,
     }
     else
     {
-        // Eight staggered positions across 240 degrees keep roughly 13 yards
-        // between neighbours. The outer row remains inside ordinary 40-yard
-        // spell range once the boss's combat reach is included.
-        centerDistance = 26.0f + 10.0f * float(ring);
+        // Ranged and healers use a full rear semicircle at 30/39 yards. This
+        // leaves room around the melee group while retaining a small range
+        // reserve for boss movement; only players who actually lose spell
+        // range need to advance afterward.
+        centerDistance = 30.0f + 9.0f * float(ring);
         tolerance = 2.0f;
     }
 
