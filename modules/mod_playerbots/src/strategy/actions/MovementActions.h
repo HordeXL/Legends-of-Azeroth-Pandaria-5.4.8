@@ -199,7 +199,8 @@ private:
         AvoidNiuzaoCharge,
         AvoidYuLonJadefireBlaze,
         AvoidYuLonJadefireBreath,
-        MoveYuLonJadefireWallGap
+        MoveYuLonJadefireWallGap,
+        StopYuLonRunSpeed
     };
 
     Reaction GetReaction() const;

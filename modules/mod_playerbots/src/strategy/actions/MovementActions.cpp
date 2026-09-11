@@ -79,6 +79,42 @@ constexpr uint32 YuLonJadefireWallEntry = 72020;
 constexpr float CelestialCourtCenterX = -650.03f;
 constexpr float CelestialCourtCenterY = -5016.83f;
 constexpr float YuLonTankMaximumCenterDistance = 82.0f;
+constexpr uint32 RunSpeedMarkerSpell = 96223;
+constexpr uint32 BurningRushSpell = 111400;
+
+bool TryActivateYuLonRunSpeed(PlayerbotAI* ai, Player* bot)
+{
+    if (!ai || !bot || bot->HasAura(RunSpeedMarkerSpell))
+        return false;
+
+    // Direct MoP self speed buffs. HasSpell plus the normal cast path retain
+    // talent, cooldown, resource, stance and CheckCast requirements, so a bot
+    // can only use an ability it legitimately owns. Direction-dependent
+    // teleports and leaps are excluded because they can land in another pool.
+    for (uint32 spellId :
+        { 2983u,    // Sprint
+          137573u,  // Burst of Speed
+          1850u,    // Dash
+          106898u,  // Stampeding Roar
+          85499u,   // Speed of Light
+          108843u,  // Blazing Speed
+          116841u,  // Tiger's Lust
+          96268u,   // Death's Advance
+          68992u,   // Darkflight
+          BurningRushSpell })
+    {
+        if (!bot->HasSpell(spellId) || bot->HasAura(spellId))
+            continue;
+        // Burning Rush costs 4% maximum health each second. Keep a reserve
+        // for incidental Blaze or Wall damage when the warlock is injured.
+        if (spellId == BurningRushSpell && bot->GetHealthPct() < 45.0f)
+            continue;
+        if (ai->CastSpell(spellId, bot))
+            return true;
+    }
+
+    return false;
+}
 
 bool CanContinueWorldBossAttack(Player* bot, Unit* target)
 {
@@ -131,7 +167,8 @@ bool GetThreateningYuLonWallGap(Player* bot, float& x, float& y, float& z,
         });
 
     float largestGap = 0.0f;
-    float gapLateral = 0.0f;
+    float gapLeft = 0.0f;
+    float gapRight = 0.0f;
     for (size_t i = 1; i < walls.size(); ++i)
     {
         float const left = lateralPosition(walls[i - 1]);
@@ -139,7 +176,8 @@ bool GetThreateningYuLonWallGap(Player* bot, float& x, float& y, float& z,
         if (right - left > largestGap)
         {
             largestGap = right - left;
-            gapLateral = (left + right) * 0.5f;
+            gapLeft = left;
+            gapRight = right;
         }
     }
     // Normal adjacent segments are 36 yards apart; the omitted segment makes
@@ -160,8 +198,16 @@ bool GetThreateningYuLonWallGap(Player* bot, float& x, float& y, float& z,
 
     float const botLateral = bot->GetPositionX() * lateralX +
         bot->GetPositionY() * lateralY;
-    float const correction = gapLateral - botLateral;
-    alreadyAligned = std::abs(correction) <= 7.0f;
+    // A missing segment leaves a roughly 72-yard center-to-center opening.
+    // Do not force everybody to its exact center: the nearest point at least
+    // 22 yards from either live segment is already safely inside the gap and
+    // can save a far-side player about 20 yards of lateral travel.
+    float const safeLeft = gapLeft + 22.0f;
+    float const safeRight = gapRight - 22.0f;
+    float const targetLateral = std::max(safeLeft,
+        std::min(safeRight, botLateral));
+    float const correction = targetLateral - botLateral;
+    alreadyAligned = std::abs(correction) <= 3.0f;
     x = bot->GetPositionX() + lateralX * correction;
     y = bot->GetPositionY() + lateralY * correction;
     z = bot->GetPositionZ();
@@ -2495,9 +2541,13 @@ BossMechanicsAction::Reaction BossMechanicsAction::GetReaction() const
         float wallGapY = 0.0f;
         float wallGapZ = 0.0f;
         bool wallGapAligned = false;
-        if (GetThreateningYuLonWallGap(bot, wallGapX, wallGapY, wallGapZ,
-                wallGapAligned) && !wallGapAligned)
+        bool const wallThreatening = GetThreateningYuLonWallGap(bot,
+            wallGapX, wallGapY, wallGapZ, wallGapAligned);
+        if (wallThreatening && !wallGapAligned)
             return Reaction::MoveYuLonJadefireWallGap;
+        if (bot->HasAura(BurningRushSpell) &&
+            (!wallThreatening || wallGapAligned))
+            return Reaction::StopYuLonRunSpeed;
 
         // Jadefire Breath (144530) is a frontal attack. Non-tanks move behind
         // Yu'lon while the cast is visible; the active tank keeps her facing
@@ -2833,8 +2883,12 @@ bool BossMechanicsAction::Execute(Event /*event*/)
                         preferDestination, preferredX, preferredY,
                         activeTank ? YuLonTankMaximumCenterDistance : FLT_MAX,
                         CelestialCourtCenterX, CelestialCourtCenterY))
+                {
+                    if (wallThreatening && bot->GetExactDist2d(x, y) > 8.0f)
+                        TryActivateYuLonRunSpeed(botAI, bot);
                     return MoveTo(bot->GetMapId(), x, y, z, false, false,
                         true, true, MovementPriority::MOVEMENT_FORCED, true);
+                }
             }
             break;
         case Reaction::AvoidYuLonJadefireBreath:
@@ -2863,14 +2917,14 @@ bool BossMechanicsAction::Execute(Event /*event*/)
                 if (IsPositionNearCreatureEntry(bot,
                         YuLonJadefireBlazeEntry, 120.0f, 13.0f, x, y) ||
                     IsSegmentNearCreatureEntry(bot,
-                        YuLonJadefireBlazeEntry, 120.0f, 11.0f,
+                        YuLonJadefireBlazeEntry, 120.0f, 13.0f,
                         bot->GetPositionX(), bot->GetPositionY(), x, y))
                 {
                     float waypointX = 0.0f;
                     float waypointY = 0.0f;
                     float waypointZ = bot->GetPositionZ();
                     if (!FindHazardAvoidingWaypoint(bot,
-                            YuLonJadefireBlazeEntry, 120.0f, 11.0f, x, y,
+                            YuLonJadefireBlazeEntry, 120.0f, 13.0f, x, y,
                             waypointX, waypointY, waypointZ))
                         return false;
                     x = waypointX;
@@ -2878,10 +2932,15 @@ bool BossMechanicsAction::Execute(Event /*event*/)
                     z = waypointZ;
                 }
 
+                if (bot->GetExactDist2d(x, y) > 8.0f)
+                    TryActivateYuLonRunSpeed(botAI, bot);
                 return MoveTo(bot->GetMapId(), x, y, z, false, false, true,
                     true, MovementPriority::MOVEMENT_FORCED, true);
             }
             break;
+        case Reaction::StopYuLonRunSpeed:
+            bot->RemoveAurasDueToSpell(BurningRushSpell);
+            return true;
         case Reaction::None:
             break;
     }
@@ -3099,14 +3158,14 @@ bool CombatFormationMoveAction::Execute(Event /*event*/)
                     bot->GetPositionY()))
                 return false;
             if (IsSegmentNearCreatureEntry(bot, YuLonJadefireBlazeEntry,
-                    120.0f, 11.0f, bot->GetPositionX(),
+                    120.0f, 13.0f, bot->GetPositionX(),
                     bot->GetPositionY(), x, y))
             {
                 float waypointX = 0.0f;
                 float waypointY = 0.0f;
                 float waypointZ = bot->GetPositionZ();
                 if (!FindHazardAvoidingWaypoint(bot,
-                        YuLonJadefireBlazeEntry, 120.0f, 11.0f, x, y,
+                        YuLonJadefireBlazeEntry, 120.0f, 13.0f, x, y,
                         waypointX, waypointY, waypointZ))
                     return false;
                 x = waypointX;
