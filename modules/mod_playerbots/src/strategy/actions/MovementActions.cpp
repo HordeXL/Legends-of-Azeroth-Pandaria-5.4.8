@@ -163,9 +163,57 @@ Creature* FindThreateningChiJiChild(Player* bot, Creature* chiJi)
     return best;
 }
 
+float ScoreChiJiFirestormSafety(Player* bot, float x, float y)
+{
+    if (!bot)
+        return -FLT_MAX;
+
+    std::list<Creature*> firestorms;
+    bot->GetCreatureListWithEntryInGrid(
+        firestorms, ChiJiFirestormEntry, 120.0f);
+
+    float clearance = FLT_MAX;
+    bool found = false;
+    for (Creature* firestorm : firestorms)
+    {
+        if (!firestorm || !firestorm->IsAlive() || !firestorm->IsInWorld() ||
+            firestorm->GetMap() != bot->GetMap())
+            continue;
+
+        float const dx = x - firestorm->GetPositionX();
+        float const dy = y - firestorm->GetPositionY();
+        float const candidateDistance = std::sqrt(dx * dx + dy * dy);
+        float const currentDistance = bot->GetExactDist2d(firestorm);
+        float const awayX = bot->GetPositionX() - firestorm->GetPositionX();
+        float const awayY = bot->GetPositionY() - firestorm->GetPositionY();
+        float const moveX = x - bot->GetPositionX();
+        float const moveY = y - bot->GetPositionY();
+        bool const movingToward = awayX * moveX + awayY * moveY < -0.25f;
+
+        // Never dodge a bird into Firestorm. If this is the Firestorm the bot
+        // has just escaped, also reject the side which moves back toward it,
+        // even when that candidate happens to remain barely outside the DBC
+        // damage radius.
+        if (candidateDistance < 19.0f ||
+            (currentDistance < 24.0f && movingToward))
+        {
+            return -FLT_MAX;
+        }
+
+        clearance = std::min(clearance, candidateDistance);
+        found = true;
+    }
+
+    return found ? clearance : 1000.0f;
+}
+
 float ScoreChiJiDodgePosition(Player* bot, Creature* chiJi, float x, float y)
 {
     if (!bot || !chiJi)
+        return -FLT_MAX;
+
+    float const firestormClearance = ScoreChiJiFirestormSafety(bot, x, y);
+    if (firestormClearance == -FLT_MAX)
         return -FLT_MAX;
 
     std::list<Creature*> children;
@@ -212,7 +260,11 @@ float ScoreChiJiDodgePosition(Player* bot, Creature* chiJi, float x, float y)
         found = true;
     }
 
-    return found ? clearance : 1000.0f;
+    float const childClearance = found ? clearance : 1000.0f;
+    // Bird-lane clearance remains the primary score. Firestorm clearance is
+    // a bounded tie-breaker after unsafe/toward-vortex candidates were
+    // rejected above.
+    return childClearance + std::min(firestormClearance, 40.0f) * 0.01f;
 }
 
 bool IsPositionInsideChiJiFirestorm(Player* bot, float x, float y)
@@ -1943,7 +1995,22 @@ bool BossMechanicsAction::isUseful()
 
 bool BossMechanicsAction::Execute(Event /*event*/)
 {
-    switch (GetReaction())
+    Reaction const reaction = GetReaction();
+
+    // Survival movement must pre-empt an in-progress cast. Waiting for a
+    // Firestorm tick or an approaching Blazing Nova lane to finish the cast
+    // is too late; once the bot has crossed the safe boundary GetReaction()
+    // becomes None and ordinary damage/healing actions are immediately free
+    // to resume while the bot holds that safe point.
+    if ((reaction == Reaction::AvoidChiJiFirestorm ||
+         reaction == Reaction::AvoidChiJiBlazingNova) &&
+        bot->IsNonMeleeSpellCasted(true))
+    {
+        bot->CastStop();
+        botAI->InterruptSpell();
+    }
+
+    switch (reaction)
     {
         case Reaction::ApproachNalak:
             if (Creature* nalak = bot->FindNearestCreature(69099, 200.0f, true))
@@ -2118,7 +2185,9 @@ bool BossMechanicsAction::Execute(Event /*event*/)
                     // changing lane every AI tick produces visible ping-pong
                     // and leaves the bot inside both novas.
                     if (getMSTime() < chiJiDodgeLockUntil &&
-                        bot->GetExactDist2d(chiJiDodgeX, chiJiDodgeY) > 2.0f)
+                        bot->GetExactDist2d(chiJiDodgeX, chiJiDodgeY) > 2.0f &&
+                        ScoreChiJiFirestormSafety(bot, chiJiDodgeX,
+                            chiJiDodgeY) != -FLT_MAX)
                         return MoveTo(bot->GetMapId(), chiJiDodgeX,
                             chiJiDodgeY, chiJiDodgeZ, false, false, true, true,
                             MovementPriority::MOVEMENT_FORCED, true);
@@ -2356,11 +2425,13 @@ bool CombatFormationMoveAction::isUseful()
         if (!GetWorldBossFormationPosition(target, x, y, z, tolerance))
             return false;
 
-        // Once avoidance has moved a bot out of a persistent Firestorm, do
-        // not let its normal Chi-Ji slot immediately pull it back into the
-        // same floor hazard. Resume the slot when the summon disappears.
+        // Once avoidance has moved a bot out of a persistent Firestorm, hold
+        // that safe point until the nearby summon disappears. Combat actions
+        // remain available outside its damage radius; only formation travel
+        // is suppressed so it cannot pull the bot back through the hazard.
         if (target->GetEntry() == ChiJiEntry &&
-            IsPositionInsideChiJiFirestorm(bot, x, y))
+            (bot->FindNearestCreature(ChiJiFirestormEntry, 24.0f, true) ||
+             IsPositionInsideChiJiFirestorm(bot, x, y)))
             return false;
 
         return bot->GetExactDist2d(x, y) > tolerance;
@@ -2412,7 +2483,8 @@ bool CombatFormationMoveAction::Execute(Event /*event*/)
             return false;
         }
         if (target->GetEntry() == ChiJiEntry &&
-            IsPositionInsideChiJiFirestorm(bot, x, y))
+            (bot->FindNearestCreature(ChiJiFirestormEntry, 24.0f, true) ||
+             IsPositionInsideChiJiFirestorm(bot, x, y)))
             return false;
 
         uint32 const firstContact = bot->GetWorldBossStagingFirstContact();
@@ -2541,16 +2613,17 @@ bool CombatFormationMoveAction::GetWorldBossFormationPosition(Unit* target,
     uint32 const ringIndex = rank % perRing;
     uint32 const ringCount = std::min(perRing, count - ring * perRing);
     float const halfArc = melee ? float(M_PI * 5.0 / 18.0) :
-        float(M_PI * 2.0 / 3.0);
+        float(M_PI / 2.0);
     float offset = 0.0f;
     if (ringCount > 1)
     {
-        // Stagger successive ranged rings so an inner and outer slot do not
-        // share the same line from the boss. The wider 240-degree arc also
-        // keeps neighbouring ranged slots outside ordinary splash radius.
-        float const step = 2.0f * halfArc / float(perRing);
-        offset = -halfArc + step *
-            (float(ringIndex) + (melee || !(ring & 1u) ? 0.0f : 0.5f));
+        // Center every complete or partial ring on the approach direction.
+        // Starting at -halfArc while dividing by perRing left the average
+        // slot 12-15 degrees off center. When the live raid centroid was used
+        // as the next anchor, that bias made the complete formation rotate
+        // around the boss on every update.
+        float const step = 2.0f * halfArc / float(ringCount);
+        offset = (float(ringIndex) - (float(ringCount) - 1.0f) * 0.5f) * step;
     }
 
     float centerDistance;
@@ -2571,45 +2644,52 @@ bool CombatFormationMoveAction::GetWorldBossFormationPosition(Unit* target,
         tolerance = 2.0f;
     }
 
-    // Anchor the rear hemisphere to the raid rather than the tank's current
-    // side. On pull the boss runs toward the compact raid before the tank gets
-    // through it and turns it away. Deriving rear from that initial tank
-    // position sends every bot across the boss, then flips all destinations
-    // by 180 degrees when the tank completes the turn. The non-victim raid
-    // centroid remains on the intended rear side throughout that transition.
-    float raidX = 0.0f;
-    float raidY = 0.0f;
-    uint32 raidCount = 0;
-    for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+    // Capture the side from which the raid approached once per encounter.
+    // Formation is independent of boss facing after that: the raid keeps its
+    // fixed semicircle and the tank turns the boss's back toward it. A live
+    // centroid is a feedback loop because the centroid itself moves whenever
+    // the formation moves, producing the observed continuous orbit.
+    uint32 const firstContact = bot->GetWorldBossStagingFirstContact();
+    uint32 const targetGuid = target->GetGUID().GetCounter();
+    if (!hasWorldBossFormationAnchor ||
+        worldBossFormationContact != firstContact ||
+        worldBossFormationTarget != targetGuid)
     {
-        Player* member = ref->GetSource();
-        if (!member || !member->IsAlive() || member == target->GetVictim() ||
-            member->GetMap() != bot->GetMap())
-            continue;
-        raidX += member->GetPositionX();
-        raidY += member->GetPositionY();
-        ++raidCount;
+        float raidX = 0.0f;
+        float raidY = 0.0f;
+        uint32 raidCount = 0;
+        for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+        {
+            Player* member = ref->GetSource();
+            if (!member || !member->IsAlive() || member == target->GetVictim() ||
+                member->GetMap() != bot->GetMap())
+                continue;
+            raidX += member->GetPositionX();
+            raidY += member->GetPositionY();
+            ++raidCount;
+        }
+
+        float approach = Position::NormalizeOrientation(
+            target->GetOrientation() + float(M_PI));
+        if (raidCount)
+        {
+            raidX /= float(raidCount);
+            raidY /= float(raidCount);
+            float const deltaX = raidX - target->GetPositionX();
+            float const deltaY = raidY - target->GetPositionY();
+            if (deltaX * deltaX + deltaY * deltaY > 4.0f)
+                approach = Position::NormalizeOrientation(
+                    std::atan2(deltaY, deltaX));
+        }
+
+        worldBossFormationAnchor = approach;
+        worldBossFormationContact = firstContact;
+        worldBossFormationTarget = targetGuid;
+        hasWorldBossFormationAnchor = true;
     }
 
-    float rear;
-    if (raidCount)
-    {
-        raidX /= float(raidCount);
-        raidY /= float(raidCount);
-        float const deltaX = raidX - target->GetPositionX();
-        float const deltaY = raidY - target->GetPositionY();
-        if (deltaX * deltaX + deltaY * deltaY > 4.0f)
-            rear = Position::NormalizeOrientation(std::atan2(deltaY, deltaX));
-        else
-            rear = Position::NormalizeOrientation(target->GetOrientation() +
-                float(M_PI));
-    }
-    else
-    {
-        rear = Position::NormalizeOrientation(target->GetOrientation() +
-            float(M_PI));
-    }
-    float const angle = Position::NormalizeOrientation(rear + offset);
+    float const angle = Position::NormalizeOrientation(
+        worldBossFormationAnchor + offset);
     x = target->GetPositionX() + std::cos(angle) * centerDistance;
     y = target->GetPositionY() + std::sin(angle) * centerDistance;
     z = target->GetPositionZ();

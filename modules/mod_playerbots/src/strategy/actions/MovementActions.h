@@ -105,6 +105,10 @@ protected:
     Position GetNearestPosition(const std::vector<Position>& positions);
     int lastMoveTimer = 0;
     uint32 lastLoggedWorldBossContact = 0;
+    uint32 worldBossFormationContact = 0;
+    uint32 worldBossFormationTarget = 0;
+    float worldBossFormationAnchor = 0.0f;
+    bool hasWorldBossFormationAnchor = false;
     int moveInterval;
 };
 
