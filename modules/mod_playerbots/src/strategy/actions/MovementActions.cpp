@@ -399,7 +399,8 @@ bool FindSafePositionFromCreatureHazards(Player* bot, uint32 entry,
     float searchRange, float minimumDistance, float& x, float& y, float& z,
     bool preferDestination = false, float preferredX = 0.0f,
     float preferredY = 0.0f, float maximumCenterDistance = FLT_MAX,
-    float centerX = 0.0f, float centerY = 0.0f)
+    float centerX = 0.0f, float centerY = 0.0f,
+    bool allowHazardCrossing = false)
 {
     if (!bot)
         return false;
@@ -481,7 +482,8 @@ bool FindSafePositionFromCreatureHazards(Player* bot, uint32 entry,
                     segmentY * projection;
                 float const pathDx = closestX - hazard->GetPositionX();
                 float const pathDy = closestY - hazard->GetPositionY();
-                if (pathDx * pathDx + pathDy * pathDy <
+                if (!allowHazardCrossing &&
+                    pathDx * pathDx + pathDy * pathDy <
                     minimumDistance * minimumDistance)
                 {
                     pathClear = false;
@@ -2526,6 +2528,21 @@ BossMechanicsAction::Reaction BossMechanicsAction::GetReaction() const
     {
         bool const activeTank = PlayerBotSpec::IsTank(bot, true) &&
             yulon->GetVictim() == bot;
+
+        float wallGapX = 0.0f;
+        float wallGapY = 0.0f;
+        float wallGapZ = 0.0f;
+        bool wallGapAligned = false;
+        bool const wallThreatening = GetThreateningYuLonWallGap(bot,
+            wallGapX, wallGapY, wallGapZ, wallGapAligned);
+
+        // Once an advancing wall requires lateral movement, reaching its
+        // opening outranks the pool dodge. Otherwise entering a pool on the
+        // only route makes the pool action pull the bot backwards, and the
+        // two reactions alternate until the wall arrives.
+        if (wallThreatening && !wallGapAligned)
+            return Reaction::MoveYuLonJadefireWallGap;
+
         if (Creature* blaze = bot->FindNearestCreature(
                 YuLonJadefireBlazeEntry, 20.0f, true))
             if (bot->GetExactDist2d(blaze) < 13.0f)
@@ -2537,14 +2554,6 @@ BossMechanicsAction::Reaction BossMechanicsAction::GetReaction() const
         if (activeTank && IsYuLonMeleeAreaBlocked(bot, yulon))
             return Reaction::AvoidYuLonJadefireBlaze;
 
-        float wallGapX = 0.0f;
-        float wallGapY = 0.0f;
-        float wallGapZ = 0.0f;
-        bool wallGapAligned = false;
-        bool const wallThreatening = GetThreateningYuLonWallGap(bot,
-            wallGapX, wallGapY, wallGapZ, wallGapAligned);
-        if (wallThreatening && !wallGapAligned)
-            return Reaction::MoveYuLonJadefireWallGap;
         if (bot->HasAura(BurningRushSpell) &&
             (!wallThreatening || wallGapAligned))
             return Reaction::StopYuLonRunSpeed;
@@ -2962,11 +2971,14 @@ bool BossMechanicsAction::Execute(Event /*event*/)
                         alreadyAligned) || alreadyAligned)
                     return false;
 
-                if (IsPositionNearCreatureEntry(bot,
-                        YuLonJadefireBlazeEntry, 120.0f, 13.0f, x, y) ||
+                bool const destinationInBlaze =
+                    IsPositionNearCreatureEntry(bot,
+                        YuLonJadefireBlazeEntry, 120.0f, 13.0f, x, y);
+                bool const routeCrossesBlaze =
                     IsSegmentNearCreatureEntry(bot,
                         YuLonJadefireBlazeEntry, 120.0f, 13.0f,
-                        bot->GetPositionX(), bot->GetPositionY(), x, y))
+                        bot->GetPositionX(), bot->GetPositionY(), x, y);
+                if (destinationInBlaze || routeCrossesBlaze)
                 {
                     float waypointX = 0.0f;
                     float waypointY = 0.0f;
@@ -2974,10 +2986,33 @@ bool BossMechanicsAction::Execute(Event /*event*/)
                     if (!FindHazardAvoidingWaypoint(bot,
                             YuLonJadefireBlazeEntry, 120.0f, 13.0f, x, y,
                             waypointX, waypointY, waypointZ))
-                        return false;
-                    x = waypointX;
-                    y = waypointY;
-                    z = waypointZ;
+                    {
+                        // Overlapping pools can seal every strictly clear
+                        // route. Waiting is lethal once the wall advances:
+                        // allow a brief crossing, but require the selected
+                        // endpoint itself to be outside every live pool.
+                        if (destinationInBlaze &&
+                            !FindSafePositionFromCreatureHazards(bot,
+                                YuLonJadefireBlazeEntry, 120.0f, 13.0f,
+                                waypointX, waypointY, waypointZ, true, x, y,
+                                FLT_MAX, 0.0f, 0.0f, true))
+                            return false;
+
+                        if (destinationInBlaze)
+                        {
+                            x = waypointX;
+                            y = waypointY;
+                            z = waypointZ;
+                        }
+                        // A safe destination with only a blocked segment is
+                        // deliberately reached directly through the pool.
+                    }
+                    else
+                    {
+                        x = waypointX;
+                        y = waypointY;
+                        z = waypointZ;
+                    }
                 }
 
                 if (bot->GetExactDist2d(x, y) > 8.0f)
