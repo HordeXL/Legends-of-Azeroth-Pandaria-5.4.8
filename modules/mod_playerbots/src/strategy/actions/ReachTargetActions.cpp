@@ -43,6 +43,14 @@ bool ReachTargetAction::isUseful()
             return false;
     }
 
+    // During a staged Yu'lon fight, direct reach movement repeatedly chooses
+    // the shortest line through a pool, then competes with the opposite
+    // hazard-escape command. Non-tanks must let the formation and
+    // boss-mechanics actions choose safe intermediate points.
+    if (target && target->GetEntry() == 71955 &&
+        bot->HasWorldBossStagingAccess() && target->GetVictim() != bot)
+        return false;
+
     // Chi-Ji's Crane Rush repeatedly sends Blazing Nova children out from
     // the boss. Do not let ordinary melee/spell reach movement override the
     // forced lane dodge and immediately chase back into the next child.

@@ -117,6 +117,51 @@ bool TryActivateYuLonRunSpeed(PlayerbotAI* ai, Player* bot)
     return false;
 }
 
+bool TryActivateYuLonCrossingDefense(PlayerbotAI* ai, Player* bot)
+{
+    if (!ai || !bot)
+        return false;
+
+    // Only use an emergency pool crossing when a class mitigation or
+    // immunity is already active or can be activated legitimately. These
+    // are instant, self-targeted MoP abilities which still allow movement.
+    // HasSpell and CastSpell retain the normal cooldown, resource, stance,
+    // talent and CheckCast restrictions.
+    for (uint32 spellId :
+        { 871u,     // Shield Wall
+          118038u,  // Die by the Sword
+          498u,     // Divine Protection
+          642u,     // Divine Shield
+          19263u,   // Deterrence
+          31224u,   // Cloak of Shadows
+          47585u,   // Dispersion
+          17u,      // Power Word: Shield
+          48707u,   // Anti-Magic Shell
+          48792u,   // Icebound Fortitude
+          108271u,  // Astral Shift
+          30823u,   // Shamanistic Rage
+          11426u,   // Ice Barrier
+          104773u,  // Unending Resolve
+          108416u,  // Sacrificial Pact
+          122783u,  // Diffuse Magic
+          115203u,  // Fortifying Brew
+          22812u,   // Barkskin
+          61336u }) // Survival Instincts
+    {
+        if (bot->HasAura(spellId))
+            return true;
+    }
+
+    for (uint32 spellId :
+        { 871u, 118038u, 498u, 642u, 19263u, 31224u, 47585u, 17u,
+          48707u, 48792u, 108271u, 30823u, 11426u, 104773u, 108416u,
+          122783u, 115203u, 22812u, 61336u })
+        if (bot->HasSpell(spellId) && ai->CastSpell(spellId, bot))
+            return true;
+
+    return false;
+}
+
 bool CanContinueWorldBossAttack(Player* bot, Unit* target)
 {
     if (!bot || !target || !bot->IsWithinLOSInMap(target))
@@ -332,6 +377,15 @@ bool FindHazardAvoidingWaypoint(Player* bot, uint32 entry, float searchRange,
         float const clearanceSq = clearance * clearance;
         for (Creature* hazard : hazards)
         {
+            // A bot which is already clipped by a pool must be allowed to
+            // leave its radius. The part of that route inside the starting
+            // pool is unavoidable; every other pool and the endpoint still
+            // have to remain clear.
+            float const startDx = fromX - hazard->GetPositionX();
+            float const startDy = fromY - hazard->GetPositionY();
+            if (startDx * startDx + startDy * startDy < clearanceSq)
+                continue;
+
             float projection = 0.0f;
             if (segmentLengthSq > 0.01f)
             {
@@ -3137,25 +3191,32 @@ bool BossMechanicsAction::Execute(Event /*event*/)
                             YuLonJadefireBlazeEntry, 120.0f, 13.0f, x, y,
                             waypointX, waypointY, waypointZ))
                     {
-                        // Overlapping pools can seal every strictly clear
-                        // route. Waiting is lethal once the wall advances:
-                        // allow a brief crossing, but require the selected
-                        // endpoint itself to be outside every live pool.
-                        if (destinationInBlaze &&
-                            !FindSafePositionFromCreatureHazards(bot,
+                        // Search wider escape rings before considering a
+                        // crossing, even if the detour temporarily increases
+                        // the remaining distance to the wall gap.
+                        bool const foundWideDetour =
+                            FindSafePositionFromCreatureHazards(bot,
                                 YuLonJadefireBlazeEntry, 120.0f, 13.0f,
-                                waypointX, waypointY, waypointZ, true, x, y,
-                                FLT_MAX, 0.0f, 0.0f, true))
-                            return false;
-
-                        if (destinationInBlaze)
+                                waypointX, waypointY, waypointZ, true, x, y);
+                        if (foundWideDetour)
                         {
                             x = waypointX;
                             y = waypointY;
                             z = waypointZ;
                         }
-                        // A safe destination with only a blocked segment is
-                        // deliberately reached directly through the pool.
+                        else
+                        {
+                            // If the wall is already advancing and its gap is
+                            // safe but every detour is sealed, crossing one
+                            // pool is preferable to certain wall damage. Do
+                            // it only under a legitimate class defensive. The
+                            // wall reaction remains highest priority, so the
+                            // bot commits to the gap instead of alternating
+                            // with an opposite pool-escape command.
+                            if (destinationInBlaze ||
+                                !TryActivateYuLonCrossingDefense(botAI, bot))
+                                return false;
+                        }
                     }
                     else
                     {
