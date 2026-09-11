@@ -2563,15 +2563,44 @@ BossMechanicsAction::Reaction BossMechanicsAction::GetReaction() const
             xuen->GetVictim() == bot;
         if (incomingAreaDamage && bot->GetGroup() && !activeTank)
         {
+            // Xuen's selector first removes tanks and melee and uses up to
+            // eight ranged/healers. It falls back to the whole raid only
+            // when fewer than eight preferred targets exist. Mirror that
+            // choice here: otherwise the packed melee group repeatedly
+            // retreats even though none of them can receive the spell in a
+            // normal 25-player roster.
+            auto isPreferredTarget = [](Player* player)
+            {
+                return player && !PlayerBotSpec::IsTank(player, true) &&
+                    (!PlayerBotSpec::IsMelee(player, true) ||
+                     PlayerBotSpec::IsHeal(player, true));
+            };
+            uint32 preferredCount = 0;
+            for (GroupReference* ref = bot->GetGroup()->GetFirstMember(); ref;
+                ref = ref->next())
+            {
+                Player* member = ref->GetSource();
+                if (member && member->IsAlive() &&
+                    member->GetMap() == bot->GetMap() &&
+                    isPreferredTarget(member))
+                    ++preferredCount;
+            }
+            bool const preferredOnly = preferredCount >= 8u;
+            if (preferredOnly && !isPreferredTarget(bot))
+                return Reaction::None;
+
             // Assigned world-boss slots already provide the required spread.
             // Use emergency movement only if two living raid members are
-            // still close enough for their missiles to overlap.
+            // still close enough for their missiles to overlap. When the
+            // preferred pool is large enough, ignore melee here too: they
+            // are not selected and stand at a separate inner boss arc.
             for (GroupReference* ref = bot->GetGroup()->GetFirstMember(); ref;
                 ref = ref->next())
             {
                 Player* member = ref->GetSource();
                 if (member && member != bot && member->IsAlive() &&
                     member->GetMap() == bot->GetMap() &&
+                    (!preferredOnly || isPreferredTarget(member)) &&
                     bot->GetExactDist2d(member) < 12.0f)
                 {
                     return Reaction::SpreadXuenLightning;
