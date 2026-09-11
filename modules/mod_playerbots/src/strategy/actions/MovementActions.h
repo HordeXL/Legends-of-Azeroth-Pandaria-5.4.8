@@ -203,6 +203,10 @@ private:
     };
 
     Reaction GetReaction() const;
+    uint32 niuzaoDodgeLockUntil = 0;
+    float niuzaoDodgeX = 0.0f;
+    float niuzaoDodgeY = 0.0f;
+    float niuzaoDodgeZ = 0.0f;
     uint32 chiJiDodgeLockUntil = 0;
     float chiJiDodgeX = 0.0f;
     float chiJiDodgeY = 0.0f;
