@@ -73,6 +73,7 @@ constexpr uint32 ChiJiEntry = 71952;
 constexpr uint32 ChiJiCraneRushSpell = 144470;
 constexpr uint32 ChiJiFirestormEntry = 71971;
 constexpr uint32 ChiJiChildEntry = 71990;
+constexpr uint32 ChiJiBeaconEntry = 71978;
 constexpr uint32 YuLonEntry = 71955;
 constexpr uint32 YuLonJadefireBlazeEntry = 72016;
 constexpr uint32 YuLonJadefireWallEntry = 72020;
@@ -699,8 +700,8 @@ Creature* FindThreateningChiJiChild(Player* bot, Creature* chiJi)
         bool const crossingSoon = botProgress > -5.0f &&
             childProgress <= botProgress + 24.0f &&
             childProgress >= botProgress - 14.0f &&
-            std::abs(lateral) < 14.0f;
-        if (!crossingSoon && directDistance >= 16.0f)
+            std::abs(lateral) < 11.5f;
+        if (!crossingSoon && directDistance >= 13.0f)
             continue;
 
         float const score = directDistance + std::abs(lateral) * 0.5f;
@@ -712,6 +713,88 @@ Creature* FindThreateningChiJiChild(Player* bot, Creature* chiJi)
     }
 
     return best;
+}
+
+float ScoreChiJiFirestormSafety(Player* bot, float x, float y);
+
+float GetGroupClearanceAt(Player* bot, float x, float y)
+{
+    if (!bot || !bot->GetGroup())
+        return 1000.0f;
+
+    float clearance = FLT_MAX;
+    for (GroupReference* ref = bot->GetGroup()->GetFirstMember(); ref;
+        ref = ref->next())
+    {
+        Player* member = ref->GetSource();
+        if (!member || member == bot || !member->IsAlive() ||
+            member->GetMap() != bot->GetMap())
+            continue;
+
+        float const dx = x - member->GetPositionX();
+        float const dy = y - member->GetPositionY();
+        clearance = std::min(clearance, std::sqrt(dx * dx + dy * dy));
+    }
+
+    return clearance == FLT_MAX ? 1000.0f : clearance;
+}
+
+bool GetChiJiBeaconPosition(Player* bot, Creature* beacon,
+    float& x, float& y, float& z)
+{
+    if (!bot || !beacon)
+        return false;
+
+    float bestScore = -FLT_MAX;
+    bool found = false;
+    // Stay well inside the Beacon of Hope area, but do not send the complete
+    // raid to one exact coordinate. Start each bot at a deterministic point
+    // on the ring, then retain the safest reachable candidate.
+    uint32 const first = bot->GetGUID().GetCounter() % 12u;
+    for (uint32 offset = 0; offset < 12u; ++offset)
+    {
+        uint32 const slot = (first + offset) % 12u;
+        float const angle = float(slot) * float(M_PI) / 6.0f;
+        float candidateX = beacon->GetPositionX() + std::cos(angle) * 3.5f;
+        float candidateY = beacon->GetPositionY() + std::sin(angle) * 3.5f;
+        float candidateZ = beacon->GetPositionZ();
+        if (!bot->GetMap()->CheckCollisionAndGetValidCoords(bot,
+                bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(),
+                candidateX, candidateY, candidateZ, false))
+            continue;
+
+        float const firestormClearance = ScoreChiJiFirestormSafety(
+            bot, candidateX, candidateY);
+        if (firestormClearance == -FLT_MAX)
+            continue;
+
+        float const move = bot->GetExactDist2d(candidateX, candidateY);
+        float const separation = GetGroupClearanceAt(
+            bot, candidateX, candidateY);
+        float const score = std::min(firestormClearance, 30.0f) * 2.0f +
+            std::min(separation, 8.0f) - move * 0.05f;
+        if (!found || score > bestScore)
+        {
+            bestScore = score;
+            x = candidateX;
+            y = candidateY;
+            z = candidateZ;
+            found = true;
+        }
+    }
+
+    // Blazing Song is lethal. If every ring point overlaps a Firestorm,
+    // reaching the beacon is still safer than remaining outside its shield.
+    if (!found)
+    {
+        x = beacon->GetPositionX();
+        y = beacon->GetPositionY();
+        z = beacon->GetPositionZ();
+        found = bot->GetMap()->CheckCollisionAndGetValidCoords(bot,
+            bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(),
+            x, y, z, false);
+    }
+    return found;
 }
 
 float ScoreChiJiFirestormSafety(Player* bot, float x, float y)
@@ -2440,6 +2523,22 @@ BossMechanicsAction::Reaction BossMechanicsAction::GetReaction() const
     // step across its lane before it arrives.
     if (Creature* chiJi = bot->FindNearestCreature(ChiJiEntry, 200.0f, true))
     {
+        // Beacon of Hope is the only intended answer to the lethal Blazing
+        // Song. Move the complete raid as soon as the beacon is summoned;
+        // the old health-percent condition sent only already-injured bots and
+        // allowed ordinary formation/chase movement to keep everyone else out.
+        if (Creature* beacon = bot->FindNearestCreature(
+                ChiJiBeaconEntry, 120.0f, true))
+        {
+            if (bot->GetExactDist2d(beacon) > 7.0f)
+                return Reaction::MoveChiJiBeacon;
+
+            // Already inside the shield: hold this point while the ordinary
+            // formation and reach actions remain suppressed, but allow
+            // healing and damage casts to continue during Blazing Song.
+            return Reaction::None;
+        }
+
         // The last children remain dangerous for a few seconds after the
         // boss aura ends, so key the dodge from the actual moving summon.
         if (FindThreateningChiJiChild(bot, chiJi))
@@ -2448,9 +2547,6 @@ BossMechanicsAction::Reaction BossMechanicsAction::GetReaction() const
                 bot->FindNearestCreature(ChiJiFirestormEntry, 18.0f, true))
             if (bot->GetExactDist2d(firestorm) < 16.0f)
                 return Reaction::AvoidChiJiFirestorm;
-        if (bot->GetHealthPct() < 70.0f &&
-            bot->FindNearestCreature(71978, 100.0f, true))
-            return Reaction::MoveChiJiBeacon;
     }
 
     // Xuen's local selector launches eight Chi Barrage missiles (144642 ->
@@ -2586,6 +2682,7 @@ bool BossMechanicsAction::Execute(Event /*event*/)
     // to resume while the bot holds that safe point.
     if ((reaction == Reaction::AvoidChiJiFirestorm ||
          reaction == Reaction::AvoidChiJiBlazingNova ||
+         reaction == Reaction::MoveChiJiBeacon ||
          reaction == Reaction::SpreadXuenLightning ||
          reaction == Reaction::AvoidNiuzaoCharge ||
          reaction == Reaction::AvoidYuLonJadefireBlaze ||
@@ -2732,8 +2829,16 @@ bool BossMechanicsAction::Execute(Event /*event*/)
         case Reaction::SpreadOrdosBurningSoul:
             return MoveFromGroup(20.0f, MovementPriority::MOVEMENT_FORCED);
         case Reaction::MoveChiJiBeacon:
-            if (Creature* beacon = bot->FindNearestCreature(71978, 100.0f, true))
-                return MoveTo(beacon, 3.0f, MovementPriority::MOVEMENT_FORCED);
+            if (Creature* beacon = bot->FindNearestCreature(
+                    ChiJiBeaconEntry, 120.0f, true))
+            {
+                float x = 0.0f;
+                float y = 0.0f;
+                float z = bot->GetPositionZ();
+                if (GetChiJiBeaconPosition(bot, beacon, x, y, z))
+                    return MoveTo(bot->GetMapId(), x, y, z, false, false,
+                        true, true, MovementPriority::MOVEMENT_FORCED, true);
+            }
             break;
         case Reaction::AvoidChiJiFirestorm:
             {
@@ -2758,7 +2863,9 @@ bool BossMechanicsAction::Execute(Event /*event*/)
                     if (getMSTime() < chiJiDodgeLockUntil &&
                         bot->GetExactDist2d(chiJiDodgeX, chiJiDodgeY) > 2.0f &&
                         ScoreChiJiFirestormSafety(bot, chiJiDodgeX,
-                            chiJiDodgeY) != -FLT_MAX)
+                            chiJiDodgeY) != -FLT_MAX &&
+                        ScoreChiJiDodgePosition(bot, chiJi, chiJiDodgeX,
+                            chiJiDodgeY) >= 12.0f)
                         return MoveTo(bot->GetMapId(), chiJiDodgeX,
                             chiJiDodgeY, chiJiDodgeZ, false, false, true, true,
                             MovementPriority::MOVEMENT_FORCED, true);
@@ -2780,12 +2887,6 @@ bool BossMechanicsAction::Execute(Event /*event*/)
                         pathY /= pathLength;
                     }
 
-                    float const botRelativeX = bot->GetPositionX() -
-                        chiJi->GetPositionX();
-                    float const botRelativeY = bot->GetPositionY() -
-                        chiJi->GetPositionY();
-                    float const currentLateral = -botRelativeX * pathY +
-                        botRelativeY * pathX;
                     float const currentCourtDistance = bot->GetExactDist2d(
                         CelestialCourtCenterX, CelestialCourtCenterY);
 
@@ -2794,20 +2895,24 @@ bool BossMechanicsAction::Execute(Event /*event*/)
                     float bestZ = 0.0f;
                     float bestScore = -FLT_MAX;
                     float bestMove = FLT_MAX;
+                    float bestSeparation = -FLT_MAX;
                     bool foundSafe = false;
 
                     // The children travel radially. Move only across their
-                    // lane, never away along it: the old full-circle search
-                    // repeatedly selected 28-yard retreats and drove the
-                    // raid to the court boundary. Try the nearest edge of
-                    // either side first, with slightly wider alternatives
-                    // only when an adjacent child or Firestorm blocks it.
-                    for (float const safeLateral : { 16.0f, 20.0f, 24.0f })
+                    // lane, never away along it. Test short relative steps,
+                    // rather than absolute offsets from the lane: an absolute
+                    // -16 target could make a bot already at +10 cross 26
+                    // yards and visually retreat with the whole raid.
+                    float const preferredSide =
+                        bot->GetGUID().GetCounter() % 2u ? 1.0f : -1.0f;
+                    for (float const moveDistance :
+                        { 4.0f, 6.0f, 8.0f, 10.0f, 12.0f, 14.0f,
+                          17.0f, 20.0f })
                     {
-                        for (float const side : { -1.0f, 1.0f })
+                        for (float const side :
+                            { preferredSide, -preferredSide })
                         {
-                            float const lateralMove =
-                                side * safeLateral - currentLateral;
+                            float const lateralMove = side * moveDistance;
                             float x = bot->GetPositionX() -
                                 pathY * lateralMove;
                             float y = bot->GetPositionY() +
@@ -2829,11 +2934,15 @@ bool BossMechanicsAction::Execute(Event /*event*/)
                             float const score = ScoreChiJiDodgePosition(
                                 bot, chiJi, x, y);
                             float const move = bot->GetExactDist2d(x, y);
-                            bool const safe = score >= 14.5f;
+                            float const separation = GetGroupClearanceAt(
+                                bot, x, y);
+                            bool const safe = score >= 12.0f;
                             if ((safe && (!foundSafe ||
                                     move < bestMove - 0.1f ||
                                     (std::abs(move - bestMove) <= 0.1f &&
-                                     score > bestScore))) ||
+                                     (separation > bestSeparation + 0.1f ||
+                                      (std::abs(separation - bestSeparation) <= 0.1f &&
+                                       score > bestScore))))) ||
                                 (!safe && !foundSafe &&
                                     (score > bestScore + 0.1f ||
                                      (std::abs(score - bestScore) <= 0.1f &&
@@ -2844,6 +2953,7 @@ bool BossMechanicsAction::Execute(Event /*event*/)
                                 bestZ = z;
                                 bestScore = score;
                                 bestMove = move;
+                                bestSeparation = separation;
                                 foundSafe = safe;
                             }
                         }
@@ -2858,7 +2968,7 @@ bool BossMechanicsAction::Execute(Event /*event*/)
                         chiJiDodgeX = bestX;
                         chiJiDodgeY = bestY;
                         chiJiDodgeZ = bestZ;
-                        chiJiDodgeLockUntil = getMSTime() + 1800u;
+                        chiJiDodgeLockUntil = getMSTime() + 1200u;
                         return true;
                     }
                     return false;
@@ -3086,7 +3196,8 @@ bool CombatFormationMoveAction::isUseful()
     if (IsNiuzaoChargeActive(target) || IsChiJiCraneRushActive(target) ||
         IsXuenAreaDamageActive(target) ||
         (target->GetEntry() == ChiJiEntry &&
-         bot->FindNearestCreature(ChiJiChildEntry, 120.0f, true)))
+         (bot->FindNearestCreature(ChiJiChildEntry, 120.0f, true) ||
+          bot->FindNearestCreature(ChiJiBeaconEntry, 120.0f, true))))
         return false;
     if (target->GetEntry() == YuLonEntry)
     {
@@ -3189,7 +3300,8 @@ bool CombatFormationMoveAction::Execute(Event /*event*/)
     if (IsNiuzaoChargeActive(target) || IsChiJiCraneRushActive(target) ||
         IsXuenAreaDamageActive(target) ||
         (target->GetEntry() == ChiJiEntry &&
-         bot->FindNearestCreature(ChiJiChildEntry, 120.0f, true)))
+         (bot->FindNearestCreature(ChiJiChildEntry, 120.0f, true) ||
+          bot->FindNearestCreature(ChiJiBeaconEntry, 120.0f, true))))
         return false;
     if (target->GetEntry() == YuLonEntry)
     {

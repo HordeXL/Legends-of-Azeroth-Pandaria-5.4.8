@@ -48,6 +48,12 @@ bool ReachTargetAction::isUseful()
     // forced lane dodge and immediately chase back into the next child.
     if (target && target->GetEntry() == 71952)
     {
+        // Do not chase Chi-Ji out of Beacon of Hope while Blazing Song is
+        // imminent or active. Boss mechanics moves tanks and damage dealers
+        // into the shield and ordinary reach resumes after it despawns.
+        if (bot->FindNearestCreature(71978, 120.0f, true))
+            return false;
+
         bool craneRush = target->HasAura(144470);
         if (Spell* spell = target->GetCurrentSpell(CURRENT_GENERIC_SPELL))
             craneRush = craneRush || (spell->GetSpellInfo() &&
