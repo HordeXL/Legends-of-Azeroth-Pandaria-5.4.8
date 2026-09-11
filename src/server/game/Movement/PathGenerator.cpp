@@ -106,7 +106,7 @@ bool PathGenerator::CalculatePath(float destX, float destY, float destZ, bool fo
 
     BuildPolyPath(start, dest);
 
-    if (_sourceUnit->VisualizePathfinding)
+    if (_sourceUnit && _sourceUnit->VisualizePathfinding)
     {
         VisualizePath(2500);
         VisualizeNavmesh(2500);
@@ -1100,6 +1100,8 @@ void PathGenerator::VisualizePath(uint32 duration)
             waypoint->SetTempSummonType(TEMPSUMMON_TIMED_DESPAWN);
             return waypoint->GetGUID();
         }
+
+        return ObjectGuid::Empty;
     };
     static auto const UpdateWaypoint = [](Unit const* source, ObjectGuid prevGUID, G3D::Vector3 const& pos, uint32 duration, ObjectGuid guid)
     {
@@ -1173,6 +1175,8 @@ void PathGenerator::VisualizeNavmesh(uint32 duration)
             waypoint->SetTempSummonType(TEMPSUMMON_TIMED_DESPAWN);
             return waypoint->GetGUID();
         }
+
+        return ObjectGuid::Empty;
     };
     static auto const UpdateWaypoint = [](Unit const* source, ObjectGuid prevGUID, G3D::Vector3 const& pos, uint32 duration, ObjectGuid guid)
     {
