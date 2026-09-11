@@ -539,9 +539,17 @@ bool ScriptedAI::EnterEvadeIfOutOfCombatArea(uint32 const diff, const float dist
             break;
         case NPC_YULON:
         case NPC_XUEN:
-        case NPC_CHI_JI:
         case NPC_NIUZAO:
             if (me->GetExactDist2d(-650.03f, -5016.83f) < 105.0f)
+                return false;
+            break;
+        case NPC_CHI_JI:
+            // Chi-Ji can be repositioned much farther than the other
+            // Celestials while the raid avoids Firestorm and Crane Rush.
+            // Cover the complete court, including its outer fighting edge,
+            // without allowing the boss to be dragged into the surrounding
+            // Timeless Isle.
+            if (me->GetExactDist2d(-650.03f, -5016.83f) < 135.0f)
                 return false;
             break;
         case NPC_HAROMM:

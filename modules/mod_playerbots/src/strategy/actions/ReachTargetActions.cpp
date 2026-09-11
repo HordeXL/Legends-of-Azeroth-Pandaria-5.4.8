@@ -71,6 +71,21 @@ bool ReachTargetAction::isUseful()
 
 std::string const ReachTargetAction::GetTargetName() { return "current target"; }
 
+bool ReachMeleeAction::isUseful()
+{
+    Unit* target = GetTarget();
+    // Chi-Ji's encounter formation selects a reachable point at the edge of
+    // the boss's melee circle and routes around Firestorms. The generic
+    // center-directed chase would override it, walk into a vortex, and make
+    // different melee classes stop at visibly different depths in the boss.
+    // The active tank remains on ordinary chase/tank-facing logic.
+    if (target && target->GetEntry() == 71952 &&
+        bot->HasWorldBossStagingAccess() && target->GetVictim() != bot)
+        return false;
+
+    return ReachTargetAction::isUseful();
+}
+
 CastReachTargetSpellAction::CastReachTargetSpellAction(PlayerbotAI* botAI, std::string const spell, float distance)
     : CastSpellAction(botAI, spell), distance(distance)
 {
