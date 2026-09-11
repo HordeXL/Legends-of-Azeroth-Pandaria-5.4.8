@@ -54,6 +54,13 @@ bool ReachTargetAction::isUseful()
                 spell->GetSpellInfo()->Id == 144470);
         if (craneRush || bot->FindNearestCreature(71990, 120.0f, true))
             return false;
+
+        // Firestorm's floor summon (71971, ten-yard damage radius) persists
+        // after the forced dodge. If ordinary melee reach resumes while the
+        // summon is still beside the bot, it walks straight back into the
+        // same hazard and repeats that cycle on every formation update.
+        if (bot->FindNearestCreature(71971, 24.0f, true))
+            return false;
     }
 
     // float dis = distance + CONTACT_DISTANCE;

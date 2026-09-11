@@ -163,6 +163,80 @@ Creature* FindThreateningChiJiChild(Player* bot, Creature* chiJi)
     return best;
 }
 
+float ScoreChiJiDodgePosition(Player* bot, Creature* chiJi, float x, float y)
+{
+    if (!bot || !chiJi)
+        return -FLT_MAX;
+
+    std::list<Creature*> children;
+    bot->GetCreatureListWithEntryInGrid(children, ChiJiChildEntry, 120.0f);
+
+    // Score against every child that can still cross the candidate point.
+    // Looking only at the nearest lane makes a bot step directly into the
+    // neighbouring lane and reverse direction on its next AI tick.
+    float clearance = FLT_MAX;
+    bool found = false;
+    for (Creature* child : children)
+    {
+        if (!child || !child->IsAlive() || !child->IsInWorld() ||
+            child->GetMap() != bot->GetMap())
+            continue;
+
+        float pathX = child->GetPositionX() - chiJi->GetPositionX();
+        float pathY = child->GetPositionY() - chiJi->GetPositionY();
+        float const childProgress = std::sqrt(pathX * pathX + pathY * pathY);
+        if (childProgress < 0.5f)
+        {
+            pathX = std::cos(child->GetOrientation());
+            pathY = std::sin(child->GetOrientation());
+        }
+        else
+        {
+            pathX /= childProgress;
+            pathY /= childProgress;
+        }
+
+        float const candidateX = x - chiJi->GetPositionX();
+        float const candidateY = y - chiJi->GetPositionY();
+        float const candidateProgress = candidateX * pathX + candidateY * pathY;
+        if (candidateProgress < -5.0f ||
+            childProgress > candidateProgress + 30.0f ||
+            childProgress < candidateProgress - 10.0f)
+            continue;
+
+        float const lateral = std::abs(-candidateX * pathY + candidateY * pathX);
+        float const directX = x - child->GetPositionX();
+        float const directY = y - child->GetPositionY();
+        float const direct = std::sqrt(directX * directX + directY * directY);
+        clearance = std::min(clearance, std::min(lateral, direct));
+        found = true;
+    }
+
+    return found ? clearance : 1000.0f;
+}
+
+bool IsPositionInsideChiJiFirestorm(Player* bot, float x, float y)
+{
+    if (!bot)
+        return false;
+
+    std::list<Creature*> firestorms;
+    bot->GetCreatureListWithEntryInGrid(firestorms, ChiJiFirestormEntry, 120.0f);
+    for (Creature* firestorm : firestorms)
+    {
+        if (!firestorm || !firestorm->IsAlive() || !firestorm->IsInWorld() ||
+            firestorm->GetMap() != bot->GetMap())
+            continue;
+        float const dx = x - firestorm->GetPositionX();
+        float const dy = y - firestorm->GetPositionY();
+        // Spell 144462 has a ten-yard DBC radius. Keep extra room for movement
+        // interpolation and the next server update.
+        if (dx * dx + dy * dy < 16.0f * 16.0f)
+            return true;
+    }
+    return false;
+}
+
 // Temporary, targeted pre-pull tracing. Record the action that actually
 // submitted movement, rather than inferring it from a combat flag or class.
 void TraceManagedPveMovement(PlayerbotAI* ai, char const* action,
@@ -2039,6 +2113,16 @@ bool BossMechanicsAction::Execute(Event /*event*/)
                     bot->FindNearestCreature(ChiJiEntry, 200.0f, true))
                 if (Creature* child = FindThreateningChiJiChild(bot, chiJi))
                 {
+                    // Finish the short committed sidestep before selecting a
+                    // different child. Crane Rush creates many adjacent lanes;
+                    // changing lane every AI tick produces visible ping-pong
+                    // and leaves the bot inside both novas.
+                    if (getMSTime() < chiJiDodgeLockUntil &&
+                        bot->GetExactDist2d(chiJiDodgeX, chiJiDodgeY) > 2.0f)
+                        return MoveTo(bot->GetMapId(), chiJiDodgeX,
+                            chiJiDodgeY, chiJiDodgeZ, false, false, true, true,
+                            MovementPriority::MOVEMENT_FORCED, true);
+
                     float pathX = child->GetPositionX() - chiJi->GetPositionX();
                     float pathY = child->GetPositionY() - chiJi->GetPositionY();
                     float pathLength = std::sqrt(pathX * pathX + pathY * pathY);
@@ -2059,19 +2143,50 @@ bool BossMechanicsAction::Execute(Event /*event*/)
                     float const botY = bot->GetPositionY() - chiJi->GetPositionY();
                     float const lateral = botX * perpendicularX +
                         botY * perpendicularY;
-                    float const side = std::abs(lateral) > 0.5f ?
-                        (lateral > 0.0f ? 1.0f : -1.0f) :
-                        (bot->GetGUID().GetCounter() % 2 ? 1.0f : -1.0f);
-                    float const correction = side * 17.0f - lateral;
-                    float x = bot->GetPositionX() + perpendicularX * correction;
-                    float y = bot->GetPositionY() + perpendicularY * correction;
-                    float z = bot->GetPositionZ();
-                    if (!bot->GetMap()->CheckCollisionAndGetValidCoords(bot,
-                            bot->GetPositionX(), bot->GetPositionY(),
-                            bot->GetPositionZ(), x, y, z, false))
+                    float bestX = 0.0f;
+                    float bestY = 0.0f;
+                    float bestZ = 0.0f;
+                    float bestScore = -FLT_MAX;
+                    float bestMove = FLT_MAX;
+                    for (float const side : { -1.0f, 1.0f })
+                    {
+                        float const correction = side * 18.0f - lateral;
+                        float x = bot->GetPositionX() + perpendicularX * correction;
+                        float y = bot->GetPositionY() + perpendicularY * correction;
+                        float z = bot->GetPositionZ();
+                        if (!bot->GetMap()->CheckCollisionAndGetValidCoords(bot,
+                                bot->GetPositionX(), bot->GetPositionY(),
+                                bot->GetPositionZ(), x, y, z, false))
+                            continue;
+
+                        float const score = ScoreChiJiDodgePosition(
+                            bot, chiJi, x, y);
+                        float const move = bot->GetExactDist2d(x, y);
+                        if (score > bestScore + 0.1f ||
+                            (std::abs(score - bestScore) <= 0.1f &&
+                             move < bestMove))
+                        {
+                            bestX = x;
+                            bestY = y;
+                            bestZ = z;
+                            bestScore = score;
+                            bestMove = move;
+                        }
+                    }
+
+                    if (bestScore == -FLT_MAX)
                         return false;
-                    return MoveTo(bot->GetMapId(), x, y, z, false, false,
-                        true, true, MovementPriority::MOVEMENT_FORCED, true);
+                    if (MoveTo(bot->GetMapId(), bestX, bestY, bestZ, false,
+                            false, true, true,
+                            MovementPriority::MOVEMENT_FORCED, true))
+                    {
+                        chiJiDodgeX = bestX;
+                        chiJiDodgeY = bestY;
+                        chiJiDodgeZ = bestZ;
+                        chiJiDodgeLockUntil = getMSTime() + 1200u;
+                        return true;
+                    }
+                    return false;
                 }
             break;
         case Reaction::SpreadXuenLightning:
@@ -2241,6 +2356,13 @@ bool CombatFormationMoveAction::isUseful()
         if (!GetWorldBossFormationPosition(target, x, y, z, tolerance))
             return false;
 
+        // Once avoidance has moved a bot out of a persistent Firestorm, do
+        // not let its normal Chi-Ji slot immediately pull it back into the
+        // same floor hazard. Resume the slot when the summon disappears.
+        if (target->GetEntry() == ChiJiEntry &&
+            IsPositionInsideChiJiFirestorm(bot, x, y))
+            return false;
+
         return bot->GetExactDist2d(x, y) > tolerance;
     }
 
@@ -2289,6 +2411,9 @@ bool CombatFormationMoveAction::Execute(Event /*event*/)
         {
             return false;
         }
+        if (target->GetEntry() == ChiJiEntry &&
+            IsPositionInsideChiJiFirestorm(bot, x, y))
+            return false;
 
         uint32 const firstContact = bot->GetWorldBossStagingFirstContact();
         bool const firstFormationMove = firstContact &&
@@ -2446,12 +2571,44 @@ bool CombatFormationMoveAction::GetWorldBossFormationPosition(Unit* target,
         tolerance = 2.0f;
     }
 
-    // Use the tank's position rather than the creature's momentary facing.
-    // Bosses may briefly turn toward a spell target, which must not make the
-    // whole raid swap sides and run through the frontal arc.
-    float const front = target->GetVictim() ?
-        target->GetAngle(target->GetVictim()) : target->GetOrientation();
-    float const rear = Position::NormalizeOrientation(front + float(M_PI));
+    // Anchor the rear hemisphere to the raid rather than the tank's current
+    // side. On pull the boss runs toward the compact raid before the tank gets
+    // through it and turns it away. Deriving rear from that initial tank
+    // position sends every bot across the boss, then flips all destinations
+    // by 180 degrees when the tank completes the turn. The non-victim raid
+    // centroid remains on the intended rear side throughout that transition.
+    float raidX = 0.0f;
+    float raidY = 0.0f;
+    uint32 raidCount = 0;
+    for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+    {
+        Player* member = ref->GetSource();
+        if (!member || !member->IsAlive() || member == target->GetVictim() ||
+            member->GetMap() != bot->GetMap())
+            continue;
+        raidX += member->GetPositionX();
+        raidY += member->GetPositionY();
+        ++raidCount;
+    }
+
+    float rear;
+    if (raidCount)
+    {
+        raidX /= float(raidCount);
+        raidY /= float(raidCount);
+        float const deltaX = raidX - target->GetPositionX();
+        float const deltaY = raidY - target->GetPositionY();
+        if (deltaX * deltaX + deltaY * deltaY > 4.0f)
+            rear = Position::NormalizeOrientation(std::atan2(deltaY, deltaX));
+        else
+            rear = Position::NormalizeOrientation(target->GetOrientation() +
+                float(M_PI));
+    }
+    else
+    {
+        rear = Position::NormalizeOrientation(target->GetOrientation() +
+            float(M_PI));
+    }
     float const angle = Position::NormalizeOrientation(rear + offset);
     x = target->GetPositionX() + std::cos(angle) * centerDistance;
     y = target->GetPositionY() + std::sin(angle) * centerDistance;

@@ -197,6 +197,10 @@ private:
     };
 
     Reaction GetReaction() const;
+    uint32 chiJiDodgeLockUntil = 0;
+    float chiJiDodgeX = 0.0f;
+    float chiJiDodgeY = 0.0f;
+    float chiJiDodgeZ = 0.0f;
 };
 
 class RunAwayAction : public MovementAction
