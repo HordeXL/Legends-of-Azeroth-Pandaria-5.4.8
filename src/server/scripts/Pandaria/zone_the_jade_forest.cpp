@@ -4845,6 +4845,79 @@ class spell_reverse_cast_ride_seat_1 : public SpellScript
     }
 };
 
+// Quest 31765 "Paint it Red!" - Thunder Hold bombardment, ported from
+// pandaria_5.4.8's zone_the_jade_forest.cpp.
+//
+// 130973 - the turret button: TRIGGER_MISSILE with TARGET_DEST_TRAJ. The
+// player casts it, the client attaches the trajectory, so the missile and its
+// payload 130994 resolve without any code.
+//
+// 130994 - impact spell: SCHOOL_DAMAGE around the impact point (the effect
+// radius comes from SpellEffect.dbc, patched to the 15 yd row) plus four
+// KILL_CREDIT2 effects on implicit target 105. Our core resolves target 105
+// natively, so those credit rows were zeroed in SpellEffect.dbc to avoid
+// double crediting; credit is granted per unit actually hit here instead,
+// exactly like pandaria_5.4.8 does.
+enum PaintItRedData
+{
+    NPC_THUNDER_HOLD_SOLDIER = 66200,
+    NPC_THUNDER_HOLD_CANNON  = 66203,
+};
+
+// Everything in the camp that counts toward the "Thunder Hold troops"
+// objective (66200). The variants also carry KillCredit2 = 66200 in the DB so
+// their kills credit through the normal kill chain as well.
+bool IsThunderHoldTroop(uint32 entry)
+{
+    switch (entry)
+    {
+        case 66200: // Thunder Hold Soldier
+        case 66284: // Thunder Hold Laborer
+        case 66285: // Thunder Hold Infantryman
+        case 66286: // Thunder Hold Mender
+        case 66287: // Thunder Hold Lieutenant
+        case 66348: // Thunder Hold Armsman
+        case 66395: // Thunder Hold Cannoneer
+        case 66647: // Thunder Hold Sharp-Shooter
+        case 66649: // Thunder Hold Mender
+        case 66650: // Thunder Hold Infantryman
+        case 66651: // Thunder Hold Laborer
+            return true;
+        default:
+            return false;
+    }
+}
+
+class spell_gunship_turret_barrage : public SpellScript
+{
+    PrepareSpellScript(spell_gunship_turret_barrage);
+
+    void HandleDamage(SpellEffIndex /*effIndex*/)
+    {
+        Unit* victim = GetHitUnit();
+        if (!victim)
+            return;
+
+        uint32 const entry = victim->GetEntry();
+        bool const isTroop = IsThunderHoldTroop(entry);
+        if (!isTroop && entry != NPC_THUNDER_HOLD_CANNON)
+            return;
+
+        // The caster is the turret; the player is its charmer.
+        Unit* caster = GetCaster();
+        if (!caster)
+            return;
+
+        if (Player* gunner = caster->GetCharmerOrOwnerPlayerOrPlayerItself())
+            gunner->KilledMonsterCredit(isTroop ? NPC_THUNDER_HOLD_SOLDIER : NPC_THUNDER_HOLD_CANNON, victim->GetGUID());
+    }
+
+    void Register() override
+    {
+        OnEffectHitTarget += SpellEffectFn(spell_gunship_turret_barrage::HandleDamage, EFFECT_0, SPELL_EFFECT_SCHOOL_DAMAGE);
+    }
+};
+
 void AddSC_jade_forest()
 {
     // Rare mobs
@@ -4937,4 +5010,7 @@ void AddSC_jade_forest()
     new creature_script<npc_jade_forest_instant_message_camera_bunny>("npc_jade_forest_instant_message_camera_bunny");
     new aura_script<spell_jade_forest_signal_flare_initialize>("spell_jade_forest_signal_flare_initialize");
     new spell_script<spell_reverse_cast_ride_seat_1>("spell_reverse_cast_ride_seat_1");
+
+    // Quest 31765 "Paint it Red!"
+    new spell_script<spell_gunship_turret_barrage>("spell_gunship_turret_barrage");
 }
