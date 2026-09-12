@@ -1,4 +1,4 @@
-/*
+﻿/*
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
  * Free Software Foundation; either version 2 of the License, or (at your
@@ -31,6 +31,8 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+
+#pragma execution_character_set("UTF-8")
 
 namespace
 {
@@ -1221,11 +1223,11 @@ void ReportAfflictionGlyphs(ChatHandler* handler, Player* player)
         report << GlyphCatalog[i].Name << '=' << (state.Glyphs[i] ? "ON" : "off");
     }
     handler->SendSysMessage(report.str().c_str());
-    handler->PSendSysMessage("UA cast: %u ms. Healing absorb: %.1f%% HP; next glyphed Life Tap: +%.1f%%. Recent health loss: %s. Life Tap allowed: critical=%s, maintenance=%s.",
+    handler->PSendSysMessage("痛苦无常施法：%u 毫秒。治疗吸收：HP的%.1f%%；下一个雕文生命分流：+%.1f%%。近期生命值损失：%s。允许生命分流：危急=%s，维护=%s。",
         AfflictionCastTime(player, UnstableAffliction), state.HealAbsorbPct, state.NextTapAbsorbPct,
         state.TakingDamage ? "yes" : "no", CanLifeTap(state, true) ? "yes" : "no",
         CanLifeTap(state, false) ? "yes" : "no");
-    handler->SendSysMessage("Soulstone: select a dead group member and press the assistant. Minor glyphs use native game effects; the assistant does not mount, swim or activate gateways for you.");
+    handler->SendSysMessage("灵魂石：选择一名死亡的团队成员，然后使用助手。小型雕文使用游戏原生效果；助手不会替你上坐骑、游泳或激活传送门。");
 }
 
 CombatRecommendation SelectAfflictionRecommendation(Player* player, Unit* selected,
@@ -1496,7 +1498,7 @@ public:
 
         if (!sPlayerbotAIConfig->combatAssistantEnabled)
         {
-            handler->SendSysMessage("Combat Assistant 5.4.8 is disabled in playerbots.conf.");
+            handler->SendSysMessage("战斗助手 5.4.8 已在 playerbots.conf 中禁用。");
             PushRecommendation(player, true);
             return true;
         }
@@ -1505,7 +1507,7 @@ public:
         bool const status = !args || !*args || !strcmp(args, "status");
         if (!cast && !status)
         {
-            handler->SendSysMessage("Usage: .combatassist cast|status");
+            handler->SendSysMessage("用法：.combatassist cast|status");
             return true;
         }
 
@@ -1515,7 +1517,7 @@ public:
         if (!recommendation)
         {
             if (status)
-                handler->SendSysMessage("Combat Assistant: no usable recommendation (select a hostile target or wait for cooldown/GCD/range/LoS).");
+                handler->SendSysMessage("战斗助手：暂无可用建议（请选择敌对目标，或等待冷却/公共冷却/射程/视线）。");
             PushRecommendation(player, true);
             return true;
         }
@@ -1523,7 +1525,7 @@ public:
         if (status)
         {
             auto const resource = GetAssistantPower(player);
-            handler->PSendSysMessage("Combat Assistant recommends spell %u (%s), %s %u, class %u, specialization %u.",
+            handler->PSendSysMessage("战斗助手建议法术 %u（%s），%s %u，职业 %u，专精 %u。",
                 recommendation.SpellId, recommendation.Reason, resource.second,
                 resource.first, uint32(player->GetClass()),
                 uint32(player->GetTalentSpecialization()));

@@ -1,4 +1,4 @@
-/*
+﻿/*
 * This file is part of the Legends of Azeroth Pandaria Project. See THANKS file for Copyright information
 *
 * This program is free software; you can redistribute it and/or modify it
@@ -59,6 +59,8 @@ EndContentData */
 #include "BlackMarketMgr.h"
 #include "CombatAI.h"
 #include "Random.h"
+
+#pragma execution_character_set("UTF-8")
 
 /*########
 # npc_air_force_bots
@@ -282,7 +284,7 @@ enum LunaclawSpirit
     TEXT_ID_PROGRESS        = 4715
 };
 
-#define GOSSIP_ITEM_GRANT   "You have thought well, spirit. I ask you to grant me the strength of your body and the strength of your heart."
+#define GOSSIP_ITEM_GRANT   "你思考得很好，之灵。我请求你赐予我你身体的力量和心灵的力量。"
 
 class npc_lunaclaw_spirit : public CreatureScript
 {
@@ -1266,10 +1268,10 @@ public:
 ## npc_rogue_trainer
 ######*/
 
-#define GOSSIP_HELLO_ROGUE1 "I wish to unlearn my talents"
-#define GOSSIP_HELLO_ROGUE2 "<Take the letter>"
-#define GOSSIP_HELLO_ROGUE3 "Purchase a Dual Talent Specialization."
-#define GOSSIP_HELLO_ROGUE4 "I wish to unlearn my specialization"
+#define GOSSIP_HELLO_ROGUE1 "我想洗掉我的天赋"
+#define GOSSIP_HELLO_ROGUE2 "<接过信>"
+#define GOSSIP_HELLO_ROGUE3 "购买双天赋专精。"
+#define GOSSIP_HELLO_ROGUE4 "我想洗掉我的专精"
 
 class npc_rogue_trainer : public CreatureScript
 {
@@ -1370,24 +1372,24 @@ enum Sayge
     SPELL_FORTUNE  = 23765  // faire fortune
 };
 
-#define GOSSIP_HELLO_SAYGE          "Yes"
-#define GOSSIP_SENDACTION_SAYGE1    "Slay the Man"
-#define GOSSIP_SENDACTION_SAYGE2    "Turn him over to liege"
-#define GOSSIP_SENDACTION_SAYGE3    "Confiscate the corn"
-#define GOSSIP_SENDACTION_SAYGE4    "Let him go and have the corn"
-#define GOSSIP_SENDACTION_SAYGE5    "Execute your friend painfully"
-#define GOSSIP_SENDACTION_SAYGE6    "Execute your friend painlessly"
-#define GOSSIP_SENDACTION_SAYGE7    "Let your friend go"
-#define GOSSIP_SENDACTION_SAYGE8    "Confront the diplomat"
-#define GOSSIP_SENDACTION_SAYGE9    "Show not so quiet defiance"
-#define GOSSIP_SENDACTION_SAYGE10   "Remain quiet"
-#define GOSSIP_SENDACTION_SAYGE11   "Speak against your brother openly"
-#define GOSSIP_SENDACTION_SAYGE12   "Help your brother in"
-#define GOSSIP_SENDACTION_SAYGE13   "Keep your brother out without letting him know"
-#define GOSSIP_SENDACTION_SAYGE14   "Take credit, keep gold"
-#define GOSSIP_SENDACTION_SAYGE15   "Take credit, share the gold"
-#define GOSSIP_SENDACTION_SAYGE16   "Let the knight take credit"
-#define GOSSIP_SENDACTION_SAYGE17   "Thanks"
+#define GOSSIP_HELLO_SAYGE          "是的"
+#define GOSSIP_SENDACTION_SAYGE1    "杀了那个人"
+#define GOSSIP_SENDACTION_SAYGE2    "把他交给领主"
+#define GOSSIP_SENDACTION_SAYGE3    "没收玉米"
+#define GOSSIP_SENDACTION_SAYGE4    "放了他，让他拿走玉米"
+#define GOSSIP_SENDACTION_SAYGE5    "痛苦地处死你的朋友"
+#define GOSSIP_SENDACTION_SAYGE6    "无痛地处死你的朋友"
+#define GOSSIP_SENDACTION_SAYGE7    "放了你的朋友"
+#define GOSSIP_SENDACTION_SAYGE8    "与外交官对质"
+#define GOSSIP_SENDACTION_SAYGE9    "公开表示反抗"
+#define GOSSIP_SENDACTION_SAYGE10   "保持沉默"
+#define GOSSIP_SENDACTION_SAYGE11   "公开指责你的兄弟"
+#define GOSSIP_SENDACTION_SAYGE12   "帮你的兄弟潜入"
+#define GOSSIP_SENDACTION_SAYGE13   "偷偷把兄弟关在外面"
+#define GOSSIP_SENDACTION_SAYGE14   "领功，独吞金币"
+#define GOSSIP_SENDACTION_SAYGE15   "领功，分享金币"
+#define GOSSIP_SENDACTION_SAYGE16   "让骑士领功"
+#define GOSSIP_SENDACTION_SAYGE17   "谢谢"
 
 class npc_sayge : public CreatureScript
 {
@@ -1753,12 +1755,12 @@ public:
 # npc_wormhole
 ######*/
 
-#define GOSSIP_ENGINEERING1   "Borean Tundra"
-#define GOSSIP_ENGINEERING2   "Howling Fjord"
-#define GOSSIP_ENGINEERING3   "Sholazar Basin"
-#define GOSSIP_ENGINEERING4   "Icecrown"
-#define GOSSIP_ENGINEERING5   "Storm Peaks"
-#define GOSSIP_ENGINEERING6   "Underground..."
+#define GOSSIP_ENGINEERING1   "北风苔原"
+#define GOSSIP_ENGINEERING2   "嚎风峡湾"
+#define GOSSIP_ENGINEERING3   "索拉查盆地"
+#define GOSSIP_ENGINEERING4   "冰冠冰川"
+#define GOSSIP_ENGINEERING5   "风暴峭壁"
+#define GOSSIP_ENGINEERING6   "地下……"
 
 enum WormholeSpells
 {
@@ -1872,9 +1874,9 @@ enum PetTrainer
     TEXT_CONFIRM                = 7722
 };
 
-#define GOSSIP_PET1             "How do I train my pet?"
-#define GOSSIP_PET2             "I wish to untrain my pet."
-#define GOSSIP_PET_CONFIRM      "Yes, please do."
+#define GOSSIP_PET1             "我该如何训练我的宠物？"
+#define GOSSIP_PET2             "我想洗掉我宠物的技能。"
+#define GOSSIP_PET_CONFIRM      "是的，请吧。"
 
 class npc_pet_trainer : public CreatureScript
 {
@@ -1961,15 +1963,15 @@ enum LockSmith
     SPELL_ESSENCE_INFUSED_MOONSTONE       = 40173,
 };
 
-#define GOSSIP_LOST_ARCATRAZ_KEY                "I've lost my key to the Arcatraz."
-#define GOSSIP_LOST_SHADOWFORGE_KEY             "I've lost my key to the Blackrock Depths."
-#define GOSSIP_LOST_SKELETON_KEY                "I've lost my key to the Scholomance."
-#define GOSSIP_LOST_SHATTERED_HALLS_KEY         "I've lost my key to the Shattered Halls."
-#define GOSSIP_LOST_THE_MASTERS_KEY             "I've lost my key to the Karazhan."
-#define GOSSIP_LOST_VIOLET_HOLD_KEY             "I've lost my key to the Violet Hold."
-#define GOSSIP_LOST_ESSENCE_INFUSED_MOONSTONE   "I've lost my Essence-Infused Moonstone."
-#define GOSSIP_LOST_KEY_TO_THE_FOCUSING_IRIS    "I've lost my Key to the Focusing Iris."
-#define GOSSIP_LOST_HC_KEY_TO_THE_FOCUSING_IRIS "I've lost my Heroic Key to the Focusing Iris."
+#define GOSSIP_LOST_ARCATRAZ_KEY                "我把阿尔卡兹的钥匙弄丢了。"
+#define GOSSIP_LOST_SHADOWFORGE_KEY             "我把黑石深渊的钥匙弄丢了。"
+#define GOSSIP_LOST_SKELETON_KEY                "我把通灵学院的钥匙弄丢了。"
+#define GOSSIP_LOST_SHATTERED_HALLS_KEY         "我把破碎大厅的钥匙弄丢了。"
+#define GOSSIP_LOST_THE_MASTERS_KEY             "我把卡拉赞的钥匙弄丢了。"
+#define GOSSIP_LOST_VIOLET_HOLD_KEY             "我把紫罗兰监狱的钥匙弄丢了。"
+#define GOSSIP_LOST_ESSENCE_INFUSED_MOONSTONE   "我把注能月光石弄丢了。"
+#define GOSSIP_LOST_KEY_TO_THE_FOCUSING_IRIS    "我把聚焦虹光的钥匙弄丢了。"
+#define GOSSIP_LOST_HC_KEY_TO_THE_FOCUSING_IRIS "我把聚焦虹光的英雄钥匙弄丢了。"
 
 class npc_locksmith : public CreatureScript
 {
@@ -2073,8 +2075,8 @@ public:
 
 #define EXP_COST                100000 //10 00 00 copper (10golds)
 #define GOSSIP_TEXT_EXP         14736
-#define GOSSIP_XP_OFF           "I no longer wish to gain experience."
-#define GOSSIP_XP_ON            "I wish to start gaining experience again."
+#define GOSSIP_XP_OFF           "我不想再获得经验值了。"
+#define GOSSIP_XP_ON            "我想重新开始获得经验值。"
 
 class npc_experience : public CreatureScript
 {

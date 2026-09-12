@@ -1,4 +1,4 @@
-/*
+﻿/*
 * This file is part of the Pandaria 5.4.8 Project. See THANKS file for Copyright information
 *
 * This program is free software; you can redistribute it and/or modify it
@@ -33,6 +33,8 @@ EndContentData */
 #include "ScriptedGossip.h"
 #include "Group.h"
 #include "Player.h"
+
+#pragma execution_character_set("UTF-8")
 
 /*###
 ## npc_highlord_demitrian
@@ -131,20 +133,20 @@ class npc_highlord_demitrian : public CreatureScript
 ###*/
 
 //gossip item text best guess
-#define GOSSIP_ITEM1 "I seek information about Natalia"
+#define GOSSIP_ITEM1 "我想打听娜塔莉亚的消息"
 
-#define GOSSIP_ITEM2 "That sounds dangerous!"
-#define GOSSIP_ITEM3 "What did you do?"
-#define GOSSIP_ITEM4 "Who?"
-#define GOSSIP_ITEM5 "Women do that. What did she demand?"
-#define GOSSIP_ITEM6 "What do you mean?"
-#define GOSSIP_ITEM7 "What happened next?"
+#define GOSSIP_ITEM2 "听起来很危险！"
+#define GOSSIP_ITEM3 "你做了什么？"
+#define GOSSIP_ITEM4 "谁？"
+#define GOSSIP_ITEM5 "女人都会这样。她要求什么？"
+#define GOSSIP_ITEM6 "什么意思？"
+#define GOSSIP_ITEM7 "后来呢？"
 
-#define GOSSIP_ITEM11 "Yes, please continue"
-#define GOSSIP_ITEM12 "What language?"
-#define GOSSIP_ITEM13 "The Priestess attacked you?!"
-#define GOSSIP_ITEM14 "I should ask the monkey about this"
-#define GOSSIP_ITEM15 "Then what..."
+#define GOSSIP_ITEM11 "是的，请继续"
+#define GOSSIP_ITEM12 "什么语言？"
+#define GOSSIP_ITEM13 "那位女祭司攻击了你？！"
+#define GOSSIP_ITEM14 "这事我该去问问那只猴子"
+#define GOSSIP_ITEM15 "然后呢……"
 
 enum RutgarAndFrankal //trigger creatures to kill
 {
@@ -1259,23 +1261,23 @@ enum WSTexts
     YELL_ROYAL_AGGRO = 0
 };
 
-#define GOSSIP_TEMPLAR_RANDOM "I am no cultist, you monster! Come to me and face your destruction!"
-#define GOSSIP_TEMPLAR_FIRE "Crimson Templar! I hold your signet! Heed my call!"
-#define GOSSIP_TEMPLAR_EARTH "Earthen Templar! I hold your signet! Heed my call!"
-#define GOSSIP_TEMPLAR_AIR "Hoary Templar! I hold your signet! Heed my call!"
-#define GOSSIP_TEMPLAR_WATER "Azure Templar! I hold your signet! Heed my call!"
+#define GOSSIP_TEMPLAR_RANDOM "我不是信徒，你这个怪物！过来面对你的毁灭吧！"
+#define GOSSIP_TEMPLAR_FIRE "绯红圣殿骑士！我持有你的印玺！回应我的召唤！"
+#define GOSSIP_TEMPLAR_EARTH "土灵圣殿骑士！我持有你的印玺！回应我的召唤！"
+#define GOSSIP_TEMPLAR_AIR "灰白圣殿骑士！我持有你的印玺！回应我的召唤！"
+#define GOSSIP_TEMPLAR_WATER "碧蓝圣殿骑士！我持有你的印玺！回应我的召唤！"
 
-#define GOSSIP_DUKE_RANDOM "You will listen to this, vile duke! I am not your Twilight's Hammer lapdog! I am here to challenge you! Come! Come, and meet your death..."
-#define GOSSIP_DUKE_FIRE "Duke of Cynders! I hold your signet! Heed my call!"
-#define GOSSIP_DUKE_EARTH "The Duke of Shards! I hold your signet! Heed my call!"
-#define GOSSIP_DUKE_AIR "The Duke of Zephyrs! I hold your signet! Heed my call!"
-#define GOSSIP_DUKE_WATER "The Duke of Fathoms! I hold your signet! Heed my call!"
+#define GOSSIP_DUKE_RANDOM "听好了，卑鄙的公爵！我不是你暮光之锤的走狗！我是来向你挑战的！来吧！来迎接你的死亡……"
+#define GOSSIP_DUKE_FIRE "灼烬公爵！我持有你的印玺！回应我的召唤！"
+#define GOSSIP_DUKE_EARTH "碎片公爵！我持有你的印玺！回应我的召唤！"
+#define GOSSIP_DUKE_AIR "微风公爵！我持有你的印玺！回应我的召唤！"
+#define GOSSIP_DUKE_WATER "深渊公爵！我持有你的印玺！回应我的召唤！"
 
-#define GOSSIP_ROYAL_RANDOM "The day of the judgement has come, fiend! I challenge you to battle!"
-#define GOSSIP_ROYAL_FIRE "Prince Skaldrenox! I hold your signet! Heed my call!"
-#define GOSSIP_ROYAL_EARTH "Baron Kazum! I hold your signet! Heed my call!"
-#define GOSSIP_ROYAL_AIR "High Marshal Whirlaxis! I hold your signet! Heed my call!"
-#define GOSSIP_ROYAL_WATER "Lord Skwol! I hold your signet! Heed my call!"
+#define GOSSIP_ROYAL_RANDOM "审判之日已经到来，恶魔！我向你发起挑战！"
+#define GOSSIP_ROYAL_FIRE "斯卡德诺克斯王子！我持有你的印玺！回应我的召唤！"
+#define GOSSIP_ROYAL_EARTH "卡祖姆男爵！我持有你的印玺！回应我的召唤！"
+#define GOSSIP_ROYAL_AIR "维尔拉西斯高阶元帅！我持有你的印玺！回应我的召唤！"
+#define GOSSIP_ROYAL_WATER "斯克沃尔勋爵！我持有你的印玺！回应我的召唤！"
 
 class go_wind_stone : public GameObjectScript
 {

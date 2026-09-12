@@ -1,4 +1,4 @@
-/*
+﻿/*
 * This file is part of the Legends of Azeroth Pandaria Project. See THANKS file for Copyright information
 *
 * This program is free software; you can redistribute it and/or modify it
@@ -22,6 +22,8 @@
 #include "Vehicle.h"
 #include "CombatAI.h"
 #include "Random.h"
+
+#pragma execution_character_set("UTF-8")
 
 enum ZoneKunLaiSummitSpellData
 {
@@ -960,7 +962,7 @@ class npc_waterspeaker_gorai : public CreatureScript
                 player->ADD_GOSSIP_ITEM(GOSSIP_ICON_VENDOR, GOSSIP_TEXT_BROWSE_GOODS, GOSSIP_SENDER_MAIN, GOSSIP_ACTION_TRADE);
 
             if (player->GetQuestStatus(QUEST_THE_RITUAL) == QUEST_STATUS_INCOMPLETE)
-                player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "I'm ready. Begin the ritual.", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
+                player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "我准备好了。开始仪式吧。", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
 
             player->SEND_GOSSIP_MENU(player->GetGossipTextId(creature), creature->GetGUID());
             return true;
@@ -1254,7 +1256,7 @@ class npc_inkgill_dissenter : public CreatureScript
         bool OnGossipHello(Player* player, Creature* creature) override
         {
             if (player->GetQuestStatus(QUEST_FREE_THE_DISSENTERS) == QUEST_STATUS_INCOMPLETE)
-                player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "There's still hope - Gorai is still alive, to the south. Go!", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
+                player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "还有希望——戈拉伊还活着，就在南边。快去！", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
 
             player->SEND_GOSSIP_MENU(player->GetGossipTextId(creature), creature->GetGUID());
             return true;

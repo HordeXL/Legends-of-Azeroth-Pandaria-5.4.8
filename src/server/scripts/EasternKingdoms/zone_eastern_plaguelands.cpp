@@ -1,4 +1,4 @@
-/*
+﻿/*
 * This file is part of the Pandaria 5.4.8 Project. See THANKS file for Copyright information
 *
 * This program is free software; you can redistribute it and/or modify it
@@ -34,6 +34,8 @@ EndContentData */
 #include "ScriptedGossip.h"
 #include "Player.h"
 #include "WorldSession.h"
+
+#pragma execution_character_set("UTF-8")
 
 class npc_ghoul_flayer : public CreatureScript
 {
@@ -136,10 +138,10 @@ public:
 ## npc_tirion_fordring
 ######*/
 
-#define GOSSIP_HELLO    "I am ready to hear your tale, Tirion."
-#define GOSSIP_SELECT1  "Thank you, Tirion.  What of your identity?"
-#define GOSSIP_SELECT2  "That is terrible."
-#define GOSSIP_SELECT3  "I will, Tirion."
+#define GOSSIP_HELLO    "我准备好听你的故事了，提里奥。"
+#define GOSSIP_SELECT1  "谢谢你，提里奥。  你的身份呢？"
+#define GOSSIP_SELECT2  "太可怕了。"
+#define GOSSIP_SELECT3  "我会的，提里奥。"
 
 class npc_tirion_fordring : public CreatureScript
 {

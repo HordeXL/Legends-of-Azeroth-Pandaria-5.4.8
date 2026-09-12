@@ -1,4 +1,4 @@
-/*
+﻿/*
 * This file is part of the Pandaria 5.4.8 Project. See THANKS file for Copyright information
 *
 * This program is free software; you can redistribute it and/or modify it
@@ -33,6 +33,8 @@ EndContentData */
 #include "SpellScript.h"
 #include "Player.h"
 #include "WorldSession.h"
+
+#pragma execution_character_set("UTF-8")
 
 /*######
 ## npc_risen_husk_spirit
@@ -145,7 +147,7 @@ enum TheramoreGuard
     SAY_QUEST3                                  = 2
 };
 
-#define GOSSIP_ITEM_THERAMORE_GUARD "You look like an intelligent person. Why don't you read one of these leaflets and give it some thought?"
+#define GOSSIP_ITEM_THERAMORE_GUARD "你看起来是个聪明人。何不读读这些传单，好好想一想？"
 
 class npc_theramore_guard : public CreatureScript
 {
@@ -237,7 +239,7 @@ enum LadyJaina
     SPELL_JAINAS_AUTOGRAPH = 23122
 };
 
-#define GOSSIP_ITEM_JAINA "I know this is rather silly but i have a young ward who is a bit shy and would like your autograph."
+#define GOSSIP_ITEM_JAINA "我知道这有点傻，但我带的一个小家伙有些害羞，想要你的签名。"
 
 class npc_lady_jaina_proudmoore : public CreatureScript
 {

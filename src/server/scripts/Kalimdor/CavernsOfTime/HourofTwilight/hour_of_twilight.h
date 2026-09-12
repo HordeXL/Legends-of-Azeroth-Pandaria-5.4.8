@@ -1,4 +1,4 @@
-/*
+﻿/*
 * This file is part of the Legends of Azeroth Pandaria Project. See THANKS file for Copyright information
 *
 * This program is free software; you can redistribute it and/or modify it
@@ -17,6 +17,8 @@
 
 #ifndef DEF_HOUROFTWILIGHT_H
 #define DEF_HOUROFTWILIGHT_H
+
+#pragma execution_character_set("UTF-8")
 
 #define HoTScriptName "instance_hour_of_twilight"
 
@@ -164,10 +166,10 @@ enum Datas
     DATA_BENEDICTUS = 2,
 };
 
-#define THRALL_INTRO "Yes, Thrall."
-#define THRALL_ARCURION "Lets move!"
-#define THRALL_ASIRA "We are ready."
-#define THRALL_BEFORE_BENEDICTUS "Yes Thrall, lets do this!"
+#define THRALL_INTRO "是的，萨尔。"
+#define THRALL_ARCURION "我们走吧！"
+#define THRALL_ASIRA "我们准备好了。"
+#define THRALL_BEFORE_BENEDICTUS "是的，萨尔，动手吧！"
 
 enum CreatureIds
 {

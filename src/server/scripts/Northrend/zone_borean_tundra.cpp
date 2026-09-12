@@ -1,4 +1,4 @@
-/*
+﻿/*
 * This file is part of the Legends of Azeroth Pandaria Project. See THANKS file for Copyright information
 *
 * This program is free software; you can redistribute it and/or modify it
@@ -43,6 +43,8 @@ EndContentData */
 #include "Player.h"
 #include "SpellInfo.h"
 #include "WorldSession.h"
+
+#pragma execution_character_set("UTF-8")
 
 /*######
 ## npc_sinkhole_kill_credit
@@ -213,7 +215,7 @@ enum Keristrasza
     SPELL_TELEPORT_TO_SARAGOSA = 46772
 };
 
-#define GOSSIP_HELLO_KERI   "I am prepared to face Saragosa!"
+#define GOSSIP_HELLO_KERI   "我准备好面对萨拉格莎了！"
 
 class npc_keristrasza : public CreatureScript
 {
@@ -250,7 +252,7 @@ public:
 ## npc_corastrasza
 ######*/
 
-#define GOSSIP_ITEM_C_1 "I... I think so..."
+#define GOSSIP_ITEM_C_1 "我……我想是吧……"
 
 enum Corastrasza
 {
@@ -298,7 +300,7 @@ public:
 ## npc_iruk
 ######*/
 
-#define GOSSIP_ITEM_I  "<Search corpse for Issliruk's Totem.>"
+#define GOSSIP_ITEM_I  "<搜查尸体，寻找伊西利鲁克的图腾>"
 
 enum Iruk
 {
@@ -956,7 +958,7 @@ enum Thassarian
     SAY_LERYSSA_4           = 3
 };
 
-#define GOSSIP_ITEM_T   "Let's do this, Thassarian. It's now or never."
+#define GOSSIP_ITEM_T   "动手吧，萨萨里安。现在不做就再没机会了。"
 
 class npc_thassarian : public CreatureScript
 {

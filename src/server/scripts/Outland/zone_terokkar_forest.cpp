@@ -1,4 +1,4 @@
-/*
+﻿/*
 * This file is part of the Pandaria 5.4.8 Project. See THANKS file for Copyright information
 *
 * This program is free software; you can redistribute it and/or modify it
@@ -39,6 +39,8 @@ EndContentData */
 #include "Group.h"
 #include "Player.h"
 #include "WorldSession.h"
+
+#pragma execution_character_set("UTF-8")
 
 /*######
 ## npc_unkor_the_ruthless
@@ -348,8 +350,8 @@ public:
 ## npc_floon
 ######*/
 
-#define GOSSIP_FLOON1           "You owe Sim'salabim money. Hand them over or die!"
-#define GOSSIP_FLOON2           "Hand over the money or die...again!"
+#define GOSSIP_FLOON1           "你欠了西姆萨拉宾的钱。交出来，不然就去死！"
+#define GOSSIP_FLOON2           "交出钱来，不然就死……再一次！"
 
 enum Floon
 {
@@ -551,10 +553,10 @@ public:
 /*######
 ## go_skull_pile
 ######*/
-#define GOSSIP_S_DARKSCREECHER_AKKARAI         "Summon Darkscreecher Akkarai"
-#define GOSSIP_S_KARROG         "Summon Karrog"
-#define GOSSIP_S_GEZZARAK_THE_HUNTRESS         "Summon Gezzarak the Huntress"
-#define GOSSIP_S_VAKKIZ_THE_WINDRAGER         "Summon Vakkiz the Windrager"
+#define GOSSIP_S_DARKSCREECHER_AKKARAI         "召唤暗啸者阿卡莱"
+#define GOSSIP_S_KARROG         "召唤卡罗格"
+#define GOSSIP_S_GEZZARAK_THE_HUNTRESS         "召唤猎手格扎拉克"
+#define GOSSIP_S_VAKKIZ_THE_WINDRAGER         "召唤风怒者瓦基兹"
 
 class go_skull_pile : public GameObjectScript
 {

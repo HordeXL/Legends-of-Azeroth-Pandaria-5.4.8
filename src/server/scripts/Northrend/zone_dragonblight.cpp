@@ -1,4 +1,4 @@
-/*
+﻿/*
 * This file is part of the Pandaria 5.4.8 Project. See THANKS file for Copyright information
 *
 * This program is free software; you can redistribute it and/or modify it
@@ -36,6 +36,8 @@ EndContentData */
 #include "CombatAI.h"
 #include "Player.h"
 
+#pragma execution_character_set("UTF-8")
+
 enum AlexstraszaWrGate
 {
     // Quest
@@ -46,7 +48,7 @@ enum AlexstraszaWrGate
     MOVIE_ID_GATES          = 14
 };
 
-#define GOSSIP_ITEM_WHAT_HAPPENED   "Alexstrasza, can you show me what happened here?"
+#define GOSSIP_ITEM_WHAT_HAPPENED   "阿莱克丝塔萨，你能让我看看这里发生过什么吗？"
 
 class npc_alexstrasza_wr_gate : public CreatureScript
 {
@@ -199,7 +201,7 @@ enum WyrmDefenderEnum
     BOSS_EMOTE_ON_LOW_HEALTH               = 2
 };
 
-#define GOSSIP_ITEM_1      "We need to get into the fight. Are you ready?"
+#define GOSSIP_ITEM_1      "我们得投入战斗了。你准备好了吗？"
 
 class npc_wyrmrest_defender : public CreatureScript
 {

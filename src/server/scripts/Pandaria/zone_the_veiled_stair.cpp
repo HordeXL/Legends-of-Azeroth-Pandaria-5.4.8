@@ -1,4 +1,4 @@
-/*
+﻿/*
 * This file is part of the Pandaria 5.4.8 Project. See THANKS file for Copyright information
 *
 * This program is free software; you can redistribute it and/or modify it
@@ -19,12 +19,14 @@
 #include "ScriptedCreature.h"
 #include "AchievementMgr.h"
 
+#pragma execution_character_set("UTF-8")
+
 #define TONG_MAX_WP 3
 #define WRATHION_MAX_WP_Q1 4
 #define WRATHION_MAX_WP_Q4 7
 #define FEL_METEORS_RANGE 6.0f
 #define SHA_TOUCHED_GEM_RANGE 10.0f
-#define WRATHION_GOSSIP "Let`s talk..."
+#define WRATHION_GOSSIP "聊聊吧……"
 
 // Legend in the making
 const Position ScenarioPoint  = { 826.33f, -169.69f, 415.26f, 2.61f };

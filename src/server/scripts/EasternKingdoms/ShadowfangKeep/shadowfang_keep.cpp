@@ -1,4 +1,4 @@
-/*
+﻿/*
 * This file is part of the Pandaria 5.4.8 Project. See THANKS file for Copyright information
 *
 * This program is free software; you can redistribute it and/or modify it
@@ -20,6 +20,8 @@
 #include "LFGMgr.h"
 #include "Group.h"
 #include "shadowfang_keep.h"
+
+#pragma execution_character_set("UTF-8")
 
 #define GOSSIP_SENDER_SHADOWFANG_PORT 33
 
@@ -145,7 +147,7 @@ static Position Loc[]=
     {-228.251511f, 2187.282471f, 79.762840f, 0.0f}
 };
 
-#define GOSSIP_ITEM_START "Begin the battle."
+#define GOSSIP_ITEM_START "开始战斗。"
 
 void SetInCombat(Creature* self)
 {
@@ -1518,13 +1520,13 @@ class npc_haunted_stable_hand_portal : public CreatureScript
             if (InstanceScript* instance = creature->GetInstanceScript())
             {
                 if (instance->GetBossState(DATA_VALDEN) == DONE)
-                    player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, ru ? "Отправиться в нижнюю обсерваторию." : "Teleport to Lower Observatory.", GOSSIP_SENDER_SHADOWFANG_PORT, 3);
+                    player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, ru ? "Отправиться в нижнюю обсерваторию." : "传送至下层天文台。", GOSSIP_SENDER_SHADOWFANG_PORT, 3);
                 else if (instance->GetBossState(DATA_SPRINGVALE) == DONE)
-                    player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, ru ? "Отправиться во внутренний двор." : "Teleport to The Courtyard.", GOSSIP_SENDER_SHADOWFANG_PORT, 2);
+                    player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, ru ? "Отправиться во внутренний двор." : "传送至庭院。", GOSSIP_SENDER_SHADOWFANG_PORT, 2);
                 else if (instance->GetBossState(DATA_SILVERLAINE) == DONE)
-                    player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, ru ? "Отправиться в обеденный зал." : "Teleport to Dining Hall.", GOSSIP_SENDER_SHADOWFANG_PORT, 1);
+                    player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, ru ? "Отправиться в обеденный зал." : "传送至餐厅。", GOSSIP_SENDER_SHADOWFANG_PORT, 1);
                 else if (instance->GetBossState(DATA_ASHBURY) == DONE)
-                    player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, ru ? "Отправиться во внутренний двор." : "Teleport to The Courtyard.", GOSSIP_SENDER_SHADOWFANG_PORT, 0);
+                    player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, ru ? "Отправиться во внутренний двор." : "传送至庭院。", GOSSIP_SENDER_SHADOWFANG_PORT, 0);
             }
 
             player->SEND_GOSSIP_MENU(player->GetGossipTextId(creature), creature->GetGUID());
@@ -1644,7 +1646,7 @@ public:
         // The old instance state fields no longer exist in the MoP instance
         // script. Preserve the original gate by requiring Rethilgore to be dead.
         if (!creature->FindNearestCreature(NPC_RETHILGORE_CLASSIC, 100.0f, true))
-            player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "Thanks, I'll follow you to the door.", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
+            player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "谢谢，我会跟你走到门口。", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
 
         player->SEND_GOSSIP_MENU(player->GetGossipTextId(creature), creature->GetGUID());
         return true;

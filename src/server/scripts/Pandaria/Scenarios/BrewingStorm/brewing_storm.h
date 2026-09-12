@@ -1,4 +1,4 @@
-/*
+﻿/*
 * This file is part of the Pandaria 5.4.8 Project. See THANKS file for Copyright information
 *
 * This program is free software; you can redistribute it and/or modify it
@@ -23,9 +23,11 @@
 #include "Creature.h"
 #include "CreatureAIImpl.h"
 
-#define TEXT_CHAPTER_MAKE_BOOMERS_BREW "Let`s get this lightning party started, Blanche."
-#define TEXT_CHAPTER_ROAD_TO_THUNDERPAW "Let`s go!"
-#define TEXT_CHAPTER_SAVE_THUNDERPAW_REFUGE "Let`s save thunderpaw!"
+#pragma execution_character_set("UTF-8")
+
+#define TEXT_CHAPTER_MAKE_BOOMERS_BREW "让这场闪电派对开始吧，布兰奇。"
+#define TEXT_CHAPTER_ROAD_TO_THUNDERPAW "我们走吧！"
+#define TEXT_CHAPTER_SAVE_THUNDERPAW_REFUGE "我们去救雷掌吧！"
 #define TEXT_LAST_CHAPTER "Let`s kill some lizards, Blanche!"
 #define BLANCHE_ALE "Stand in Blanche`s Ale of Replenishment to restore health and mana!"
 #define BOOMER_BREW "Use the Boomer Bew to zap saurok minions!"

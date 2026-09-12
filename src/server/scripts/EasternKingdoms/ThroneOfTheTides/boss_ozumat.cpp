@@ -1,4 +1,4 @@
-/*
+﻿/*
 * This file is part of the Pandaria 5.4.8 Project. See THANKS file for Copyright information
 *
 * This program is free software; you can redistribute it and/or modify it
@@ -19,7 +19,9 @@
 #include "throne_of_the_tides.h"
 #include "Group.h"
 
-#define GOSSIP_READY "We are ready!"
+#pragma execution_character_set("UTF-8")
+
+#define GOSSIP_READY "我们准备好了！"
 
 enum ScriptTexts
 {

@@ -1,4 +1,4 @@
-/*
+﻿/*
 * This file is part of the Legends of Azeroth Pandaria Project. See THANKS file for Copyright information
 *
 * This program is free software; you can redistribute it and/or modify it
@@ -24,6 +24,8 @@
 #include "ulduar.h"
 #include "Group.h"
 #include "Random.h"
+
+#pragma execution_character_set("UTF-8")
 
 enum Yells
 {
@@ -1898,7 +1900,7 @@ class npc_observation_ring_keeper : public CreatureScript
                 return false;
 
             player->PlayerTalkClass->GetGossipMenu().SetMenuId(0);
-            player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, player->GetSession()->GetSessionDbLocaleIndex() == LOCALE_ruRU ? "Я не лидер рейда..." : "I'm not the raid leader...", 0, 0);
+            player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, player->GetSession()->GetSessionDbLocaleIndex() == LOCALE_ruRU ? "Я не лидер рейда..." : "我不是团长……", 0, 0);
             player->SEND_GOSSIP_MENU(player->GetGossipTextId(creature), creature->GetGUID());
             return true;
         }

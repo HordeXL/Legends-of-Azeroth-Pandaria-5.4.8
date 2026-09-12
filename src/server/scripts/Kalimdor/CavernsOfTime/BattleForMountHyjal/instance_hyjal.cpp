@@ -1,4 +1,4 @@
-/*
+﻿/*
 * This file is part of the Pandaria 5.4.8 Project. See THANKS file for Copyright information
 *
 * This program is free software; you can redistribute it and/or modify it
@@ -28,6 +28,8 @@ EndScriptData */
 #include "hyjal_trash.h"
 #include "Player.h"
 
+#pragma execution_character_set("UTF-8")
+
 /* Battle of Mount Hyjal encounters:
 0 - Rage Winterchill event
 1 - Anetheron event
@@ -36,7 +38,7 @@ EndScriptData */
 4 - Archimonde event
 */
 
-#define YELL_EFFORTS        "All of your efforts have been in vain, for the draining of the World Tree has already begun. Soon the heart of your world will beat no more."
+#define YELL_EFFORTS        "你们的一切努力都是徒劳的，因为汲取世界之树的过程早已开始。你们世界的心脏很快就会停止跳动。"
 
 class instance_hyjal : public InstanceMapScript
 {

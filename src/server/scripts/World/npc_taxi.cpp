@@ -1,4 +1,4 @@
-/*
+﻿/*
 * This file is part of the Pandaria 5.4.8 Project. See THANKS file for Copyright information
 *
 * This program is free software; you can redistribute it and/or modify it
@@ -29,35 +29,37 @@ EndScriptData
 #include "Player.h"
 #include "WorldSession.h"
 
-#define GOSSIP_SUSURRUS         "I am ready."
-#define GOSSIP_NETHER_DRAKE     "I'm ready to fly! Take me up, dragon!"
+#pragma execution_character_set("UTF-8")
+
+#define GOSSIP_SUSURRUS         "我准备好了。"
+#define GOSSIP_NETHER_DRAKE     "我准备好飞了！带我上天吧，巨龙！"
 //#define GOSSIP_BRAZEN           "I am ready to go to Durnholde Keep."
 //#define GOSSIP_IRONWING         "I'd like to take a flight around Stormwind Harbor."
-#define GOSSIP_DABIREE1         "Fly me to Murketh and Shaadraz Gateways"
-#define GOSSIP_DABIREE2         "Fly me to Shatter Point"
-#define GOSSIP_WINDBELLOW1      "Fly me to The Abyssal Shelf"
-#define GOSSIP_WINDBELLOW2      "Fly me to Honor Point"
-#define GOSSIP_BRACK1           "Fly me to Murketh and Shaadraz Gateways"
-#define GOSSIP_BRACK2           "Fly me to The Abyssal Shelf"
-#define GOSSIP_BRACK3           "Fly me to Spinebreaker Post"
-#define GOSSIP_IRENA            "Fly me to Skettis please"
-#define GOSSIP_CLOUDBREAKER1    "Speaking of action, I've been ordered to undertake an air strike."
-#define GOSSIP_CLOUDBREAKER2    "I need to intercept the Dawnblade reinforcements."
-#define GOSSIP_DRAGONHAWK       "<Ride the dragonhawk to Sun's Reach>"
-#define GOSSIP_VERONIA          "Fly me to Manaforge Coruu please"
-#define GOSSIP_DEESAK           "Fly me to Ogri'la please"
+#define GOSSIP_DABIREE1         "载我飞往穆尔凯斯与沙德雷兹之门"
+#define GOSSIP_DABIREE2         "载我飞往碎裂点"
+#define GOSSIP_WINDBELLOW1      "载我飞往深渊平台"
+#define GOSSIP_WINDBELLOW2      "载我飞往荣耀据点"
+#define GOSSIP_BRACK1           "载我飞往穆尔凯斯与沙德雷兹之门"
+#define GOSSIP_BRACK2           "载我飞往深渊平台"
+#define GOSSIP_BRACK3           "载我飞往碎脊岗哨"
+#define GOSSIP_IRENA            "请载我飞往斯克提斯"
+#define GOSSIP_CLOUDBREAKER1    "说到行动，我奉命执行一次空袭。"
+#define GOSSIP_CLOUDBREAKER2    "我需要拦截晨刃援军。"
+#define GOSSIP_DRAGONHAWK       "<骑上龙鹰前往阳之港>"
+#define GOSSIP_VERONIA          "请载我飞往法力熔炉：考鲁"
+#define GOSSIP_DEESAK           "请载我飞往奥格瑞拉"
 //#define GOSSIP_AFRASASTRASZ1    "I would like to take a flight to the ground, Lord Of Afrasastrasz."
 //#define GOSSIP_AFRASASTRASZ2    "My Lord, I must go to the upper floor of the temple."
 //#define GOSSIP_TARIOLSTRASZ1    "My Lord, I must go to the upper floor of the temple."
 //#define GOSSIP_TARIOLSTRASZ2    "Can you spare a drake to travel to Lord Of Afrasastrasz, in the middle of the temple?"
 //#define GOSSIP_TORASTRASZA1     "I would like to see Lord Of Afrasastrasz, in the middle of the temple."
 //#define GOSSIP_TORASTRASZA2     "Yes, Please. I would like to return to the ground floor of the temple."
-#define GOSSIP_CRIMSONWING      "<Ride the gryphons to Survey Alcaz Island>"
-#define GOSSIP_THRICESTAR1      "Do you think I could take a ride on one of those flying machines?"
-#define GOSSIP_THRICESTAR2      "Kara, I need to be flown out the Dens of Dying to find Bixie."
-#define GOSSIP_WILLIAMKEILAR1   "Take me to Northpass Tower."
-#define GOSSIP_WILLIAMKEILAR2   "Take me to Eastwall Tower."
-#define GOSSIP_WILLIAMKEILAR3   "Take me to Crown Guard Tower."
+#define GOSSIP_CRIMSONWING      "<骑上狮鹫侦察阿尔卡兹岛>"
+#define GOSSIP_THRICESTAR1      "你觉得我能坐一坐那些飞行器吗？"
+#define GOSSIP_THRICESTAR2      "卡拉，我需要飞往亡者之穴去找碧克茜。"
+#define GOSSIP_WILLIAMKEILAR1   "载我去北哨塔。"
+#define GOSSIP_WILLIAMKEILAR2   "载我去东墙塔。"
+#define GOSSIP_WILLIAMKEILAR3   "载我去皇冠守卫塔。"
 
 class npc_taxi : public CreatureScript
 {

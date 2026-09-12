@@ -1,6 +1,8 @@
-#include "ScriptPCH.h"
+﻿#include "ScriptPCH.h"
 #include "Chat.h"
 #include "ServiceMgr.h"
+
+#pragma execution_character_set("UTF-8")
 
 enum skillsId
 {
@@ -80,7 +82,7 @@ public:
             player->ADD_GOSSIP_ITEM_DB(51002, 13, GOSSIP_SENDER_MAIN, INSCRIPTION);
         if(player->HasSkill(ARCHAEOLOGY))
             player->ADD_GOSSIP_ITEM_DB(51002, 14, GOSSIP_SENDER_MAIN, ARCHAEOLOGY);
-        player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "Bye", GOSSIP_SENDER_MAIN, 1);
+        player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "再见。", GOSSIP_SENDER_MAIN, 1);
 
         player->SEND_GOSSIP_MENU(20010, item->GetGUID());
         return true;
@@ -209,7 +211,7 @@ public:
             if(player->HasSkill(action) && player->GetSkillValue(action) < maxvalueprof)
                 player->SetSkill(action, player->GetSkillStep(action), maxvalueprof, maxvalueprof);
             
-            ChatHandler(player->GetSession()).PSendSysMessage("Thanks for supporting the project!");
+            ChatHandler(player->GetSession()).PSendSysMessage("感谢你对本项目的支持！");
             player->DestroyItemCount(item->GetEntry(), 1, true); //Item is destroyed on useage.
 
             std::ostringstream infoSkill;
@@ -221,7 +223,7 @@ public:
         {
             player->SetSkill(action, player->GetSkillStep(action), 600, 600);
             
-            ChatHandler(player->GetSession()).PSendSysMessage("Thanks for supporting the project!");
+            ChatHandler(player->GetSession()).PSendSysMessage("感谢你对本项目的支持！");
             player->DestroyItemCount(item->GetEntry(), 1, true); //Item is destroyed on useage.
 
             std::ostringstream infoSkill;
@@ -231,7 +233,7 @@ public:
         }
         else
         {
-            ChatHandler(player->GetSession()).PSendSysMessage("You don't have that profession");
+            ChatHandler(player->GetSession()).PSendSysMessage("你没有该专业。");
         }
         player->SaveToDB();
     }
@@ -277,7 +279,7 @@ public:
             player->ADD_GOSSIP_ITEM_DB(51002, 13, GOSSIP_SENDER_MAIN, INSCRIPTION);
         if(player->HasSkill(ARCHAEOLOGY))
             player->ADD_GOSSIP_ITEM_DB(51002, 14, GOSSIP_SENDER_MAIN, ARCHAEOLOGY);
-        player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "Bye", GOSSIP_SENDER_MAIN, 1);
+        player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "再见。", GOSSIP_SENDER_MAIN, 1);
 
         player->SEND_GOSSIP_MENU(20011, item->GetGUID());
         return true;
@@ -294,7 +296,7 @@ public:
             if(player->HasSkill(action) && player->GetSkillValue(action) < maxvalueprof)
                 player->SetSkill(action, player->GetSkillStep(action), maxvalueprof, maxvalueprof);
             
-            ChatHandler(player->GetSession()).PSendSysMessage("Thanks for supporting the project!");
+            ChatHandler(player->GetSession()).PSendSysMessage("感谢你对本项目的支持！");
             player->DestroyItemCount(item->GetEntry(), 1, true); //Item is destroyed on useage.
 
             std::ostringstream infoSkill;
@@ -304,7 +306,7 @@ public:
         }
         else
         {
-            ChatHandler(player->GetSession()).PSendSysMessage("You don't have that profession");
+            ChatHandler(player->GetSession()).PSendSysMessage("你没有该专业。");
         }
         
         player->CLOSE_GOSSIP_MENU();

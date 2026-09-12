@@ -1,4 +1,4 @@
-/*
+﻿/*
 * This file is part of the Legends of Azeroth Pandaria Project. See THANKS file for Copyright information
 *
 * This program is free software; you can redistribute it and/or modify it
@@ -21,6 +21,8 @@
 #include "SpellScript.h"
 #include "ulduar.h"
 #include "SpellInfo.h"
+
+#pragma execution_character_set("UTF-8")
 
 enum Says
 {
@@ -842,7 +844,7 @@ class npc_expedition_commander : public CreatureScript
             {
                 player->PrepareGossipMenu(creature);
 
-                player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, ru ? "Мы готовы помочь!" : "Activate Harpoons!", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF);
+                player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, ru ? "Мы готовы помочь!" : "启动鱼叉！", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF);
                 player->SEND_GOSSIP_MENU(13853, creature->GetGUID());
             }
             else

@@ -1,6 +1,8 @@
-#include "ScriptMgr.h"
+﻿#include "ScriptMgr.h"
 #include "Chat.h"
 #include "ServiceMgr.h"
+
+#pragma execution_character_set("UTF-8")
 
 namespace BattlePay
 {
@@ -24,12 +26,12 @@ public:
     {
         if (player->IsInCombat() || player->InArena() || player->InBattleground()) //Item is not usable in combat, arenas and battlegrounds. This can be modified to your taste.
         {
-            player->GetSession()->SendNotification("You may not use this token whilst you are in combat or present in an arena or battleground.");
+            player->GetSession()->SendNotification("你在战斗中或身处竞技场/战场时无法使用此代币。");
         }
         else if(player->HasItemCount(item->GetEntry(), 1, true)) //verify that the characters have the item
         {
             player->ModifyCurrency(392, 1000 * CURRENCY_PRECISION); // add 1000 honor points
-            ChatHandler(player->GetSession()).SendSysMessage("Thanks for helping the WoW project, you just received 1000 honor points.");
+            ChatHandler(player->GetSession()).SendSysMessage("感谢你帮助魔兽世界项目，你获得了1000点荣誉值。");
 
             //Item is destroyed on useage.
             player->DestroyItemCount(item->GetEntry(), 1, true);
@@ -39,7 +41,7 @@ public:
         }
         else
         {
-            ChatHandler(player->GetSession()).SendSysMessage("You do not have the necessary token.");
+            ChatHandler(player->GetSession()).SendSysMessage("你没有所需的代币。");
         }
         return true;
     }
@@ -54,12 +56,12 @@ public:
     {
         if (player->IsInCombat() || player->InArena() || player->InBattleground()) //Item is not usable in combat, arenas and battlegrounds. This can be modified to your taste.
         {
-            player->GetSession()->SendNotification("You may not use this token whilst you are in combat or present in an arena or battleground.");
+            player->GetSession()->SendNotification("你在战斗中或身处竞技场/战场时无法使用此代币。");
         }
         else if(player->HasItemCount(item->GetEntry(), 1, true)) //verify that the characters have the item
         {
             player->ModifyCurrency(CURRENCY_TYPE_JUSTICE_POINTS, 1000 * CURRENCY_PRECISION, true, true, true); // add 1000 justice points
-            ChatHandler(player->GetSession()).SendSysMessage("Thanks for helping the WoW project, you just received 1000 justice points.");
+            ChatHandler(player->GetSession()).SendSysMessage("感谢你帮助魔兽世界项目，你获得了1000点正义值。");
 
             //Item is destroyed on useage.
             player->DestroyItemCount(item->GetEntry(), 1, true);
@@ -69,7 +71,7 @@ public:
         }
         else
         {
-            ChatHandler(player->GetSession()).SendSysMessage("You do not have the necessary token.");
+            ChatHandler(player->GetSession()).SendSysMessage("你没有所需的代币。");
         }
         return true;
     }
@@ -84,12 +86,12 @@ public:
     {
         if (player->IsInCombat() || player->InArena() || player->InBattleground()) //Item is not usable in combat, arenas and battlegrounds. This can be modified to your taste.
         {
-            player->GetSession()->SendNotification("You may not use this token whilst you are in combat or present in an arena or battleground.");
+            player->GetSession()->SendNotification("你在战斗中或身处竞技场/战场时无法使用此代币。");
         }
         else if(player->HasItemCount(item->GetEntry(), 1, true)) //verify that the characters have the item
         {
             player->ModifyCurrency(CURRENCY_TYPE_VALOR_POINTS, 1000 * CURRENCY_PRECISION, true, true, true); // add 1000 valor points
-            ChatHandler(player->GetSession()).SendSysMessage("Thanks for helping the WoW project, you just received 1000 valor points.");
+            ChatHandler(player->GetSession()).SendSysMessage("感谢你帮助魔兽世界项目，你获得了1000点勇气值。");
 
             //Item is destroyed on useage.
             player->DestroyItemCount(item->GetEntry(), 1, true);
@@ -99,7 +101,7 @@ public:
         }
         else
         {
-            ChatHandler(player->GetSession()).SendSysMessage("You do not have the necessary token.");
+            ChatHandler(player->GetSession()).SendSysMessage("你没有所需的代币。");
         }
         return true;
     }
@@ -114,12 +116,12 @@ public:
     {
         if (player->IsInCombat() || player->InArena() || player->InBattleground()) //Item is not usable in combat, arenas and battlegrounds. This can be modified to your taste.
         {
-            player->GetSession()->SendNotification("You may not use this token whilst you are in combat or present in an arena or battleground.");
+            player->GetSession()->SendNotification("你在战斗中或身处竞技场/战场时无法使用此代币。");
         }
         else if(player->HasItemCount(item->GetEntry(), 1, true)) //verify that the characters have the item
         {
             player->ModifyCurrency(390, 1000 * CURRENCY_PRECISION); // add 1000 conquest points
-            ChatHandler(player->GetSession()).SendSysMessage("Thanks for helping the WoW project, you just received 1000 conquest points.");
+            ChatHandler(player->GetSession()).SendSysMessage("感谢你帮助魔兽世界项目，你获得了1000点征服值。");
 
             //Item is destroyed on useage.
             player->DestroyItemCount(item->GetEntry(), 1, true);
@@ -129,7 +131,7 @@ public:
         }
         else
         {
-            ChatHandler(player->GetSession()).SendSysMessage("You do not have the necessary token.");
+            ChatHandler(player->GetSession()).SendSysMessage("你没有所需的代币。");
         }
         return true;
     }
@@ -145,11 +147,11 @@ public:
     {
         if (player->IsInCombat() || player->InArena() || player->InBattleground())
         {
-            player->GetSession()->SendNotification("You may not use this token whilst you are in combat or present in an arena or battleground.");
+            player->GetSession()->SendNotification("你在战斗中或身处竞技场/战场时无法使用此代币。");
         }
         else if (player->GetMoney() > MAX_MONEY_AMOUNT - uint64(Gold))
         {
-            ChatHandler(player->GetSession()).SendSysMessage("Maximum allowed gold limit exceeded.");
+            ChatHandler(player->GetSession()).SendSysMessage("超过允许的金币上限。");
         }
         else
         {
@@ -176,17 +178,17 @@ public:
     {
         if (player->IsInCombat() || player->InArena() || player->InBattleground())
         {
-            player->GetSession()->SendNotification("You may not use this token whilst you are in combat or present in an arena or battleground.");
+            player->GetSession()->SendNotification("你在战斗中或身处竞技场/战场时无法使用此代币。");
         }
         else if (Level <= player->GetLevel())
         {
-            ChatHandler(player->GetSession()).SendSysMessage("Your current character level is too high.");
+            ChatHandler(player->GetSession()).SendSysMessage("你的角色等级过高。");
         }
         else
         {
             player->GiveLevel(Level);
             player->DestroyItemCount(item->GetEntry(), 1, true);
-            ChatHandler(player->GetSession()).SendSysMessage("Thanks for helping the Pandaria 5.4.8 project, you just leveled up your character to level 90.");
+            ChatHandler(player->GetSession()).SendSysMessage("感谢你帮助熊猫人之谜5.4.8项目，你的角色已升至90级。");
             player->SaveToDB();
         }
 
@@ -204,17 +206,17 @@ public:
     {
         if (player->IsInCombat() || player->InArena() || player->InBattleground())
         {
-            player->GetSession()->SendNotification("You may not use this token whilst you are in combat or present in an arena or battleground.");
+            player->GetSession()->SendNotification("你在战斗中或身处竞技场/战场时无法使用此代币。");
         }
         else if (player->HasAtLoginFlag(AtLoginFlags(0xFFFFFFFF)))
         {
-            ChatHandler(player->GetSession()).SendSysMessage("You have already activated a character service.");
+            ChatHandler(player->GetSession()).SendSysMessage("你已经激活过一项角色服务。");
         }
         else
         {
             player->SetAtLoginFlag(FlagAtLogin);
             player->DestroyItemCount(item->GetEntry(), 1, true);
-            ChatHandler(player->GetSession()).SendSysMessage("The character service has been activated. Please log out and enter this character again.");
+            ChatHandler(player->GetSession()).SendSysMessage("角色服务已激活。请退出游戏并重新登录该角色。");
             player->SaveToDB();
         }
 

@@ -1,4 +1,4 @@
-﻿local TEAM_ALLIANCE=0
+local TEAM_ALLIANCE=0
 local TEAM_HORDE=1
 --CLASS				
 local CLASS_WARRIOR 		= 1		
@@ -39,17 +39,17 @@ local function GetPlayerInfo(player)
 end
 
 local function PlayerFirstLogin(event, player)
-	SendWorldMessage("|cFFFF0000[announce] Welcome|r"..GetPlayerInfo(player).." |cFFFF0000 join the server!|r")
+	SendWorldMessage("|cFFFF0000[公告] 欢迎|r"..GetPlayerInfo(player).." |cFFFF0000 加入服务器！|r")
 	print("Player is Created. GUID:"..player:GetGUIDLow())
 end
 
 local function PlayerLogin(event, player)
-	SendWorldMessage("|cFFFF0000[announce]|r Welcome"..GetPlayerInfo(player).." online!")
+	SendWorldMessage("|cFFFF0000[公告]|r 欢迎"..GetPlayerInfo(player).." 上线！")
 	print("Player is Login. GUID:"..player:GetGUIDLow())
 end
 
 local function PlayerLogout(event, player)
-	SendWorldMessage("|cFFFF0000[announce]|r"..GetPlayerInfo(player).." offline!")
+	SendWorldMessage("|cFFFF0000[公告]|r"..GetPlayerInfo(player).." 下线！")
 	print("Player is Logout. GUID:"..player:GetGUIDLow())
 end
 

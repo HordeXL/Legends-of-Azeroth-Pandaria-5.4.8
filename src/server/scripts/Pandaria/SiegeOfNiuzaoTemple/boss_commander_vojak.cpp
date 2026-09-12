@@ -1,4 +1,4 @@
-/*
+﻿/*
 * This file is part of the Legends of Azeroth Pandaria Project. See THANKS file for Copyright information
 *
 * This program is free software; you can redistribute it and/or modify it
@@ -22,6 +22,8 @@
 #include "Map.h"
 #include "Vehicle.h"
 #include "CreatureTextMgr.h"
+
+#pragma execution_character_set("UTF-8")
 
 /*
 
@@ -354,8 +356,8 @@ class npc_yang_ironclaw : public CreatureScript
 
         bool OnGossipHello(Player* player, Creature* creature) override
         {
-            player->ADD_GOSSIP_ITEM(GOSSIP_ICON_BATTLE, "We're ready to defend!", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
-            player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "We will wait", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 2);
+            player->ADD_GOSSIP_ITEM(GOSSIP_ICON_BATTLE, "我们准备好防守了！", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
+            player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "我们再等等", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 2);
 
             // "Thanks for saving us! Are you ready to get this party started?"
             player->SEND_GOSSIP_MENU(2475, creature->GetGUID());

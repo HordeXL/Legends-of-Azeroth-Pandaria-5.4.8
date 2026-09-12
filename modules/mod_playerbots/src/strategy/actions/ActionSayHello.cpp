@@ -1,9 +1,11 @@
-#include "ActionSayHello.h"
+﻿#include "ActionSayHello.h"
 
 #include "PlayerbotAI.h"
 #include "PlayerbotAIConfig.h"
 #include "Player.h"
 #include "Log.h"
+
+#pragma execution_character_set("UTF-8")
 
 SayHelloAction::SayHelloAction(PlayerbotAI* ai)
     : Action(ai, "say hello")
@@ -23,6 +25,6 @@ bool SayHelloAction::Execute(Event event)
             return true;
     }
 
-    botAI->GetBot()->Say("Hello !", Language::LANG_UNIVERSAL);
+    botAI->GetBot()->Say("你好！", Language::LANG_UNIVERSAL);
     return true;
 }

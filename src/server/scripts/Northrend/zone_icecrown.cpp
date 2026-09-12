@@ -1,4 +1,4 @@
-/*
+﻿/*
 * This file is part of the Pandaria 5.4.8 Project. See THANKS file for Copyright information
 *
 * This program is free software; you can redistribute it and/or modify it
@@ -23,17 +23,19 @@
 #include "TemporarySummon.h"
 #include "CombatAI.h"
 
+#pragma execution_character_set("UTF-8")
+
 /*######
 ## npc_arete
 ######*/
 
-#define GOSSIP_ARETE_ITEM1 "Lord-Commander, I would hear your tale."
-#define GOSSIP_ARETE_ITEM2 "<You nod slightly but do not complete the motion as the Lord-Commander narrows his eyes before he continues.>"
-#define GOSSIP_ARETE_ITEM3 "I thought that they now called themselves the Scarlet Onslaught?"
-#define GOSSIP_ARETE_ITEM4 "Where did the grand admiral go?"
-#define GOSSIP_ARETE_ITEM5 "That's fine. When do I start?"
-#define GOSSIP_ARETE_ITEM6 "Let's finish this!"
-#define GOSSIP_ARETE_ITEM7 "That's quite a tale, Lord-Commander."
+#define GOSSIP_ARETE_ITEM1 "大领主，我想听听你的故事。"
+#define GOSSIP_ARETE_ITEM2 "<你微微点头，但大领主眯起双眼，你便停下了动作。>"
+#define GOSSIP_ARETE_ITEM3 "我记得他们现在自称血色先锋军了？"
+#define GOSSIP_ARETE_ITEM4 "那位大海军上将去哪儿了？"
+#define GOSSIP_ARETE_ITEM5 "没问题。我什么时候开始？"
+#define GOSSIP_ARETE_ITEM6 "我们了结这件事吧！"
+#define GOSSIP_ARETE_ITEM7 "真是段精彩的故事，大领主。"
 
 enum Arete
 {
@@ -122,8 +124,8 @@ enum SquireDavid
     GOSSIP_TEXTID_SQUIRE                                = 14407
 };
 
-#define GOSSIP_SQUIRE_ITEM_1 "I am ready to fight!"
-#define GOSSIP_SQUIRE_ITEM_2 "How do the Argent Crusader raiders fight?"
+#define GOSSIP_SQUIRE_ITEM_1 "我准备好战斗了！"
+#define GOSSIP_SQUIRE_ITEM_2 "银色十字军骑士是怎么战斗的？"
 
 class npc_squire_david : public CreatureScript
 {

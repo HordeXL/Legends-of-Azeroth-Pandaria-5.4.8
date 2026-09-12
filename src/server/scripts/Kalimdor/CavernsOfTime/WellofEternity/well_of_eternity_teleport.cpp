@@ -1,4 +1,4 @@
-/*
+﻿/*
 * This file is part of the Pandaria 5.4.8 Project. See THANKS file for Copyright information
 *
 * This program is free software; you can redistribute it and/or modify it
@@ -18,6 +18,8 @@
 #include "ScriptPCH.h"
 #include "well_of_eternity.h"
 #include "GameObjectAI.h"
+
+#pragma execution_character_set("UTF-8")
 
 enum Spells
 {
@@ -47,19 +49,19 @@ class go_well_of_eternity_teleport : public GameObjectScript
 
             if (InstanceScript* instance = go->GetInstanceScript())
             {
-                player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, ru ? "Телепорт ко входу в сад.":"Teleport to Start.", GOSSIP_SENDER_MAIN, START_TELEPORT);
+                player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, ru ? "Телепорт ко входу в сад.":"传送至起点。", GOSSIP_SENDER_MAIN, START_TELEPORT);
 
                 if (player->IsGameMaster())
                 {
-                    player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, ru ? "Перенестись во дворец Азшары.": "Teleport to Azshara's Palace.", GOSSIP_SENDER_MAIN, AZSHARA_TELEPORT);
-                    player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, ru ? "Перенестись в Источник Вечности.": "Teleport to Well of Eternity.", GOSSIP_SENDER_MAIN, WOE_TELEPORT);
+                    player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, ru ? "Перенестись во дворец Азшары.": "传送至艾萨拉的宫殿。", GOSSIP_SENDER_MAIN, AZSHARA_TELEPORT);
+                    player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, ru ? "Перенестись в Источник Вечности.": "传送至永恒之井。", GOSSIP_SENDER_MAIN, WOE_TELEPORT);
                 }
                 else
                 {
                     if (instance->GetBossState(DATA_PEROTHARN) == DONE)
-                        player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, ru ? "Перенестись во дворец Азшары.": "Teleport to Azshara's Palace.", GOSSIP_SENDER_MAIN, AZSHARA_TELEPORT);
+                        player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, ru ? "Перенестись во дворец Азшары.": "传送至艾萨拉的宫殿。", GOSSIP_SENDER_MAIN, AZSHARA_TELEPORT);
                     if (instance->GetBossState(DATA_AZSHARA) == DONE)
-                        player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, ru ? "Перенестись в Источник Вечности.": "Teleport to Well of Eternity.", GOSSIP_SENDER_MAIN, WOE_TELEPORT);
+                        player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, ru ? "Перенестись в Источник Вечности.": "传送至永恒之井。", GOSSIP_SENDER_MAIN, WOE_TELEPORT);
                 }
             }
         

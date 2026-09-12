@@ -1,4 +1,4 @@
-/*
+﻿/*
 * This file is part of the Pandaria 5.4.8 Project. See THANKS file for Copyright information
 *
 * This program is free software; you can redistribute it and/or modify it
@@ -20,6 +20,8 @@
 #include "ScriptedCreature.h"
 #include "GridNotifiers.h"
 #include "fall_of_theramore_horde.h"
+
+#pragma execution_character_set("UTF-8")
 
 // Misc Spells
 enum eSpells
@@ -71,7 +73,7 @@ class npc_blastmaster_sparkfuse : public CreatureScript
         bool OnGossipHello(Player* player, Creature* creature) override
         {
             // don`t know real text
-            player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "Placeholder:", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
+            player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "占位符：", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
             player->SEND_GOSSIP_MENU(19183, creature->GetGUID());
             return true;
         }
@@ -908,7 +910,7 @@ class npc_theramore_thalen_songweaver : public CreatureScript
         bool OnGossipHello(Player* player, Creature* creature) override
         {
             // don`t know real text
-            player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "Placeholder:", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
+            player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "占位符：", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
             player->SEND_GOSSIP_MENU(19183, creature->GetGUID());
             return true;
         }

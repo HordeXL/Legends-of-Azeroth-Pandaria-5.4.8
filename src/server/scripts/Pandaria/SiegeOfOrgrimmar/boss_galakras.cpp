@@ -1,4 +1,4 @@
-/*
+﻿/*
 * This file is part of the Legends of Azeroth Pandaria Project. See THANKS file for Copyright information
 *
 * This program is free software; you can redistribute it and/or modify it
@@ -19,6 +19,8 @@
 #include "ScriptedCreature.h"
 #include "siege_of_orgrimmar.h"
 #include "Vehicle.h"
+
+#pragma execution_character_set("UTF-8")
 
 enum Spells
 {
@@ -2419,7 +2421,7 @@ class npc_galakras_jaina_proudmoore : public CreatureScript
             if (player->GetInstanceScript() && player->GetInstanceScript()->GetBossState(DATA_GALAKRAS) == DONE)
                 return false;
 
-            player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "I`m ready!", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
+            player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "我准备好了！", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
             player->SEND_GOSSIP_MENU(player->GetGossipTextId(creature), creature->GetGUID());
             return true;
         }
@@ -2643,7 +2645,7 @@ class npc_galakras_lorthemar_theron : public CreatureScript
             if (player->GetInstanceScript() && player->GetInstanceScript()->GetBossState(DATA_GALAKRAS) == DONE)
                 return false;
 
-            player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "I`m ready!", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
+            player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "我准备好了！", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
             player->SEND_GOSSIP_MENU(player->GetGossipTextId(creature), creature->GetGUID());
             return true;
         }

@@ -1,4 +1,4 @@
-/*
+﻿/*
 * This file is part of the Pandaria 5.4.8 Project. See THANKS file for Copyright information
 *
 * This program is free software; you can redistribute it and/or modify it
@@ -33,6 +33,8 @@ EndContentData */
 #include "zulfarrak.h"
 #include "Player.h"
 
+#pragma execution_character_set("UTF-8")
+
 /*######
 ## npc_sergeant_bly
 ######*/
@@ -61,7 +63,7 @@ enum eActions
     ACTION_INTRO = 0,
 };
 
-#define GOSSIP_BLY                  "[PH] In that case, I will take my reward!"
+#define GOSSIP_BLY                  "那样的话，我就拿走我的报酬！"
 
 class npc_sergeant_bly : public CreatureScript
 {
@@ -225,7 +227,7 @@ enum weegliSays
     SAY_WEEGLI_OK_I_GO          = 1
 };
 
-#define GOSSIP_WEEGLI               "[PH] Please blow up the door."
+#define GOSSIP_WEEGLI               "请把门炸开。"
 
 class npc_weegli_blastfuse : public CreatureScript
 {

@@ -1,4 +1,4 @@
-/*
+﻿/*
  * This file is part of the Legends of Azeroth Pandaria Project. See THANKS file for Copyright information
  *
  * This program is free software; you can redistribute it and/or modify it
@@ -23,6 +23,8 @@
 #include "QuestDef.h"
 #include "ObjectMgr.h"
 #include "DatabaseEnv.h"
+
+#pragma execution_character_set("UTF-8")
 
 class item_quest_completer : public ItemScript
 {
@@ -65,7 +67,7 @@ public:
             return true;
         }
 
-        player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "Nevermind", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
+        player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "算了吧。", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
         player->SEND_GOSSIP_MENU(DEFAULT_GOSSIP_MESSAGE, item->GetGUID());
         return true;
     }

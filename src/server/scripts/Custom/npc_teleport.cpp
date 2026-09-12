@@ -17,6 +17,8 @@
 #include "Chat.h"
 #include "Player.h"
 
+#pragma execution_character_set("UTF-8")
+
 enum NPC_TELEPORT
 {
     GOSSIP_MENU_NPCTELEPORT                                       = 900000,  
@@ -138,7 +140,7 @@ struct npc_teleport : public ScriptedAI
         InitGossipMenuFor(player, GOSSIP_MENU_NPCTELEPORT);
         if (player->IsInCombat())
         {
-            player->GetSession()->SendNotification("You are in combat!");
+            player->GetSession()->SendNotification("你正在战斗中！");
             CloseGossipMenuFor(player);
         }
 		if (player->GetTeam() == ALLIANCE)

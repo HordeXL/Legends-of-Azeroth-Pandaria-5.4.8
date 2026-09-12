@@ -1,4 +1,4 @@
-/*
+﻿/*
 * This file is part of the Pandaria 5.4.8 Project. See THANKS file for Copyright information
 *
 * This program is free software; you can redistribute it and/or modify it
@@ -31,6 +31,8 @@ EndContentData */
 #include "ScriptedEscortAI.h"
 #include "wailing_caverns.h"
 #include "Player.h"
+
+#pragma execution_character_set("UTF-8")
 
 /*######
 ## npc_disciple_of_naralex
@@ -70,7 +72,7 @@ enum Enums
 
 #define GOSSIP_ID_START_1       698  //Naralex sleeps again!
 #define GOSSIP_ID_START_2       699  //The fanglords are dead!
-#define GOSSIP_ITEM_NARALEX     "Let the event begin!"
+#define GOSSIP_ITEM_NARALEX     "让我们开始吧！"
 
 class npc_disciple_of_naralex : public CreatureScript
 {

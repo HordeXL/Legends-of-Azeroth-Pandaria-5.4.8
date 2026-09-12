@@ -1,4 +1,4 @@
-/*
+﻿/*
 * This file is part of the Legends of Azeroth Pandaria Project. See THANKS file for Copyright information
 *
 * This program is free software; you can redistribute it and/or modify it
@@ -19,6 +19,8 @@
 #include "ScriptedCreature.h"
 #include "ScriptedEscortAI.h"
 #include "Vehicle.h"
+
+#pragma execution_character_set("UTF-8")
 
 class AreaTrigger_at_mandori : public AreaTriggerScript
 {
@@ -1014,9 +1016,9 @@ class npc_shen_healer : public CreatureScript
         }
 };
 
-#define GOSSIP_CHOOSE_FACTION     "I'm ready to choose my destiny."
-#define GOSSIP_TP_STORMIND        "I would like to go to Stormwind"
-#define GOSSIP_TP_ORGRI           "I would like to go to Orgrimmar"
+#define GOSSIP_CHOOSE_FACTION     "我准备好选择自己的命运了。"
+#define GOSSIP_TP_STORMIND        "我想去暴风城"
+#define GOSSIP_TP_ORGRI           "我想去奥格瑞玛"
 
 class npc_shang_xi_choose_faction : public CreatureScript
 {

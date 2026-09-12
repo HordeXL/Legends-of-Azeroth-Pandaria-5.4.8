@@ -1,4 +1,4 @@
-/*
+﻿/*
 * This file is part of the Legends of Azeroth Pandaria Project. See THANKS file for Copyright information
 *
 * This program is free software; you can redistribute it and/or modify it
@@ -26,6 +26,8 @@ EndContentData */
 #include "ScriptPCH.h"
 #include "Group.h"
 #include "trial_of_the_champion.h"
+
+#pragma execution_character_set("UTF-8")
 
 #define GOSSIP_START_EVENT1     "Я готов к старту испытания."
 #define GOSSIP_START_EVENT2     "Я готов к следующему испытанию."
@@ -147,42 +149,42 @@ class npc_anstart : public CreatureScript
                             introTimer = 4000;
                             break;
                         case 1:
-                            me->Say("The Sunreavers are proud to present their representatives in this trial by combat.", LANG_UNIVERSAL, 0); // AN_1
+                            me->Say("夺日者很荣幸在此献上他们的代表，参与这场比武审判。", LANG_UNIVERSAL, 0); // AN_1
                             ++introPhase;
                             introTimer = 10000;
                             break;
                         case 2:
-                            me->Say("Welcome, champions. Today, before the eyes of your leeders and peers, you will prove youselves worthy combatants.", LANG_UNIVERSAL, 0); // AN_2
+                            me->Say("欢迎，勇士们。今天，在你们的领袖和同伴的注视下，你们将证明自己是合格的斗士。", LANG_UNIVERSAL, 0); // AN_2
                             ++introPhase;
                             introTimer = 13000;
                             break;
                         case 3:
-                            Trall->Yell("Fight well, Horde! Lok'tar Ogar!", LANG_UNIVERSAL, 0); // AN_3
+                            Trall->Yell("部落，奋勇作战！Lok'tar Ogar！", LANG_UNIVERSAL, 0); // AN_3
                             ++introPhase;
                             introTimer = 8000;
                             break;
                         case 4:
-                            Garrosh->Yell("Finally, a fight worth watching.", LANG_UNIVERSAL, 0); // AN_4
+                            Garrosh->Yell("终于有一场值得一看的战斗了。", LANG_UNIVERSAL, 0); // AN_4
                             ++introPhase;
                             introTimer = 6000;
                             break;
                         case 5:
-                            King->Yell("I did not come here to watch animals tear at each other senselessly, Tirion.", LANG_UNIVERSAL, 0); // AN_5
+                            King->Yell("我来这里可不是为了看野兽无谓地互相撕咬，提里奥。", LANG_UNIVERSAL, 0); // AN_5
                             ++introPhase;
                             introTimer = 8000;
                             break;
                         case 6:
-                            Highlord->Yell("You will first be facing three of the Grand Champions of the Tournament! These fierce contenders have beaten out all others to reach the pinnacle of skill in the joust.", LANG_UNIVERSAL, 0); // AN_6
+                            Highlord->Yell("你们首先要面对的是锦标赛的三位大冠军！这些凶悍的竞争者击败了所有对手，登上了马上长枪比武技艺的巅峰。", LANG_UNIVERSAL, 0); // AN_6
                             ++introPhase;
                             introTimer = 8000;
                             break;
                         case 7:
-                            Highlord->Yell("Will tought! You next challenge comes from the Crusade's own ranks. You will be tested against their consederable prowess.", LANG_UNIVERSAL, 0); // AN_7
+                            Highlord->Yell("打得好！你们的下一个挑战来自十字军自己的队伍。你们将领略他们不俗的实力。", LANG_UNIVERSAL, 0); // AN_7
                             ++introPhase;
                             introTimer = 3000;
                             break;
                         case 8:
-                            me->Say("You may begin!", LANG_UNIVERSAL, 0); // AN_8
+                            me->Say("开始吧！", LANG_UNIVERSAL, 0); // AN_8
                             ++introPhase;
                             introTimer = 4000;
                             break;
@@ -227,7 +229,7 @@ class npc_announcer_toc5 : public CreatureScript
 
         if (player->GetGroup() && !player->GetGroup()->IsLeader(player->GetGUID()))
         {
-            player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "Sorry, I'm not the group leader", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF+2);
+            player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "抱歉，我不是队长", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF+2);
             player->SEND_GOSSIP_MENU(DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
             return true;
         }
@@ -335,7 +337,7 @@ class npc_announcer_toc5 : public CreatureScript
                             instance->HandleGameObject(go->GetGUID(), false);
                         instance->SetData(DATA_MOVEMENT_DONE, 0);
 
-                        me->Say("Coming out of the gate Grand Champions other faction.", LANG_UNIVERSAL, 0); // SAY_START
+                        me->Say("另一阵营的大冠军正从大门进场。", LANG_UNIVERSAL, 0); // SAY_START
                         DoSummonGrandChampion(firstBoss);
                         NextStep(10000, false, 1);
                         break;
@@ -493,7 +495,7 @@ class npc_announcer_toc5 : public CreatureScript
 
             void DoStartArgentChampionEncounter()
             {
-                me->Say("Coming out of the gate Crusader's Coliseum Champion.", LANG_UNIVERSAL, 0); // SAY_START3
+                me->Say("十字军竞技场冠军正从大门进场。", LANG_UNIVERSAL, 0); // SAY_START3
                 me->GetMotionMaster()->MovePoint(1, 735.81f, 661.92f, 412.39f);
 
                 if (me->SummonCreature(argentChampion, SpawnPosition))
@@ -561,7 +563,7 @@ class npc_announcer_toc5 : public CreatureScript
                         if (GameObject* go = GameObject::GetGameObject(*me, instance->GetGuidData(DATA_MAIN_GATE)))
                             instance->HandleGameObject(go->GetGUID(), false);
 
-                        me->Yell("What''s that, up near the rafters?", LANG_UNIVERSAL, 0); // SAY_START5
+                        me->Yell("那是什么？在上面横梁附近？", LANG_UNIVERSAL, 0); // SAY_START5
                     }
                 }
             }

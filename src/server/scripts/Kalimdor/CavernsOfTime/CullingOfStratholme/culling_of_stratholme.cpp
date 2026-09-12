@@ -1,4 +1,4 @@
-/*
+﻿/*
 * This file is part of the Pandaria 5.4.8 Project. See THANKS file for Copyright information
 *
 * This program is free software; you can redistribute it and/or modify it
@@ -18,6 +18,8 @@
 #include "culling_of_stratholme.h"
 #include "ScriptedEscortAI.h"
 #include "PassiveAI.h"
+
+#pragma execution_character_set("UTF-8")
 
 enum Says
 {
@@ -215,8 +217,8 @@ float RiftAndSpawnsLocations[ENCOUNTER_CHRONO_SPAWNS][5]=
     { NPC_EPOCH,              2451.809326f, 1112.901245f, 149.220459f, 3.363617f }
 };
 
-#define GOSSIP_ITEM_ARTHAS_0 "I'm ready to start Culling of Stratholme."
-#define GOSSIP_ITEM_ARTHAS_7 "Hurry up, sir. There is no time to lose."
+#define GOSSIP_ITEM_ARTHAS_0 "我准备好开始净化斯坦索姆了。"
+#define GOSSIP_ITEM_ARTHAS_7 "快点，长官。分秒必争。"
 
 class npc_arthas : public CreatureScript
 {
@@ -1327,8 +1329,8 @@ class npc_crate_helper : public CreatureScript
         }
 };
 
-#define GOSSIP_ITEM_CHROMIE_0 "I need something for revealing the scourge plans, Chromie."
-#define GOSSIP_ITEM_CHROMIE_1 "Take me to the entrance of Stratholme."
+#define GOSSIP_ITEM_CHROMIE_0 "我需要能揭露天灾计划的东西，克罗米。"
+#define GOSSIP_ITEM_CHROMIE_1 "带我去斯坦索姆入口。"
 
 class npc_chromie : public CreatureScript
 {

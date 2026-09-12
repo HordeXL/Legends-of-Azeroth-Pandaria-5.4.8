@@ -1,4 +1,4 @@
-/*
+﻿/*
 * This file is part of the Legends of Azeroth Pandaria Project. See THANKS file for Copyright information
 *
 * This program is free software; you can redistribute it and/or modify it
@@ -47,6 +47,8 @@ EndContentData */
 #include "SpellScript.h"
 #include "Player.h"
 #include "WorldSession.h"
+
+#pragma execution_character_set("UTF-8")
 
 /*#####
 # npc_mature_netherwing_drake
@@ -444,8 +446,8 @@ public:
 ## npc_flanis_swiftwing_and_kagrosh
 ######*/
 
-#define GOSSIP_HSK1 "Take Flanis's Pack"
-#define GOSSIP_HSK2 "Take Kagrosh's Pack"
+#define GOSSIP_HSK1 "拿走弗拉尼斯的背包"
+#define GOSSIP_HSK2 "拿走卡格罗什的背包"
 
 class npcs_flanis_swiftwing_and_kagrosh : public CreatureScript
 {
@@ -497,12 +499,12 @@ public:
 
 #define QUEST_11082     11082
 
-#define GOSSIP_HMO "I am here for you, overseer."
-#define GOSSIP_SMO1 "How dare you question an overseer of the Dragonmaw!"
-#define GOSSIP_SMO2 "Who speaks of me? What are you talking about, broken?"
-#define GOSSIP_SMO3 "Continue please."
-#define GOSSIP_SMO4 "Who are these bidders?"
-#define GOSSIP_SMO5 "Well... yes."
+#define GOSSIP_HMO "我来为你效劳，监工。"
+#define GOSSIP_SMO1 "你竟敢质问龙喉的监工！"
+#define GOSSIP_SMO2 "谁提到了我？你在说什么，破碎者？"
+#define GOSSIP_SMO3 "请继续。"
+#define GOSSIP_SMO4 "这些出价者是谁？"
+#define GOSSIP_SMO5 "呃……是的。"
 
 class npc_murkblood_overseer : public CreatureScript
 {
@@ -563,13 +565,13 @@ public:
 ## npc_oronok
 ######*/
 
-#define GOSSIP_ORONOK1 "I am ready to hear your story, Oronok."
-#define GOSSIP_ORONOK2 "How do I find the cipher?"
-#define GOSSIP_ORONOK3 "How do you know all of this?"
-#define GOSSIP_ORONOK4 "Yet what? What is it, Oronok?"
-#define GOSSIP_ORONOK5 "Continue, please."
-#define GOSSIP_ORONOK6 "So what of the cipher now? And your boys?"
-#define GOSSIP_ORONOK7 "I will find your boys and the cipher, Oronok."
+#define GOSSIP_ORONOK1 "我准备好听你的故事了，奥罗诺克。"
+#define GOSSIP_ORONOK2 "我该怎么找到密码？"
+#define GOSSIP_ORONOK3 "这些事你是怎么知道的？"
+#define GOSSIP_ORONOK4 "可是什么？到底怎么了，奥罗诺克？"
+#define GOSSIP_ORONOK5 "请继续。"
+#define GOSSIP_ORONOK6 "那密码现在怎么样了？你的儿子们呢？"
+#define GOSSIP_ORONOK7 "我会找到你的儿子们和密码的，奥罗诺克。"
 
 class npc_oronok_tornheart : public CreatureScript
 {

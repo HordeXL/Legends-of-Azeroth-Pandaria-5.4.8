@@ -1,4 +1,4 @@
-/*
+﻿/*
 * This file is part of the Legends of Azeroth Pandaria Project. See THANKS file for Copyright information
 *
 * This program is free software; you can redistribute it and/or modify it
@@ -20,6 +20,8 @@
 #include "ScriptedGossip.h"
 #include "ScriptedEscortAI.h"
 #include "CreatureTextMgr.h"
+
+#pragma execution_character_set("UTF-8")
 
 const Position MySerpentPath[2]
 {
@@ -920,7 +922,7 @@ class npc_sha_reminant : public CreatureScript
         }
 };
 
-#define GOSSIP_CHOICE_1 "Challenge the Patriarch."
+#define GOSSIP_CHOICE_1 "挑战族长。"
 
 enum ePandriarchWindfurSpells
 {
@@ -1376,7 +1378,7 @@ enum eBigBaoEvents
     EVENT_WAR_STOMP                     = 4
 };
 
-#define GOSSIP_CHOICE_2 "Let's see which one of us is the better student. I challenge you to a duel !"
+#define GOSSIP_CHOICE_2 "看看我们俩谁才是更好的学生。我向你发起决斗！"
 
 class npc_big_bao : public CreatureScript
 {
@@ -2760,7 +2762,7 @@ class npc_nectarbreeze_farmer : public CreatureScript
         bool OnGossipHello(Player* player, Creature* creature) override
         {
             if (player->GetQuestStatus(29579) == QUEST_STATUS_INCOMPLETE)
-                player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "Get to Hanae's house. It's safe there.", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
+                player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "去哈奈的家里，那里很安全。", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
             player->SEND_GOSSIP_MENU(player->GetGossipTextId(creature), creature->GetGUID());
 
             return true;
@@ -3927,7 +3929,7 @@ class npc_prince_anduin_decision_questgiver : public CreatureScript
             if (player->GetQuestStatus(QUEST_ANDUIN_DECISION) != QUEST_STATUS_INCOMPLETE || creature->GetPositionZ() < 85.0f)
                 return false;
 
-            player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "It is time to go home, Prince Anduin.", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1); // miss gossip_menu_id
+            player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "该回家了，安度因王子。", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1); // miss gossip_menu_id
             player->SEND_GOSSIP_MENU(player->GetGossipTextId(creature), creature->GetGUID());
             return true;
         }

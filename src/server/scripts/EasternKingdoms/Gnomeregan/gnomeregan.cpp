@@ -1,4 +1,4 @@
-/*
+﻿/*
 * This file is part of the Pandaria 5.4.8 Project. See THANKS file for Copyright information
 *
 * This program is free software; you can redistribute it and/or modify it
@@ -29,7 +29,9 @@ Script Data End */
 #include "ScriptedEscortAI.h"
 #include "Player.h"
 
-#define GOSSIP_START_EVENT "I am ready to being"
+#pragma execution_character_set("UTF-8")
+
+#define GOSSIP_START_EVENT "我准备好了。"
 
 enum BlastmasterEmi
 {

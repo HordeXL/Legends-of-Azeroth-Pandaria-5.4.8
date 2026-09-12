@@ -1,4 +1,4 @@
-/*
+﻿/*
 * This file is part of the Pandaria 5.4.8 Project. See THANKS file for Copyright information
 *
 * This program is free software; you can redistribute it and/or modify it
@@ -17,6 +17,8 @@
 
 #include "ScriptPCH.h"
 #include "halls_of_origination.h"
+
+#pragma execution_character_set("UTF-8")
 
 #define GOSSIP_SENDER_HALLS_OF_ORIGINATION 644
 
@@ -476,7 +478,7 @@ class npc_halls_of_origination_brann_bronzebeard : public CreatureScript
             if (creature->IsQuestGiver())
                 player->PrepareQuestMenu(creature->GetGUID());
 
-            player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, ru ? "Вперед." : "Let's go.", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
+            player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, ru ? "Вперед." : "出发吧。", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
             player->SEND_GOSSIP_MENU(player->GetGossipTextId(creature), creature->GetGUID());
 
             return true;
@@ -593,11 +595,11 @@ class go_halls_of_origination_transit_device : public GameObjectScript
             if (InstanceScript* instance = go->GetInstanceScript())
             {
                 if (instance->GetBossState(DATA_ANRAPHET) == DONE)
-                    player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, ru ? "Отправиться к Чертогу Огней." : "Teleport to The Vaults of Lights.", GOSSIP_SENDER_HALLS_OF_ORIGINATION, 2);
+                    player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, ru ? "Отправиться к Чертогу Огней." : "传送至光明宝库。", GOSSIP_SENDER_HALLS_OF_ORIGINATION, 2);
                 if (instance->GetBossState(DATA_EARTHRAGER_PTAH) == DONE)
-                    player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, ru ? "Отправиться в гробницу Ярости Земли." : "Teleport to Tobm of the Earthrager.", GOSSIP_SENDER_HALLS_OF_ORIGINATION, 1);
+                    player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, ru ? "Отправиться в гробницу Ярости Земли." : "传送至土骸之墓。", GOSSIP_SENDER_HALLS_OF_ORIGINATION, 1);
                 if (instance->GetBossState(DATA_TEMPLE_GUARDIAN_ANHUUR) == DONE)
-                    player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, ru ? "Отправиться к платформе Творца." : "Teleport to Chamber of Prophecy.", GOSSIP_SENDER_HALLS_OF_ORIGINATION, 0);
+                    player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, ru ? "Отправиться к платформе Творца." : "传送至预言之殿。", GOSSIP_SENDER_HALLS_OF_ORIGINATION, 0);
             }
 
             player->SEND_GOSSIP_MENU(player->GetGossipTextId(go), go->GetGUID());

@@ -1,4 +1,4 @@
-/*
+﻿/*
 * This file is part of the Pandaria 5.4.8 Project. See THANKS file for Copyright information
 *
 * This program is free software; you can redistribute it and/or modify it
@@ -29,6 +29,8 @@ EndScriptData */
 #include "SpellInfo.h"
 #include "WorldSession.h"
 
+#pragma execution_character_set("UTF-8")
+
 /*
 A few notes for future developement:
 - A full implementation of gossip for GO's is required. They must have the same scripting capabilities as creatures. Basically,
@@ -39,15 +41,15 @@ there is no difference here (except that default text is chosen with `gameobject
 /*###
 # to be removed from here (->ncp_text). This is data for database projects.
 ###*/
-#define TALK_MUST_UNLEARN_WEAPON    "You must forget your weapon type specialty before I can help you. Go to Everlook in Winterspring and seek help there."
+#define TALK_MUST_UNLEARN_WEAPON    "你必须先遗忘你的武器类型专精，我才能帮助你。去冬泉谷的永望镇寻求帮助吧。"
 
-#define TALK_HAMMER_LEARN           "Ah, a seasoned veteran you once were. I know you are capable, you merely need to ask and I shall teach you the way of the hammersmith."
-#define TALK_AXE_LEARN              "Ah, a seasoned veteran you once were. I know you are capable, you merely need to ask and I shall teach you the way of the axesmith."
-#define TALK_SWORD_LEARN            "Ah, a seasoned veteran you once were. I know you are capable, you merely need to ask and I shall teach you the way of the swordsmith."
+#define TALK_HAMMER_LEARN           "啊，你也曾是经验丰富的老兵。我知道你有这个能力，只需开口，我就会传授你锻锤之道。"
+#define TALK_AXE_LEARN              "啊，你也曾是经验丰富的老兵。我知道你有这个能力，只需开口，我就会传授你锻斧之道。"
+#define TALK_SWORD_LEARN            "啊，你也曾是经验丰富的老兵。我知道你有这个能力，只需开口，我就会传授你锻剑之道。"
 
-#define TALK_HAMMER_UNLEARN         "Forgetting your Hammersmithing skill is not something to do lightly. If you choose to abandon it you will forget all recipes that require Hammersmithing to create!"
-#define TALK_AXE_UNLEARN            "Forgetting your Axesmithing skill is not something to do lightly. If you choose to abandon it you will forget all recipes that require Axesmithing to create!"
-#define TALK_SWORD_UNLEARN          "Forgetting your Swordsmithing skill is not something to do lightly. If you choose to abandon it you will forget all recipes that require Swordsmithing to create!"
+#define TALK_HAMMER_UNLEARN         "遗忘锻锤技能可不是小事。如果你选择放弃，你将忘掉所有需要锻锤技能才能制作的配方！"
+#define TALK_AXE_UNLEARN            "遗忘锻斧技能可不是小事。如果你选择放弃，你将忘掉所有需要锻斧技能才能制作的配方！"
+#define TALK_SWORD_UNLEARN          "遗忘锻剑技能可不是小事。如果你选择放弃，你将忘掉所有需要锻剑技能才能制作的配方！"
 
 /*###
 # generic defines
@@ -61,46 +63,46 @@ there is no difference here (except that default text is chosen with `gameobject
 # gossip item and box texts
 ###*/
 
-#define GOSSIP_LEARN_POTION         "Please teach me how to become a Master of Potions, Lauranna"
-#define GOSSIP_UNLEARN_POTION       "I wish to unlearn Potion Mastery"
-#define GOSSIP_LEARN_TRANSMUTE      "Please teach me how to become a Master of Transmutations, Zarevhi"
-#define GOSSIP_UNLEARN_TRANSMUTE    "I wish to unlearn Transmutation Mastery"
-#define GOSSIP_LEARN_ELIXIR         "Please teach me how to become a Master of Elixirs, Lorokeem"
-#define GOSSIP_UNLEARN_ELIXIR       "I wish to unlearn Elixir Mastery"
+#define GOSSIP_LEARN_POTION         "请教我如何成为药水大师，劳拉安娜"
+#define GOSSIP_UNLEARN_POTION       "我想遗忘药水大师"
+#define GOSSIP_LEARN_TRANSMUTE      "请教我如何成为转化大师，扎雷夫希"
+#define GOSSIP_UNLEARN_TRANSMUTE    "我想遗忘转化大师"
+#define GOSSIP_LEARN_ELIXIR         "请教我如何成为药剂大师，洛罗基姆"
+#define GOSSIP_UNLEARN_ELIXIR       "我想遗忘药剂大师"
 
-#define BOX_UNLEARN_ALCHEMY_SPEC    "Do you really want to unlearn your alchemy specialty and lose all associated recipes? \n Cost: "
+#define BOX_UNLEARN_ALCHEMY_SPEC    "你真的要遗忘你的炼金专精并失去所有相关配方吗？ \n 费用： "
 
-#define GOSSIP_WEAPON_LEARN         "Please teach me how to become a Weaponsmith"
-#define GOSSIP_WEAPON_UNLEARN       "I wish to unlearn the art of Weaponsmithing"
-#define GOSSIP_ARMOR_LEARN          "Please teach me how to become a Armorsmith"
-#define GOSSIP_ARMOR_UNLEARN        "I wish to unlearn the art of Armorsmithing"
+#define GOSSIP_WEAPON_LEARN         "请教我如何成为武器锻造师"
+#define GOSSIP_WEAPON_UNLEARN       "我想遗忘武器锻造技艺"
+#define GOSSIP_ARMOR_LEARN          "请教我如何成为护甲锻造师"
+#define GOSSIP_ARMOR_UNLEARN        "我想遗忘护甲锻造技艺"
 
-#define GOSSIP_UNLEARN_SMITH_SPEC   "I wish to unlearn my blacksmith specialty"
-#define BOX_UNLEARN_ARMORORWEAPON   "Do you really want to unlearn your blacksmith specialty and lose all associated recipes? \n Cost: "
+#define GOSSIP_UNLEARN_SMITH_SPEC   "我想遗忘我的锻造专精"
+#define BOX_UNLEARN_ARMORORWEAPON   "你真的要遗忘你的锻造专精并失去所有相关配方吗？ \n 费用： "
 
-#define GOSSIP_LEARN_HAMMER         "Please teach me how to become a Hammersmith, Lilith"
-#define GOSSIP_UNLEARN_HAMMER       "I wish to unlearn Hammersmithing"
-#define GOSSIP_LEARN_AXE            "Please teach me how to become a Axesmith, Kilram"
-#define GOSSIP_UNLEARN_AXE          "I wish to unlearn Axesmithing"
-#define GOSSIP_LEARN_SWORD          "Please teach me how to become a Swordsmith, Seril"
-#define GOSSIP_UNLEARN_SWORD        "I wish to unlearn Swordsmithing"
+#define GOSSIP_LEARN_HAMMER         "请教我如何成为锻锤大师，莉莉丝"
+#define GOSSIP_UNLEARN_HAMMER       "我想遗忘锻锤技艺"
+#define GOSSIP_LEARN_AXE            "请教我如何成为锻斧大师，基尔拉姆"
+#define GOSSIP_UNLEARN_AXE          "我想遗忘锻斧技艺"
+#define GOSSIP_LEARN_SWORD          "请教我如何成为锻剑大师，塞里尔"
+#define GOSSIP_UNLEARN_SWORD        "我想遗忘锻剑技艺"
 
-#define BOX_UNLEARN_WEAPON_SPEC     "Do you really want to unlearn your weaponsmith specialty and lose all associated recipes? \n Cost: "
+#define BOX_UNLEARN_WEAPON_SPEC     "你真的要遗忘你的武器锻造专精并失去所有相关配方吗？ \n 费用： "
 
-#define GOSSIP_UNLEARN_DRAGON       "I wish to unlearn Dragonscale Leatherworking"
-#define GOSSIP_UNLEARN_ELEMENTAL    "I wish to unlearn Elemental Leatherworking"
-#define GOSSIP_UNLEARN_TRIBAL       "I wish to unlearn Tribal Leatherworking"
+#define GOSSIP_UNLEARN_DRAGON       "我想遗忘龙鳞制皮"
+#define GOSSIP_UNLEARN_ELEMENTAL    "我想遗忘元素制皮"
+#define GOSSIP_UNLEARN_TRIBAL       "我想遗忘部落制皮"
 
-#define BOX_UNLEARN_LEATHER_SPEC    "Do you really want to unlearn your leatherworking specialty and lose all associated recipes? \n Cost: "
+#define BOX_UNLEARN_LEATHER_SPEC    "你真的要遗忘你的制皮专精并失去所有相关配方吗？ \n 费用： "
 
-#define GOSSIP_LEARN_SPELLFIRE      "Please teach me how to become a Spellcloth tailor"
-#define GOSSIP_UNLEARN_SPELLFIRE    "I wish to unlearn Spellfire Tailoring"
-#define GOSSIP_LEARN_MOONCLOTH      "Please teach me how to become a Mooncloth tailor"
-#define GOSSIP_UNLEARN_MOONCLOTH    "I wish to unlearn Mooncloth Tailoring"
-#define GOSSIP_LEARN_SHADOWEAVE     "Please teach me how to become a Shadoweave tailor"
-#define GOSSIP_UNLEARN_SHADOWEAVE   "I wish to unlearn Shadoweave Tailoring"
+#define GOSSIP_LEARN_SPELLFIRE      "请教我如何成为法纹裁缝"
+#define GOSSIP_UNLEARN_SPELLFIRE    "我想遗忘法纹裁缝"
+#define GOSSIP_LEARN_MOONCLOTH      "请教我如何成为月布裁缝"
+#define GOSSIP_UNLEARN_MOONCLOTH    "我想遗忘月布裁缝"
+#define GOSSIP_LEARN_SHADOWEAVE     "请教我如何成为暗纹裁缝"
+#define GOSSIP_UNLEARN_SHADOWEAVE   "我想遗忘暗纹裁缝"
 
-#define BOX_UNLEARN_TAILOR_SPEC     "Do you really want to unlearn your tailoring specialty and lose all associated recipes? \n Cost: "
+#define BOX_UNLEARN_TAILOR_SPEC     "你真的要遗忘你的裁缝专精并失去所有相关配方吗？ \n 费用： "
 
 /*###
 # spells defines
@@ -784,9 +786,9 @@ enum EngineeringTrinkets
     SPELL_TO_TOSHLEY            = 36955,
 };
 
-#define GOSSIP_ITEM_ZAP         "This Dimensional Imploder sounds dangerous! How can I make one?"
-#define GOSSIP_ITEM_JHORDY      "I must build a beacon for this marvelous device!"
-#define GOSSIP_ITEM_KABLAM      "[PH] Unknown"
+#define GOSSIP_ITEM_ZAP         "这个维度聚爆器听起来很危险！我怎么才能做一个？"
+#define GOSSIP_ITEM_JHORDY      "我必须为这台神奇的装置制造一个信标！"
+#define GOSSIP_ITEM_KABLAM      "未知"
 
 class npc_engineering_tele_trinket : public CreatureScript
 {

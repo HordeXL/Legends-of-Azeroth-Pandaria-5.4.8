@@ -1,4 +1,4 @@
-/*
+﻿/*
 * This file is part of the Legends of Azeroth Pandaria Project. See THANKS file for Copyright information
 *
 * This program is free software; you can redistribute it and/or modify it
@@ -34,6 +34,8 @@ EndContentData */
 #include "the_black_morass.h"
 #include "Player.h"
 #include "SpellInfo.h"
+
+#pragma execution_character_set("UTF-8")
 
 enum MedivhBm
 {
@@ -371,7 +373,7 @@ enum Saat
     ITEM_CHRONO_BEACON      = 24289
 };
 
-#define GOSSIP_ITEM_OBTAIN      "[PH] Obtain Chrono-Beacon"
+#define GOSSIP_ITEM_OBTAIN      "领取时空信标"
 
 class npc_saat : public CreatureScript
 {

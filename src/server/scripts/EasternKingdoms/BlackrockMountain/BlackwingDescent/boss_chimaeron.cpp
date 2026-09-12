@@ -1,4 +1,4 @@
-/*
+﻿/*
 * This file is part of the Pandaria 5.4.8 Project. See THANKS file for Copyright information
 *
 * This program is free software; you can redistribute it and/or modify it
@@ -18,6 +18,8 @@
 #include"ScriptPCH.h"
 #include"Spell.h"
 #include"blackwing_descent.h"
+
+#pragma execution_character_set("UTF-8")
 
 //todo: реализовать reroure power, low health, корректный double attack
 enum ScriptTexts
@@ -358,19 +360,19 @@ class boss_chimaeron : public CreatureScript
 };
 
 #define GOSSIP_MENU_1 16565
-#define GOSSIP_OPTION_1 "I suppose you'll be needing a key for this cage? Wait, don't tell me. The horrific gibbering monster behind me ate it, right?"
+#define GOSSIP_OPTION_1 "我想你需要这笼子的钥匙吧？等等，先别说。被我这后面那只可怕的胡言乱语的怪物吃掉了，对吧？"
 #define GOSSIP_OPTION_1_RU "Я полагаю, тебе нужен ключ от этой клетки? Погоди, ничего не говори. Невероятно ужасный монстр позади меня съел его, не так ли?"
 #define GOSSIP_MENU_2 16593
-#define GOSSIP_OPTION_2 "You were trapped, as I recall. This situation seems oddly similar."
+#define GOSSIP_OPTION_2 "我记得你曾被困住过。这情形似曾相识啊。"
 #define GOSSIP_OPTION_2_RU "Ты оказался в ловушке, как я понимаю. Эта ситуация кажется подозрительно похожей."
 #define GOSSIP_MENU_3 16594
-#define GOSSIP_OPTION_3 "Gnomes in Lava Suits, for example."
+#define GOSSIP_OPTION_3 "比如穿着熔岩服的侏儒。"
 #define GOSSIP_OPTION_3_RU "Гнома в лава-костюме, например."
 #define GOSSIP_MENU_4 16595
-#define GOSSIP_OPTION_4 "No, I, uh, haven't seen it. You were saying?"
+#define GOSSIP_OPTION_4 "没有，我，呃，没看见。你刚说到哪儿了？"
 #define GOSSIP_OPTION_4_RU "Нет, я, э-э, не видел его. Так что ты говорил?"
 #define GOSSIP_MENU_5 16596
-#define GOSSIP_OPTION_5 "Restrictions? What restrictions?"
+#define GOSSIP_OPTION_5 "限制？什么限制？"
 #define GOSSIP_OPTION_5_RU "Условия? Что за условия?"
 #define GOSSIP_MENU_6 16597
 

@@ -1,4 +1,4 @@
-/*
+﻿/*
 * This file is part of the Pandaria 5.4.8 Project. See THANKS file for Copyright information
 *
 * This program is free software; you can redistribute it and/or modify it
@@ -39,6 +39,8 @@ EndContentData */
 #include "GridNotifiersImpl.h"
 #include "Cell.h"
 #include "CellImpl.h"
+
+#pragma execution_character_set("UTF-8")
 
 //Support for quest: You're Fired! (10821)
 bool     obelisk_one, obelisk_two, obelisk_three, obelisk_four, obelisk_five;
@@ -311,7 +313,7 @@ public:
 ## npc_overseer_nuaar
 ######*/
 
-#define GOSSIP_HELLO_ON "Overseer, I am here to negotiate on behalf of the Cenarion Expedition."
+#define GOSSIP_HELLO_ON "监工，我代表塞纳里奥远征队前来谈判。"
 
 class npc_overseer_nuaar : public CreatureScript
 {
@@ -344,8 +346,8 @@ public:
 ## npc_saikkal_the_elder
 ######*/
 
-#define GOSSIP_HELLO_STE    "Yes... yes, it's me."
-#define GOSSIP_SELECT_STE   "Yes elder. Tell me more of the book."
+#define GOSSIP_HELLO_STE    "是……是的，是我。"
+#define GOSSIP_SELECT_STE   "是的，长者。再跟我说说那本书的事。"
 
 class npc_saikkal_the_elder : public CreatureScript
 {

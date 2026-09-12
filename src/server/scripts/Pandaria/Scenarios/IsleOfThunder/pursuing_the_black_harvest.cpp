@@ -1,4 +1,4 @@
-/*
+﻿/*
 * This file is part of the Pandaria 5.4.8 Project. See THANKS file for Copyright information
 *
 * This program is free software; you can redistribute it and/or modify it
@@ -25,6 +25,8 @@
 #include "SpellScript.h"
 #include "Vehicle.h"
 #include "LFGMgr.h"
+
+#pragma execution_character_set("UTF-8")
 
 enum Spells
 {
@@ -147,7 +149,7 @@ class npc_black_harvest_akama : public CreatureScript
             if (creature->IsQuestGiver())
                 player->PrepareQuestMenu(creature->GetGUID());
     
-            player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "Show me a path!", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
+            player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "为我指一条路！", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
     
             player->SEND_GOSSIP_MENU(player->GetGossipTextId(creature), creature->GetGUID());
             return true;

@@ -1,4 +1,4 @@
-/*
+﻿/*
 * This file is part of the Pandaria 5.4.8 Project. See THANKS file for Copyright information
 *
 * This program is free software; you can redistribute it and/or modify it
@@ -34,24 +34,26 @@ EndContentData */
 #include "Player.h"
 #include "SpellInfo.h"
 
+#pragma execution_character_set("UTF-8")
+
 /*######
 ## npc_greatmother_geyah
 ######*/
 
-#define GOSSIP_HGG1 "Hello, Greatmother. Garrosh told me that you wanted to speak with me."
-#define GOSSIP_HGG2 "Garrosh is beyond redemption, Greatmother. I fear that in helping the Mag'har, I have convinced Garrosh that he is unfit to lead."
+#define GOSSIP_HGG1 "你好，老妈妈。加尔鲁什告诉我，你想和我谈谈。"
+#define GOSSIP_HGG2 "加尔鲁什已经无可救药了，老妈妈。恐怕在帮助玛格汉的过程中，我让加尔鲁什认定自己不适合领导大家。"
 
-#define GOSSIP_SGG1 "You raised all of the orcs here, Greatmother?"
-#define GOSSIP_SGG2 "Do you believe that?"
-#define GOSSIP_SGG3 "What can be done? I have tried many different things. I have done my best to help the people of Nagrand. Each time I have approached Garrosh, he has dismissed me."
-#define GOSSIP_SGG4 "Left? How can you choose to leave?"
-#define GOSSIP_SGG5 "What is this duty?"
-#define GOSSIP_SGG6 "Is there anything I can do for you, Greatmother?"
-#define GOSSIP_SGG7 "I have done all that I could, Greatmother. I thank you for your kind words."
-#define GOSSIP_SGG8 "Greatmother, you are the mother of Durotan?"
-#define GOSSIP_SGG9 "Greatmother, I never had the honor. Durotan died long before my time, but his heroics are known to all on my world. The orcs of Azeroth reside in a place known as Durotar, named after your son. And ... (You take a moment to breathe and think through what you are about to tell the Greatmother.)"
-#define GOSSIP_SGG10 "It is my Warchief, Greatmother. The leader of my people. From my world. He ... He is the son of Durotan. He is your grandchild."
-#define GOSSIP_SGG11 "I will return to Azeroth at once, Greatmother."
+#define GOSSIP_SGG1 "这里所有的兽人都是你抚养长大的吗，老妈妈？"
+#define GOSSIP_SGG2 "你相信吗？"
+#define GOSSIP_SGG3 "还能做什么？我试过很多办法，竭尽全力帮助纳格兰的人民。可每次我去找加尔鲁什，他都对我置之不理。"
+#define GOSSIP_SGG4 "离开？你怎么能选择离开？"
+#define GOSSIP_SGG5 "这是什么职责？"
+#define GOSSIP_SGG6 "有什么我能为你做的吗，老妈妈？"
+#define GOSSIP_SGG7 "我已经尽力了，老妈妈。谢谢你的美言。"
+#define GOSSIP_SGG8 "老妈妈，你是杜隆坦的母亲？"
+#define GOSSIP_SGG9 "老妈妈，我无缘得见杜隆坦。他在我出生前很久就去世了，但他的英名在我的世界无人不晓。艾泽拉斯的兽人居住在一个叫杜隆塔尔的地方，那是以你儿子的名字命名的。而且……（你停下来喘了口气，把即将说出口的话在脑中理了一遍。）"
+#define GOSSIP_SGG10 "他是我的大酋长，老妈妈。我的人民的领袖，来自我的世界。他……他是杜隆坦的儿子。是你的孙子。"
+#define GOSSIP_SGG11 "我马上就回艾泽拉斯去，老妈妈。"
 
 //all the textId's for the below is unknown, but i do believe the gossip item texts are proper.
 class npc_greatmother_geyah : public CreatureScript

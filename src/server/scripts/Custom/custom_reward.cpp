@@ -1,5 +1,7 @@
-#include "Chat.h"
+﻿#include "Chat.h"
 #include "Config.h"
+
+#pragma execution_character_set("UTF-8")
 
 class Played_Time_Reward : public PlayerScript
 {
@@ -15,7 +17,7 @@ public:
             timeInterval -= player->ptr_Interval;
             if (player->IsInWorld() && sWorld->getBoolConfig(CONFIG_BONUS_TIME_REWARD))
             {
-                ChatHandler(player->GetSession()).PSendSysMessage("Bonus for played time.");
+                ChatHandler(player->GetSession()).PSendSysMessage("游戏时长奖励。");
 
                 LoginDatabasePreparedStatement* stmt = LoginDatabase.GetPreparedStatement(LOGIN_UPD_BATTLEPAY_VP_COINS);
                 stmt->setUInt32(0, sConfigMgr->GetIntDefault("PlayedTimeReward.vp", 0));

@@ -1,4 +1,4 @@
-/*
+﻿/*
 * This file is part of the Pandaria 5.4.8 Project. See THANKS file for Copyright information
 *
 * This program is free software; you can redistribute it and/or modify it
@@ -22,6 +22,8 @@
 #include "blackrock_depths.h"
 #include "Player.h"
 #include "WorldSession.h"
+
+#pragma execution_character_set("UTF-8")
 
 //go_shadowforge_brazier
 class go_shadowforge_brazier : public GameObjectScript
@@ -414,16 +416,16 @@ enum KharamQuests
     QUEST_4342                          = 4342
 };
 
-#define GOSSIP_ITEM_KHARAN_1    "I need to know where the princess are, Kharan!"
-#define GOSSIP_ITEM_KHARAN_2    "All is not lost, Kharan!"
-#define GOSSIP_ITEM_KHARAN_3    "Gor'shak is my friend, you can trust me."
-#define GOSSIP_ITEM_KHARAN_4    "Not enough, you need to tell me more."
-#define GOSSIP_ITEM_KHARAN_5    "So what happened?"
-#define GOSSIP_ITEM_KHARAN_6    "Continue..."
-#define GOSSIP_ITEM_KHARAN_7    "So you suspect that someone on the inside was involved? That they were tipped off?"
-#define GOSSIP_ITEM_KHARAN_8    "Continue with your story please."
-#define GOSSIP_ITEM_KHARAN_9    "Indeed."
-#define GOSSIP_ITEM_KHARAN_10   "The door is open, Kharan. You are a free man."
+#define GOSSIP_ITEM_KHARAN_1    "我需要知道公主们在哪儿，卡兰！"
+#define GOSSIP_ITEM_KHARAN_2    "还没有全盘皆输，卡兰！"
+#define GOSSIP_ITEM_KHARAN_3    "戈尔沙克是我的朋友，你可以信任我。"
+#define GOSSIP_ITEM_KHARAN_4    "这还不够，你得再多告诉我一些。"
+#define GOSSIP_ITEM_KHARAN_5    "所以发生了什么？"
+#define GOSSIP_ITEM_KHARAN_6    "继续……"
+#define GOSSIP_ITEM_KHARAN_7    "所以你怀疑有内应？有人给他们通风报信？"
+#define GOSSIP_ITEM_KHARAN_8    "请继续讲你的故事。"
+#define GOSSIP_ITEM_KHARAN_9    "的确。"
+#define GOSSIP_ITEM_KHARAN_10   "门开了，卡兰。你是自由人了。"
 
 class npc_kharan_mighthammer : public CreatureScript
 {
@@ -516,8 +518,8 @@ enum LokhtosSpells
     SPELL_CREATE_THORIUM_BROTHERHOOD_CONTRACT_DND          = 23059
 };
 
-#define GOSSIP_ITEM_SHOW_ACCESS     "Show me what I have access to, Lothos."
-#define GOSSIP_ITEM_GET_CONTRACT    "Get Thorium Brotherhood Contract"
+#define GOSSIP_ITEM_SHOW_ACCESS     "给我看看我能进哪些区域，洛索斯。"
+#define GOSSIP_ITEM_GET_CONTRACT    "领取瑟银兄弟会契约"
 
 class npc_lokhtos_darkbargainer : public CreatureScript
 {
@@ -568,8 +570,8 @@ enum DughalQuests
     QUEST_JAIL_BREAK                      = 4322
 };
 
-#define SAY_DUGHAL_FREE         "Thank you, $n! I'm free!!!"
-#define GOSSIP_DUGHAL           "You're free, Dughal! Get out of here!"
+#define SAY_DUGHAL_FREE         "谢谢你，$n！我自由了！！！"
+#define GOSSIP_DUGHAL           "你自由了，杜戈尔！快离开这里！"
 
 /*
 class npc_dughal_stormwing : public CreatureScript
@@ -671,15 +673,15 @@ public:
  */
 
 // npc_marshal_windsor
-#define SAY_WINDSOR_AGGRO1          "You locked up the wrong Marshal. Prepare to be destroyed!"
-#define SAY_WINDSOR_AGGRO2          "I bet you're sorry now, aren't you !?!!"
-#define SAY_WINDSOR_AGGRO3          "You better hold me back $n or they are going to feel some prison house beatings."
-#define SAY_WINDSOR_1               "Let's get a move on. My gear should be in the storage area up this way..."
-#define SAY_WINDSOR_4_1             "Check that cell, $n. If someone is alive in there, we need to get them out."
-#define SAY_WINDSOR_4_2             "Get him out of there!"
-#define SAY_WINDSOR_4_3             "Good work! We're almost there, $n. This way."
-#define SAY_WINDSOR_6               "This is it, $n. My stuff should be in that room. Cover me, I'm going in!"
-#define SAY_WINDSOR_9               "Ah, there it is!"
+#define SAY_WINDSOR_AGGRO1          "你们关押错了元帅。准备受死吧！"
+#define SAY_WINDSOR_AGGRO2          "我猜你现在后悔了吧，啊？！？！"
+#define SAY_WINDSOR_AGGRO3          "你最好拉住我，$n，不然我要让他们尝尝牢房拳脚的滋味。"
+#define SAY_WINDSOR_1               "赶紧动身吧。我的装备应该在前面的储藏区……"
+#define SAY_WINDSOR_4_1             "检查那间牢房，$n。如果里面还有活人，我们得把他们救出来。"
+#define SAY_WINDSOR_4_2             "把他弄出来！"
+#define SAY_WINDSOR_4_3             "干得好！我们快到了，$n。这边走。"
+#define SAY_WINDSOR_6               "就是这里了，$n。我的东西应该在那个房间里。掩护我，我进去了！"
+#define SAY_WINDSOR_9               "啊，找到了！"
 
 enum MarshalWindsor
 {
@@ -849,20 +851,20 @@ public:
   */
 
 // npc_marshal_reginald_windsor
-#define SAY_REGINALD_WINDSOR_0_1    "Can you feel the power, $n??? It's time to ROCK!"
-#define SAY_REGINALD_WINDSOR_0_2    "Now we just have to free Tobias and we can get out of here. This way!"
-#define SAY_REGINALD_WINDSOR_5_1    "Open it."
-#define SAY_REGINALD_WINDSOR_5_2    "I never did like those two. Let's get moving."
-#define SAY_REGINALD_WINDSOR_7_1    "Open it and be careful this time!"
-#define SAY_REGINALD_WINDSOR_7_2    "That intolerant dirtbag finally got what was coming to him. Good riddance!"
-#define SAY_REGINALD_WINDSOR_7_3    "Alright, let's go."
-#define SAY_REGINALD_WINDSOR_13_1   "Open it. We need to hurry up. I can smell those Dark Irons coming a mile away and I can tell you one thing, they're COMING!"
-#define SAY_REGINALD_WINDSOR_13_2   "Administering fists of fury on Crest Killer!"
-#define SAY_REGINALD_WINDSOR_13_3   "He has to be in the last cell. Unless... they killed him."
-#define SAY_REGINALD_WINDSOR_14_1   "Get him out of there!"
-#define SAY_REGINALD_WINDSOR_14_2   "Excellent work, $n. Let's find the exit. I think I know the way. Follow me!"
-#define SAY_REGINALD_WINDSOR_20_1   "We made it!"
-#define SAY_REGINALD_WINDSOR_20_2   "Meet me at Maxwell's encampment. We'll go over the next stages of the plan there and figure out a way to decode my tablets without the decryption ring."
+#define SAY_REGINALD_WINDSOR_0_1    "感受到这力量了吗，$n？？？是时候大干一场了！"
+#define SAY_REGINALD_WINDSOR_0_2    "现在我们只要救出托比亚斯就能离开这里了。这边走！"
+#define SAY_REGINALD_WINDSOR_5_1    "打开它。"
+#define SAY_REGINALD_WINDSOR_5_2    "我从来就不喜欢那两个家伙。我们走吧。"
+#define SAY_REGINALD_WINDSOR_7_1    "打开它，这次小心点！"
+#define SAY_REGINALD_WINDSOR_7_2    "那个恶棍终于遭报应了。死得好！"
+#define SAY_REGINALD_WINDSOR_7_3    "好了，我们走。"
+#define SAY_REGINALD_WINDSOR_13_1   "打开它。我们得抓紧了。我一英里外就能闻到那些黑铁矮人的味儿，而且我可以告诉你一件事——他们来了！"
+#define SAY_REGINALD_WINDSOR_13_2   "对“灭顶杀手”饱以怒拳！"
+#define SAY_REGINALD_WINDSOR_13_3   "他一定在最后一间牢房里。除非……他们已经杀了他。"
+#define SAY_REGINALD_WINDSOR_14_1   "把他弄出来！"
+#define SAY_REGINALD_WINDSOR_14_2   "干得漂亮，$n。我们找出口吧。我认得路。跟我来！"
+#define SAY_REGINALD_WINDSOR_20_1   "我们成功了！"
+#define SAY_REGINALD_WINDSOR_20_2   "到麦克斯韦尔的营地与我会合。我们在那里商量计划的下一步，并想出没有解密环也能破译我石板的办法。"
 
 enum MarshalReginaldWindor
 {
@@ -1079,7 +1081,7 @@ public:
 */
 
 // npc_tobias_seecher
-#define SAY_TOBIAS_FREE         "Thank you! I will run for safety immediately!"
+#define SAY_TOBIAS_FREE         "谢谢！我马上跑去安全的地方！"
 
 /*
 class npc_tobias_seecher : public CreatureScript
@@ -1117,7 +1119,7 @@ public:
     {
         if (player->GetQuestStatus(QUEST_JAIL_BREAK) == QUEST_STATUS_INCOMPLETE && instance->GetData(DATA_QUEST_JAIL_BREAK) == ENCOUNTER_STATE_IN_PROGRESS)
         {
-            player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "Get out of here, Tobias, you're free!", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
+            player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "快离开这里，托比亚斯，你自由了！", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
             player->SEND_GOSSIP_MENU(2847, creature->GetGUID());
         }
         return true;

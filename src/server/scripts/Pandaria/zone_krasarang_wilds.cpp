@@ -1,4 +1,4 @@
-/*
+﻿/*
 * This file is part of the Legends of Azeroth Pandaria Project. See THANKS file for Copyright information
 *
 * This program is free software; you can redistribute it and/or modify it
@@ -21,6 +21,8 @@
 #include "ScriptedEscortAI.h"
 #include "Vehicle.h"
 #include "CombatAI.h"
+
+#pragma execution_character_set("UTF-8")
 
 enum KrasarangWildsCreatureSpells
 {
@@ -2271,7 +2273,7 @@ class npc_krasarang_wilds_lyalia : public CreatureScript
                 player->PrepareQuestMenu(creature->GetGUID());
 
             if ((player->GetQuestStatus(QUEST_THE_LORD_RECLAIMER) == QUEST_STATUS_INCOMPLETE && creature->GetEntry() == NPC_LYALIA) || (player->GetQuestStatus(QUEST_FOR_FAMILY) == QUEST_STATUS_INCOMPLETE && creature->GetEntry() == NPC_KOR_BLOODTUSK))
-                player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "It`s trap!", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
+                player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "是陷阱！", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
 
             player->SEND_GOSSIP_MENU(player->GetGossipTextId(creature), creature->GetGUID());
             return true;

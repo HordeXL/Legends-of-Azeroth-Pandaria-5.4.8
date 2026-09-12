@@ -1,4 +1,4 @@
-/*
+﻿/*
 * This file is part of the Pandaria 5.4.8 Project. See THANKS file for Copyright information
 *
 * This program is free software; you can redistribute it and/or modify it
@@ -21,6 +21,8 @@
 #include "blackrock_depths.h"
 #include "Player.h"
 
+#pragma execution_character_set("UTF-8")
+
 enum Spells
 {
     SPELL_SMELT_DARK_IRON                         = 14891,
@@ -37,10 +39,10 @@ enum Misc
     DATA_SKILLPOINT_MIN                           = 230
 };
 
-#define GOSSIP_ITEM_TEACH_1 "Teach me the art of smelting dark iron"
-#define GOSSIP_ITEM_TEACH_2 "Continue..."
-#define GOSSIP_ITEM_TEACH_3 "[PH] Continue..."
-#define GOSSIP_ITEM_TRIBUTE "I want to pay tribute"
+#define GOSSIP_ITEM_TEACH_1 "教我熔炼黑铁的技艺"
+#define GOSSIP_ITEM_TEACH_2 "继续……"
+#define GOSSIP_ITEM_TEACH_3 "继续……"
+#define GOSSIP_ITEM_TRIBUTE "我要献上贡品"
 
 class boss_gloomrel : public CreatureScript
 {
@@ -98,8 +100,8 @@ enum DoomrelSpells
     SPELL_SUMMON_VOIDWALKERS                               = 15092
 };
 
-#define GOSSIP_ITEM_CHALLENGE   "Your bondage is at an end, Doom'rel. I challenge you!"
-#define GOSSIP_SELECT_DOOMREL   "[PH] Continue..."
+#define GOSSIP_ITEM_CHALLENGE   "你的奴役结束了，杜姆雷尔。我向你挑战！"
+#define GOSSIP_SELECT_DOOMREL   "继续……"
 
 class boss_doomrel : public CreatureScript
 {

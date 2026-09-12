@@ -1,4 +1,4 @@
-/*
+﻿/*
 * This file is part of the Legends of Azeroth Pandaria Project. See THANKS file for Copyright information
 *
 * This program is free software; you can redistribute it and/or modify it
@@ -39,6 +39,8 @@ EndContentData */
 #include "CellImpl.h"
 #include "GridNotifiersImpl.h"
 #include "GridNotifiers.h"
+
+#pragma execution_character_set("UTF-8")
 
 /*######
 ## npc_draenei_survivor
@@ -178,7 +180,7 @@ enum Overgrind
     SPELL_DYNAMITE  = 7978
 };
 
-#define GOSSIP_FIGHT "Traitor! You will be brought to justice!"
+#define GOSSIP_FIGHT "叛徒！你会被绳之以法的！"
 
 class npc_engineer_spark_overgrind : public CreatureScript
 {

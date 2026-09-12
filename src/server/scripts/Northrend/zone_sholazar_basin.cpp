@@ -1,4 +1,4 @@
-/*
+﻿/*
 * This file is part of the Pandaria 5.4.8 Project. See THANKS file for Copyright information
 *
 * This program is free software; you can redistribute it and/or modify it
@@ -39,11 +39,13 @@ EndContentData */
 #include "CombatAI.h"
 #include "Player.h"
 
+#pragma execution_character_set("UTF-8")
+
 /*######
 ## npc_injured_rainspeaker_oracle
 ######*/
 
-#define GOSSIP_ITEM1 "I am ready to travel to your village now."
+#define GOSSIP_ITEM1 "我现在就准备好前往你们的村庄了。"
 
 enum Rainspeaker
 {
@@ -178,8 +180,8 @@ public:
 ## npc_vekjik
 ######*/
 
-#define GOSSIP_VEKJIK_ITEM1 "Shaman Vekjik, I have spoken with the big-tongues and they desire peace. I have brought this offering on their behalf."
-#define GOSSIP_VEKJIK_ITEM2 "No no... I had no intentions of betraying your people. I was only defending myself. it was all a misunderstanding."
+#define GOSSIP_VEKJIK_ITEM1 "维克吉克萨满，我已经和大舌头氏族谈过了，他们渴望和平。我代表他们带来了这份贡品。"
+#define GOSSIP_VEKJIK_ITEM2 "不不……我无意背叛你的人民。我只是自卫。这完全是个误会。"
 
 enum Vekjik
 {
@@ -239,9 +241,9 @@ public:
 ## avatar_of_freya
 ######*/
 
-#define GOSSIP_ITEM_AOF1 "I want to stop the Scourge as much as you do. How can I help?"
-#define GOSSIP_ITEM_AOF2 "You can trust me. I am no friend of the Lich King."
-#define GOSSIP_ITEM_AOF3 "I will not fail."
+#define GOSSIP_ITEM_AOF1 "我和你一样想阻止天灾。我能帮什么忙？"
+#define GOSSIP_ITEM_AOF2 "你可以信任我。我不是巫妖王的朋友。"
+#define GOSSIP_ITEM_AOF3 "我不会失败的。"
 
 enum Freya
 {
@@ -464,7 +466,7 @@ public:
 ## npc_jungle_punch_target
 #####*/
 
-#define SAY_OFFER     "Care to try Grimbooze Thunderbrew's new jungle punch?"
+#define SAY_OFFER     "想尝尝格林布兹·雷酒的新调丛林宾治吗？"
 
 enum JunglePunch
 {
@@ -650,9 +652,9 @@ public:
 ## npc_adventurous_dwarf
 ######*/
 
-#define GOSSIP_OPTION_ORANGE    "Can you spare an orange?"
-#define GOSSIP_OPTION_BANANAS   "Have a spare bunch of bananas?"
-#define GOSSIP_OPTION_PAPAYA    "I could really use a papaya."
+#define GOSSIP_OPTION_ORANGE    "能匀我一个甜橙吗？"
+#define GOSSIP_OPTION_BANANAS   "有多余的一串香蕉吗？"
+#define GOSSIP_OPTION_PAPAYA    "我真的很需要一只木瓜。"
 
 enum AdventurousDwarf
 {

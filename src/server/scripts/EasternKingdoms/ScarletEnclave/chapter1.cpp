@@ -1,4 +1,4 @@
-/*
+﻿/*
 * This file is part of the Legends of Azeroth Pandaria Project. See THANKS file for Copyright information
 *
 * This program is free software; you can redistribute it and/or modify it
@@ -30,6 +30,8 @@
 #include "CreatureTextMgr.h"
 #include "MoveSplineInit.h"
 #include <G3D/Vector3.h>
+
+#pragma execution_character_set("UTF-8")
 
 /*######
 ##Quest 12848
@@ -500,7 +502,7 @@ public:
 ## npc_death_knight_initiate
 ######*/
 
-#define GOSSIP_ACCEPT_DUEL      "I challenge you, death knight!"
+#define GOSSIP_ACCEPT_DUEL      "我向你挑战，死亡骑士！"
 
 enum Spells_DKI
 {

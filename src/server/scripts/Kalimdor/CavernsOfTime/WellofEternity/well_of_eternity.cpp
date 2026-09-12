@@ -1,4 +1,4 @@
-/*
+﻿/*
 * This file is part of the Legends of Azeroth Pandaria Project. See THANKS file for Copyright information
 *
 * This program is free software; you can redistribute it and/or modify it
@@ -18,6 +18,8 @@
 #include "ScriptPCH.h"
 #include "Vehicle.h"
 #include "well_of_eternity.h"
+
+#pragma execution_character_set("UTF-8")
 
 #define MAX_DOOMGUARDS 15
 
@@ -853,7 +855,7 @@ class npc_well_of_eternity_illidan_1 : public CreatureScript
                     {
                         player->ADD_GOSSIP_ITEM_DB(13163, 0, 0, 0);
                         if (player->IsGameMaster())
-                            player->ADD_GOSSIP_ITEM(GOSSIP_ICON_DOT, "Skip to boss.", 0, 100);
+                            player->ADD_GOSSIP_ITEM(GOSSIP_ICON_DOT, "跳过至首领战。", 0, 100);
                         player->SEND_GOSSIP_MENU(18551, creature->GetGUID());
                     }
                 }

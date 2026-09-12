@@ -1,4 +1,4 @@
-/*
+﻿/*
 * This file is part of the Legends of Azeroth Pandaria Project. See THANKS file for Copyright information
 *
 * This program is free software; you can redistribute it and/or modify it
@@ -21,6 +21,8 @@
 #include "InstanceScript.h"
 #include "deadmines.h"
 #include "Spell.h"
+
+#pragma execution_character_set("UTF-8")
 
 #define GOSSIP_SENDER_DEADMINES_PORT 36
 
@@ -84,14 +86,14 @@ class go_deadmines_teleport : public GameObjectScript
             if (InstanceScript* instance = go->GetInstanceScript())
             {
                 if (instance->GetBossState(DATA_GLUBTOK) == DONE)
-                    player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, ru ? "Отправиться ко входу." : "Teleport to entrance.", GOSSIP_SENDER_DEADMINES_PORT, 0);
+                    player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, ru ? "Отправиться ко входу." : "传送至入口。", GOSSIP_SENDER_DEADMINES_PORT, 0);
 
                 if (instance->GetBossState(DATA_ADMIRAL) == DONE)
-                    player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, ru ? "Отправиться в потайную бухту." : "Teleport to Ironclad Cove.", GOSSIP_SENDER_DEADMINES_PORT, 3);
+                    player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, ru ? "Отправиться в потайную бухту." : "传送至铁甲湾。", GOSSIP_SENDER_DEADMINES_PORT, 3);
                 else if (instance->GetBossState(DATA_FOEREAPER) == DONE)
-                    player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, ru ? "Отправиться в гоблинский цех." : "Teleport to The Foundry.", GOSSIP_SENDER_DEADMINES_PORT, 2);
+                    player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, ru ? "Отправиться в гоблинский цех." : "传送至铸造厂。", GOSSIP_SENDER_DEADMINES_PORT, 2);
                 else if (instance->GetBossState(DATA_HELIX) == DONE)
-                    player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, ru ? "Отправиться в мачтовую мастерскую." : "Teleport to The Mast Room.", GOSSIP_SENDER_DEADMINES_PORT, 1);
+                    player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, ru ? "Отправиться в мачтовую мастерскую." : "传送至桅杆室。", GOSSIP_SENDER_DEADMINES_PORT, 1);
             }
 
             player->SEND_GOSSIP_MENU(player->GetGossipTextId(go), go->GetGUID());

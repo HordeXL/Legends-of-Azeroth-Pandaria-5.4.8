@@ -1,4 +1,4 @@
-/*
+﻿/*
 * This file is part of the Legends of Azeroth Pandaria Project. See THANKS file for Copyright information
 *
 * This program is free software; you can redistribute it and/or modify it
@@ -24,6 +24,8 @@ EndScriptData */
 
 #include "ScriptPCH.h"
 #include "sunwell_plateau.h"
+
+#pragma execution_character_set("UTF-8")
 
 enum Yells
 {
@@ -78,7 +80,7 @@ enum SWPActions
     DO_BANISH                                   =  2,
 };
 
-#define GO_FAILED   "You are unable to use this currently."
+#define GO_FAILED   "你目前无法使用它。"
 
 #define FLY_X   1679
 #define FLY_Y   900

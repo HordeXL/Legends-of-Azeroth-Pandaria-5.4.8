@@ -1,4 +1,4 @@
-/*
+﻿/*
 * This file is part of the Legends of Azeroth Pandaria Project. See THANKS file for Copyright information
 *
 * This program is free software; you can redistribute it and/or modify it
@@ -25,6 +25,8 @@
 #include "SpellScript.h"
 #include "Vehicle.h"
 #include "LFGMgr.h"
+
+#pragma execution_character_set("UTF-8")
 
 enum Spells
 {
@@ -521,7 +523,7 @@ class npc_thunder_king_treasure_tenwu_of_the_red_smoke : public CreatureScript
 
         bool OnGossipHello(Player* player, Creature* creature) override
         {
-            player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "I`m ready to leave. Let`s get our of here.", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1); // hasn`t gossip info in sniffs
+            player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "我准备好离开了。我们离开这里吧。", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1); // hasn`t gossip info in sniffs
             player->SEND_GOSSIP_MENU(player->GetGossipTextId(creature), creature->GetGUID());
             return true;
         }

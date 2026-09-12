@@ -1,4 +1,4 @@
-/*
+﻿/*
 * This file is part of the Pandaria 5.4.8 Project. See THANKS file for Copyright information
 *
 * This program is free software; you can redistribute it and/or modify it
@@ -16,6 +16,8 @@
 */
 
 #include "ScriptPCH.h"
+
+#pragma execution_character_set("UTF-8")
 
 //101037 - borean beam
 //101053 Orb Staff Fusion
@@ -36,10 +38,10 @@
 ## entry 15192
 ######*/
 
-#define GOSSIP_A_WRINKIE_IN_TIME "Yes, Anachronos. I am ready to witness your vision of the future."
+#define GOSSIP_A_WRINKIE_IN_TIME "是的，阿纳克洛斯。我已准备好见证你对未来的展望。"
 #define ACTION_A_WRINKIE_IN_TIME 1001
 
-#define GOSSIP_ON_A_WING_AND_A_PRAYER "Take the Timeless Eye."
+#define GOSSIP_ON_A_WING_AND_A_PRAYER "拿走永恒之眼。"
 #define ACTION_ON_A_WING_AND_A_PRAYER 1002
 
 class npc_anachronos_15192 : public CreatureScript

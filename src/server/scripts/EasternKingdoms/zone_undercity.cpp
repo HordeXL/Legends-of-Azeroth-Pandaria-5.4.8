@@ -1,4 +1,4 @@
-/*
+﻿/*
 * This file is part of the Pandaria 5.4.8 Project. See THANKS file for Copyright information
 *
 * This program is free software; you can redistribute it and/or modify it
@@ -32,6 +32,8 @@ EndContentData */
 #include "ScriptedCreature.h"
 #include "ScriptedGossip.h"
 #include "Player.h"
+
+#pragma execution_character_set("UTF-8")
 
 /*######
 ## npc_lady_sylvanas_windrunner
@@ -283,9 +285,9 @@ enum ParqualFintallas
     SPELL_MARK_OF_SHAME         = 6767
 };
 
-#define GOSSIP_HPF1             "Gul'dan"
-#define GOSSIP_HPF2             "Kel'Thuzad"
-#define GOSSIP_HPF3             "Ner'zhul"
+#define GOSSIP_HPF1             "古尔丹"
+#define GOSSIP_HPF2             "克尔苏加德"
+#define GOSSIP_HPF3             "耐奥祖"
 
 class npc_parqual_fintallas : public CreatureScript
 {

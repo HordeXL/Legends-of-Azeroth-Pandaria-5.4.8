@@ -1,4 +1,4 @@
-/*
+﻿/*
 * This file is part of the Legends of Azeroth Pandaria Project. See THANKS file for Copyright information
 *
 * This program is free software; you can redistribute it and/or modify it
@@ -28,10 +28,12 @@
 #include "SpellScript.h"
 #include "Player.h"
 
-#define GOSSIP_HELLO_DEMO1  "Build catapult."
-#define GOSSIP_HELLO_DEMO2  "Build demolisher."
-#define GOSSIP_HELLO_DEMO3  "Build siege engine."
-#define GOSSIP_HELLO_DEMO4  "I cannot build more!"
+#pragma execution_character_set("UTF-8")
+
+#define GOSSIP_HELLO_DEMO1  "制造弹射器。"
+#define GOSSIP_HELLO_DEMO2  "制造摧毁者。"
+#define GOSSIP_HELLO_DEMO3  "制造攻城机。"
+#define GOSSIP_HELLO_DEMO4  "我不能再造了！"
 
 enum WGqueuenpctext
 {

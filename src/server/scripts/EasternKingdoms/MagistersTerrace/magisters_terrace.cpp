@@ -1,4 +1,4 @@
-/*
+﻿/*
 * This file is part of the Pandaria 5.4.8 Project. See THANKS file for Copyright information
 *
 * This program is free software; you can redistribute it and/or modify it
@@ -32,6 +32,8 @@ EndContentData */
 #include "Player.h"
 #include "SpellInfo.h"
 
+#pragma execution_character_set("UTF-8")
+
 /*######
 ## npc_kalecgos
 ######*/
@@ -54,11 +56,11 @@ enum Misc
 
 const float afKaelLandPoint[] = {225.045f, -276.236f, -5.434f};
 
-#define GOSSIP_ITEM_KAEL_1      "Who are you?"
-#define GOSSIP_ITEM_KAEL_2      "What can we do to assist you?"
-#define GOSSIP_ITEM_KAEL_3      "What brings you to the Sunwell?"
-#define GOSSIP_ITEM_KAEL_4      "You're not alone here?"
-#define GOSSIP_ITEM_KAEL_5      "What would Kil'jaeden want with a mortal woman?"
+#define GOSSIP_ITEM_KAEL_1      "你是谁？"
+#define GOSSIP_ITEM_KAEL_2      "我们能帮你什么忙？"
+#define GOSSIP_ITEM_KAEL_3      "是什么风把你吹到太阳之井来的？"
+#define GOSSIP_ITEM_KAEL_4      "这里不止你一个人？"
+#define GOSSIP_ITEM_KAEL_5      "基尔加丹要一个凡人女子做什么？"
 
 // This is friendly keal that appear after used Orb.
 // If we assume DB handle summon, summon appear somewhere outside the platform where Orb is

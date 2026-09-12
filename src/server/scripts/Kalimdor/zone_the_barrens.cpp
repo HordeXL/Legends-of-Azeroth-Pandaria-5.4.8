@@ -1,4 +1,4 @@
-/*
+﻿/*
 * This file is part of the Legends of Azeroth Pandaria Project. See THANKS file for Copyright information
 *
 * This program is free software; you can redistribute it and/or modify it
@@ -33,11 +33,13 @@ EndContentData */
 #include "Player.h"
 #include "SpellInfo.h"
 
+#pragma execution_character_set("UTF-8")
+
 /*######
 ## npc_beaten_corpse
 ######*/
 
-#define GOSSIP_CORPSE "Examine corpse in detail..."
+#define GOSSIP_CORPSE "仔细检查尸体……"
 
 enum eQuests
 {

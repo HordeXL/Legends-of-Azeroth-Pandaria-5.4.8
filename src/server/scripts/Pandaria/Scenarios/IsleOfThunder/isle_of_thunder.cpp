@@ -1,4 +1,4 @@
-/*
+﻿/*
 * This file is part of the Legends of Azeroth Pandaria Project. See THANKS file for Copyright information
 *
 * This program is free software; you can redistribute it and/or modify it
@@ -20,6 +20,8 @@
 #include "Vehicle.h"
 #include "LFGMgr.h"
 #include "Random.h"
+
+#pragma execution_character_set("UTF-8")
 
 enum Spells
 {
@@ -1864,7 +1866,7 @@ class npc_teardown_scout_captain_elsia : public CreatureScript
             if (creature->IsQuestGiver())
                 player->PrepareQuestMenu(creature->GetGUID());
 
-            player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "I`m ready", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
+            player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "我准备好了。", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
 
             player->SEND_GOSSIP_MENU(player->GetGossipTextId(creature), creature->GetGUID());
             return true;
@@ -3047,7 +3049,7 @@ class npc_taoshi_to_skies : public CreatureScript
             if (creature->IsQuestGiver())
                 player->PrepareQuestMenu(creature->GetGUID());
     
-            player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "I`m ready", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
+            player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "我准备好了。", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
     
             player->SEND_GOSSIP_MENU(player->GetGossipTextId(creature), creature->GetGUID());
             return true;
@@ -5093,12 +5095,12 @@ class npc_wrathion_thunder_forge : public CreatureScript
             if (creature->GetInstanceScript())
             {
                 if (creature->GetInstanceScript()->GetData(STEP_IN_FORGE) == DONE)
-                    player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "I`m ready!", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 2);
+                    player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "我准备好了！", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 2);
                 else
-                    player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "I`m ready!", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
+                    player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "我准备好了！", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
             }
             else if (player->GetQuestStatus(QUEST_THE_THUNDER_FORGE) == QUEST_STATUS_INCOMPLETE)
-                player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "I`m ready!", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 3);
+                player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "我准备好了！", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 3);
     
             player->SEND_GOSSIP_MENU(player->GetGossipTextId(creature), creature->GetGUID());
             return true;

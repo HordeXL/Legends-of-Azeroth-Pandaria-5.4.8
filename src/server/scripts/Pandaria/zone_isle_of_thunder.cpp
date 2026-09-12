@@ -1,4 +1,4 @@
-/*
+﻿/*
 * This file is part of the Pandaria 5.4.8 Project. See THANKS file for Copyright information
 *
 * This program is free software; you can redistribute it and/or modify it
@@ -26,6 +26,8 @@
 #include "Group.h"
 #include "Player.h"
 #include "Random.h"
+
+#pragma execution_character_set("UTF-8")
 
 enum Spells
 {
@@ -2599,7 +2601,7 @@ class npc_scout_captain_elsia : public CreatureScript
             if (player->GetQuestStatus(QUEST_THE_STORM_GATHERS_H) != QUEST_STATUS_INCOMPLETE)
                 return false;
 
-            player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "I`m ready to go", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
+            player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "我准备好出发了。", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
 
             player->SEND_GOSSIP_MENU(player->GetGossipTextId(creature), creature->GetGUID());
             return true;
@@ -2755,7 +2757,7 @@ class npc_vereesa_windrunner : public CreatureScript
             if (player->GetQuestStatus(QUEST_THE_STORM_GATHERS_A) != QUEST_STATUS_INCOMPLETE)
                 return false;
 
-            player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "I`m ready to go", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
+            player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "我准备好出发了。", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
 
             player->SEND_GOSSIP_MENU(player->GetGossipTextId(creature), creature->GetGUID());
             return true;

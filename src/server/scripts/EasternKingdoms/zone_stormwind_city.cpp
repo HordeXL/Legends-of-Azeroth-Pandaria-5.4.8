@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (C) 2008-2015 TrinityCore <http://www.trinitycore.org/>
  * Copyright (C) 2006-2009 ScriptDev2 <https://scriptdev2.svn.sourceforge.net/>
  *
@@ -39,11 +39,13 @@ EndContentData */
 #include "ScriptedEscortAI.h"
 #include "Player.h"
 
+#pragma execution_character_set("UTF-8")
+
 /*######
 ## npc_archmage_malin
 ######*/
 
-#define GOSSIP_ITEM_MALIN "Can you send me to Theramore? I have an urgent message for Lady Jaina from Highlord Bolvar."
+#define GOSSIP_ITEM_MALIN "您能送我去塞拉摩吗？我有伯瓦尔大领主给吉安娜女士的紧急口信。"
 
 class npc_archmage_malin : public CreatureScript
 {
@@ -151,10 +153,10 @@ public:
 ## npc_lady_katrana_prestor
 ######*/
 
-#define GOSSIP_ITEM_KAT_1 "Pardon the intrusion, Lady Prestor, but Highlord Bolvar suggested that I seek your advice."
-#define GOSSIP_ITEM_KAT_2 "My apologies, Lady Prestor."
-#define GOSSIP_ITEM_KAT_3 "Begging your pardon, Lady Prestor. That was not my intent."
-#define GOSSIP_ITEM_KAT_4 "Thank you for your time, Lady Prestor."
+#define GOSSIP_ITEM_KAT_1 "冒昧打扰了，普瑞斯托女士，伯瓦尔大领主建议我来向您请教。"
+#define GOSSIP_ITEM_KAT_2 "十分抱歉，普瑞斯托女士。"
+#define GOSSIP_ITEM_KAT_3 "请您原谅，普瑞斯托女士。那并非我的本意。"
+#define GOSSIP_ITEM_KAT_4 "感谢您抽出时间，普瑞斯托女士。"
 
 class npc_lady_katrana_prestor : public CreatureScript
 {

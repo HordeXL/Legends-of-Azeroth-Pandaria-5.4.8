@@ -1,4 +1,4 @@
-/*
+﻿/*
 * This file is part of the Pandaria 5.4.8 Project. See THANKS file for Copyright information
 *
 * This program is free software; you can redistribute it and/or modify it
@@ -29,6 +29,8 @@ EndScriptData */
 #include "molten_core.h"
 #include "Player.h"
 
+#pragma execution_character_set("UTF-8")
+
 enum Texts
 {
     SAY_AGGRO           = 0,
@@ -52,7 +54,7 @@ enum Spells
 };
 
 #define GOSSIP_HELLO 4995
-#define GOSSIP_SELECT "Tell me more."
+#define GOSSIP_SELECT "多告诉我一些。"
 
 enum Events
 {

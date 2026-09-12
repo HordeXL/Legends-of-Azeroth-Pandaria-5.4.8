@@ -1,4 +1,4 @@
-/*
+﻿/*
 * This file is part of the Pandaria 5.4.8 Project. See THANKS file for Copyright information
 *
 * This program is free software; you can redistribute it and/or modify it
@@ -32,6 +32,8 @@ EndContentData */
 #include "ScriptedGossip.h"
 #include "ScriptedEscortAI.h"
 #include "Player.h"
+
+#pragma execution_character_set("UTF-8")
 
 /*######
 ## npc_apothecary_hanes
@@ -209,9 +211,9 @@ public:
 ## npc_razael_and_lyana
 ######*/
 
-#define GOSSIP_RAZAEL_REPORT_EN "High Executor Anselm wants a report on the situation."
+#define GOSSIP_RAZAEL_REPORT_EN "高阶执行官安塞尔姆想要一份局势报告。"
 #define GOSSIP_RAZAEL_REPORT_RU "Верховный палач Ансельм желает выслушать твой доклад о текущей ситуации."
-#define GOSSIP_LYANA_REPORT_EN "High Executor Anselm requests your report."
+#define GOSSIP_LYANA_REPORT_EN "高阶执行官安塞尔姆要听取你的报告。"
 #define GOSSIP_LYANA_REPORT_RU "Верховный палач Ансельм ждет твоего отчета."
 
 enum RazaelAndLyanaData

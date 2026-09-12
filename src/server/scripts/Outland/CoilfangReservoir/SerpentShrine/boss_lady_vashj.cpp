@@ -1,4 +1,4 @@
-/*
+﻿/*
 * This file is part of the Pandaria 5.4.8 Project. See THANKS file for Copyright information
 *
 * This program is free software; you can redistribute it and/or modify it
@@ -28,6 +28,8 @@ EndScriptData */
 #include "Spell.h"
 #include "Player.h"
 #include "WorldSession.h"
+
+#pragma execution_character_set("UTF-8")
 
 enum LadyVashj
 {
@@ -71,8 +73,8 @@ enum LadyVashj
 
 
 
-#define TEXT_NOT_INITIALIZED          "Instance script not initialized"
-#define TEXT_ALREADY_DEACTIVATED      "Already deactivated"
+#define TEXT_NOT_INITIALIZED          "实例脚本未初始化"
+#define TEXT_ALREADY_DEACTIVATED      "已停用"
 
 float ElementPos[8][4] =
 {

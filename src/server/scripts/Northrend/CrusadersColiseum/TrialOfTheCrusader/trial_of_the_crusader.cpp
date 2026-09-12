@@ -1,4 +1,4 @@
-/*
+﻿/*
 * This file is part of the Legends of Azeroth Pandaria Project. See THANKS file for Copyright information
 *
 * This program is free software; you can redistribute it and/or modify it
@@ -23,6 +23,8 @@
 #include "ScriptedGossip.h"
 #include "trial_of_the_crusader.h"
 #include "Player.h"
+
+#pragma execution_character_set("UTF-8")
 
 enum Yells
 {
@@ -132,7 +134,7 @@ class npc_announcer_toc10 : public CreatureScript
             if (!instance)
                 return true;
 
-            char const* _message = "We are ready!";
+            char const* _message = "我们准备好了！";
 
             if (player->IsInCombat() || instance->IsEncounterInProgress() || instance->GetData(TYPE_EVENT))
                 return true;

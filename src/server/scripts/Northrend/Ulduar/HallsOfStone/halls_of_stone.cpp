@@ -1,4 +1,4 @@
-/*
+﻿/*
 * This file is part of the Pandaria 5.4.8 Project. See THANKS file for Copyright information
 *
 * This program is free software; you can redistribute it and/or modify it
@@ -21,6 +21,8 @@
 #include "ScriptedEscortAI.h"
 #include "halls_of_stone.h"
 #include "Player.h"
+
+#pragma execution_character_set("UTF-8")
 
 enum Texts
 {
@@ -123,7 +125,7 @@ enum Misc
 
 };
 
-#define GOSSIP_ITEM_START               "Brann, it would be our honor!"
+#define GOSSIP_ITEM_START               "布莱恩，这是我们的荣幸！"
 #define GOSSIP_ITEM_PROGRESS            "Let's move Brann, enough of the history lessons!"
 
 static Position SpawnLocations[]=

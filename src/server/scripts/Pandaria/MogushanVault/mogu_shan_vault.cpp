@@ -1,4 +1,4 @@
-/*
+﻿/*
 * This file is part of the Pandaria 5.4.8 Project. See THANKS file for Copyright information
 *
 * This program is free software; you can redistribute it and/or modify it
@@ -24,6 +24,8 @@
 #include "MoveSplineInit.h"
 #include "SpellScript.h"
 #include "Config.h"
+
+#pragma execution_character_set("UTF-8")
 
 enum eSpells
 {
@@ -2182,7 +2184,7 @@ class npc_mogushan_vaults_leng_windstaff : public CreatureScript
                 player->PrepareQuestMenu(creature->GetGUID());
                 
             if(sConfigMgr->GetIntDefault("FirstOfTheKingdom.MogushanVaults", 1))
-                player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "Turn off dampening?", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
+                player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "关闭抑制光环？", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
     
             player->SEND_GOSSIP_MENU(player->GetGossipTextId(creature), creature->GetGUID());
             return true;

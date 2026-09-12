@@ -1,4 +1,4 @@
-/*
+﻿/*
 * This file is part of the Pandaria 5.4.8 Project. See THANKS file for Copyright information
 *
 * This program is free software; you can redistribute it and/or modify it
@@ -38,12 +38,14 @@ EndContentData */
 #include "Player.h"
 #include "WorldSession.h"
 
+#pragma execution_character_set("UTF-8")
+
 /*######
 ## npcs_ashyen_and_keleth
 ######*/
 
-#define GOSSIP_ITEM_BLESS_ASH     "Grant me your mark, wise ancient."
-#define GOSSIP_ITEM_BLESS_KEL     "Grant me your mark, mighty ancient."
+#define GOSSIP_ITEM_BLESS_ASH     "赐予我你的印记，睿智的远古之灵。"
+#define GOSSIP_ITEM_BLESS_KEL     "赐予我你的印记，强大的远古之灵。"
 
 enum AshyenAndKeleth
 {
@@ -158,7 +160,7 @@ public:
 ## npc_cooshcoosh
 ######*/
 
-#define GOSSIP_COOSH            "You owe Sim'salabim money. Hand them over or die!"
+#define GOSSIP_COOSH            "你欠了西姆萨拉宾的钱。交出来，不然就去死！"
 
 enum Cooshhooosh
 {
@@ -237,9 +239,9 @@ public:
 ## npc_elder_kuruti
 ######*/
 
-#define GOSSIP_ITEM_KUR1 "Greetings, elder. It is time for your people to end their hostility towards the draenei and their allies."
-#define GOSSIP_ITEM_KUR2 "I did not mean to deceive you, elder. The draenei of Telredor thought to approach you in a way that would seem familiar to you."
-#define GOSSIP_ITEM_KUR3 "I will tell them. Farewell, elder."
+#define GOSSIP_ITEM_KUR1 "你好，长者。是时候让你的人民结束对德莱尼及其盟友的敌意了。"
+#define GOSSIP_ITEM_KUR2 "我并非有意欺骗你，长者。泰雷多尔的德莱尼想以一种让你感到熟悉的方式来接近你。"
+#define GOSSIP_ITEM_KUR3 "我会转告他们的。别了，长者。"
 
 class npc_elder_kuruti : public CreatureScript
 {
@@ -400,8 +402,8 @@ public:
 ## npc_timothy_daniels
 ######*/
 
-#define GOSSIP_TIMOTHY_DANIELS_ITEM1    "Specialist, eh? Just what kind of specialist are you, anyway?"
-#define GOSSIP_TEXT_BROWSE_POISONS      "Let me browse your reagents and poison supplies."
+#define GOSSIP_TIMOTHY_DANIELS_ITEM1    "专家，是吗？你到底是什么样的专家？"
+#define GOSSIP_TEXT_BROWSE_POISONS      "让我看看你的材料和毒药供应。"
 
 enum Timothy
 {

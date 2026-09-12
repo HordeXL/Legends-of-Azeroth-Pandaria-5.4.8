@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (C) 2016+ AzerothCore <www.azerothcore.org>, released under GNU GPL v2 license, you may redistribute it
  * and/or modify it under version 2 of the License, or (at your option), any later version.
  */
@@ -16,6 +16,8 @@
 #include "SpellHistory.h"
 #include "Totem.h"
 #include "Timer.h"
+
+#pragma execution_character_set("UTF-8")
 
 bool CastEarthShockAction::isUseful()
 {
@@ -411,7 +413,7 @@ bool CastManaTideTotemAction::Execute(Event event)
     uint32 now = getMSTime();
     if (!announcementStartedAt)
     {
-        botAI->Say("Mana Tide Totem in 5 seconds!");
+        botAI->Say("5秒后施放法力潮汐图腾！");
         announcementStartedAt = now;
         return true;
     }

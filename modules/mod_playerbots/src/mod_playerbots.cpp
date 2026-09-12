@@ -1,4 +1,4 @@
-/*
+﻿/*
 ** Made by Traesh https://github.com/Traesh
 ** AzerothCore 2019 http://www.azerothcore.org/
 ** Conan513 https://github.com/conan513
@@ -45,6 +45,8 @@
 
 #include "CombatAssistant.h"
 
+#pragma execution_character_set("UTF-8")
+
 #ifndef _PLAYERBOT_CONFIG
 # define _PLAYERBOT_CONFIG  "playerbots.conf"
 #endif
@@ -65,7 +67,7 @@ public:
     void OnLogin(Player* player) override
     {
         // Announce Module
-        ChatHandler(player->GetSession()).SendSysMessage("This server is running the |cff4CFF00mod playerbots |rmodule.");
+        ChatHandler(player->GetSession()).SendSysMessage("本服务器正在运行 |cff4CFF00mod playerbots |r模块。");
     }
 
 };
@@ -103,9 +105,9 @@ public:
             sRandomPlayerbotMgr->Reserve(sPlayerbotAIConfig->maxRandomBots);
             sRandomItemMgr->Init();
 
-            TC_LOG_INFO("playerbots", "Playerbots enabled: %s", sPlayerbotAIConfig->enabled ? "Yes" : "No");
+            TC_LOG_INFO("playerbots", "Playerbots enabled: %s", sPlayerbotAIConfig->enabled ? "是的" : "No");
             TC_LOG_INFO("playerbots", "Playerbots min/max to load: %u/%u", sPlayerbotAIConfig->minRandomBots, sPlayerbotAIConfig->maxRandomBots);
-            TC_LOG_INFO("playerbots", "Playerbots autologin: %s", sPlayerbotAIConfig->randomBotAutologin ? "Yes" : "No");
+            TC_LOG_INFO("playerbots", "Playerbots autologin: %s", sPlayerbotAIConfig->randomBotAutologin ? "是的" : "No");
         }
     }
     void OnUpdate(uint32 diff) override
@@ -314,7 +316,7 @@ public:
                     std::to_string(std::ceil((sPlayerbotAIConfig->maxRandomBots * 0.11 / 60) * 10) / 10.0);
                 roundedTime = roundedTime.substr(0, roundedTime.find('.') + 2);
 
-                ChatHandler(player->GetSession()).SendSysMessage(std::string("Playerbots: bot initialization at server startup takes about '" + roundedTime + "' minutes.").c_str());
+                ChatHandler(player->GetSession()).SendSysMessage(std::string("机器人系统在服务器启动时的初始化约需 '" + roundedTime + "' 分钟。").c_str());
             }
         }
     }

@@ -1,4 +1,4 @@
-/*
+﻿/*
 * This file is part of the Legends of Azeroth Pandaria Project. See THANKS file for Copyright information
 *
 * This program is free software; you can redistribute it and/or modify it
@@ -17,6 +17,8 @@
 
 #include "ScriptPCH.h"
 #include "trial_of_the_champion.h"
+
+#pragma execution_character_set("UTF-8")
 
 enum Spells
 {
@@ -526,7 +528,7 @@ class boss_grand_champion_toc5 : public CreatureScript
                             break;
                         case 3:
                             _phase = 4;
-                            me->Yell("Excellent work!", LANG_UNIVERSAL); // SAY_START_1
+                            me->Yell("干得好！", LANG_UNIVERSAL); // SAY_START_1
                             me->InterruptNonMeleeSpells(true);
                             me->RemoveAurasDueToSpell(SPELL_BLADESTORM);
                             DoCast(me, SPELL_KNEEL, true);

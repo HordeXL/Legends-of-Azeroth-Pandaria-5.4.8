@@ -1,4 +1,4 @@
-/*
+﻿/*
 * This file is part of the Pandaria 5.4.8 Project. See THANKS file for Copyright information
 *
 * This program is free software; you can redistribute it and/or modify it
@@ -31,11 +31,13 @@ EndContentData */
 #include "ScriptedGossip.h"
 #include "Player.h"
 
+#pragma execution_character_set("UTF-8")
+
 /*######
 ## npc_deathly_usher
 ######*/
 
-#define GOSSIP_ITEM_USHER "I wish to to visit the Rise of the Defiler."
+#define GOSSIP_ITEM_USHER "我想前往堕落者之丘。"
 
 enum DeathlyUsher
 {

@@ -1,7 +1,9 @@
-#include "ScriptPCH.h"
+﻿#include "ScriptPCH.h"
 #include "Chat.h"
 #include "ScriptedGossip.h"
 #include "SpellMgr.h"
+
+#pragma execution_character_set("UTF-8")
 
 namespace
 {
@@ -99,16 +101,16 @@ namespace
         }
 
         player->SetSaveTimer(1);
-        ChatHandler(player->GetSession()).PSendSysMessage("VIP Utility Master: %s learned.", group.Name);
+        ChatHandler(player->GetSession()).PSendSysMessage("VIP辅助大师：已学会%s。", group.Name);
     }
 
     void ShowMainMenu(Player* player, Creature* creature)
     {
         ClearGossipMenuFor(player);
-        AddGossipItemFor(player, GOSSIP_ICON_VENDOR, "Browse free mount goods.", GOSSIP_SENDER_MAIN, ACTION_VENDOR);
-        AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Riding and flying.", GOSSIP_SENDER_MAIN, ACTION_MENU_RIDING);
-        AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Weapon and armor skills.", GOSSIP_SENDER_MAIN, ACTION_MENU_WEAPONS);
-        AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Professions.", GOSSIP_SENDER_MAIN, ACTION_MENU_PROFESSIONS);
+        AddGossipItemFor(player, GOSSIP_ICON_VENDOR, "浏览免费坐骑商品。", GOSSIP_SENDER_MAIN, ACTION_VENDOR);
+        AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "骑术与飞行。", GOSSIP_SENDER_MAIN, ACTION_MENU_RIDING);
+        AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "武器与护甲技能。", GOSSIP_SENDER_MAIN, ACTION_MENU_WEAPONS);
+        AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "专业。", GOSSIP_SENDER_MAIN, ACTION_MENU_PROFESSIONS);
         SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
     }
 
@@ -116,7 +118,7 @@ namespace
     {
         ClearGossipMenuFor(player);
         AddGossipItemFor(player, GOSSIP_ICON_TRAINER, RidingGroup.Name, GOSSIP_SENDER_MAIN, ACTION_LEARN_RIDING);
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Back.", GOSSIP_SENDER_MAIN, ACTION_BACK);
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "返回。", GOSSIP_SENDER_MAIN, ACTION_BACK);
         SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
     }
 
@@ -125,19 +127,19 @@ namespace
         ClearGossipMenuFor(player);
         AddGossipItemFor(player, GOSSIP_ICON_TRAINER, WeaponGroup.Name, GOSSIP_SENDER_MAIN, ACTION_LEARN_WEAPONS);
         AddGossipItemFor(player, GOSSIP_ICON_TRAINER, ArmorGroup.Name, GOSSIP_SENDER_MAIN, ACTION_LEARN_ARMOR);
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Back.", GOSSIP_SENDER_MAIN, ACTION_BACK);
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "返回。", GOSSIP_SENDER_MAIN, ACTION_BACK);
         SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
     }
 
     void ShowProfessionMenu(Player* player, Creature* creature)
     {
         ClearGossipMenuFor(player);
-        AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Learn all professions.", GOSSIP_SENDER_MAIN, ACTION_PROF_ALL);
+        AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "学会所有专业。", GOSSIP_SENDER_MAIN, ACTION_PROF_ALL);
 
         for (VipSpellGroup const& group : ProfessionGroups)
             AddGossipItemFor(player, GOSSIP_ICON_TRAINER, group.Name, GOSSIP_SENDER_MAIN, group.Action);
 
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Back.", GOSSIP_SENDER_MAIN, ACTION_BACK);
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "返回。", GOSSIP_SENDER_MAIN, ACTION_BACK);
         SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
     }
 

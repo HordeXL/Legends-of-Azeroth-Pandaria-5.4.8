@@ -1,4 +1,4 @@
-/*
+﻿/*
 * This file is part of the Legends of Azeroth Pandaria Project. See THANKS file for Copyright information
 *
 * This program is free software; you can redistribute it and/or modify it
@@ -22,7 +22,9 @@
 #include "Vehicle.h"
 #include "CreatureTextMgr.h"
 
-#define GOSSIP_WIND "I would like to go back on the top of the temple"
+#pragma execution_character_set("UTF-8")
+
+#define GOSSIP_WIND "我想回到神殿顶部"
 
 class npc_master_shang_xi_temple : public CreatureScript
 {
@@ -527,7 +529,7 @@ class npc_rocket_launcher : public CreatureScript
                     me->CastSpell(zhao, SPELL_ROCKET_LAUNCH, false);
                 else
                 {
-                    Clicker->ToPlayer()->GetSession()->SendNotification("Wait until the Onyx Serpent is directly overhead.");
+                    Clicker->ToPlayer()->GetSession()->SendNotification("等黑曜石巨蛇来到正上方时再行动。");
                     return;
                 }
 

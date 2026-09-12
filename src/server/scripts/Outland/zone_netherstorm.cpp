@@ -1,4 +1,4 @@
-/*
+﻿/*
 * This file is part of the Pandaria 5.4.8 Project. See THANKS file for Copyright information
 *
 * This program is free software; you can redistribute it and/or modify it
@@ -36,6 +36,8 @@ EndContentData */
 #include "ScriptedGossip.h"
 #include "ScriptedEscortAI.h"
 #include "Player.h"
+
+#pragma execution_character_set("UTF-8")
 
 /*######
 ## npc_manaforge_control_console
@@ -675,7 +677,7 @@ enum ProfessorDabiriData
     QUEST_ON_NETHERY_WINGS  = 10438,
 };
 
-#define GOSSIP_ITEM "I need a new phase distruptor, Professor"
+#define GOSSIP_ITEM "我需要一个新位相干扰器，教授"
 
 class npc_professor_dabiri : public CreatureScript
 {

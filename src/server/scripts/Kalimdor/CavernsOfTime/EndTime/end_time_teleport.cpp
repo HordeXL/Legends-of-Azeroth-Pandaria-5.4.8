@@ -1,4 +1,4 @@
-/*
+﻿/*
 * This file is part of the Pandaria 5.4.8 Project. See THANKS file for Copyright information
 *
 * This program is free software; you can redistribute it and/or modify it
@@ -18,6 +18,8 @@
 #include "ScriptPCH.h"
 #include "end_time.h"
 #include "GameObjectAI.h"
+
+#pragma execution_character_set("UTF-8")
 
 enum Spells
 {
@@ -53,15 +55,15 @@ class go_end_time_teleport : public GameObjectScript
 
             if (InstanceScript* instance = go->GetInstanceScript())
             {
-                player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, ru ? "Перенестись ко входу.":"Entryway of Time.", GOSSIP_SENDER_MAIN, START_TELEPORT);
+                player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, ru ? "Перенестись ко входу.":"时光入口。", GOSSIP_SENDER_MAIN, START_TELEPORT);
 
                 if (player->IsGameMaster())
                 {
-                    player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, ru ? "Изумрудное святилище драконов.":"Emerald Dragonshrine.", GOSSIP_SENDER_MAIN, TYRANDE_TELEPORT);
-                    player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, ru ? "Лазуритовое святилище драконов.":"Azure Dragonshrine.", GOSSIP_SENDER_MAIN, JAINA_TELEPORT);
-                    player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, ru ? "Обсидиановое святилище драконов.":"Obsidian Dragonshrine.", GOSSIP_SENDER_MAIN, BAINE_TELEPORT);
-                    player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, ru ? "Рубиновое святилище драконов.":"Ruby Dragonshrine.", GOSSIP_SENDER_MAIN, SYLVANAS_TELEPORT);
-                    player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, ru ? "Бронзовое святилище драконов.":"Bronze Dragonshrine.", GOSSIP_SENDER_MAIN, MUROZOND_TELEPORT);
+                    player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, ru ? "Изумрудное святилище драконов.":"翡翠巨龙圣地。", GOSSIP_SENDER_MAIN, TYRANDE_TELEPORT);
+                    player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, ru ? "Лазуритовое святилище драконов.":"碧蓝巨龙圣地。", GOSSIP_SENDER_MAIN, JAINA_TELEPORT);
+                    player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, ru ? "Обсидиановое святилище драконов.":"黑曜石巨龙圣地。", GOSSIP_SENDER_MAIN, BAINE_TELEPORT);
+                    player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, ru ? "Рубиновое святилище драконов.":"红玉巨龙圣地。", GOSSIP_SENDER_MAIN, SYLVANAS_TELEPORT);
+                    player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, ru ? "Бронзовое святилище драконов.":"青铜巨龙圣地。", GOSSIP_SENDER_MAIN, MUROZOND_TELEPORT);
                 }
                 else
                 {
@@ -72,16 +74,16 @@ class go_end_time_teleport : public GameObjectScript
                     switch (echo1)
                     {
                         case DATA_ECHO_OF_JAINA:
-                            player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, ru ? "Лазуритовое святилище драконов.":"Azure Dragonshrine.", GOSSIP_SENDER_MAIN, JAINA_TELEPORT);
+                            player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, ru ? "Лазуритовое святилище драконов.":"碧蓝巨龙圣地。", GOSSIP_SENDER_MAIN, JAINA_TELEPORT);
                             break;
                         case DATA_ECHO_OF_BAINE:
-                            player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, ru ? "Обсидиановое святилище драконов.":"Obsidian Dragonshrine.", GOSSIP_SENDER_MAIN, BAINE_TELEPORT);
+                            player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, ru ? "Обсидиановое святилище драконов.":"黑曜石巨龙圣地。", GOSSIP_SENDER_MAIN, BAINE_TELEPORT);
                             break;
                         case DATA_ECHO_OF_TYRANDE:
-                            player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, ru ? "Изумрудное святилище драконов.":"Emerald Dragonshrine.", GOSSIP_SENDER_MAIN, TYRANDE_TELEPORT);
+                            player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, ru ? "Изумрудное святилище драконов.":"翡翠巨龙圣地。", GOSSIP_SENDER_MAIN, TYRANDE_TELEPORT);
                             break;
                         case DATA_ECHO_OF_SYLVANAS:
-                            player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, ru ? "Рубиновое святилище драконов.":"Ruby Dragonshrine.", GOSSIP_SENDER_MAIN, SYLVANAS_TELEPORT);
+                            player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, ru ? "Рубиновое святилище драконов.":"红玉巨龙圣地。", GOSSIP_SENDER_MAIN, SYLVANAS_TELEPORT);
                             break;
                     }
 
@@ -90,22 +92,22 @@ class go_end_time_teleport : public GameObjectScript
                         switch (echo2)
                         {
                             case DATA_ECHO_OF_JAINA:
-                                player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, ru ? "Лазуритовое святилище драконов.":"Azure Dragonshrine.", GOSSIP_SENDER_MAIN, JAINA_TELEPORT);
+                                player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, ru ? "Лазуритовое святилище драконов.":"碧蓝巨龙圣地。", GOSSIP_SENDER_MAIN, JAINA_TELEPORT);
                                 break;
                             case DATA_ECHO_OF_BAINE:
-                                player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, ru ? "Обсидиановое святилище драконов.":"Obsidian Dragonshrine.", GOSSIP_SENDER_MAIN, BAINE_TELEPORT);
+                                player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, ru ? "Обсидиановое святилище драконов.":"黑曜石巨龙圣地。", GOSSIP_SENDER_MAIN, BAINE_TELEPORT);
                                 break;
                             case DATA_ECHO_OF_TYRANDE:
-                                player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, ru ? "Изумрудное святилище драконов.":"Emerald Dragonshrine.", GOSSIP_SENDER_MAIN, TYRANDE_TELEPORT);
+                                player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, ru ? "Изумрудное святилище драконов.":"翡翠巨龙圣地。", GOSSIP_SENDER_MAIN, TYRANDE_TELEPORT);
                                 break;
                             case DATA_ECHO_OF_SYLVANAS:
-                                player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, ru ? "Рубиновое святилище драконов.":"Ruby Dragonshrine.", GOSSIP_SENDER_MAIN, SYLVANAS_TELEPORT);
+                                player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, ru ? "Рубиновое святилище драконов.":"红玉巨龙圣地。", GOSSIP_SENDER_MAIN, SYLVANAS_TELEPORT);
                                 break;
                         }
                     }
 
                     if (instance->GetData(DATA_SECOND_ENCOUNTER) == DONE)
-                        player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, ru ? "Бронзовое святилище драконов.":"Bronze Dragonshrine.", GOSSIP_SENDER_MAIN, MUROZOND_TELEPORT);
+                        player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, ru ? "Бронзовое святилище драконов.":"青铜巨龙圣地。", GOSSIP_SENDER_MAIN, MUROZOND_TELEPORT);
                 }
             }
 

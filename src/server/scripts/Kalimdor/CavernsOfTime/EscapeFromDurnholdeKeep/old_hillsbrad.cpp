@@ -1,4 +1,4 @@
-/*
+﻿/*
 * This file is part of the Pandaria 5.4.8 Project. See THANKS file for Copyright information
 *
 * This program is free software; you can redistribute it and/or modify it
@@ -35,6 +35,8 @@ EndContentData */
 #include "old_hillsbrad.h"
 #include "Player.h"
 
+#pragma execution_character_set("UTF-8")
+
 enum Erozion
 {
     QUEST_ENTRY_HILLSBRAD   = 10282,
@@ -45,7 +47,7 @@ enum Erozion
     GOSSIP_MENU_EROZION     = 7769,
     GOSSIP_OPTION_BOMB      = 0  //I need a pack of Incendiary Bombs.
 };
-#define GOSSIP_HELLO_EROZION2   "[PH] Teleport please, i'm tired."
+#define GOSSIP_HELLO_EROZION2   "请传送我吧，我累了。"
 
 /*######
 ## npc_erozion
@@ -424,7 +426,7 @@ public:
                     SetRun();
                     break;
                 case 98:
-                    //trigger epoch Yell("Thrall! Come outside and face your fate! ....")
+                    //trigger epoch Yell("萨尔！出来面对你的命运吧！……")
                     //from here, thrall should not never be allowed to move to point 106 which he currently does.
                     break;
                 case 106:

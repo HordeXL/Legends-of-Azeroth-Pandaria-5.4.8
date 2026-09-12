@@ -1,4 +1,6 @@
-#include "ScriptPCH.h"
+﻿#include "ScriptPCH.h"
+
+#pragma execution_character_set("UTF-8")
 
 class custom_emo_stone : public ItemScript
 {
@@ -8,8 +10,8 @@ public:
     bool OnUse(Player* player, Item* item, SpellCastTargets const& targets) override // Any hook here
     {
         player->PlayerTalkClass->ClearMenus(); // Clears old options
-        player->ADD_GOSSIP_ITEM(0, "Summon Teleporter for |cffFF00001|r minute!", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
-        player->ADD_GOSSIP_ITEM(0, "Close", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 2);
+        player->ADD_GOSSIP_ITEM(0, "召唤传送器，持续|cffFF00001|r分钟！", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
+        player->ADD_GOSSIP_ITEM(0, "关闭", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 2);
         player->SEND_GOSSIP_MENU(DEFAULT_GOSSIP_MESSAGE, item->GetGUID());
         return false; // Cast the spell on use normally
     }
