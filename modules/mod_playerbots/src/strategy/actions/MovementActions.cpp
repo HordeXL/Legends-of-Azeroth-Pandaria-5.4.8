@@ -253,51 +253,55 @@ bool GetThreateningYuLonWallGap(Player* bot, float& x, float& y, float& z,
     float const botLateral = bot->GetPositionX() * lateralX +
         bot->GetPositionY() * lateralY;
     // A missing segment leaves a roughly 72-yard center-to-center opening.
-    // Do not force everybody to its exact center: the nearest point at least
-    // 22 yards from either live segment is already safely inside the gap and
-    // can save a far-side player about 20 yards of lateral travel.
+    // The live wall pieces occupy roughly eighteen yards on either side, so
+    // a 22-yard center margin keeps a small practical reserve.
     float const safeLeft = gapLeft + 22.0f;
     float const safeRight = gapRight - 22.0f;
-    float targetLateral = std::max(safeLeft,
-        std::min(safeRight, botLateral));
 
-    // Players already inside the opening retain their current lane. Players
-    // arriving from either side used to clamp to the same edge coordinate,
-    // which made the complete group funnel through one Blaze intersection.
-    // Give only those incoming players stable, evenly distributed lanes in
-    // the nearest half of the opening, avoiding a long cross-gap detour.
-    if (botLateral < safeLeft || botLateral > safeRight)
+    // Assign every group member, including players already inside the gap,
+    // one stable point in a three-column grid. Merely retaining the current
+    // lane made the raid emerge from the wall in one pile; the next eight
+    // Blaze summons then overlapped four or five times. Longitudinal rows
+    // keep the formation inside the same opening without pushing everybody
+    // toward one exact lateral coordinate.
+    std::vector<uint32> members;
+    if (Group* group = bot->GetGroup())
     {
-        std::vector<uint32> members;
-        if (Group* group = bot->GetGroup())
+        for (Group::MemberSlot const& slot : group->GetMemberSlots())
         {
-            for (GroupReference* ref = group->GetFirstMember(); ref;
-                ref = ref->next())
-            {
-                Player* member = ref->GetSource();
-                if (member && member->IsAlive() &&
-                    member->GetMap() == bot->GetMap())
-                    members.push_back(member->GetGUID().GetCounter());
-            }
+            Player* member = ObjectAccessor::FindPlayer(slot.guid);
+            if (member && member->GetMap() == bot->GetMap())
+                members.push_back(member->GetGUID().GetCounter());
         }
-        if (members.empty())
-            members.push_back(bot->GetGUID().GetCounter());
-        std::sort(members.begin(), members.end());
-        auto const member = std::lower_bound(members.begin(), members.end(),
-            bot->GetGUID().GetCounter());
-        size_t const rank = member == members.end() ? 0u :
-            size_t(std::distance(members.begin(), member));
-        float const laneFraction = (float(rank) + 0.5f) /
-            float(members.size());
-        float const halfWidth = (safeRight - safeLeft) * 0.5f;
-        targetLateral = botLateral < safeLeft ?
-            safeLeft + halfWidth * laneFraction :
-            safeRight - halfWidth * laneFraction;
     }
-    float const correction = targetLateral - botLateral;
-    alreadyAligned = std::abs(correction) <= 3.0f;
-    x = bot->GetPositionX() + lateralX * correction;
-    y = bot->GetPositionY() + lateralY * correction;
+    if (members.empty())
+        members.push_back(bot->GetGUID().GetCounter());
+    std::sort(members.begin(), members.end());
+    auto const member = std::lower_bound(members.begin(), members.end(),
+        bot->GetGUID().GetCounter());
+    size_t const rank = member == members.end() ? 0u :
+        size_t(std::distance(members.begin(), member));
+
+    uint32 const columnCount = std::min(3u, uint32(members.size()));
+    uint32 const rowCount = uint32((members.size() + columnCount - 1u) /
+        columnCount);
+    uint32 const column = uint32(rank) % columnCount;
+    uint32 const row = uint32(rank) / columnCount;
+    float const targetLateral = safeLeft +
+        (float(column) + 0.5f) / float(columnCount) *
+        (safeRight - safeLeft);
+    float const courtForward = CelestialCourtCenterX * forwardX +
+        CelestialCourtCenterY * forwardY;
+    float const targetForward = courtForward +
+        (float(row) - (float(rowCount) - 1.0f) * 0.5f) * 10.0f;
+    float const lateralCorrection = targetLateral - botLateral;
+    float const forwardCorrection = targetForward - botForward;
+    alreadyAligned = std::abs(lateralCorrection) <= 3.0f &&
+        std::abs(forwardCorrection) <= 3.0f;
+    x = bot->GetPositionX() + lateralX * lateralCorrection +
+        forwardX * forwardCorrection;
+    y = bot->GetPositionY() + lateralY * lateralCorrection +
+        forwardY * forwardCorrection;
     z = bot->GetPositionZ();
     return true;
 }
@@ -3055,13 +3059,13 @@ BossMechanicsAction::Reaction BossMechanicsAction::GetReaction() const
              !wallGapAligned))
             return Reaction::MoveYuLonJadefireWallGap;
 
-        // Keep one escape direction only while the bot is still inside the
-        // real eleven-yard damage area. Continuing toward a thirteen-yard
-        // buffer after reaching safety looked like every ranged player was
-        // running back to the pool edge.
+        // Keep one escape direction until the bot clears every pool plus a
+        // two-yard reserve. The route itself is selected away from the full
+        // starting cluster; abandoning it at the exact damage edge let a bot
+        // fall back into an overlapping neighbour on its next movement tick.
         if (getMSTime() < yuLonDodgeLockUntil &&
             (activeTank || IsPositionNearCreatureEntry(bot,
-                YuLonJadefireBlazeEntry, 120.0f, 11.0f,
+                YuLonJadefireBlazeEntry, 120.0f, 13.0f,
                 bot->GetPositionX(), bot->GetPositionY())) &&
             bot->GetExactDist2d(yuLonDodgeX, yuLonDodgeY) > 1.5f &&
             !IsPositionNearCreatureEntry(bot, YuLonJadefireBlazeEntry,
@@ -3071,11 +3075,12 @@ BossMechanicsAction::Reaction BossMechanicsAction::GetReaction() const
         }
 
         if (Creature* blaze = bot->FindNearestCreature(
-                YuLonJadefireBlazeEntry, 18.0f, true))
-            // A persistent pool is stationary after it appears. Players
-            // already outside its real eleven-yard radius are safe and must
-            // not be pulled back toward a synthetic avoidance boundary.
-            if (bot->GetExactDist2d(blaze) < 11.0f)
+                YuLonJadefireBlazeEntry, 20.0f, true))
+            // React inside a small two-yard buffer so adjacent ranged players
+            // begin separating before eight simultaneous pool auras tick.
+            // The formation action holds the first safe in-range point and
+            // no longer sends them back to their old slot afterward.
+            if (bot->GetExactDist2d(blaze) < 13.0f)
                 return Reaction::AvoidYuLonJadefireBlaze;
 
         // The tank can be personally safe while the entire rear melee arc is
@@ -3776,7 +3781,7 @@ bool BossMechanicsAction::Execute(Event /*event*/)
                     TryActivateWorldBossDefense(botAI, bot);
                 if (now < yuLonDodgeLockUntil &&
                     (activeTank || IsPositionNearCreatureEntry(bot,
-                        YuLonJadefireBlazeEntry, 120.0f, 11.0f,
+                        YuLonJadefireBlazeEntry, 120.0f, 13.0f,
                         bot->GetPositionX(), bot->GetPositionY())) &&
                     bot->GetExactDist2d(yuLonDodgeX, yuLonDodgeY) > 1.5f &&
                     !IsPositionNearCreatureEntry(bot,
@@ -3807,7 +3812,7 @@ bool BossMechanicsAction::Execute(Event /*event*/)
                         yuLonDodgeX = x;
                         yuLonDodgeY = y;
                         yuLonDodgeZ = z;
-                        yuLonDodgeLockUntil = now + 4000u;
+                        yuLonDodgeLockUntil = now + 8000u;
                         return true;
                     }
                     return false;
