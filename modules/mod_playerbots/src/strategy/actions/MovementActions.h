@@ -110,6 +110,12 @@ protected:
     float worldBossFormationAnchor = 0.0f;
     bool hasWorldBossFormationAnchor = false;
     bool worldBossFormationEstablished = false;
+    uint32 worldBossHazardWaypointLockUntil = 0;
+    uint32 worldBossHazardWaypointTarget = 0;
+    uint32 worldBossHazardWaypointEntry = 0;
+    float worldBossHazardWaypointX = 0.0f;
+    float worldBossHazardWaypointY = 0.0f;
+    float worldBossHazardWaypointZ = 0.0f;
     int moveInterval;
 };
 
@@ -217,6 +223,10 @@ private:
     float xuenSpreadX = 0.0f;
     float xuenSpreadY = 0.0f;
     float xuenSpreadZ = 0.0f;
+    uint32 yuLonDodgeLockUntil = 0;
+    float yuLonDodgeX = 0.0f;
+    float yuLonDodgeY = 0.0f;
+    float yuLonDodgeZ = 0.0f;
 };
 
 class RunAwayAction : public MovementAction
