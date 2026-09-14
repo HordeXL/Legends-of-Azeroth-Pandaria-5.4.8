@@ -73,7 +73,13 @@ bool ReachTargetAction::isUseful()
         // after the forced dodge. If ordinary melee reach resumes while the
         // summon is still beside the bot, it walks straight back into the
         // same hazard and repeats that cycle on every formation update.
-        if (bot->FindNearestCreature(71971, 24.0f, true))
+        // Any active Firestorm can block the direct line back to Chi-Ji.
+        // Let combat formation select a safe corridor/waypoint instead of
+        // enabling center-directed reach only because the vortex is not yet
+        // within the old 24-yard proximity check.
+        if (bot->HasWorldBossStagingAccess() &&
+            target->GetVictim() != bot &&
+            bot->FindNearestCreature(71971, 120.0f, true))
             return false;
     }
 

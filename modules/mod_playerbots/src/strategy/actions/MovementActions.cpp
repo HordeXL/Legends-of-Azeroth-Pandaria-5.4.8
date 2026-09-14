@@ -72,6 +72,9 @@ constexpr uint32 NiuzaoChargeSpell = 144608;
 constexpr uint32 ChiJiEntry = 71952;
 constexpr uint32 ChiJiCraneRushSpell = 144470;
 constexpr uint32 ChiJiFirestormEntry = 71971;
+constexpr float ChiJiFirestormDamageRadius = 10.0f;
+constexpr float ChiJiFirestormClearance =
+    ChiJiFirestormDamageRadius + 2.0f;
 constexpr uint32 ChiJiChildEntry = 71990;
 constexpr uint32 ChiJiBeaconEntry = 71978;
 constexpr uint32 YuLonEntry = 71955;
@@ -427,8 +430,7 @@ bool FindHazardAvoidingWaypoint(Player* bot, uint32 entry, float searchRange,
             float candidateY = bot->GetPositionY() +
                 std::sin(angle) * stepDistance;
             float candidateZ = bot->GetPositionZ();
-            if (pointIsNearHazard(candidateX, candidateY,
-                    std::max(13.0f, pathClearance)) ||
+            if (pointIsNearHazard(candidateX, candidateY, pathClearance) ||
                 segmentIsNearHazard(bot->GetPositionX(), bot->GetPositionY(),
                     candidateX, candidateY, pathClearance))
                 continue;
@@ -938,20 +940,45 @@ float ScoreChiJiFirestormSafety(Player* bot, float x, float y)
         float const dy = y - firestorm->GetPositionY();
         float const candidateDistance = std::sqrt(dx * dx + dy * dy);
         float const currentDistance = bot->GetExactDist2d(firestorm);
-        float const awayX = bot->GetPositionX() - firestorm->GetPositionX();
-        float const awayY = bot->GetPositionY() - firestorm->GetPositionY();
-        float const moveX = x - bot->GetPositionX();
-        float const moveY = y - bot->GetPositionY();
-        bool const movingToward = awayX * moveX + awayY * moveY < -0.25f;
-
-        // Never dodge a bird into Firestorm. If this is the Firestorm the bot
-        // has just escaped, also reject the side which moves back toward it,
-        // even when that candidate happens to remain barely outside the DBC
-        // damage radius.
-        if (candidateDistance < 19.0f ||
-            (currentDistance < 24.0f && movingToward))
-        {
+        // Spell 144462 has a ten-yard DBC radius. Two Firestorms can leave a
+        // real corridor between them, so use a two-yard interpolation margin
+        // instead of treating their old 19-yard avoidance circles as one
+        // closed obstacle.
+        if (candidateDistance < ChiJiFirestormClearance)
             return -FLT_MAX;
+
+        float const segmentX = x - bot->GetPositionX();
+        float const segmentY = y - bot->GetPositionY();
+        float const segmentLengthSq = segmentX * segmentX +
+            segmentY * segmentY;
+        if (currentDistance < ChiJiFirestormClearance)
+        {
+            // A bot already clipped by the pulse must move outward. Its
+            // unavoidable starting part inside the circle is allowed.
+            if (candidateDistance <= currentDistance + 0.25f)
+                return -FLT_MAX;
+        }
+        else
+        {
+            float projection = 0.0f;
+            if (segmentLengthSq > 0.01f)
+            {
+                projection = ((firestorm->GetPositionX() -
+                    bot->GetPositionX()) * segmentX +
+                    (firestorm->GetPositionY() - bot->GetPositionY()) *
+                    segmentY) / segmentLengthSq;
+                projection = std::max(0.0f,
+                    std::min(1.0f, projection));
+            }
+            float const closestX = bot->GetPositionX() +
+                segmentX * projection;
+            float const closestY = bot->GetPositionY() +
+                segmentY * projection;
+            float const closestDx = closestX - firestorm->GetPositionX();
+            float const closestDy = closestY - firestorm->GetPositionY();
+            if (closestDx * closestDx + closestDy * closestDy <
+                ChiJiFirestormClearance * ChiJiFirestormClearance)
+                return -FLT_MAX;
         }
 
         clearance = std::min(clearance, candidateDistance);
@@ -1035,9 +1062,10 @@ bool IsPositionInsideChiJiFirestorm(Player* bot, float x, float y)
             continue;
         float const dx = x - firestorm->GetPositionX();
         float const dy = y - firestorm->GetPositionY();
-        // Spell 144462 has a ten-yard DBC radius. Keep extra room for movement
-        // interpolation and the next server update.
-        if (dx * dx + dy * dy < 16.0f * 16.0f)
+        // Keep a two-yard margin outside the ten-yard DBC damage radius. A
+        // larger margin falsely closes valid passages between two summons.
+        if (dx * dx + dy * dy <
+            ChiJiFirestormClearance * ChiJiFirestormClearance)
             return true;
     }
     return false;
@@ -2663,9 +2691,23 @@ BossMechanicsAction::Reaction BossMechanicsAction::GetReaction() const
         // boss aura ends, so key the dodge from the actual moving summon.
         if (FindThreateningChiJiChild(bot, chiJi))
             return Reaction::AvoidChiJiBlazingNova;
+
+        // Finish one outward escape while the bot is still inside a pulse.
+        // Once it crosses the practical twelve-yard boundary, release the
+        // lock immediately so attacks can resume or a real corridor can be
+        // followed toward the boss.
+        if (getMSTime() < chiJiFirestormLockUntil &&
+            IsPositionInsideChiJiFirestorm(bot, bot->GetPositionX(),
+                bot->GetPositionY()) &&
+            !IsPositionInsideChiJiFirestorm(bot, chiJiFirestormX,
+                chiJiFirestormY))
+        {
+            return Reaction::AvoidChiJiFirestorm;
+        }
         if (Creature* firestorm =
-                bot->FindNearestCreature(ChiJiFirestormEntry, 18.0f, true))
-            if (bot->GetExactDist2d(firestorm) < 16.0f)
+                bot->FindNearestCreature(ChiJiFirestormEntry,
+                    ChiJiFirestormClearance + 4.0f, true))
+            if (bot->GetExactDist2d(firestorm) < ChiJiFirestormClearance)
                 return Reaction::AvoidChiJiFirestorm;
     }
 
@@ -3021,10 +3063,29 @@ bool BossMechanicsAction::Execute(Event /*event*/)
                 float x = 0.0f;
                 float y = 0.0f;
                 float z = bot->GetPositionZ();
-                if (FindSafePositionFromCreatureHazards(bot,
-                        ChiJiFirestormEntry, 120.0f, 19.0f, x, y, z))
-                    return MoveTo(bot->GetMapId(), x, y, z, false, false,
+                uint32 const now = getMSTime();
+                if (now < chiJiFirestormLockUntil &&
+                    IsPositionInsideChiJiFirestorm(bot,
+                        bot->GetPositionX(), bot->GetPositionY()) &&
+                    !IsPositionInsideChiJiFirestorm(bot,
+                        chiJiFirestormX, chiJiFirestormY))
+                {
+                    return MoveTo(bot->GetMapId(), chiJiFirestormX,
+                        chiJiFirestormY, chiJiFirestormZ, false, false,
                         true, true, MovementPriority::MOVEMENT_FORCED, true);
+                }
+                if (FindSafePositionFromCreatureHazards(bot,
+                        ChiJiFirestormEntry, 120.0f,
+                        ChiJiFirestormClearance, x, y, z) &&
+                    MoveTo(bot->GetMapId(), x, y, z, false, false,
+                        true, true, MovementPriority::MOVEMENT_FORCED, true))
+                {
+                    chiJiFirestormX = x;
+                    chiJiFirestormY = y;
+                    chiJiFirestormZ = z;
+                    chiJiFirestormLockUntil = now + 2500u;
+                    return true;
+                }
             }
             break;
         case Reaction::AvoidChiJiBlazingNova:
@@ -3569,6 +3630,18 @@ bool CombatFormationMoveAction::isUseful()
                 {
                     bot->StopMoving();
                 }
+                if (target->GetEntry() == ChiJiEntry &&
+                    bot->FindNearestCreature(
+                        ChiJiFirestormEntry, 120.0f, true) &&
+                    !IsPositionInsideChiJiFirestorm(bot,
+                        bot->GetPositionX(), bot->GetPositionY()) &&
+                    CanContinueWorldBossAttack(bot, target))
+                {
+                    // A locked detour is only needed until the boss becomes
+                    // attackable from a safe point. Do not finish walking to
+                    // its endpoint merely to restore an obsolete slot.
+                    bot->StopMoving();
+                }
             }
         }
         return false;
@@ -3677,15 +3750,19 @@ bool CombatFormationMoveAction::isUseful()
             return false;
         }
 
-        // Once avoidance has moved a bot out of a persistent Firestorm, hold
-        // that safe point until the nearby summon disappears. Combat actions
-        // remain available outside its damage radius; only formation travel
-        // is suppressed so it cannot pull the bot back through the hazard.
+        // Once avoidance has moved a bot out of persistent Firestorms, hold
+        // any safe point from which Chi-Ji is still attackable. Requiring the
+        // summon to remain within 24 yards made formation movement resume in
+        // front of a more distant vortex and choose a direct line through it.
         if (target->GetEntry() == ChiJiEntry &&
-            (bot->FindNearestCreature(ChiJiFirestormEntry, 24.0f, true) ||
-             IsPositionInsideChiJiFirestorm(bot, x, y)) &&
+            bot->FindNearestCreature(ChiJiFirestormEntry, 120.0f, true) &&
+            !IsPositionInsideChiJiFirestorm(bot,
+                bot->GetPositionX(), bot->GetPositionY()) &&
             CanContinueWorldBossAttack(bot, target))
+        {
+            bot->StopMoving();
             return false;
+        }
         return true;
     }
 
@@ -3793,10 +3870,14 @@ bool CombatFormationMoveAction::Execute(Event /*event*/)
             }
         }
         if (target->GetEntry() == ChiJiEntry &&
-            (bot->FindNearestCreature(ChiJiFirestormEntry, 24.0f, true) ||
-             IsPositionInsideChiJiFirestorm(bot, x, y)) &&
+            bot->FindNearestCreature(ChiJiFirestormEntry, 120.0f, true) &&
+            !IsPositionInsideChiJiFirestorm(bot,
+                bot->GetPositionX(), bot->GetPositionY()) &&
             CanContinueWorldBossAttack(bot, target))
+        {
+            bot->StopMoving();
             return false;
+        }
         if (target->GetEntry() == YuLonEntry ||
             target->GetEntry() == ChiJiEntry)
         {
@@ -3806,7 +3887,7 @@ bool CombatFormationMoveAction::Execute(Event /*event*/)
             uint32 const hazardEntry = target->GetEntry() == YuLonEntry ?
                 YuLonJadefireBlazeEntry : ChiJiFirestormEntry;
             float const clearance = target->GetEntry() == YuLonEntry ?
-                13.0f : 16.0f;
+                13.0f : ChiJiFirestormClearance;
             if (IsPositionNearCreatureEntry(bot, hazardEntry,
                     120.0f, clearance, bot->GetPositionX(),
                     bot->GetPositionY()))
@@ -4083,7 +4164,7 @@ bool CombatFormationMoveAction::GetWorldBossFormationPosition(Unit* target,
         uint32 const hazardEntry = target->GetEntry() == YuLonEntry ?
             YuLonJadefireBlazeEntry : ChiJiFirestormEntry;
         float const hazardClearance = target->GetEntry() == YuLonEntry ?
-            13.0f : 16.0f;
+            13.0f : ChiJiFirestormClearance;
         std::list<Creature*> hazards;
         bot->GetCreatureListWithEntryInGrid(
             hazards, hazardEntry, 120.0f);

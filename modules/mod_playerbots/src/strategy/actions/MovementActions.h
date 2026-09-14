@@ -218,6 +218,10 @@ private:
     float chiJiDodgeX = 0.0f;
     float chiJiDodgeY = 0.0f;
     float chiJiDodgeZ = 0.0f;
+    uint32 chiJiFirestormLockUntil = 0;
+    float chiJiFirestormX = 0.0f;
+    float chiJiFirestormY = 0.0f;
+    float chiJiFirestormZ = 0.0f;
     uint32 xuenSpreadLockUntil = 0;
     uint32 xuenSpreadMechanic = 0;
     float xuenSpreadX = 0.0f;
