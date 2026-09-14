@@ -982,37 +982,54 @@ bool GetXuenCracklingPosition(Player* bot, Creature* xuen,
             continue;
         members.push_back(member);
     }
+    if (members.size() < 2u)
+        return false;
+
+    // Crackling Lightning cannot be sidestepped. Preserve the established
+    // formation and move only the farthest third a little farther out. The
+    // previous absolute slot assignment made every ranged player run inward
+    // immediately before the first pulse and their crossing paths multiplied
+    // the chain hits.
+    std::sort(members.begin(), members.end(), [xuen](Player* left,
+        Player* right)
+    {
+        float const leftDistance = left->GetExactDist2d(xuen);
+        float const rightDistance = right->GetExactDist2d(xuen);
+        if (std::abs(leftDistance - rightDistance) > 0.25f)
+            return leftDistance > rightDistance;
+        return left->GetGUID().GetCounter() <
+            right->GetGUID().GetCounter();
+    });
     auto const member = std::find(members.begin(), members.end(), bot);
     if (member == members.end())
         return false;
-
     uint32 const rank = uint32(std::distance(members.begin(), member));
-    uint32 const count = uint32(members.size());
-    uint32 const perRing = count > 18u ? 8u : 6u;
-    uint32 const ring = rank / perRing;
-    uint32 const ringIndex = rank % perRing;
-    uint32 const ringCount = std::min(perRing, count - ring * perRing);
+    uint32 const moverCount = std::max(1u,
+        uint32((members.size() + 2u) / 3u));
+    if (rank >= moverCount)
+        return false;
 
-    // Use Xuen's rear as one common anchor. A centroid-based anchor changed
-    // while earlier bots were already moving, so later bots could calculate
-    // a different set of slots during the same AI update cycle.
-    float anchor = Position::NormalizeOrientation(
-        xuen->GetOrientation() + float(M_PI));
-    float const anchorQuantum = float(M_PI / 12.0);
-    anchor = std::round(anchor / anchorQuantum) * anchorQuantum;
+    float radialX = bot->GetPositionX() - xuen->GetPositionX();
+    float radialY = bot->GetPositionY() - xuen->GetPositionY();
+    float const currentDistance = std::sqrt(
+        radialX * radialX + radialY * radialY);
+    if (currentDistance < 2.0f)
+        return false;
+    radialX /= currentDistance;
+    radialY /= currentDistance;
 
-    float const step = float(M_PI) / float(ringCount);
-    float offset = (float(ringIndex) -
-        (float(ringCount) - 1.0f) * 0.5f) * step;
-    if (ring & 1u)
-        offset += step * 0.5f;
-    offset = std::max(float(-M_PI / 2.0 + M_PI / 36.0),
-        std::min(float(M_PI / 2.0 - M_PI / 36.0), offset));
+    // Never trade the chain separation for lost DPS range. Combat reach is
+    // included because spellDistance is measured from the unit edges.
+    float const maximumCenterDistance =
+        sPlayerbotAIConfig->spellDistance - 2.0f +
+        bot->GetCombatReach() + xuen->GetCombatReach();
+    float const outwardStep = std::min(4.0f,
+        maximumCenterDistance - currentDistance);
+    if (outwardStep < 2.0f)
+        return false;
 
-    float const distance = 28.0f + 7.0f * float(ring);
-    float const angle = Position::NormalizeOrientation(anchor + offset);
-    x = xuen->GetPositionX() + std::cos(angle) * distance;
-    y = xuen->GetPositionY() + std::sin(angle) * distance;
+    x = bot->GetPositionX() + radialX * outwardStep;
+    y = bot->GetPositionY() + radialY * outwardStep;
     z = xuen->GetPositionZ();
 
     float const courtX = x - CelestialCourtCenterX;
@@ -1023,7 +1040,15 @@ bool GetXuenCracklingPosition(Player* bot, Creature* xuen,
             x, y, z, false))
         return false;
 
-    return xuen->IsWithinLOS(x, y, z) && bot->IsWithinLOS(x, y, z);
+    if (!xuen->IsWithinLOS(x, y, z) || !bot->IsWithinLOS(x, y, z))
+        return false;
+
+    // An outward step must not approach another already-farther member on
+    // the same radial line. If it would reduce local clearance, staying put
+    // is safer for this cast.
+    float const currentClearance = GetGroupClearanceAt(bot,
+        bot->GetPositionX(), bot->GetPositionY());
+    return GetGroupClearanceAt(bot, x, y) + 0.5f >= currentClearance;
 }
 
 bool GetChiJiBeaconPosition(Player* bot, Creature* beacon,
@@ -2951,11 +2976,16 @@ BossMechanicsAction::Reaction BossMechanicsAction::GetReaction() const
             if (areaDamageMechanic == 144642)
                 return Reaction::DodgeXuenChiBarrage;
 
-            // Give the complete selector pool deterministic slots once per
-            // aura. Local nearest-neighbour corrections let Clanden, Emmina
-            // and Natarea choose the same empty side and remain a stable
-            // three-player chain cluster throughout both logged casts.
-            return Reaction::SpreadXuenLightning;
+            // Crackling itself is unavoidable. Keep the already established
+            // spread and let only the farthest third make one small outward
+            // step; closer players must not run inward through each other.
+            float spreadX = 0.0f;
+            float spreadY = 0.0f;
+            float spreadZ = 0.0f;
+            if (GetXuenCracklingPosition(bot, xuen, preferredOnly,
+                    spreadX, spreadY, spreadZ))
+                return Reaction::SpreadXuenLightning;
+            return Reaction::None;
         }
     }
 
@@ -3025,10 +3055,14 @@ BossMechanicsAction::Reaction BossMechanicsAction::GetReaction() const
              !wallGapAligned))
             return Reaction::MoveYuLonJadefireWallGap;
 
-        // Keep one escape direction long enough to actually leave an
-        // overlapping pool cluster. Re-selecting a destination every AI
-        // update made bots turn back toward the boss before reaching safety.
+        // Keep one escape direction only while the bot is still inside the
+        // real eleven-yard damage area. Continuing toward a thirteen-yard
+        // buffer after reaching safety looked like every ranged player was
+        // running back to the pool edge.
         if (getMSTime() < yuLonDodgeLockUntil &&
+            (activeTank || IsPositionNearCreatureEntry(bot,
+                YuLonJadefireBlazeEntry, 120.0f, 11.0f,
+                bot->GetPositionX(), bot->GetPositionY())) &&
             bot->GetExactDist2d(yuLonDodgeX, yuLonDodgeY) > 1.5f &&
             !IsPositionNearCreatureEntry(bot, YuLonJadefireBlazeEntry,
                 120.0f, 13.0f, yuLonDodgeX, yuLonDodgeY))
@@ -3037,11 +3071,11 @@ BossMechanicsAction::Reaction BossMechanicsAction::GetReaction() const
         }
 
         if (Creature* blaze = bot->FindNearestCreature(
-                YuLonJadefireBlazeEntry, 22.0f, true))
-            // Start leaving before the visible edge reaches the bot. Waiting
-            // until the damage radius is already occupied costs several
-            // ticks when multiple pools overlap or block the direct route.
-            if (bot->GetExactDist2d(blaze) < 15.0f)
+                YuLonJadefireBlazeEntry, 18.0f, true))
+            // A persistent pool is stationary after it appears. Players
+            // already outside its real eleven-yard radius are safe and must
+            // not be pulled back toward a synthetic avoidance boundary.
+            if (bot->GetExactDist2d(blaze) < 11.0f)
                 return Reaction::AvoidYuLonJadefireBlaze;
 
         // The tank can be personally safe while the entire rear melee arc is
@@ -3741,6 +3775,9 @@ bool BossMechanicsAction::Execute(Event /*event*/)
                         bot->GetPositionX(), bot->GetPositionY()))
                     TryActivateWorldBossDefense(botAI, bot);
                 if (now < yuLonDodgeLockUntil &&
+                    (activeTank || IsPositionNearCreatureEntry(bot,
+                        YuLonJadefireBlazeEntry, 120.0f, 11.0f,
+                        bot->GetPositionX(), bot->GetPositionY())) &&
                     bot->GetExactDist2d(yuLonDodgeX, yuLonDodgeY) > 1.5f &&
                     !IsPositionNearCreatureEntry(bot,
                         YuLonJadefireBlazeEntry, 120.0f, 13.0f,
@@ -3946,12 +3983,9 @@ bool CombatFormationMoveAction::isUseful()
                     !IsPositionNearCreatureEntry(bot,
                         YuLonJadefireBlazeEntry, 120.0f, 13.0f,
                         bot->GetPositionX(), bot->GetPositionY()) &&
-                    CanContinueWorldBossAttack(bot, target) &&
-                    ((PlayerBotSpec::IsMelee(bot, true) &&
-                      !PlayerBotSpec::IsHeal(bot, true)) ||
-                     GetGroupClearanceAt(bot, bot->GetPositionX(),
-                         bot->GetPositionY()) >= 10.0f))
+                    CanContinueWorldBossAttack(bot, target))
                 {
+                    worldBossHazardWaypointLockUntil = 0;
                     bot->StopMoving();
                 }
                 if (target->GetEntry() == ChiJiEntry &&
@@ -4061,20 +4095,16 @@ bool CombatFormationMoveAction::isUseful()
                 YuLonJadefireBlazeEntry, 120.0f, true);
         if (yuLonPoolsActive)
             worldBossFormationEstablished = true;
-        bool const yuLonMelee = PlayerBotSpec::IsMelee(bot, true) &&
-            !PlayerBotSpec::IsHeal(bot, true);
-        bool const yuLonSafelySpread = yuLonMelee ||
-            GetGroupClearanceAt(bot, bot->GetPositionX(),
-                bot->GetPositionY()) >= 10.0f;
         if (target->GetEntry() == YuLonEntry &&
             worldBossFormationEstablished &&
             !IsPositionNearCreatureEntry(bot, YuLonJadefireBlazeEntry,
                 120.0f, 13.0f, bot->GetPositionX(), bot->GetPositionY()) &&
-            CanContinueWorldBossAttack(bot, target) && yuLonSafelySpread)
+            CanContinueWorldBossAttack(bot, target))
         {
             // Cancel a still-running formation MoveTo as well. Merely making
             // this action not useful leaves the previous movement generator
             // active and the bot can continue toward the obsolete slot.
+            worldBossHazardWaypointLockUntil = 0;
             bot->StopMoving();
             return false;
         }
@@ -4163,15 +4193,13 @@ bool CombatFormationMoveAction::Execute(Event /*event*/)
             worldBossFormationEstablished = true;
         bool const yuLonMelee = PlayerBotSpec::IsMelee(bot, true) &&
             !PlayerBotSpec::IsHeal(bot, true);
-        bool const yuLonSafelySpread = yuLonMelee ||
-            GetGroupClearanceAt(bot, bot->GetPositionX(),
-                bot->GetPositionY()) >= 10.0f;
         if (target->GetEntry() == YuLonEntry &&
             worldBossFormationEstablished &&
             !IsPositionNearCreatureEntry(bot, YuLonJadefireBlazeEntry,
                 120.0f, 13.0f, bot->GetPositionX(), bot->GetPositionY()) &&
-            CanContinueWorldBossAttack(bot, target) && yuLonSafelySpread)
+            CanContinueWorldBossAttack(bot, target))
         {
+            worldBossHazardWaypointLockUntil = 0;
             bot->StopMoving();
             return false;
         }
