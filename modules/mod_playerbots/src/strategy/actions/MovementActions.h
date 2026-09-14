@@ -212,6 +212,11 @@ private:
     float chiJiDodgeX = 0.0f;
     float chiJiDodgeY = 0.0f;
     float chiJiDodgeZ = 0.0f;
+    uint32 xuenSpreadLockUntil = 0;
+    uint32 xuenSpreadMechanic = 0;
+    float xuenSpreadX = 0.0f;
+    float xuenSpreadY = 0.0f;
+    float xuenSpreadZ = 0.0f;
 };
 
 class RunAwayAction : public MovementAction

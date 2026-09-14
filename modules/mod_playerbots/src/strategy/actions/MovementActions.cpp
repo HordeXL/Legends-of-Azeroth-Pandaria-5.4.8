@@ -260,20 +260,26 @@ bool GetThreateningYuLonWallGap(Player* bot, float& x, float& y, float& z,
     return true;
 }
 
-bool IsXuenAreaDamageActive(Unit const* target)
+uint32 GetXuenAreaDamageMechanic(Unit const* target)
 {
     if (!target || target->GetEntry() != 71953)
-        return false;
+        return 0;
 
     if (target->HasAura(144635))
-        return true;
+        return 144635;
 
     if (Spell* spell = target->GetCurrentSpell(CURRENT_GENERIC_SPELL))
         return spell->GetSpellInfo() &&
             (spell->GetSpellInfo()->Id == 144642 ||
-             spell->GetSpellInfo()->Id == 144635);
+             spell->GetSpellInfo()->Id == 144635) ?
+            spell->GetSpellInfo()->Id : 0;
 
-    return false;
+    return 0;
+}
+
+bool IsXuenAreaDamageActive(Unit const* target)
+{
+    return GetXuenAreaDamageMechanic(target) != 0;
 }
 
 bool IsPositionNearCreatureEntry(Player* bot, uint32 entry, float searchRange,
@@ -2611,7 +2617,8 @@ BossMechanicsAction::Reaction BossMechanicsAction::GetReaction() const
     // effect applies a warning aura to the selected player.
     if (Creature* xuen = bot->FindNearestCreature(71953, 200.0f, true))
     {
-        bool const incomingAreaDamage = IsXuenAreaDamageActive(xuen);
+        uint32 const areaDamageMechanic = GetXuenAreaDamageMechanic(xuen);
+        bool const incomingAreaDamage = areaDamageMechanic != 0;
 
         bool const activeTank = PlayerBotSpec::IsTank(bot, true) &&
             xuen->GetVictim() == bot;
@@ -2642,6 +2649,18 @@ BossMechanicsAction::Reaction BossMechanicsAction::GetReaction() const
             bool const preferredOnly = preferredCount >= 8u;
             if (preferredOnly && !isPreferredTarget(bot))
                 return Reaction::None;
+
+            // Execute stores one lateral destination for this exact mechanic.
+            // Once it is reached, do not turn every following damage pulse
+            // into another retreat. A different overlapping Xuen mechanic
+            // may still request its own single correction.
+            if (areaDamageMechanic == xuenSpreadMechanic &&
+                getMSTime() < xuenSpreadLockUntil)
+            {
+                if (bot->GetExactDist2d(xuenSpreadX, xuenSpreadY) > 1.5f)
+                    return Reaction::SpreadXuenLightning;
+                return Reaction::None;
+            }
 
             // Assigned world-boss slots already provide the required spread.
             // Use emergency movement only if two living raid members are
@@ -3061,11 +3080,180 @@ bool BossMechanicsAction::Execute(Event /*event*/)
                 }
             break;
         case Reaction::SpreadXuenLightning:
-            // Crackling Lightning lasts for several ticks, but it does not
-            // require continuous running. Make only the short correction
-            // needed to clear a nearby player, then resume attacking while
-            // the normal ranged formation maintains the separation.
-            return MoveFromGroup(12.0f, MovementPriority::MOVEMENT_FORCED);
+            {
+                Creature* xuen = bot->FindNearestCreature(
+                    71953, 200.0f, true);
+                Group* group = bot->GetGroup();
+                if (!xuen || !group)
+                    return false;
+
+                uint32 const mechanic = GetXuenAreaDamageMechanic(xuen);
+                uint32 const now = getMSTime();
+                if (mechanic && mechanic == xuenSpreadMechanic &&
+                    now < xuenSpreadLockUntil)
+                {
+                    if (bot->GetExactDist2d(
+                            xuenSpreadX, xuenSpreadY) <= 1.5f)
+                        return false;
+                    return MoveTo(bot->GetMapId(), xuenSpreadX,
+                        xuenSpreadY, xuenSpreadZ, false, false, true, true,
+                        MovementPriority::MOVEMENT_FORCED, true);
+                }
+
+                // Find the nearest member of the same selector pool. Tanks
+                // and melee are not selected while at least eight ranged or
+                // healer candidates are alive, so they must not make the
+                // complete melee pack move.
+                auto isPreferredTarget = [](Player* player)
+                {
+                    return player && !PlayerBotSpec::IsTank(player, true) &&
+                        (!PlayerBotSpec::IsMelee(player, true) ||
+                         PlayerBotSpec::IsHeal(player, true));
+                };
+                uint32 preferredCount = 0;
+                for (GroupReference* ref = group->GetFirstMember(); ref;
+                    ref = ref->next())
+                {
+                    Player* member = ref->GetSource();
+                    if (member && member->IsAlive() &&
+                        member->GetMap() == bot->GetMap() &&
+                        isPreferredTarget(member))
+                        ++preferredCount;
+                }
+                bool const preferredOnly = preferredCount >= 8u;
+
+                Player* nearest = nullptr;
+                float nearestDistance = FLT_MAX;
+                for (GroupReference* ref = group->GetFirstMember(); ref;
+                    ref = ref->next())
+                {
+                    Player* member = ref->GetSource();
+                    if (!member || member == bot || !member->IsAlive() ||
+                        member->GetMap() != bot->GetMap() ||
+                        (preferredOnly && !isPreferredTarget(member)))
+                        continue;
+                    float const distance = bot->GetExactDist2d(member);
+                    if (distance < nearestDistance)
+                    {
+                        nearestDistance = distance;
+                        nearest = member;
+                    }
+                }
+                if (!nearest || nearestDistance >= 12.0f || !mechanic)
+                    return false;
+
+                // Move around Xuen rather than directly away from the raid.
+                // Test short steps on both sides and keep the first distance
+                // that provides fourteen yards of clearance. This avoids the
+                // old visible backwards chain while preserving cast range.
+                float radialX = bot->GetPositionX() - xuen->GetPositionX();
+                float radialY = bot->GetPositionY() - xuen->GetPositionY();
+                float const radius = std::sqrt(
+                    radialX * radialX + radialY * radialY);
+                if (radius < 2.0f)
+                    return false;
+                radialX /= radius;
+                radialY /= radius;
+                float const tangentX = -radialY;
+                float const tangentY = radialX;
+                float const awayDot =
+                    (bot->GetPositionX() - nearest->GetPositionX()) *
+                        tangentX +
+                    (bot->GetPositionY() - nearest->GetPositionY()) *
+                        tangentY;
+                float const preferredSide = std::abs(awayDot) > 0.1f ?
+                    (awayDot > 0.0f ? 1.0f : -1.0f) :
+                    (bot->GetGUID().GetCounter() % 2u ? 1.0f : -1.0f);
+
+                float bestX = 0.0f;
+                float bestY = 0.0f;
+                float bestZ = 0.0f;
+                float bestClearance = -FLT_MAX;
+                bool found = false;
+                bool foundClear = false;
+                float const currentCourtDistance = bot->GetExactDist2d(
+                    CelestialCourtCenterX, CelestialCourtCenterY);
+                for (float const moveDistance :
+                    { 4.0f, 6.0f, 8.0f, 10.0f, 12.0f })
+                {
+                    float distanceBestClearance = -FLT_MAX;
+                    float distanceBestX = 0.0f;
+                    float distanceBestY = 0.0f;
+                    float distanceBestZ = 0.0f;
+                    bool distanceFound = false;
+                    for (float const side :
+                        { preferredSide, -preferredSide })
+                    {
+                        float x = bot->GetPositionX() +
+                            tangentX * side * moveDistance;
+                        float y = bot->GetPositionY() +
+                            tangentY * side * moveDistance;
+                        float z = bot->GetPositionZ();
+                        if (!bot->GetMap()->CheckCollisionAndGetValidCoords(
+                                bot, bot->GetPositionX(),
+                                bot->GetPositionY(), bot->GetPositionZ(),
+                                x, y, z, false))
+                            continue;
+
+                        float const courtX = x - CelestialCourtCenterX;
+                        float const courtY = y - CelestialCourtCenterY;
+                        float const courtDistance = std::sqrt(
+                            courtX * courtX + courtY * courtY);
+                        if (courtDistance > 100.0f &&
+                            courtDistance > currentCourtDistance + 0.5f)
+                            continue;
+
+                        float const clearance = GetGroupClearanceAt(
+                            bot, x, y);
+                        if (!distanceFound ||
+                            clearance > distanceBestClearance)
+                        {
+                            distanceBestClearance = clearance;
+                            distanceBestX = x;
+                            distanceBestY = y;
+                            distanceBestZ = z;
+                            distanceFound = true;
+                        }
+                    }
+
+                    if (!distanceFound)
+                        continue;
+                    if (!found || distanceBestClearance > bestClearance)
+                    {
+                        bestClearance = distanceBestClearance;
+                        bestX = distanceBestX;
+                        bestY = distanceBestY;
+                        bestZ = distanceBestZ;
+                        found = true;
+                    }
+                    if (distanceBestClearance >= 14.0f)
+                    {
+                        bestX = distanceBestX;
+                        bestY = distanceBestY;
+                        bestZ = distanceBestZ;
+                        foundClear = true;
+                        break;
+                    }
+                }
+
+                if (!found && !foundClear)
+                    return false;
+                if (MoveTo(bot->GetMapId(), bestX, bestY, bestZ, false,
+                        false, true, true,
+                        MovementPriority::MOVEMENT_FORCED, true))
+                {
+                    xuenSpreadX = bestX;
+                    xuenSpreadY = bestY;
+                    xuenSpreadZ = bestZ;
+                    xuenSpreadMechanic = mechanic;
+                    // Covers every pulse of this cast. A concurrent different
+                    // mechanic has a different id and may request one new
+                    // correction without waiting for this timer.
+                    xuenSpreadLockUntil = now + 12000u;
+                    return true;
+                }
+                return false;
+            }
         case Reaction::AvoidNiuzaoCharge:
             if (Creature* niuzao = bot->FindNearestCreature(NiuzaoEntry, 200.0f, true))
             {
