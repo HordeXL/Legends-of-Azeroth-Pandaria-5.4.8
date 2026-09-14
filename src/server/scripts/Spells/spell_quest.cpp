@@ -1813,7 +1813,8 @@ enum BearFlankMaster
 {
     SPELL_BEAR_FLANK_MASTER = 56565,
     SPELL_CREATE_BEAR_FLANK = 56566,
-    SPELL_BEAR_FLANK_FAIL = 56569
+    SPELL_BEAR_FLANK_FAIL = 56569,
+    NPC_DEAD_ICEMAW_BEAR = 30292
 };
 
 class spell_q13011_bear_flank_master : public SpellScriptLoader
@@ -1828,14 +1829,16 @@ class spell_q13011_bear_flank_master : public SpellScriptLoader
             bool Validate(SpellInfo const* /*spellInfo*/) override
             {
                 if (!sSpellMgr->GetSpellInfo(SPELL_BEAR_FLANK_MASTER) ||
-                    !sSpellMgr->GetSpellInfo(SPELL_CREATE_BEAR_FLANK))
+                    !sSpellMgr->GetSpellInfo(SPELL_CREATE_BEAR_FLANK) ||
+                    !sSpellMgr->GetSpellInfo(SPELL_BEAR_FLANK_FAIL))
                     return false;
                 return true;
             }
 
             bool Load() override
             {
-                return GetCaster()->GetTypeId() == TYPEID_UNIT;
+                Creature* creature = GetCaster() ? GetCaster()->ToCreature() : nullptr;
+                return creature && creature->GetEntry() == NPC_DEAD_ICEMAW_BEAR;
             }
 
             void HandleScript(SpellEffIndex /*effIndex*/)
