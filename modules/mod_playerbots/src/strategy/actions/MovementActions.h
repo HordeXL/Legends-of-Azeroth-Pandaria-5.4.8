@@ -202,6 +202,7 @@ private:
         AvoidChiJiFirestorm,
         AvoidChiJiBlazingNova,
         SpreadXuenLightning,
+        DodgeXuenChiBarrage,
         AvoidNiuzaoCharge,
         AvoidYuLonJadefireBlaze,
         AvoidYuLonJadefireBreath,
@@ -231,6 +232,10 @@ private:
     float yuLonDodgeX = 0.0f;
     float yuLonDodgeY = 0.0f;
     float yuLonDodgeZ = 0.0f;
+    uint32 yuLonWallWaypointLockUntil = 0;
+    float yuLonWallWaypointX = 0.0f;
+    float yuLonWallWaypointY = 0.0f;
+    float yuLonWallWaypointZ = 0.0f;
 };
 
 class RunAwayAction : public MovementAction
