@@ -102,6 +102,7 @@ class boss_niuzao : public CreatureScript
             void Reset() override
             {
                 events.Reset();
+                me->SetVisible(true);
 
                 me->SetCombatDistance(500.0f);
 
@@ -276,8 +277,9 @@ class boss_niuzao : public CreatureScript
                         }
                         case EVENT_NIUZAO_DEATH:
                         {
-                            if (Creature* shao = me->FindNearestCreature(NPC_EMPEROR_SHAOHAO_TI, 500.0f, true))
-                                shao->AI()->DoAction(0);
+                            Creature* shao = me->FindNearestCreature(
+                                NPC_EMPEROR_SHAOHAO_TI, 500.0f, true);
+                            me->SetVisible(false);
 
                             uint32 corpseDelay = me->GetCorpseDelay();
                             uint32 respawnDelay = me->GetRespawnDelay();
@@ -290,6 +292,9 @@ class boss_niuzao : public CreatureScript
 
                             me->SetCorpseDelay(corpseDelay);
                             me->SetRespawnDelay(respawnDelay);
+
+                            if (shao)
+                                shao->AI()->DoAction(0);
                             break;
                         }
                     }
