@@ -261,9 +261,11 @@ bool GetThreateningYuLonWallGap(Player* bot, float& x, float& y, float& z,
     // Assign every group member, including players already inside the gap,
     // one stable point in a three-column grid. Merely retaining the current
     // lane made the raid emerge from the wall in one pile; the next eight
-    // Blaze summons then overlapped four or five times. Longitudinal rows
-    // keep the formation inside the same opening without pushing everybody
-    // toward one exact lateral coordinate.
+    // Blaze summons then overlapped four or five times. Use the complete safe
+    // width and fourteen-yard rows. The old cell-centre placement left only
+    // about 9-10 yards between neighbours, inside the thirteen-yard Blaze
+    // avoidance radius, so the first post-wall volley could overlap six or
+    // more pools before anybody had time to move.
     std::vector<uint32> members;
     if (Group* group = bot->GetGroup())
     {
@@ -287,17 +289,21 @@ bool GetThreateningYuLonWallGap(Player* bot, float& x, float& y, float& z,
         columnCount);
     uint32 const column = uint32(rank) % columnCount;
     uint32 const row = uint32(rank) / columnCount;
-    float const targetLateral = safeLeft +
-        (float(column) + 0.5f) / float(columnCount) *
-        (safeRight - safeLeft);
+    float const targetLateral = columnCount > 1u ?
+        safeLeft + float(column) / float(columnCount - 1u) *
+            (safeRight - safeLeft) :
+        (safeLeft + safeRight) * 0.5f;
     float const courtForward = CelestialCourtCenterX * forwardX +
         CelestialCourtCenterY * forwardY;
     float const targetForward = courtForward +
-        (float(row) - (float(rowCount) - 1.0f) * 0.5f) * 10.0f;
+        (float(row) - (float(rowCount) - 1.0f) * 0.5f) * 14.0f;
     float const lateralCorrection = targetLateral - botLateral;
     float const forwardCorrection = targetForward - botForward;
-    alreadyAligned = std::abs(lateralCorrection) <= 3.0f &&
-        std::abs(forwardCorrection) <= 3.0f;
+    // Do not release the wall reaction several yards before the assigned
+    // point. With fourteen-yard slots, a three-yard tolerance could still
+    // leave two neighbours inside the same Blaze avoidance area.
+    alreadyAligned = std::abs(lateralCorrection) <= 1.5f &&
+        std::abs(forwardCorrection) <= 1.5f;
     x = bot->GetPositionX() + lateralX * lateralCorrection +
         forwardX * forwardCorrection;
     y = bot->GetPositionY() + lateralY * lateralCorrection +
@@ -915,10 +921,12 @@ Creature* FindThreateningChiJiChild(Player* bot, Creature* chiJi,
         // SpellEffect 144494 has a four-yard radius. The former 11.5-yard
         // lane and 13-yard direct-distance fallback marked neighbouring
         // radial lanes as threats and made every dodge accumulate toward the
-        // arena edge. React only while the child is close to crossing this
-        // exact six-yard corridor (four yards plus a two-yard safety margin).
+        // arena edge. Keep the exact six-yard corridor (four yards plus a
+        // two-yard safety margin), but start the short sidestep earlier. A
+        // fourteen-yard lookahead was shorter than one movement/reaction
+        // cycle for the fastest children and produced repeated Nova hits.
         bool const crossingSoon = botProgress > -5.0f &&
-            childProgress <= botProgress + 14.0f &&
+            childProgress <= botProgress + 22.0f &&
             childProgress >= botProgress - 5.0f &&
             std::abs(lateral) < ChiJiBlazingNovaClearance;
         bool const directlyDangerous = directDistance <
@@ -1224,7 +1232,7 @@ float ScoreChiJiDodgePosition(Player* bot, Creature* chiJi, float x, float y)
         float const candidateY = y - chiJi->GetPositionY();
         float const candidateProgress = candidateX * pathX + candidateY * pathY;
         if (candidateProgress < -5.0f ||
-            childProgress > candidateProgress + 16.0f ||
+            childProgress > candidateProgress + 24.0f ||
             childProgress < candidateProgress - 5.0f)
             continue;
 
@@ -3048,25 +3056,16 @@ BossMechanicsAction::Reaction BossMechanicsAction::GetReaction() const
         bool const wallThreatening = GetThreateningYuLonWallGap(bot,
             wallGapX, wallGapY, wallGapZ, wallGapAligned);
 
-        // Once an advancing wall requires lateral movement, reaching its
-        // opening outranks the pool dodge. Otherwise entering a pool on the
-        // only route makes the pool action pull the bot backwards, and the
-        // two reactions alternate until the wall arrives.
-        if (wallThreatening &&
-            ((getMSTime() < yuLonWallWaypointLockUntil &&
-              bot->GetExactDist2d(yuLonWallWaypointX,
-                  yuLonWallWaypointY) > 1.5f) ||
-             !wallGapAligned))
-            return Reaction::MoveYuLonJadefireWallGap;
+        bool const insideBlaze = IsPositionNearCreatureEntry(bot,
+            YuLonJadefireBlazeEntry, 120.0f, 13.0f,
+            bot->GetPositionX(), bot->GetPositionY());
 
-        // Keep one escape direction until the bot clears every pool plus a
-        // two-yard reserve. The route itself is selected away from the full
-        // starting cluster; abandoning it at the exact damage edge let a bot
-        // fall back into an overlapping neighbour on its next movement tick.
+        // Never keep following a wall waypoint after it has entered a pool.
+        // The Blaze escape already prefers the wall opening, but first selects
+        // the shortest route out of the complete overlapping starting cluster.
+        // Once clear, wall alignment resumes without alternating backwards.
         if (getMSTime() < yuLonDodgeLockUntil &&
-            (activeTank || IsPositionNearCreatureEntry(bot,
-                YuLonJadefireBlazeEntry, 120.0f, 13.0f,
-                bot->GetPositionX(), bot->GetPositionY())) &&
+            (activeTank || insideBlaze) &&
             bot->GetExactDist2d(yuLonDodgeX, yuLonDodgeY) > 1.5f &&
             !IsPositionNearCreatureEntry(bot, YuLonJadefireBlazeEntry,
                 120.0f, 13.0f, yuLonDodgeX, yuLonDodgeY))
@@ -3074,14 +3073,17 @@ BossMechanicsAction::Reaction BossMechanicsAction::GetReaction() const
             return Reaction::AvoidYuLonJadefireBlaze;
         }
 
-        if (Creature* blaze = bot->FindNearestCreature(
-                YuLonJadefireBlazeEntry, 20.0f, true))
-            // React inside a small two-yard buffer so adjacent ranged players
-            // begin separating before eight simultaneous pool auras tick.
-            // The formation action holds the first safe in-range point and
-            // no longer sends them back to their old slot afterward.
-            if (bot->GetExactDist2d(blaze) < 13.0f)
-                return Reaction::AvoidYuLonJadefireBlaze;
+        if (insideBlaze)
+            return Reaction::AvoidYuLonJadefireBlaze;
+
+        // A safely positioned bot may now align with the opening. Direct and
+        // locked wall routes are checked against every live pool in Execute.
+        if (wallThreatening &&
+            ((getMSTime() < yuLonWallWaypointLockUntil &&
+              bot->GetExactDist2d(yuLonWallWaypointX,
+                  yuLonWallWaypointY) > 1.5f) ||
+             !wallGapAligned))
+            return Reaction::MoveYuLonJadefireWallGap;
 
         // The tank can be personally safe while the entire rear melee arc is
         // covered. Pull Yu'lon forward until both the tank point and enough
@@ -3522,7 +3524,7 @@ bool BossMechanicsAction::Execute(Event /*event*/)
                         chiJiDodgeX = bestX;
                         chiJiDodgeY = bestY;
                         chiJiDodgeZ = bestZ;
-                        chiJiDodgeLockUntil = getMSTime() + 1800u;
+                        chiJiDodgeLockUntil = getMSTime() + 2500u;
                         chiJiIgnoredChildGuid =
                             child->GetGUID().GetCounter();
                         chiJiIgnoredChildUntil = getMSTime() + 4500u;
@@ -3786,7 +3788,11 @@ bool BossMechanicsAction::Execute(Event /*event*/)
                     bot->GetExactDist2d(yuLonDodgeX, yuLonDodgeY) > 1.5f &&
                     !IsPositionNearCreatureEntry(bot,
                         YuLonJadefireBlazeEntry, 120.0f, 13.0f,
-                        yuLonDodgeX, yuLonDodgeY))
+                        yuLonDodgeX, yuLonDodgeY) &&
+                    CountSegmentNearCreatureEntry(bot,
+                        YuLonJadefireBlazeEntry, 120.0f, 13.0f,
+                        bot->GetPositionX(), bot->GetPositionY(),
+                        yuLonDodgeX, yuLonDodgeY, true) == 0u)
                 {
                     return MoveTo(bot->GetMapId(), yuLonDodgeX,
                         yuLonDodgeY, yuLonDodgeZ, false, false, true, true,
@@ -3859,7 +3865,7 @@ bool BossMechanicsAction::Execute(Event /*event*/)
                     CountSegmentNearCreatureEntry(bot,
                         YuLonJadefireBlazeEntry, 120.0f, 13.0f,
                         bot->GetPositionX(), bot->GetPositionY(),
-                        yuLonWallWaypointX, yuLonWallWaypointY, true) == 0u)
+                        yuLonWallWaypointX, yuLonWallWaypointY) == 0u)
                 {
                     if (bot->GetExactDist2d(yuLonWallWaypointX,
                             yuLonWallWaypointY) > 8.0f)
