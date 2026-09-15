@@ -196,6 +196,7 @@ private:
         SpreadOondastaBeam,
         MaintainOondastaOffTank,
         AvoidOondastaFrillBlast,
+        RelocateOrdosStack,
         StackOrdosMagmaCrush,
         SpreadOrdosBurningSoul,
         MoveChiJiBeacon,
