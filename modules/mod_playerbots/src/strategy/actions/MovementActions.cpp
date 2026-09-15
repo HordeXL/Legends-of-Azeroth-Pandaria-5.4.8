@@ -781,11 +781,10 @@ bool HasOrdosBurningSoul(Unit const* unit)
         unit->HasAura(OrdosBurningSoulEffectSpell));
 }
 
-Player* GetOrdosBurningSoulSwapTank(Player* bot, Creature* ordos)
+Player* GetOrdosBurningSoulSwapTank(Player* bot, Creature* ordos,
+    Player* activeTank)
 {
     Group* group = bot ? bot->GetGroup() : nullptr;
-    Player* activeTank = ordos && ordos->GetVictim() ?
-        ordos->GetVictim()->ToPlayer() : nullptr;
     if (!group || !activeTank || !HasOrdosBurningSoul(activeTank))
         return nullptr;
 
@@ -861,16 +860,13 @@ bool FindSafeOrdosStackAnchor(Player* bot, Creature* ordos, Unit* tank,
         float candidateX = OrdosTankRouteAnchorX[index];
         float candidateY = OrdosTankRouteAnchorY[index];
         float candidateZ = tank->GetPositionZ();
+        bot->UpdateAllowedPositionZ(candidateX, candidateY, candidateZ);
         float const tankDx = candidateX - tank->GetPositionX();
         float const tankDy = candidateY - tank->GetPositionY();
         if ((tankHasPoolAura && tankDx * tankDx + tankDy * tankDy <=
                 OrdosStackAnchorRadius * OrdosStackAnchorRadius) ||
             !IsOrdosPointSafe(hazards, candidateX, candidateY,
                 OrdosStackSafetyMargin) ||
-            !bot->GetMap()->CheckCollisionAndGetValidCoords(bot,
-                tank->GetPositionX(), tank->GetPositionY(),
-                tank->GetPositionZ(), candidateX, candidateY,
-                candidateZ, false) ||
             !IsInsideOrdosArena(candidateX, candidateY) ||
             !IsOrdosPointSafe(hazards, candidateX, candidateY,
                 OrdosStackSafetyMargin) ||
@@ -907,20 +903,11 @@ bool FindSafeOrdosStackAnchor(Player* bot, Creature* ordos, Unit* tank,
         return false;
     }
 
-    // If a knockback displaced the tank from the route, rejoin its nearest
-    // safe perimeter point without changing the prescribed pool order.
-    std::vector<std::pair<float, uint8>> nearestAnchors;
+    // A tank hand-off or knockback can leave the new tank between anchors.
+    // Resume at the first safe route point rather than the geometrically
+    // nearest one, which could jump into a later row and scatter the pools.
     for (uint8 index = 0; index < OrdosTankRouteAnchorCount; ++index)
-    {
-        float const dx = OrdosTankRouteAnchorX[index] -
-            tank->GetPositionX();
-        float const dy = OrdosTankRouteAnchorY[index] -
-            tank->GetPositionY();
-        nearestAnchors.emplace_back(dx * dx + dy * dy, index);
-    }
-    std::sort(nearestAnchors.begin(), nearestAnchors.end());
-    for (auto const& candidate : nearestAnchors)
-        if (tryAnchor(candidate.second))
+        if (tryAnchor(index))
             return true;
 
     return false;
@@ -3498,10 +3485,113 @@ bool AvoidAoeAction::Execute(Event /*event*/)
     return FleePosition(position, radius, 500);
 }
 
+Player* BossMechanicsAction::GetOrdosDesignatedTank(Creature* ordos) const
+{
+    Group* group = bot ? bot->GetGroup() : nullptr;
+    if (!ordos || !group || !ordos->IsInCombat())
+    {
+        ordosEncounterGuid = ObjectGuid::Empty;
+        ordosDesignatedTankGuid = ObjectGuid::Empty;
+        return nullptr;
+    }
+
+    if (ordosEncounterGuid != ordos->GetGUID())
+    {
+        ordosEncounterGuid = ordos->GetGUID();
+        ordosDesignatedTankGuid = ObjectGuid::Empty;
+    }
+
+    auto eligibleTank = [&](Player* member)
+    {
+        return member && member->IsAlive() && member->IsInWorld() &&
+            member->GetMap() == bot->GetMap() &&
+            PlayerBotSpec::IsTank(member, true);
+    };
+
+    Player* designatedTank = nullptr;
+    for (GroupReference* ref = group->GetFirstMember(); ref;
+        ref = ref->next())
+    {
+        Player* member = ref->GetSource();
+        if (eligibleTank(member) &&
+            member->GetGUID() == ordosDesignatedTankGuid)
+        {
+            designatedTank = member;
+            break;
+        }
+    }
+
+    if (!designatedTank)
+    {
+        // Every bot independently chooses the same group main tank at pull.
+        // This prevents an assist tank's opening threat from redirecting the
+        // boss before the first balcony anchor is reached.
+        for (GroupReference* ref = group->GetFirstMember(); ref;
+            ref = ref->next())
+        {
+            Player* member = ref->GetSource();
+            if (eligibleTank(member) && PlayerBotSpec::IsMainTank(member))
+            {
+                designatedTank = member;
+                break;
+            }
+        }
+
+        Player* currentTank = ordos->GetVictim() ?
+            ordos->GetVictim()->ToPlayer() : nullptr;
+        if (!designatedTank && eligibleTank(currentTank))
+            designatedTank = currentTank;
+
+        // A dead main tank may leave the boss on a damage dealer briefly.
+        // Select one deterministic living tank so all bot clients agree on
+        // who must recover it.
+        if (!designatedTank)
+        {
+            for (GroupReference* ref = group->GetFirstMember(); ref;
+                ref = ref->next())
+            {
+                Player* member = ref->GetSource();
+                if (!eligibleTank(member) || HasOrdosBurningSoul(member))
+                    continue;
+
+                if (!designatedTank ||
+                    std::make_pair(member->GetExactDist2d(ordos),
+                        member->GetGUID()) <
+                    std::make_pair(designatedTank->GetExactDist2d(ordos),
+                        designatedTank->GetGUID()))
+                    designatedTank = member;
+            }
+        }
+
+        ordosDesignatedTankGuid = designatedTank ?
+            designatedTank->GetGUID() : ObjectGuid::Empty;
+    }
+
+    // Persist the selected replacement after the taunt. The old main tank
+    // becomes the standby instead of automatically fighting to take Ordos
+    // back as soon as Burning Soul expires.
+    if (designatedTank && HasOrdosBurningSoul(designatedTank))
+        if (Player* replacement = GetOrdosBurningSoulSwapTank(
+                bot, ordos, designatedTank))
+        {
+            designatedTank = replacement;
+            ordosDesignatedTankGuid = replacement->GetGUID();
+        }
+
+    return designatedTank;
+}
+
 BossMechanicsAction::Reaction BossMechanicsAction::GetReaction() const
 {
     if (!bot || !bot->IsInWorld() || !bot->IsAlive() || !bot->IsInCombat())
+    {
+        if (bot && !bot->IsInCombat())
+        {
+            ordosEncounterGuid = ObjectGuid::Empty;
+            ordosDesignatedTankGuid = ObjectGuid::Empty;
+        }
         return Reaction::None;
+    }
 
     // Galleon (entry 62346), local boss_galion.cpp: every minute the boss
     // summons six Salyin Warmongers (entry 62351).  Damage dealers and the
@@ -3620,13 +3710,19 @@ BossMechanicsAction::Reaction BossMechanicsAction::GetReaction() const
     if (Creature* ordos = bot->FindNearestCreature(
             OrdosEntry, 200.0f, true))
     {
-        if (GetOrdosBurningSoulSwapTank(bot, ordos) == bot)
-            return Reaction::TakeOverOrdosBurningSoulTank;
+        Player* designatedTank = GetOrdosDesignatedTank(ordos);
 
         // Keep either aura ID because the caster and target aura differ in
         // this 5.4.8 implementation.
         if (HasOrdosBurningSoul(bot) && bot->GetGroup())
             return Reaction::SpreadOrdosBurningSoul;
+
+        if (designatedTank == bot && ordos->GetVictim() != bot)
+            return Reaction::TakeOverOrdosTank;
+
+        if (designatedTank && designatedTank != bot &&
+            PlayerBotSpec::IsTank(bot, true))
+            return Reaction::MaintainOrdosStandbyTank;
 
         Unit* tank = ordos->GetVictim();
         if (tank && tank->GetTypeId() == TYPEID_PLAYER)
@@ -3929,7 +4025,9 @@ bool BossMechanicsAction::Execute(Event /*event*/)
     // is too late; once the bot has crossed the safe boundary GetReaction()
     // becomes None and ordinary damage/healing actions are immediately free
     // to resume while the bot holds that safe point.
-    if ((reaction == Reaction::RelocateOrdosStack ||
+    if ((reaction == Reaction::TakeOverOrdosTank ||
+         reaction == Reaction::MaintainOrdosStandbyTank ||
+         reaction == Reaction::RelocateOrdosStack ||
          reaction == Reaction::StackOrdosMagmaCrush ||
          reaction == Reaction::SpreadOrdosBurningSoul ||
          reaction == Reaction::AvoidChiJiFirestorm ||
@@ -4074,11 +4172,11 @@ bool BossMechanicsAction::Execute(Event /*event*/)
                     true, MovementPriority::MOVEMENT_FORCED);
             }
             break;
-        case Reaction::TakeOverOrdosBurningSoulTank:
+        case Reaction::TakeOverOrdosTank:
             if (Creature* ordos = bot->FindNearestCreature(
                     OrdosEntry, 200.0f, true))
             {
-                if (GetOrdosBurningSoulSwapTank(bot, ordos) != bot)
+                if (GetOrdosDesignatedTank(ordos) != bot)
                     return true;
 
                 context->GetValue<Unit*>("current target")->Set(ordos);
@@ -4090,10 +4188,10 @@ bool BossMechanicsAction::Execute(Event /*event*/)
                     bot->Attack(ordos, true);
                 botAI->ChangeEngine(BOT_STATE_COMBAT);
 
-                // This encounter-specific swap intentionally bypasses the
-                // generic rescue policy, which normally forbids taunting from
-                // a healthy tank. The active tank is healthy but must leave
-                // before Burning Soul detonates.
+                // Both the opening assignment and a Burning Soul hand-off
+                // intentionally bypass the generic rescue policy. Waiting
+                // for normal threat logic lets two tank specializations pull
+                // Ordos in different directions before the first pool.
                 uint32 const tauntSpell = GroupPveCombat::TauntSpell(bot);
                 if (SpellInfo const* spellInfo =
                         sSpellMgr->GetSpellInfo(tauntSpell))
@@ -4108,6 +4206,63 @@ bool BossMechanicsAction::Execute(Event /*event*/)
                     }
                 return true;
             }
+            break;
+        case Reaction::MaintainOrdosStandbyTank:
+            if (Creature* ordos = bot->FindNearestCreature(
+                    OrdosEntry, 200.0f, true))
+                if (Player* designatedTank =
+                        GetOrdosDesignatedTank(ordos))
+                {
+                    if (designatedTank == bot)
+                        return true;
+
+                    if (context->GetValue<Unit*>("current target")->Get() ==
+                            ordos)
+                        context->GetValue<Unit*>("current target")->Set(
+                            nullptr);
+                    if (context->GetValue<ObjectGuid>("pull target")->Get() ==
+                            ordos->GetGUID())
+                        context->GetValue<ObjectGuid>("pull target")->Set(
+                            ObjectGuid::Empty);
+                    if (bot->GetVictim() == ordos)
+                        bot->AttackStop();
+                    if (Unit* pet = bot->GetPet())
+                        if (pet->GetVictim() == ordos)
+                            pet->AttackStop();
+
+                    bool const inFire = IsPositionInsideOrdosFire(bot,
+                        bot->GetPositionX(), bot->GetPositionY(), 0.5f);
+                    if (inFire)
+                    {
+                        float exitX = 0.0f;
+                        float exitY = 0.0f;
+                        float exitZ = 0.0f;
+                        if (FindNearestOrdosFireExit(bot,
+                                designatedTank->GetPositionX(),
+                                designatedTank->GetPositionY(), 0,
+                                exitX, exitY, exitZ))
+                            return MoveTo(bot->GetMapId(), exitX, exitY,
+                                exitZ, false, false, true, true,
+                                MovementPriority::MOVEMENT_FORCED, true);
+                    }
+
+                    if (bot->GetExactDist2d(designatedTank) > 10.0f)
+                    {
+                        float standbyX = ordos->GetPositionX();
+                        float standbyY = ordos->GetPositionY();
+                        float standbyZ = ordos->GetPositionZ();
+                        if (FindSafeOrdosAttackPosition(bot, ordos,
+                                designatedTank, standbyX, standbyY,
+                                standbyZ))
+                            return MoveTo(bot->GetMapId(), standbyX,
+                                standbyY, standbyZ, false, false, true,
+                                true, MovementPriority::MOVEMENT_FORCED,
+                                true);
+                    }
+
+                    bot->StopMoving();
+                    return true;
+                }
             break;
         case Reaction::StackOrdosMagmaCrush:
             if (Creature* ordos = bot->FindNearestCreature(
