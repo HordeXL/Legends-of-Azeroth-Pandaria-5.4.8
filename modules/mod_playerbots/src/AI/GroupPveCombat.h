@@ -9,6 +9,7 @@ public:
     static bool IsCollected(Player* player, Unit* target);
     static Unit* OpeningTarget(Player* player);
     static Unit* ActiveWorldBossTarget(Player* player);
+    static bool TankOwnsTarget(Player* player, Unit* target);
     static bool AoeReady(Player* player, Unit* target);
     static bool DamageAllowed(Player* player, Unit* target);
     static bool NeedsRescue(Player* player, Unit* target);

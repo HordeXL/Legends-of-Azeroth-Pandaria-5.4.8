@@ -824,6 +824,21 @@ bool PlayerbotAI::TryWorldBossEngagement()
         return true;
     }
 
+    // Oondasta is taunt-immune. Stop an already-started non-tank autoattack
+    // as well as spell rotations while Alpha Male gives the tanks time to
+    // take threat. Once a tank owns the boss, normal damage resumes and the
+    // tank-facing action turns the frontal cone away from the raid.
+    if (!PlayerBotSpec::IsTank(bot, true) &&
+        !GroupPveCombat::DamageAllowed(bot, worldBoss))
+    {
+        if (bot->GetVictim() == worldBoss)
+            bot->AttackStop();
+        if (Guardian* pet = bot->GetGuardianPet())
+            if (pet->GetVictim() == worldBoss)
+                pet->AttackStop();
+        return true;
+    }
+
     // Healers join the combat engine immediately so they can react to the
     // first raid damage, but do not waste a global cooldown or mana attacking.
     if (PlayerBotSpec::IsHeal(bot, true))
@@ -4310,7 +4325,8 @@ bool PlayerbotAI::CanPetEngageTarget(Unit* target)
     return pet && pet->IsAlive() && bot->IsAlive() && bot->IsInCombat() &&
         target && target->IsAlive() && target->IsInWorld() && target->GetMap() == bot->GetMap() &&
         CanLfgAutoQueueEngage(target) && HasEngagedTarget(target) &&
-        GroupPveCombat::AoeReady(bot, target);
+        GroupPveCombat::AoeReady(bot, target) &&
+        GroupPveCombat::DamageAllowed(bot, target);
 }
 
 bool PlayerbotAI::HasEngagedTarget(Unit* target) const

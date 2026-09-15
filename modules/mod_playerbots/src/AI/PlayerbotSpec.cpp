@@ -474,6 +474,26 @@ Unit* GroupPveCombat::ActiveWorldBossTarget(Player* player)
     return nullptr;
 }
 
+bool GroupPveCombat::TankOwnsTarget(Player* player, Unit* target)
+{
+    if (!player || !target)
+        return false;
+
+    Group* group = GetActiveGroup(player);
+    if (!group)
+        return false;
+
+    // Use the threat victim rather than a scripted temporary spell target.
+    // World bosses can cast at a random raid member without changing the
+    // player who actually controls their facing.
+    HostileReference* reference = target->GetThreatManager().getCurrentVictim();
+    Unit* victim = reference ? reference->getTarget() : target->GetVictim();
+    Player* owner = victim ?
+        victim->GetCharmerOrOwnerPlayerOrPlayerItself() : nullptr;
+    return owner && owner->IsAlive() && group->IsMember(owner->GetGUID()) &&
+        PlayerBotSpec::IsTank(owner, true);
+}
+
 bool GroupPveCombat::AoeReady(Player* player, Unit* target)
 {
     return IsEngaged(player, target) &&
@@ -494,6 +514,15 @@ bool GroupPveCombat::DamageAllowed(Player* player, Unit* target)
     // has elapsed.  Tanks remain free to establish and turn the boss, while
     // healer casts on friendly targets never enter this hostile-target path.
     if (player->HasWorldBossStagingAccess() && opening)
+        return false;
+
+    // Oondasta cannot be taunted. If a damage dealer wins the opening threat,
+    // continuing the full raid rotation keeps the boss facing the rear
+    // formation indefinitely. Hold non-tank damage until Alpha Male lets one
+    // of the staged tanks establish ownership; TankFaceAction can then turn
+    // the boss away before Frill Blast.
+    if (player->HasWorldBossStagingAccess() && target &&
+        target->GetEntry() == 69161 && !TankOwnsTarget(player, target))
         return false;
 
     return !opening || opening == target;
