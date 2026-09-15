@@ -106,11 +106,15 @@ constexpr uint32 OrdosMovementProgressInterval = 750;
 constexpr float OrdosMovementProgressDistance = 0.75f;
 constexpr float OrdosArenaCenterX = -62.0f;
 constexpr float OrdosArenaCenterY = -5400.0f;
-constexpr uint8 OrdosTankRouteAnchorCount = 5;
+constexpr uint8 OrdosTankRouteAnchorCount = 11;
 constexpr float OrdosTankRouteAnchorX[OrdosTankRouteAnchorCount] =
-    { -38.0f, -42.0f, -54.0f, -70.0f, -90.0f };
+    { -38.0f, -42.0f, -54.0f, -70.0f, -90.0f,
+      -90.0f, -70.0f, -58.0f, -78.0f, -97.0f,
+      -116.0f };
 constexpr float OrdosTankRouteAnchorY[OrdosTankRouteAnchorCount] =
-    { -5390.0f, -5410.0f, -5426.0f, -5438.0f, -5432.0f };
+    { -5390.0f, -5410.0f, -5426.0f, -5438.0f, -5432.0f,
+      -5412.0f, -5414.0f, -5396.0f, -5393.0f, -5387.0f,
+      -5395.0f };
 constexpr float OrdosStackAnchorRadius = 4.0f;
 constexpr float OrdosBurningSoulHorizontalGateX[4] =
     { -32.0f, -52.0f, -72.0f, -92.0f };
@@ -539,10 +543,16 @@ bool IsOrdosRouteSafe(std::vector<OrdosFireHazard> const& hazards,
         float const clearanceSq = clearance * clearance;
         float const startX = fromX - hazard.x;
         float const startY = fromY - hazard.y;
-        // A stack which starts inside newly spawned fire must be allowed to
-        // cross that fire's boundary on its way out.
+        // A movement which starts inside newly spawned fire may leave it, but
+        // every path segment must move away from its centre. Ignoring the
+        // complete starting hazard allowed a long route to cross the pool and
+        // emerge at a small isolated patch on its far side.
         if (startX * startX + startY * startY < clearanceSq)
+        {
+            if (startX * segmentX + startY * segmentY < -0.01f)
+                return false;
             continue;
+        }
 
         float projection = 0.0f;
         if (segmentLengthSq > 0.01f)
@@ -569,8 +579,11 @@ bool IsPositionInsideOrdosFire(Player* bot, float x, float y,
 
 bool IsInsideOrdosArena(float x, float y)
 {
-    return x > -96.0f && x < -28.0f &&
+    bool const insideSanctuary = x > -96.0f && x < -28.0f &&
         y > -5446.0f && y < -5354.0f;
+    bool const insideMainEntrance = x > -162.0f && x <= -96.0f &&
+        y > -5412.0f && y < -5380.0f;
+    return insideSanctuary || insideMainEntrance;
 }
 
 bool IsOrdosNavigationPathUsable(Player* bot,
@@ -882,17 +895,13 @@ bool FindSafeOrdosStackAnchor(Player* bot, Creature* ordos, Unit* tank,
         tank->GetPositionX(), tank->GetPositionY());
     if (currentIndex >= 0)
     {
-        // Fill the railing in order. Only after the last usable point has been
-        // reached do we retrace already cleared anchors in reverse order.
-        // This prevents a nearest-point tie from placing the second or third
-        // pool across the balcony exit.
+        // Fill the first perimeter row, turn into a parallel second and third
+        // row, then leave through the main entrance. Never retrace a covered
+        // anchor: even when its centre is clear, the route back can cross an
+        // older overlapping pool.
         for (uint8 index = uint8(currentIndex + 1);
             index < OrdosTankRouteAnchorCount; ++index)
             if (tryAnchor(index))
-                return true;
-
-        for (int8 index = currentIndex - 1; index >= 0; --index)
-            if (tryAnchor(uint8(index)))
                 return true;
 
         return false;
@@ -917,10 +926,11 @@ bool FindSafeOrdosStackAnchor(Player* bot, Creature* ordos, Unit* tank,
     return false;
 }
 
-bool FindSafeOrdosAttackPosition(Player* bot, Creature* ordos,
+bool FindSafeOrdosAttackPosition(Player* bot, Creature* ordos, Unit* tank,
     float& x, float& y, float& z)
 {
-    if (!bot || !ordos || bot->GetMap() != ordos->GetMap())
+    if (!bot || !ordos || !tank || bot->GetMap() != ordos->GetMap() ||
+        tank->GetMap() != bot->GetMap())
         return false;
 
     std::vector<OrdosFireHazard> hazards;
@@ -957,17 +967,26 @@ bool FindSafeOrdosAttackPosition(Player* bot, Creature* ordos,
         float const angle = Position::NormalizeOrientation(
             preferredAngle + float(offset) * float(M_PI / 12.0));
 
-        for (float const radiusOffset : { 0.0f, -1.0f, 1.0f })
+        // Prefer an attack-capable point, but sample a wider recovery ring if
+        // the large pool covers the complete melee circle. This keeps ranged
+        // bots and temporarily displaced melee near the encounter instead of
+        // abandoning the group at Boss Bot Caller.
+        for (float const radiusOffset :
+            { 0.0f, -1.0f, 1.0f, 3.0f, 5.0f })
         {
             float const radius = std::max(1.5f,
-                std::min(maximumAttackRadius,
+                std::min(OrdosMagmaShareRadius - 2.0f,
                     attackRadius + radiusOffset));
             float candidateX = ordos->GetPositionX() +
                 std::cos(angle) * radius;
             float candidateY = ordos->GetPositionY() +
                 std::sin(angle) * radius;
             float candidateZ = ordos->GetPositionZ();
-            if (!IsInsideOrdosArena(candidateX, candidateY) ||
+            float const tankDx = candidateX - tank->GetPositionX();
+            float const tankDy = candidateY - tank->GetPositionY();
+            if (tankDx * tankDx + tankDy * tankDy >
+                    OrdosMagmaShareRadius * OrdosMagmaShareRadius ||
+                !IsInsideOrdosArena(candidateX, candidateY) ||
                 !IsOrdosPointSafe(hazards, candidateX, candidateY, 1.0f) ||
                 !bot->GetMap()->CheckCollisionAndGetValidCoords(bot,
                     bot->GetPositionX(), bot->GetPositionY(),
@@ -3630,13 +3649,17 @@ BossMechanicsAction::Reaction BossMechanicsAction::GetReaction() const
                     ordosStackWaypointY) > 1.5f;
             bool const tankOffLane = !IsNearOrdosStackAnchor(
                 tank->GetPositionX(), tank->GetPositionY());
+            bool const outsideRaidEnvelope = tank != bot &&
+                (bot->GetExactDist2d(ordos) > 14.0f ||
+                 bot->GetExactDist2d(tank) > OrdosMagmaShareRadius);
 
             // Only the tank follows the compact perimeter route. Other raid
-            // members hold their own fire-safe attack position and relocate
-            // only when fire actually reaches them.
+            // members hold a fire-safe attack position inside the Magma Crush
+            // sharing envelope. Burning Soul carriers returned above and are
+            // the only players allowed to leave it.
             if ((tank == bot && (followingLockedAnchor || tankInFire ||
                     tankOffLane)) ||
-                (tank != bot && standingInFire))
+                (tank != bot && (standingInFire || outsideRaidEnvelope)))
                 return Reaction::RelocateOrdosStack;
         }
 
@@ -4095,7 +4118,7 @@ bool BossMechanicsAction::Execute(Event /*event*/)
                     float y = 0.0f;
                     float z = 0.0f;
                     if (tank != bot && FindSafeOrdosAttackPosition(
-                            bot, ordos, x, y, z))
+                            bot, ordos, tank, x, y, z))
                     {
                         MoveTo(bot->GetMapId(), x, y, z, false, false,
                             true, true, MovementPriority::MOVEMENT_FORCED,
@@ -4122,7 +4145,7 @@ bool BossMechanicsAction::Execute(Event /*event*/)
                         float attackY = ordos->GetPositionY();
                         float attackZ = ordos->GetPositionZ();
                         bool const attackPositionValid =
-                            FindSafeOrdosAttackPosition(bot, ordos,
+                            FindSafeOrdosAttackPosition(bot, ordos, tank,
                                 attackX, attackY, attackZ);
                         float exitX = 0.0f;
                         float exitY = 0.0f;
@@ -4268,34 +4291,50 @@ bool BossMechanicsAction::Execute(Event /*event*/)
                         }
                         else if (!ordosBurningSoulGateReached)
                         {
-                            float gateX = 0.0f;
-                            float gateY = 0.0f;
-                            float gateZ = 0.0f;
-                            if (FindSafeOrdosBurningSoulGate(bot,
+                            // Take a direct verified route whenever possible.
+                            // The old mandatory central gate delayed carriers
+                            // beside the raid until their explosions fired.
+                            std::vector<OrdosFireHazard> hazards;
+                            CollectOrdosFireHazards(bot, hazards);
+                            if (IsOrdosNavigationPathUsable(bot, hazards,
                                     ordosBurningSoulWaypointX,
                                     ordosBurningSoulWaypointY,
                                     ordosBurningSoulWaypointZ,
-                                    gateX, gateY, gateZ))
+                                    2.0f, true))
                             {
-                                if (bot->GetExactDist2d(gateX, gateY) <=
-                                    OrdosBurningSoulGateRadius)
-                                {
-                                    ordosBurningSoulGateReached = true;
-                                }
-                                else
-                                {
-                                    moveX = gateX;
-                                    moveY = gateY;
-                                    moveZ = gateZ;
-                                }
+                                ordosBurningSoulGateReached = true;
                             }
                             else
                             {
-                                // Never replace a rejected fire-free route
-                                // with a diagonal shortcut across an old pool.
-                                // Retry as hazards and paths change.
-                                bot->StopMoving();
-                                return true;
+                                float gateX = 0.0f;
+                                float gateY = 0.0f;
+                                float gateZ = 0.0f;
+                                if (FindSafeOrdosBurningSoulGate(bot,
+                                        ordosBurningSoulWaypointX,
+                                        ordosBurningSoulWaypointY,
+                                        ordosBurningSoulWaypointZ,
+                                        gateX, gateY, gateZ))
+                                {
+                                    if (bot->GetExactDist2d(gateX, gateY) <=
+                                        OrdosBurningSoulGateRadius)
+                                    {
+                                        ordosBurningSoulGateReached = true;
+                                    }
+                                    else
+                                    {
+                                        moveX = gateX;
+                                        moveY = gateY;
+                                        moveZ = gateZ;
+                                    }
+                                }
+                                else
+                                {
+                                    // Never replace a rejected fire-free route
+                                    // with a diagonal shortcut across an old
+                                    // pool. Retry as hazards and paths change.
+                                    bot->StopMoving();
+                                    return true;
+                                }
                             }
                         }
 
@@ -5514,7 +5553,7 @@ bool CombatFormationMoveAction::GetWorldBossFormationPosition(Unit* target,
             tank->GetTypeId() != TYPEID_PLAYER)
             return false;
 
-        if (!FindSafeOrdosAttackPosition(bot, ordos, x, y, z))
+        if (!FindSafeOrdosAttackPosition(bot, ordos, tank, x, y, z))
             return false;
 
         // Sharing a point is intentional here: Magma Crush rewards a compact
