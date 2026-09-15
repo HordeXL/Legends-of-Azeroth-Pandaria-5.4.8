@@ -238,6 +238,14 @@ private:
     float ordosBurningSoulWaypointX = 0.0f;
     float ordosBurningSoulWaypointY = 0.0f;
     float ordosBurningSoulWaypointZ = 0.0f;
+    uint32 ordosBurningSoulSequenceUntil = 0;
+    uint32 ordosBurningSoulProgressCheckAt = 0;
+    float ordosBurningSoulProgressX = 0.0f;
+    float ordosBurningSoulProgressY = 0.0f;
+    float ordosBurningSoulProgressTargetX = 0.0f;
+    float ordosBurningSoulProgressTargetY = 0.0f;
+    float ordosBurningSoulProgressDistance = 0.0f;
+    uint8 ordosBurningSoulWaypointRetry = 0;
     uint32 xuenSpreadLockUntil = 0;
     uint32 xuenSpreadMechanic = 0;
     float xuenSpreadX = 0.0f;

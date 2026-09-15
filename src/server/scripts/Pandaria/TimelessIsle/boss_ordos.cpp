@@ -288,32 +288,52 @@ class spell_ordos_burning_soul : public AuraScript
 {
     PrepareAuraScript(spell_ordos_burning_soul);
 
-    void HandleOnApply(AuraEffect const* /*aureff*/, AuraEffectHandleModes /*mode*/)
+    bool IsOtherAffectedHuman(Player* candidate, Player* player) const
+    {
+        return candidate && candidate != player && candidate->IsAlive() &&
+            candidate->GetSession() && !candidate->GetSession()->IsBot() &&
+            candidate->HasAura(SPELL_ORDOS_BURNING_SOUL);
+    }
+
+    void EnsurePlayerMarker()
     {
         Player* player = GetOwner()->ToPlayer();
         if (!player || !player->GetSession() || player->GetSession()->IsBot())
             return;
-
         Group* group = player->GetGroup();
         if (!group)
             return;
 
+        uint8 const crossIcon = 6;
+
+        // Reuse this aura's assigned marker whenever possible. Role marker
+        // automation may replace it between ticks; SetTargetIcon removes the
+        // stale marker from this player while restoring the mechanic marker.
+        if (burningSoulMarker < TARGETICONCOUNT)
+        {
+            if (group->GetTargetIcon(burningSoulMarker) == player->GetGUID())
+                return;
+
+            ObjectGuid const assignedTarget =
+                group->GetTargetIcon(burningSoulMarker);
+            Player* assignedPlayer = assignedTarget ?
+                ObjectAccessor::FindPlayer(assignedTarget) : nullptr;
+            if (!IsOtherAffectedHuman(assignedPlayer, player))
+            {
+                group->SetTargetIcon(burningSoulMarker, player->GetGUID(),
+                    player->GetGUID(), 0);
+                return;
+            }
+        }
+
         // Burning Soul can select several players at once. Reserve the red
         // cross for the first affected real player even if role automation
-        // had temporarily placed it on a bot; additional humans receive
-        // another free icon. SetTargetIcon also removes this player's old
-        // icon, so stale role markers cannot hide the warning.
-        uint8 const crossIcon = 6;
+        // temporarily placed it on a bot; additional humans receive another
+        // free icon.
         ObjectGuid const crossTarget = group->GetTargetIcon(crossIcon);
         Player* crossPlayer = crossTarget ?
             ObjectAccessor::FindPlayer(crossTarget) : nullptr;
-        bool const crossBelongsToAnotherAffectedHuman =
-            crossPlayer && crossPlayer != player && crossPlayer->IsAlive() &&
-            crossPlayer->GetSession() &&
-            !crossPlayer->GetSession()->IsBot() &&
-            crossPlayer->HasAura(SPELL_ORDOS_BURNING_SOUL);
-
-        if (!crossBelongsToAnotherAffectedHuman)
+        if (!IsOtherAffectedHuman(crossPlayer, player))
         {
             group->SetTargetIcon(crossIcon, player->GetGUID(),
                 player->GetGUID(), 0);
@@ -328,12 +348,7 @@ class spell_ordos_burning_soul : public AuraScript
             ObjectGuid const iconTarget = group->GetTargetIcon(icon);
             Player* iconPlayer = iconTarget ?
                 ObjectAccessor::FindPlayer(iconTarget) : nullptr;
-            bool const iconBelongsToAffectedHuman =
-                iconPlayer && iconPlayer != player && iconPlayer->IsAlive() &&
-                iconPlayer->GetSession() &&
-                !iconPlayer->GetSession()->IsBot() &&
-                iconPlayer->HasAura(SPELL_ORDOS_BURNING_SOUL);
-            if (iconBelongsToAffectedHuman)
+            if (IsOtherAffectedHuman(iconPlayer, player))
                 continue;
 
             group->SetTargetIcon(icon, player->GetGUID(),
@@ -341,6 +356,20 @@ class spell_ordos_burning_soul : public AuraScript
             burningSoulMarker = icon;
             break;
         }
+    }
+
+    void HandleOnApply(AuraEffect const* /*aureff*/,
+        AuraEffectHandleModes /*mode*/)
+    {
+        EnsurePlayerMarker();
+    }
+
+    void HandlePeriodic(AuraEffect const* /*aureff*/)
+    {
+        // Other bot/role systems can rewrite raid icons after aura apply.
+        // Reassert the warning every damage tick so a real player keeps a
+        // visible mechanic marker for the complete debuff.
+        EnsurePlayerMarker();
     }
 
     void HandleOnRemove(AuraEffect const* /*aureff*/, AuraEffectHandleModes /*mode*/)
@@ -362,6 +391,7 @@ class spell_ordos_burning_soul : public AuraScript
     void Register() override
     {
         OnEffectApply += AuraEffectApplyFn(spell_ordos_burning_soul::HandleOnApply, EFFECT_0, SPELL_AURA_PERIODIC_DAMAGE, AURA_EFFECT_HANDLE_REAL);
+        OnEffectPeriodic += AuraEffectPeriodicFn(spell_ordos_burning_soul::HandlePeriodic, EFFECT_0, SPELL_AURA_PERIODIC_DAMAGE);
         OnEffectRemove += AuraEffectRemoveFn(spell_ordos_burning_soul::HandleOnRemove, EFFECT_0, SPELL_AURA_PERIODIC_DAMAGE, AURA_EFFECT_HANDLE_REAL);
     }
 
