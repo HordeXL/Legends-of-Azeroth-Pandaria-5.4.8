@@ -287,16 +287,61 @@ class spell_ordos_burning_soul : public AuraScript
 {
     PrepareAuraScript(spell_ordos_burning_soul);
 
-    void HandleOnRemove(AuraEffect const* aureff, AuraEffectHandleModes /*mode*/)
+    void HandleOnApply(AuraEffect const* /*aureff*/, AuraEffectHandleModes /*mode*/)
+    {
+        Player* player = GetOwner()->ToPlayer();
+        if (!player || !player->GetSession() || player->GetSession()->IsBot())
+            return;
+
+        Group* group = player->GetGroup();
+        if (!group)
+            return;
+
+        // Preserve markers assigned by the raid. Burning Soul can select
+        // several players at once, so give real players separate free icons,
+        // preferring the red cross for the first target.
+        for (uint8 icon = 0; icon < TARGETICONCOUNT; ++icon)
+            if (group->GetTargetIcon(icon) == player->GetGUID())
+                return;
+
+        static uint8 const preferredIcons[TARGETICONCOUNT] =
+            { 6, 0, 1, 2, 3, 4, 5, 7 };
+        for (uint8 icon : preferredIcons)
+        {
+            if (group->GetTargetIcon(icon))
+                continue;
+
+            group->SetTargetIcon(icon, player->GetGUID(),
+                player->GetGUID(), 0);
+            burningSoulMarker = icon;
+            break;
+        }
+    }
+
+    void HandleOnRemove(AuraEffect const* /*aureff*/, AuraEffectHandleModes /*mode*/)
     {
         if (Unit* owner = GetOwner()->ToUnit())
+        {
+            if (burningSoulMarker < TARGETICONCOUNT)
+                if (Player* player = owner->ToPlayer())
+                    if (Group* group = player->GetGroup())
+                        if (group->GetTargetIcon(burningSoulMarker) ==
+                                player->GetGUID())
+                            group->SetTargetIcon(burningSoulMarker,
+                                player->GetGUID(), ObjectGuid::Empty, 0);
+
             owner->CastSpell(owner, SPELL_BURNING_SOUL_EFF, true);
+        }
     }
 
     void Register() override
     {
+        OnEffectApply += AuraEffectApplyFn(spell_ordos_burning_soul::HandleOnApply, EFFECT_0, SPELL_AURA_PERIODIC_DAMAGE, AURA_EFFECT_HANDLE_REAL);
         OnEffectRemove += AuraEffectRemoveFn(spell_ordos_burning_soul::HandleOnRemove, EFFECT_0, SPELL_AURA_PERIODIC_DAMAGE, AURA_EFFECT_HANDLE_REAL);
     }
+
+private:
+    uint8 burningSoulMarker = TARGETICONCOUNT;
 };
 
 // 1090 - Pool of Fire
