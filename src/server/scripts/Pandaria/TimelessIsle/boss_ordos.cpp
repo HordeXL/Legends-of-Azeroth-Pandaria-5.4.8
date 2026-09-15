@@ -18,6 +18,7 @@
 #include "ScriptMgr.h"
 #include "ScriptedCreature.h"
 #include "ObjectMgr.h"
+#include "ObjectAccessor.h"
 #include "ScriptMgr.h"
 #include "Group.h"
 #include "timeless_isle.h"
@@ -297,18 +298,42 @@ class spell_ordos_burning_soul : public AuraScript
         if (!group)
             return;
 
-        // Preserve markers assigned by the raid. Burning Soul can select
-        // several players at once, so give real players separate free icons,
-        // preferring the red cross for the first target.
-        for (uint8 icon = 0; icon < TARGETICONCOUNT; ++icon)
-            if (group->GetTargetIcon(icon) == player->GetGUID())
-                return;
+        // Burning Soul can select several players at once. Reserve the red
+        // cross for the first affected real player even if role automation
+        // had temporarily placed it on a bot; additional humans receive
+        // another free icon. SetTargetIcon also removes this player's old
+        // icon, so stale role markers cannot hide the warning.
+        uint8 const crossIcon = 6;
+        ObjectGuid const crossTarget = group->GetTargetIcon(crossIcon);
+        Player* crossPlayer = crossTarget ?
+            ObjectAccessor::FindPlayer(crossTarget) : nullptr;
+        bool const crossBelongsToAnotherAffectedHuman =
+            crossPlayer && crossPlayer != player && crossPlayer->IsAlive() &&
+            crossPlayer->GetSession() &&
+            !crossPlayer->GetSession()->IsBot() &&
+            crossPlayer->HasAura(SPELL_ORDOS_BURNING_SOUL);
 
-        static uint8 const preferredIcons[TARGETICONCOUNT] =
-            { 6, 0, 1, 2, 3, 4, 5, 7 };
+        if (!crossBelongsToAnotherAffectedHuman)
+        {
+            group->SetTargetIcon(crossIcon, player->GetGUID(),
+                player->GetGUID(), 0);
+            burningSoulMarker = crossIcon;
+            return;
+        }
+
+        static uint8 const preferredIcons[TARGETICONCOUNT - 1] =
+            { 0, 1, 2, 3, 4, 5, 7 };
         for (uint8 icon : preferredIcons)
         {
-            if (group->GetTargetIcon(icon))
+            ObjectGuid const iconTarget = group->GetTargetIcon(icon);
+            Player* iconPlayer = iconTarget ?
+                ObjectAccessor::FindPlayer(iconTarget) : nullptr;
+            bool const iconBelongsToAffectedHuman =
+                iconPlayer && iconPlayer != player && iconPlayer->IsAlive() &&
+                iconPlayer->GetSession() &&
+                !iconPlayer->GetSession()->IsBot() &&
+                iconPlayer->HasAura(SPELL_ORDOS_BURNING_SOUL);
+            if (iconBelongsToAffectedHuman)
                 continue;
 
             group->SetTargetIcon(icon, player->GetGUID(),

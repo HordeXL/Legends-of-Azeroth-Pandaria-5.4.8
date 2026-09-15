@@ -226,6 +226,10 @@ private:
     float chiJiFirestormX = 0.0f;
     float chiJiFirestormY = 0.0f;
     float chiJiFirestormZ = 0.0f;
+    uint32 ordosStackWaypointLockUntil = 0;
+    float ordosStackWaypointX = 0.0f;
+    float ordosStackWaypointY = 0.0f;
+    float ordosStackWaypointZ = 0.0f;
     uint32 chiJiBeaconWaypointLockUntil = 0;
     float chiJiBeaconWaypointX = 0.0f;
     float chiJiBeaconWaypointY = 0.0f;
