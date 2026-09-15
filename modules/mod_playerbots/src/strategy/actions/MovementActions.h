@@ -196,6 +196,7 @@ private:
         SpreadOondastaBeam,
         MaintainOondastaOffTank,
         AvoidOondastaFrillBlast,
+        TakeOverOrdosBurningSoulTank,
         RelocateOrdosStack,
         StackOrdosMagmaCrush,
         SpreadOrdosBurningSoul,
@@ -246,6 +247,7 @@ private:
     float ordosBurningSoulProgressTargetY = 0.0f;
     float ordosBurningSoulProgressDistance = 0.0f;
     uint8 ordosBurningSoulWaypointRetry = 0;
+    bool ordosBurningSoulGateReached = false;
     uint32 xuenSpreadLockUntil = 0;
     uint32 xuenSpreadMechanic = 0;
     float xuenSpreadX = 0.0f;
