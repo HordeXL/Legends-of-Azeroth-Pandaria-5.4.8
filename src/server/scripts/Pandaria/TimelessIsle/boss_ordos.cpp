@@ -297,6 +297,25 @@ class spell_ordos_burning_soul : public AuraScript
 {
     PrepareAuraScript(spell_ordos_burning_soul);
 
+    void SendPlayerWarning(uint8 seconds)
+    {
+        Player* player = GetOwner()->ToPlayer();
+        if (!player || !player->GetSession() || player->GetSession()->IsBot() ||
+            lastWarningSecond == seconds)
+            return;
+
+        if (seconds == 1)
+            player->GetSession()->SendNotification(
+                "BURNING SOUL - RUN OUT OF THE RAID! 1 second");
+        else
+            player->GetSession()->SendNotification(
+                "BURNING SOUL - RUN OUT OF THE RAID! %u seconds", seconds);
+
+        // Interface\\RaidWarning.wav. Send it only to the affected human.
+        player->PlayDirectSound(8959, player);
+        lastWarningSecond = seconds;
+    }
+
     bool IsOtherAffectedHuman(Player* candidate, Player* player) const
     {
         return candidate && candidate != player && candidate->IsAlive() &&
@@ -371,14 +390,22 @@ class spell_ordos_burning_soul : public AuraScript
         AuraEffectHandleModes /*mode*/)
     {
         EnsurePlayerMarker();
+        SendPlayerWarning(10);
     }
 
-    void HandlePeriodic(AuraEffect const* /*aureff*/)
+    void HandlePeriodic(AuraEffect const* aureff)
     {
         // Other bot/role systems can rewrite raid icons after aura apply.
         // Reassert the warning every damage tick so a real player keeps a
         // visible mechanic marker for the complete debuff.
         EnsurePlayerMarker();
+
+        int32 const duration = aureff->GetBase()->GetDuration();
+        uint8 const remaining = uint8(std::max<int32>(1,
+            (duration + IN_MILLISECONDS - 1) / IN_MILLISECONDS));
+        if (remaining == 5 || remaining == 3 || remaining == 2 ||
+            remaining == 1)
+            SendPlayerWarning(remaining);
     }
 
     void HandleOnRemove(AuraEffect const* /*aureff*/, AuraEffectHandleModes /*mode*/)
@@ -406,6 +433,7 @@ class spell_ordos_burning_soul : public AuraScript
 
 private:
     uint8 burningSoulMarker = TARGETICONCOUNT;
+    uint8 lastWarningSecond = 0;
 };
 
 // 1090 - Pool of Fire

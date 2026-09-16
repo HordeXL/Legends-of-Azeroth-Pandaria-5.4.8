@@ -104,7 +104,9 @@ constexpr float OrdosPersistentHazardPadding = 2.0f;
 // the tank route uses the real Pool of Fire radius plus this smaller margin.
 constexpr float OrdosStackSafetyMargin = 0.75f;
 constexpr uint32 OrdosStackWaypointDuration = 10 * IN_MILLISECONDS;
-constexpr float OrdosBurningSoulRaidClearance = 22.0f;
+// Burning Soul explodes in ten yards. Two extra yards cover movement and
+// position-update latency without sending carriers needlessly far away.
+constexpr float OrdosBurningSoulRaidClearance = 12.0f;
 constexpr uint32 OrdosBurningSoulWaypointDuration = 12 * IN_MILLISECONDS;
 constexpr uint32 OrdosMovementProgressInterval = 750;
 constexpr float OrdosMovementProgressDistance = 0.75f;
@@ -527,6 +529,22 @@ bool IsNearOrdosStackAnchor(float x, float y)
     return index >= 0 && OrdosTankRouteHoldPosition[uint8(index)];
 }
 
+bool IsAtOrdosStackAnchor(float x, float y)
+{
+    constexpr float exactHoldRadius = 1.5f;
+    for (uint8 index = 0; index < OrdosTankRouteAnchorCount; ++index)
+    {
+        if (!OrdosTankRouteHoldPosition[index])
+            continue;
+
+        float const dx = x - OrdosTankRouteAnchorX[index];
+        float const dy = y - OrdosTankRouteAnchorY[index];
+        if (dx * dx + dy * dy <= exactHoldRadius * exactHoldRadius)
+            return true;
+    }
+    return false;
+}
+
 float GetOrdosMovementHazardRadius(OrdosFireHazard const& hazard,
     bool useActualPoolRadius)
 {
@@ -902,7 +920,7 @@ bool FindSafeOrdosStackAnchor(Player* bot, Creature* ordos, Unit* tank,
     auto acceptCurrentTankPosition = [&]()
     {
         if (tankHasPoolAura ||
-            !IsNearOrdosStackAnchor(tank->GetPositionX(),
+            !IsAtOrdosStackAnchor(tank->GetPositionX(),
                 tank->GetPositionY()) ||
             !IsInsideOrdosArena(tank->GetPositionX(),
                 tank->GetPositionY()) ||
@@ -970,6 +988,15 @@ bool FindSafeOrdosStackAnchor(Player* bot, Creature* ordos, Unit* tank,
         tank->GetPositionX(), tank->GetPositionY());
     if (currentIndex >= 0)
     {
+        // A holding point is not reached merely because the tank entered its
+        // broad route-matching radius. Snap to its centre before waiting for
+        // the next pool; otherwise a pool can land several yards into the
+        // following transit leg.
+        if (OrdosTankRouteHoldPosition[uint8(currentIndex)] &&
+            !IsAtOrdosStackAnchor(tank->GetPositionX(),
+                tank->GetPositionY()) && !tankHasPoolAura)
+            return tryAnchor(uint8(currentIndex));
+
         // Advance only one prescribed point at a time. A small free fragment
         // elsewhere and a temporary navmesh failure cannot redirect the tank
         // or skip one of the ordered pool positions.
@@ -3838,7 +3865,11 @@ BossMechanicsAction::Reaction BossMechanicsAction::GetReaction() const
             PlayerBotSpec::IsTank(bot, true))
             return Reaction::MaintainOrdosStandbyTank;
 
-        Unit* tank = ordos->GetVictim();
+        // The selected raid tank is the formation reference even when Ordos
+        // briefly turns to a damage dealer. A temporary victim must never
+        // inherit the pool-placement route.
+        Unit* tank = designatedTank ? static_cast<Unit*>(designatedTank) :
+            ordos->GetVictim();
         if (tank && tank->GetTypeId() == TYPEID_PLAYER)
         {
             bool const standingInFire =
@@ -3857,11 +3888,11 @@ BossMechanicsAction::Reaction BossMechanicsAction::GetReaction() const
                     ordosStackWaypointY) &&
                 bot->GetExactDist2d(ordosStackWaypointX,
                     ordosStackWaypointY) > 1.5f;
-            bool const tankOffLane = !IsNearOrdosStackAnchor(
+            bool const tankOffLane = !IsAtOrdosStackAnchor(
                 tank->GetPositionX(), tank->GetPositionY());
             bool const outsideRaidEnvelope = tank != bot &&
-                (bot->GetExactDist2d(ordos) > 14.0f ||
-                 bot->GetExactDist2d(tank) > OrdosMagmaShareRadius);
+                (bot->GetExactDist2d(ordos) > 10.0f ||
+                 bot->GetExactDist2d(tank) > 14.0f);
 
             // Only the tank follows the compact perimeter route. Other raid
             // members hold a fire-safe attack position inside the Magma Crush
@@ -4381,7 +4412,7 @@ bool BossMechanicsAction::Execute(Event /*event*/)
         case Reaction::StackOrdosMagmaCrush:
             if (Creature* ordos = bot->FindNearestCreature(
                     OrdosEntry, 200.0f, true))
-                if (Unit* tank = ordos->GetVictim())
+                if (Unit* tank = GetOrdosDesignatedTank(ordos))
                 {
                     float x = 0.0f;
                     float y = 0.0f;
@@ -4402,9 +4433,11 @@ bool BossMechanicsAction::Execute(Event /*event*/)
         case Reaction::RelocateOrdosStack:
             if (Creature* ordos = bot->FindNearestCreature(
                     OrdosEntry, 200.0f, true))
-                if (Unit* tank = ordos->GetVictim())
+                if (Player* tank = GetOrdosDesignatedTank(ordos))
                 {
-                    if (tank != bot)
+                    bool const ownsPoolRoute = tank == bot &&
+                        ordos->GetVictim() == bot;
+                    if (!ownsPoolRoute)
                     {
                         // Non-tanks do not chase the tank's pool waypoint.
                         // Leave the nearest fire edge first, heading toward a
@@ -4560,7 +4593,7 @@ bool BossMechanicsAction::Execute(Event /*event*/)
         case Reaction::SpreadOrdosBurningSoul:
             if (Creature* ordos = bot->FindNearestCreature(
                     OrdosEntry, 200.0f, true))
-                if (Unit* tank = ordos->GetVictim())
+                if (Player* tank = GetOrdosDesignatedTank(ordos))
                 {
                     uint32 const now = getMSTime();
                     if (now >= ordosBurningSoulSequenceUntil)
@@ -4735,7 +4768,8 @@ bool BossMechanicsAction::Execute(Event /*event*/)
             // Do not let ordinary formation or melee movement pull a carrier
             // back into the raid when the arena temporarily has no fully safe
             // sampled point.
-            MoveFromGroup(24.0f, MovementPriority::MOVEMENT_FORCED);
+            MoveFromGroup(OrdosBurningSoulRaidClearance,
+                MovementPriority::MOVEMENT_FORCED);
             return true;
         case Reaction::MoveChiJiBeacon:
             if (Creature* beacon = bot->FindNearestCreature(
