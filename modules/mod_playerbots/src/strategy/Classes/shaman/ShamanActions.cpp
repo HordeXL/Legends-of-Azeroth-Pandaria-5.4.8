@@ -12,6 +12,8 @@
 
 #include "Group.h"
 #include "Creature.h"
+#include "CreatureAI.h"
+#include "Log.h"
 #include "Playerbots.h"
 #include "SpellHistory.h"
 #include "Totem.h"
@@ -44,6 +46,23 @@ bool CastPveAscendanceAction::isUseful()
 namespace
 {
 constexpr float CoordinatedTotemRadius = 80.0f;
+constexpr uint32 OrdosEntry = 72057;
+// boss_ordosAI::GetData(DATA_ORDOS_POOL_IMMINENT).
+constexpr uint32 OrdosPoolImminentData = 3;
+
+Creature* GetActiveOrdos(Player* bot)
+{
+    Creature* ordos = bot ?
+        bot->FindNearestCreature(OrdosEntry, 200.0f, true) : nullptr;
+    return ordos && ordos->IsInCombat() ? ordos : nullptr;
+}
+
+bool IsOrdosPoolEvacuationActive(Player* bot)
+{
+    Creature* ordos = GetActiveOrdos(bot);
+    return ordos && ordos->AI() &&
+        ordos->AI()->GetData(OrdosPoolImminentData) != 0;
+}
 
 Creature* GetOwnedActiveTotem(Player* bot, uint8 slot)
 {
@@ -384,6 +403,13 @@ bool CastManaTideTotemAction::isUseful()
             {"mana tide totem"}))
         return false;
 
+    // In the compact Ordos arena, wait for BossMechanicsAction to move the
+    // shaman to the temporary fire-safe evacuation ring. That action has a
+    // higher priority while movement is needed and yields once it arrives,
+    // allowing this instant cast without making the raid chase the totem.
+    if (GetActiveOrdos(bot))
+        return IsOrdosPoolEvacuationActive(bot) && !bot->isMoving();
+
     if (!announcementStartedAt)
         return true;
 
@@ -408,6 +434,25 @@ bool CastManaTideTotemAction::Execute(Event event)
         announcementStartedAt = 0;
         return false;
     }
+
+    if (GetActiveOrdos(bot))
+    {
+        announcementStartedAt = 0;
+        if (!IsOrdosPoolEvacuationActive(bot) || bot->isMoving())
+            return false;
+
+        // The ordinary five-second warning is longer than Ordos's 3.5-second
+        // pool warning. Cast immediately after reaching the safe point.
+        bool const cast = CastTotemAction::Execute(event);
+        if (cast)
+            TC_LOG_INFO("server",
+                "Ordos Mana Tide safe placement shaman=%s/%u position=(%.2f,%.2f,%.2f)",
+                bot->GetName().c_str(), bot->GetGUID().GetCounter(),
+                bot->GetPositionX(), bot->GetPositionY(),
+                bot->GetPositionZ());
+        return cast;
+    }
+
     uint32 now = getMSTime();
     if (!announcementStartedAt)
     {

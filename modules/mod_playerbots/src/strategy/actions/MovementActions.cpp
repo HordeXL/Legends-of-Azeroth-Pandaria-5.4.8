@@ -1076,10 +1076,21 @@ bool FindSafeOrdosAttackPosition(Player* bot, Creature* ordos, Unit* tank,
     bool const melee = PlayerBotSpec::IsMelee(bot, true) &&
         !PlayerBotSpec::IsHeal(bot, true);
     bool const useMagmaStackRing = avoidIncomingPool || !melee;
-    float const positionCenterX = useMagmaStackRing ?
+    float positionCenterX = useMagmaStackRing ?
         tank->GetPositionX() : ordos->GetPositionX();
-    float const positionCenterY = useMagmaStackRing ?
+    float positionCenterY = useMagmaStackRing ?
         tank->GetPositionY() : ordos->GetPositionY();
+    if (avoidIncomingPool)
+    {
+        // The warning begins while the tank may still be following a transit
+        // leg. Pool of Fire will land at the authoritative next holding
+        // anchor, not at that temporary position. Lock the raid's evacuation
+        // ring to the pending anchor so its waypoint cannot become the centre
+        // of the new pool after the tank completes the leg.
+        uint8 const targetIndex = GetOrdosStackTargetIndex(ordos, hazards);
+        positionCenterX = OrdosTankRouteAnchorX[targetIndex];
+        positionCenterY = OrdosTankRouteAnchorY[targetIndex];
+    }
 
     // Without fire, use the open interior side. Once a pool has appeared,
     // stand on the side opposite the closest fire source. Ordos has no frontal
@@ -1136,11 +1147,15 @@ bool FindSafeOrdosAttackPosition(Player* bot, Creature* ordos, Unit* tank,
             float const tankDx = candidateX - tank->GetPositionX();
             float const tankDy = candidateY - tank->GetPositionY();
             float const tankDistanceSq = tankDx * tankDx + tankDy * tankDy;
+            float const centerDx = candidateX - positionCenterX;
+            float const centerDy = candidateY - positionCenterY;
+            float const centerDistanceSq =
+                centerDx * centerDx + centerDy * centerDy;
             float const bossDx = candidateX - ordos->GetPositionX();
             float const bossDy = candidateY - ordos->GetPositionY();
             if ((!avoidIncomingPool && tankDistanceSq >
                     OrdosMagmaShareRadius * OrdosMagmaShareRadius) ||
-                (avoidIncomingPool && tankDistanceSq <
+                (avoidIncomingPool && centerDistanceSq <
                     OrdosPoolEvacuationMinDistance *
                         OrdosPoolEvacuationMinDistance) ||
                 (!avoidIncomingPool && useMagmaStackRing && tankDistanceSq <
@@ -3669,6 +3684,13 @@ bool MoveFromGroupAction::Execute(Event event)
 
 bool MoveToManaTideAction::isUseful()
 {
+    // Ordos requires the raid to remain on its fire-safe Magma Crush ring.
+    // Restoration shamans place Mana Tide at a scheduled pool-evacuation
+    // point instead; no beneficiary may abandon formation to chase it.
+    if (Creature* ordos = bot->FindNearestCreature(OrdosEntry, 200.0f, true))
+        if (ordos->IsInCombat())
+            return false;
+
     if (!ManaTideCoordination::IsManaBeneficiary(bot) ||
         bot->GetPowerPct(POWER_MANA) >= sPlayerbotAIConfig->mediumMana ||
         bot->IsNonMeleeSpellCasted(true))
@@ -3682,6 +3704,10 @@ bool MoveToManaTideAction::isUseful()
 
 bool MoveToManaTideAction::Execute([[maybe_unused]] Event event)
 {
+    if (Creature* ordos = bot->FindNearestCreature(OrdosEntry, 200.0f, true))
+        if (ordos->IsInCombat())
+            return false;
+
     Creature* totem = ManaTideCoordination::FindActiveGroupTotem(bot);
     if (!totem || bot->GetDistance(totem) <= ManaTideCoordination::MoveInsideRadius)
         return false;
@@ -4758,21 +4784,27 @@ bool BossMechanicsAction::Execute(Event /*event*/)
                             now + OrdosPoolEscapeWaypointDuration : 0;
                         if (waypointValid)
                         {
-                            float const selectedTankDx =
+                            std::vector<OrdosFireHazard> poolHazards;
+                            CollectOrdosPoolHazards(bot, poolHazards);
+                            uint8 const pendingAnchor =
+                                GetOrdosStackTargetIndex(ordos, poolHazards);
+                            float const selectedAnchorDx =
                                 ordosPoolEscapeWaypointX -
-                                tank->GetPositionX();
-                            float const selectedTankDy =
+                                OrdosTankRouteAnchorX[pendingAnchor];
+                            float const selectedAnchorDy =
                                 ordosPoolEscapeWaypointY -
-                                tank->GetPositionY();
+                                OrdosTankRouteAnchorY[pendingAnchor];
                             TC_LOG_INFO("server",
-                                "Ordos pool-cast evacuation bot=%s/%u from=(%.2f,%.2f) to=(%.2f,%.2f) tank-distance=%.2f in-fire=%u",
+                                "Ordos pool-cast evacuation bot=%s/%u from=(%.2f,%.2f) to=(%.2f,%.2f) pending-anchor=%u distance=%.2f in-fire=%u",
                                 bot->GetName().c_str(),
                                 bot->GetGUID().GetCounter(),
                                 bot->GetPositionX(), bot->GetPositionY(),
                                 ordosPoolEscapeWaypointX,
                                 ordosPoolEscapeWaypointY,
-                                std::sqrt(selectedTankDx * selectedTankDx +
-                                    selectedTankDy * selectedTankDy),
+                                uint32(pendingAnchor),
+                                std::sqrt(selectedAnchorDx *
+                                    selectedAnchorDx + selectedAnchorDy *
+                                    selectedAnchorDy),
                                 inPool ? 1u : 0u);
                         }
                     }
@@ -4808,7 +4840,26 @@ bool BossMechanicsAction::Execute(Event /*event*/)
                     if (distance <= 1.25f)
                     {
                         bot->StopMoving();
-                        return true;
+                        // Keep the locked safe point, but do not consume every
+                        // AI tick while waiting for the pool to land. Ranged
+                        // damage and healing rotations can run from here.
+                        // Melee must still be held while the incoming pool is
+                        // active or its reach action would charge straight
+                        // back to the tank before the snapshot.
+                        bool poolStillThreatening = ordos->AI() &&
+                            ordos->AI()->GetData(
+                                OrdosPoolImminentData) != 0;
+                        if (Spell* spell = ordos->GetCurrentSpell(
+                                CURRENT_GENERIC_SPELL))
+                            poolStillThreatening = poolStillThreatening ||
+                                (spell->GetSpellInfo() &&
+                                    spell->GetSpellInfo()->Id ==
+                                        OrdosPoolOfFireSpell);
+                        if (poolStillThreatening &&
+                            PlayerBotSpec::IsMelee(bot, true) &&
+                            !PlayerBotSpec::IsHeal(bot, true))
+                            return true;
+                        return false;
                     }
 
                     if (distance > 7.0f)
@@ -6095,6 +6146,25 @@ bool CombatFormationMoveAction::isUseful()
         return false;
     }
 
+    // Boss mechanics owns movement during the short Ordos pool warning. Once
+    // a ranged player has reached its locked evacuation point, this formation
+    // action must yield so the ordinary damage/healing rotation can execute
+    // without sending the player back toward the pending pool centre.
+    if (target->GetEntry() == OrdosEntry)
+    {
+        Creature* ordos = target->ToCreature();
+        bool poolStillThreatening = ordos && ordos->AI() &&
+            ordos->AI()->GetData(OrdosPoolImminentData) != 0;
+        if (ordos)
+            if (Spell* spell = ordos->GetCurrentSpell(
+                    CURRENT_GENERIC_SPELL))
+                poolStillThreatening = poolStillThreatening ||
+                    (spell->GetSpellInfo() && spell->GetSpellInfo()->Id ==
+                        OrdosPoolOfFireSpell);
+        if (poolStillThreatening)
+            return false;
+    }
+
     // Keep the raid at its current safe points while Niuzao runs his circuit.
     // Recomputing slots around a moving boss makes ranged players chase him
     // and drags the whole formation around the arena edge.
@@ -6132,7 +6202,8 @@ bool CombatFormationMoveAction::isUseful()
         // Stay at an active Mana Tide until mana has recovered. Otherwise a
         // ranged formation slot outside the totem aura would pull the bot
         // away immediately after it reached the totem.
-        if (ManaTideCoordination::IsManaBeneficiary(bot) &&
+        if (target->GetEntry() != OrdosEntry &&
+            ManaTideCoordination::IsManaBeneficiary(bot) &&
             bot->GetPowerPct(POWER_MANA) < sPlayerbotAIConfig->mediumMana &&
             ManaTideCoordination::FindActiveGroupTotem(bot))
         {
