@@ -198,6 +198,7 @@ private:
         AvoidOondastaFrillBlast,
         TakeOverOrdosTank,
         MaintainOrdosStandbyTank,
+        EvadeOrdosPoolCast,
         RelocateOrdosStack,
         StackOrdosMagmaCrush,
         SpreadOrdosBurningSoul,
@@ -239,6 +240,10 @@ private:
     float ordosRaidTransitY = 0.0f;
     float ordosRaidTransitZ = 0.0f;
     uint32 ordosRaidTransitRetryAt = 0;
+    uint32 ordosPoolEscapeWaypointLockUntil = 0;
+    float ordosPoolEscapeWaypointX = 0.0f;
+    float ordosPoolEscapeWaypointY = 0.0f;
+    float ordosPoolEscapeWaypointZ = 0.0f;
     mutable ObjectGuid ordosEncounterGuid = ObjectGuid::Empty;
     mutable ObjectGuid ordosDesignatedTankGuid = ObjectGuid::Empty;
     uint32 chiJiBeaconWaypointLockUntil = 0;

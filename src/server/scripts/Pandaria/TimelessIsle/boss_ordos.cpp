@@ -51,6 +51,7 @@ enum OrdosData
 {
     DATA_ORDOS_POOL_COUNT = 1,
     DATA_ORDOS_DEFEATED = 2,
+    DATA_ORDOS_POOL_IMMINENT = 3,
 };
 
 enum Creatures
@@ -87,6 +88,38 @@ class boss_ordos : public CreatureScript
             uint32 poolOfFireCount = 0;
             bool defeated = false;
 
+            Unit* GetPoolOfFireTarget()
+            {
+                Unit* victim = me->GetVictim();
+                Player* playerVictim = victim ? victim->ToPlayer() : nullptr;
+                if (!playerVictim ||
+                    !playerVictim->HasWorldBossStagingAccess())
+                    return victim;
+
+                Group* group = playerVictim->GetGroup();
+                if (!group)
+                    return victim;
+
+                // The staged playerbot raid publishes one authoritative main
+                // tank. A momentary threat flicker must not put a permanent
+                // pool on a damage dealer (or at that player's Burning Soul
+                // airborne Z) and destroy the ordered placement route.
+                for (Group::MemberSlot const& slot : group->GetMemberSlots())
+                {
+                    if (!(slot.flags & MEMBER_FLAG_MAINTANK))
+                        continue;
+
+                    Player* mainTank = ObjectAccessor::FindPlayer(slot.guid);
+                    if (mainTank && mainTank->IsAlive() &&
+                        mainTank->IsInWorld() && mainTank->GetMap() == me->GetMap() &&
+                        mainTank->HasWorldBossStagingAccess() &&
+                        mainTank->GetExactDist2d(me) <= 80.0f)
+                        return mainTank;
+                }
+
+                return victim;
+            }
+
             void Reset() override
             {
                 events.Reset();
@@ -112,6 +145,10 @@ class boss_ordos : public CreatureScript
                         return poolOfFireCount;
                     case DATA_ORDOS_DEFEATED:
                         return defeated ? 1 : 0;
+                    case DATA_ORDOS_POOL_IMMINENT:
+                        return events.GetTimeUntilEvent(
+                            EVENT_ORDOS_POOL_OF_FIRE) <=
+                                3500;
                     default:
                         return 0;
                 }
@@ -243,16 +280,19 @@ class boss_ordos : public CreatureScript
                     }
                     case EVENT_ORDOS_POOL_OF_FIRE:
                     {
-                        if (Unit* target = me->GetVictim())
+                        if (Unit* target = GetPoolOfFireTarget())
                         {
                             ++poolOfFireCount;
+                            Unit* victim = me->GetVictim();
                             TC_LOG_INFO("server",
-                                "Ordos Pool of Fire count=%u target=%s/%u position=(%.2f,%.2f,%.2f)",
+                                "Ordos Pool of Fire count=%u target=%s/%u position=(%.2f,%.2f,%.2f) victim=%s/%u",
                                 poolOfFireCount,
                                 target->GetName().c_str(),
                                 target->GetGUID().GetCounter(),
                                 target->GetPositionX(), target->GetPositionY(),
-                                target->GetPositionZ());
+                                target->GetPositionZ(),
+                                victim ? victim->GetName().c_str() : "none",
+                                victim ? victim->GetGUID().GetCounter() : 0u);
                             me->CastSpell(target->GetPositionX(), target->GetPositionY(), target->GetPositionZ(), SPELL_ORDOS_POOL_OF_FIRE, false);
                         }
 
