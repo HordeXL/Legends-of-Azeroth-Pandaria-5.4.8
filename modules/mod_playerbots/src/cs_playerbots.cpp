@@ -4977,10 +4977,26 @@ bool UpdateWorldBossDefeatTimer(Creature const* boss, bool encounterStarted,
     // These four bosses survive lethal damage: their DamageTaken handlers
     // switch to friendly faction 35, stop combat, and despawn after 13 seconds.
     // Evade/wipe keeps faction 31. Never infer victory from a missing creature.
-    bool defeated = encounterStarted && boss && (!boss->IsAlive() ||
-        (IsCelestialWorldBoss(boss->GetEntry()) && boss->GetFaction() == 35 &&
-            !boss->IsInCombat()));
-    if (!defeated && !defeatedTimer)
+    bool positivelyDefeated = false;
+    if (encounterStarted && boss)
+    {
+        if (boss->GetEntry() == 72057)
+        {
+            // Ordos despawns himself during EnterEvadeMode. IsAlive() alone
+            // therefore cannot distinguish a wipe from JustDied; his script
+            // publishes an explicit, latched death result instead.
+            constexpr uint32 DATA_ORDOS_DEFEATED = 2;
+            positivelyDefeated = boss->AI() &&
+                boss->AI()->GetData(DATA_ORDOS_DEFEATED) != 0;
+        }
+        else
+        {
+            positivelyDefeated = !boss->IsAlive() ||
+                (IsCelestialWorldBoss(boss->GetEntry()) &&
+                    boss->GetFaction() == 35 && !boss->IsInCombat());
+        }
+    }
+    if (!positivelyDefeated && !defeatedTimer)
         return false;
 
     // Latch a positively observed victory through the subsequent despawn.

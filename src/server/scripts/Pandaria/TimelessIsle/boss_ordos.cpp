@@ -50,6 +50,7 @@ enum Events
 enum OrdosData
 {
     DATA_ORDOS_POOL_COUNT = 1,
+    DATA_ORDOS_DEFEATED = 2,
 };
 
 enum Creatures
@@ -84,11 +85,13 @@ class boss_ordos : public CreatureScript
             SummonList summons;
             EventMap events;
             uint32 poolOfFireCount = 0;
+            bool defeated = false;
 
             void Reset() override
             {
                 events.Reset();
                 poolOfFireCount = 0;
+                defeated = false;
                 me->RemoveAllAreasTrigger();
                 summons.DespawnAll();
                 HandleDoor(me, GO_HEATET_DOOR, true);
@@ -103,7 +106,15 @@ class boss_ordos : public CreatureScript
 
             uint32 GetData(uint32 type) const override
             {
-                return type == DATA_ORDOS_POOL_COUNT ? poolOfFireCount : 0;
+                switch (type)
+                {
+                    case DATA_ORDOS_POOL_COUNT:
+                        return poolOfFireCount;
+                    case DATA_ORDOS_DEFEATED:
+                        return defeated ? 1 : 0;
+                    default:
+                        return 0;
+                }
             }
 
             void KilledUnit(Unit* victim) override
@@ -153,6 +164,7 @@ class boss_ordos : public CreatureScript
 
             void EnterEvadeMode() override
             {
+                defeated = false;
                 ScriptedAI::EnterEvadeMode();
                 summons.DespawnAll();
                 events.Reset();
@@ -175,6 +187,7 @@ class boss_ordos : public CreatureScript
 
             void JustDied(Unit* /*killer*/) override
             {
+                defeated = true;
                 Talk(SAY_ORDOS_DEATH);
                 me->RemoveAllAreasTrigger();
                 summons.DespawnAll();

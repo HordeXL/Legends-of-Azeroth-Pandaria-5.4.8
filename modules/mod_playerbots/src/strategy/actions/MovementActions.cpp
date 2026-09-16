@@ -101,7 +101,10 @@ constexpr uint32 OrdosAncientFlameEffect = 144699;
 constexpr uint32 OrdosPoolCountData = 1;
 constexpr float OrdosMagmaShareRadius = 18.0f;
 constexpr float OrdosRaidCombatRadius = 5.5f;
-constexpr float OrdosRaidMaximumRadius = 8.0f;
+constexpr float OrdosRaidPositionRadius = 7.0f;
+constexpr float OrdosRaidRelocateRadius = 9.0f;
+constexpr float OrdosRaidTankRelocateRadius = 11.0f;
+constexpr uint32 OrdosAncientFlameRetryDelay = 8 * IN_MILLISECONDS;
 constexpr float OrdosAncientFlameClearance = 22.0f;
 constexpr float OrdosPersistentHazardPadding = 2.0f;
 // Route centres may be closer than the visual pool diameter so adjacent rows
@@ -1089,7 +1092,7 @@ bool FindSafeOrdosAttackPosition(Player* bot, Creature* ordos, Unit* tank,
             { 0.0f, -1.0f, 1.0f, 3.0f, 5.0f })
         {
             float const radius = std::max(1.5f,
-                std::min(OrdosRaidMaximumRadius,
+                std::min(OrdosRaidPositionRadius,
                     attackRadius + radiusOffset));
             float candidateX = ordos->GetPositionX() +
                 std::cos(angle) * radius;
@@ -3890,10 +3893,6 @@ BossMechanicsAction::Reaction BossMechanicsAction::GetReaction() const
         if (designatedTank == bot && ordos->GetVictim() != bot)
             return Reaction::TakeOverOrdosTank;
 
-        if (designatedTank && designatedTank != bot &&
-            PlayerBotSpec::IsTank(bot, true))
-            return Reaction::MaintainOrdosStandbyTank;
-
         // The selected raid tank is the formation reference even when Ordos
         // briefly turns to a damage dealer. A temporary victim must never
         // inherit the pool-placement route.
@@ -3903,11 +3902,14 @@ BossMechanicsAction::Reaction BossMechanicsAction::GetReaction() const
         {
             std::vector<OrdosFireHazard> poolHazards;
             CollectOrdosPoolHazards(bot, poolHazards);
-            bool const standingInFire =
+            bool const standingInPool =
                 bot->HasAura(OrdosPoolOfFireAura) ||
-                bot->HasAura(OrdosAncientFlameEffect) ||
-                IsPositionInsideOrdosFire(bot, bot->GetPositionX(),
+                IsPositionInsideOrdosPool(bot, bot->GetPositionX(),
                     bot->GetPositionY());
+            bool const standingInAncientFlame = !standingInPool &&
+                (bot->HasAura(OrdosAncientFlameEffect) ||
+                    IsPositionInsideOrdosFire(bot, bot->GetPositionX(),
+                        bot->GetPositionY()));
             // Ancient Flame is a raid hazard, but its broad creature radius
             // must not pull the active tank off the deterministic pool route.
             // Pool of Fire is the only geometry which advances that route.
@@ -3915,8 +3917,9 @@ BossMechanicsAction::Reaction BossMechanicsAction::GetReaction() const
                 tank->HasAura(OrdosPoolOfFireAura) ||
                 IsPositionInsideOrdosPool(bot, tank->GetPositionX(),
                     tank->GetPositionY());
+            uint32 const now = getMSTime();
             bool const followingLockedAnchor =
-                getMSTime() < ordosStackWaypointLockUntil &&
+                now < ordosStackWaypointLockUntil &&
                 IsInsideOrdosArena(ordosStackWaypointX,
                     ordosStackWaypointY) &&
                 bot->GetExactDist2d(ordosStackWaypointX,
@@ -3924,16 +3927,30 @@ BossMechanicsAction::Reaction BossMechanicsAction::GetReaction() const
             bool const tankOffLane = !IsAtCurrentOrdosStackAnchor(ordos,
                 poolHazards, tank->GetPositionX(), tank->GetPositionY());
             bool const outsideRaidEnvelope = tank != bot &&
-                (bot->GetExactDist2d(ordos) > OrdosRaidMaximumRadius ||
-                 bot->GetExactDist2d(tank) > 10.0f);
+                (bot->GetExactDist2d(ordos) > OrdosRaidRelocateRadius ||
+                 bot->GetExactDist2d(tank) >
+                    OrdosRaidTankRelocateRadius);
+            bool const standbyTank = designatedTank &&
+                designatedTank != bot && PlayerBotSpec::IsTank(bot, true);
+
+            // A standby tank keeps attacking normally and is prevented from
+            // taunting by PlayerbotAI::ShouldTaunt. Only actual movement needs
+            // the high-priority maintenance reaction.
+            if (standbyTank && (standingInPool || outsideRaidEnvelope))
+                return Reaction::MaintainOrdosStandbyTank;
 
             // Only the tank follows the compact perimeter route. Other raid
             // members hold a fire-safe attack position inside the Magma Crush
             // sharing envelope. Burning Soul carriers returned above and are
-            // the only players allowed to leave it.
+            // the only players allowed to leave it. Ancient Flame is a soft,
+            // healable hazard: unlike a pool, it waits for the current cast
+            // and is rechecked slowly when no fully clear stack point exists.
             if ((tank == bot && (followingLockedAnchor || tankInPool ||
                     tankOffLane)) ||
-                (tank != bot && (standingInFire || outsideRaidEnvelope)))
+                (tank != bot && (standingInPool || outsideRaidEnvelope ||
+                    (standingInAncientFlame &&
+                        now >= ordosAncientFlameRetryAt &&
+                        !bot->IsNonMeleeSpellCasted(true)))))
                 return Reaction::RelocateOrdosStack;
         }
 
@@ -3945,7 +3962,7 @@ BossMechanicsAction::Reaction BossMechanicsAction::GetReaction() const
             if (spell->GetSpellInfo() &&
                 spell->GetSpellInfo()->Id == OrdosMagmaCrushSpell && tank &&
                 tank->GetTypeId() == TYPEID_PLAYER &&
-                bot->GetExactDist2d(ordos) > OrdosRaidMaximumRadius)
+                bot->GetExactDist2d(ordos) > OrdosRaidRelocateRadius)
                 return Reaction::StackOrdosMagmaCrush;
     }
 
@@ -4473,21 +4490,7 @@ bool BossMechanicsAction::Execute(Event /*event*/)
                         GetOrdosDesignatedTank(ordos))
                 {
                     if (designatedTank == bot)
-                        return true;
-
-                    if (context->GetValue<Unit*>("current target")->Get() ==
-                            ordos)
-                        context->GetValue<Unit*>("current target")->Set(
-                            nullptr);
-                    if (context->GetValue<ObjectGuid>("pull target")->Get() ==
-                            ordos->GetGUID())
-                        context->GetValue<ObjectGuid>("pull target")->Set(
-                            ObjectGuid::Empty);
-                    if (bot->GetVictim() == ordos)
-                        bot->AttackStop();
-                    if (Unit* pet = bot->GetPet())
-                        if (pet->GetVictim() == ordos)
-                            pet->AttackStop();
+                        return false;
 
                     bool const inPool = IsPositionInsideOrdosPool(bot,
                         bot->GetPositionX(), bot->GetPositionY(), 0.5f);
@@ -4506,10 +4509,10 @@ bool BossMechanicsAction::Execute(Event /*event*/)
                     }
 
                     bool const needsSafePosition =
-                        bot->GetExactDist2d(ordos) >
-                            OrdosRaidMaximumRadius ||
-                        IsPositionInsideOrdosFire(bot,
-                            bot->GetPositionX(), bot->GetPositionY(), 0.5f);
+                        inPool || bot->GetExactDist2d(ordos) >
+                            OrdosRaidRelocateRadius ||
+                        bot->GetExactDist2d(designatedTank) >
+                            OrdosRaidTankRelocateRadius;
                     if (needsSafePosition)
                     {
                         float standbyX = ordos->GetPositionX();
@@ -4542,8 +4545,10 @@ bool BossMechanicsAction::Execute(Event /*event*/)
                         }
                     }
 
-                    bot->StopMoving();
-                    return true;
+                    // Safe standby tanks keep Ordos selected and use their
+                    // normal damage rotation. ShouldTaunt separately prevents
+                    // them from stealing the ordered pool route.
+                    return false;
                 }
             break;
         case Reaction::StackOrdosMagmaCrush:
@@ -4578,10 +4583,11 @@ bool BossMechanicsAction::Execute(Event /*event*/)
                     {
                         // Non-tanks do not chase the tank's pool waypoint.
                         // A pool is the hard constraint: leave its nearest edge
-                        // first. Ancient Flame is avoided inside the eight-yard
-                        // raid envelope when possible, but never sends a bot
-                        // far enough away to break Magma Crush sharing.
+                        // first. Ancient Flame is avoided inside the compact
+                        // raid envelope when possible, but reaching a valid
+                        // point releases the action so rotations can resume.
                         ordosStackWaypointLockUntil = 0;
+                        uint32 const now = getMSTime();
                         float attackX = ordos->GetPositionX();
                         float attackY = ordos->GetPositionY();
                         float attackZ = ordos->GetPositionZ();
@@ -4604,7 +4610,16 @@ bool BossMechanicsAction::Execute(Event /*event*/)
 
                         if (attackPositionValid)
                         {
-                            if (bot->GetExactDist2d(attackX, attackY) > 12.0f)
+                            float const attackDistance = bot->GetExactDist2d(
+                                attackX, attackY);
+                            if (attackDistance <= 1.5f)
+                            {
+                                ordosAncientFlameRetryAt = now +
+                                    OrdosAncientFlameRetryDelay;
+                                bot->StopMoving();
+                                return false;
+                            }
+                            if (attackDistance > 12.0f)
                                 TryActivateWorldBossRunSpeed(botAI, bot);
                             MoveTo(bot->GetMapId(), attackX, attackY, attackZ,
                                 false, false, true, true,
@@ -4618,7 +4633,16 @@ bool BossMechanicsAction::Execute(Event /*event*/)
                         if (FindSafeOrdosAttackPosition(bot, ordos, tank,
                                 attackX, attackY, attackZ, true))
                         {
-                            if (bot->GetExactDist2d(attackX, attackY) > 12.0f)
+                            float const attackDistance = bot->GetExactDist2d(
+                                attackX, attackY);
+                            if (attackDistance <= 1.5f)
+                            {
+                                ordosAncientFlameRetryAt = now +
+                                    OrdosAncientFlameRetryDelay;
+                                bot->StopMoving();
+                                return false;
+                            }
+                            if (attackDistance > 12.0f)
                                 TryActivateWorldBossRunSpeed(botAI, bot);
                             MoveTo(bot->GetMapId(), attackX, attackY, attackZ,
                                 false, false, true, true,
@@ -4626,8 +4650,10 @@ bool BossMechanicsAction::Execute(Event /*event*/)
                             return true;
                         }
 
+                        ordosAncientFlameRetryAt = now +
+                            OrdosAncientFlameRetryDelay;
                         bot->StopMoving();
-                        return true;
+                        return false;
                     }
 
                     uint32 const now = getMSTime();
