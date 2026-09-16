@@ -98,7 +98,11 @@ constexpr uint32 OrdosAncientFlameEffect = 144699;
 constexpr float OrdosMagmaShareRadius = 18.0f;
 constexpr float OrdosRaidCombatRadius = 5.5f;
 constexpr float OrdosAncientFlameClearance = 22.0f;
-constexpr float OrdosStackSafetyMargin = 2.0f;
+constexpr float OrdosPersistentHazardPadding = 2.0f;
+// Route centres may be closer than the visual pool diameter so adjacent rows
+// overlap. Area-trigger hazards carry a separate two-yard generic padding;
+// the tank route uses the real Pool of Fire radius plus this smaller margin.
+constexpr float OrdosStackSafetyMargin = 0.75f;
 constexpr uint32 OrdosStackWaypointDuration = 10 * IN_MILLISECONDS;
 constexpr float OrdosBurningSoulRaidClearance = 22.0f;
 constexpr uint32 OrdosBurningSoulWaypointDuration = 12 * IN_MILLISECONDS;
@@ -106,23 +110,35 @@ constexpr uint32 OrdosMovementProgressInterval = 750;
 constexpr float OrdosMovementProgressDistance = 0.75f;
 constexpr float OrdosArenaCenterX = -62.0f;
 constexpr float OrdosArenaCenterY = -5400.0f;
-constexpr uint8 OrdosTankRouteAnchorCount = 11;
+constexpr uint8 OrdosTankRouteAnchorCount = 18;
 constexpr float OrdosTankRouteAnchorX[OrdosTankRouteAnchorCount] =
-    { -38.0f, -42.0f, -54.0f, -70.0f, -90.0f,
-      -90.0f, -70.0f, -58.0f, -78.0f, -97.0f,
-      -116.0f };
+    { -38.0f, -42.0f,
+      -54.0f, -61.0f, -61.0f, -61.0f,
+      -78.5f, -78.5f, -78.5f, -78.5f,
+      -95.75f, -95.75f, -95.75f, -95.75f, -95.75f,
+      -116.0f, -136.0f, -156.0f };
 constexpr float OrdosTankRouteAnchorY[OrdosTankRouteAnchorCount] =
-    { -5390.0f, -5410.0f, -5426.0f, -5438.0f, -5432.0f,
-      -5412.0f, -5414.0f, -5396.0f, -5393.0f, -5387.0f,
-      -5395.0f };
-// The two points after the balcony corners only guide the tank around the
-// sanctuary's angled railing. They are traversed without holding Ordos for a
-// pool. All other interior points are compact pool positions; the last point
-// is the emergency route through the main entrance.
+    { -5390.0f, -5410.0f,
+      -5426.0f, -5407.0f, -5387.0f, -5367.0f,
+      -5357.0f, -5377.0f, -5397.0f, -5417.0f,
+      -5442.0f, -5422.0f, -5397.0f, -5357.0f, -5377.0f,
+      -5396.0f, -5396.0f, -5396.0f };
+// Pack the sanctuary in overlapping rows without making the tank stand in the
+// preceding 15-yard Pool of Fire. The first two points are the balcony
+// corners. Four points sweep the first row, and four staggered points sweep
+// back along the second. The third row targets two pools on each side of the
+// entrance: its middle point is transit-only, so the tank crosses the
+// remaining gap immediately after placing the second pool and resumes at the
+// far outer corner. Only after every prescribed interior target is covered
+// does the route continue through the three main-entrance corridor positions.
 constexpr bool OrdosTankRouteHoldPosition[OrdosTankRouteAnchorCount] =
-    { true, true, false, false, true, true, true, true, true, true, true };
+    { true, true,
+      true, true, true, true,
+      true, true, true, true,
+      true, true, false, true, true,
+      true, true, true };
 constexpr uint8 OrdosTankRouteEntranceIndex =
-    OrdosTankRouteAnchorCount - 1;
+    15;
 constexpr float OrdosStackAnchorRadius = 4.0f;
 constexpr float OrdosBurningSoulHorizontalGateX[4] =
     { -32.0f, -52.0f, -72.0f, -92.0f };
@@ -487,7 +503,8 @@ void CollectOrdosFireHazards(Player* bot,
             continue;
 
         hazards.push_back({ object->GetPositionX(), object->GetPositionY(),
-            std::max(2.0f, std::min(radius, 20.0f)) + 2.0f, spellId });
+            std::max(2.0f, std::min(radius, 20.0f)) +
+                OrdosPersistentHazardPadding, spellId });
     }
 }
 
@@ -510,12 +527,23 @@ bool IsNearOrdosStackAnchor(float x, float y)
     return index >= 0 && OrdosTankRouteHoldPosition[uint8(index)];
 }
 
+float GetOrdosMovementHazardRadius(OrdosFireHazard const& hazard,
+    bool useActualPoolRadius)
+{
+    if (useActualPoolRadius && hazard.spellId == OrdosPoolOfFireSpell)
+        return std::max(2.0f,
+            hazard.radius - OrdosPersistentHazardPadding);
+
+    return hazard.radius;
+}
+
 bool IsOrdosPointSafe(std::vector<OrdosFireHazard> const& hazards,
-    float x, float y, float margin)
+    float x, float y, float margin, bool useActualPoolRadius = false)
 {
     for (OrdosFireHazard const& hazard : hazards)
     {
-        float const clearance = hazard.radius + margin;
+        float const clearance = GetOrdosMovementHazardRadius(hazard,
+            useActualPoolRadius) + margin;
         float const dx = x - hazard.x;
         float const dy = y - hazard.y;
         if (dx * dx + dy * dy < clearance * clearance)
@@ -529,8 +557,8 @@ bool CanUseOrdosEntranceFallback(
 {
     // Do not leave the sanctuary because a navmesh path to a row failed for
     // one tick. The entrance is unlocked only when Pool of Fire genuinely
-    // covers every interior holding position. Transit points do not need a
-    // pool because they exist solely to follow the railing bends.
+    // covers every prescribed interior holding position. Transit points do
+    // not need a pool because they exist solely to follow the railing bends.
     for (uint8 index = 0; index < OrdosTankRouteEntranceIndex; ++index)
     {
         if (!OrdosTankRouteHoldPosition[index])
@@ -575,7 +603,8 @@ float GetOrdosFireClearance(std::vector<OrdosFireHazard> const& hazards,
 }
 
 bool IsOrdosRouteSafe(std::vector<OrdosFireHazard> const& hazards,
-    float fromX, float fromY, float toX, float toY, float margin)
+    float fromX, float fromY, float toX, float toY, float margin,
+    bool useActualPoolRadius = false)
 {
     float const segmentX = toX - fromX;
     float const segmentY = toY - fromY;
@@ -583,7 +612,8 @@ bool IsOrdosRouteSafe(std::vector<OrdosFireHazard> const& hazards,
         segmentY * segmentY;
     for (OrdosFireHazard const& hazard : hazards)
     {
-        float const clearance = hazard.radius + margin;
+        float const clearance = GetOrdosMovementHazardRadius(hazard,
+            useActualPoolRadius) + margin;
         float const clearanceSq = clearance * clearance;
         float const startX = fromX - hazard.x;
         float const startY = fromY - hazard.y;
@@ -632,7 +662,8 @@ bool IsInsideOrdosArena(float x, float y)
 
 bool IsOrdosNavigationPathUsable(Player* bot,
     std::vector<OrdosFireHazard> const& hazards, float x, float y, float z,
-    float fireMargin, bool requireFireSafe, float* pathLength = nullptr)
+    float fireMargin, bool requireFireSafe, float* pathLength = nullptr,
+    bool useActualPoolRadius = false)
 {
     if (!bot || !IsInsideOrdosArena(x, y))
         return false;
@@ -664,7 +695,7 @@ bool IsOrdosNavigationPathUsable(Player* bot,
         for (G3D::Vector3 const& point : points)
         {
             if (!IsOrdosRouteSafe(hazards, fromX, fromY,
-                    point.x, point.y, fireMargin))
+                    point.x, point.y, fireMargin, useActualPoolRadius))
                 return false;
             fromX = point.x;
             fromY = point.y;
@@ -876,13 +907,14 @@ bool FindSafeOrdosStackAnchor(Player* bot, Creature* ordos, Unit* tank,
             !IsInsideOrdosArena(tank->GetPositionX(),
                 tank->GetPositionY()) ||
             !IsOrdosPointSafe(hazards, tank->GetPositionX(),
-                tank->GetPositionY(), OrdosStackSafetyMargin))
+                tank->GetPositionY(), OrdosStackSafetyMargin, true))
             return false;
 
         if (tank != bot && bot->GetExactDist2d(tank) > 1.5f &&
             !IsOrdosNavigationPathUsable(bot, hazards,
                 tank->GetPositionX(), tank->GetPositionY(),
-                tank->GetPositionZ(), 2.0f, true))
+                tank->GetPositionZ(), OrdosStackSafetyMargin, true,
+                nullptr, true))
             return false;
 
         x = tank->GetPositionX();
@@ -901,7 +933,7 @@ bool FindSafeOrdosStackAnchor(Player* bot, Creature* ordos, Unit* tank,
             tank->GetPositionY());
     auto tryAnchor = [&](uint8 index)
     {
-        if (index == OrdosTankRouteEntranceIndex &&
+        if (index >= OrdosTankRouteEntranceIndex &&
             !CanUseOrdosEntranceFallback(hazards))
             return false;
 
@@ -914,13 +946,12 @@ bool FindSafeOrdosStackAnchor(Player* bot, Creature* ordos, Unit* tank,
         if ((tankHasPoolAura && tankDx * tankDx + tankDy * tankDy <=
                 OrdosStackAnchorRadius * OrdosStackAnchorRadius) ||
             !IsOrdosPointSafe(hazards, candidateX, candidateY,
-                OrdosStackSafetyMargin) ||
+                OrdosStackSafetyMargin, true) ||
             !IsInsideOrdosArena(candidateX, candidateY) ||
-            !IsOrdosPointSafe(hazards, candidateX, candidateY,
-                OrdosStackSafetyMargin) ||
             !ordos->IsWithinLOS(candidateX, candidateY, candidateZ) ||
             !IsOrdosNavigationPathUsable(bot, hazards, candidateX,
-                candidateY, candidateZ, 2.0f, true))
+                candidateY, candidateZ, OrdosStackSafetyMargin, true,
+                nullptr, true))
             return false;
 
         x = candidateX;
@@ -929,9 +960,9 @@ bool FindSafeOrdosStackAnchor(Player* bot, Creature* ordos, Unit* tank,
         return true;
     };
 
-    // Hold the first two pools in the opposite balcony corners. The following
-    // two points are non-holding guides around the railing, so the tank walks
-    // continuously to the far corner before placing the third pool.
+    // Start in the first balcony corner. Every subsequent pool and transit
+    // point is consumed strictly in route order so neither a dense row nor the
+    // deliberately preserved third-row entrance gap can be skipped.
     if (initialRailingPull)
         return tryAnchor(0);
 
@@ -939,9 +970,9 @@ bool FindSafeOrdosStackAnchor(Player* bot, Creature* ordos, Unit* tank,
         tank->GetPositionX(), tank->GetPositionY());
     if (currentIndex >= 0)
     {
-        // Advance only one prescribed point at a time. In particular, a
-        // temporary path failure on the second or third row must not jump the
-        // tank straight to the main entrance.
+        // Advance only one prescribed point at a time. A small free fragment
+        // elsewhere and a temporary navmesh failure cannot redirect the tank
+        // or skip one of the ordered pool positions.
         uint8 const nextIndex = uint8(currentIndex + 1);
         return nextIndex < OrdosTankRouteAnchorCount &&
             tryAnchor(nextIndex);
@@ -954,8 +985,10 @@ bool FindSafeOrdosStackAnchor(Player* bot, Creature* ordos, Unit* tank,
         if (tryAnchor(index))
             return true;
 
-    if (tryAnchor(OrdosTankRouteEntranceIndex))
-        return true;
+    for (uint8 index = OrdosTankRouteEntranceIndex;
+        index < OrdosTankRouteAnchorCount; ++index)
+        if (tryAnchor(index))
+            return true;
 
     return false;
 }
