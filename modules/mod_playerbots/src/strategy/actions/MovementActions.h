@@ -234,6 +234,11 @@ private:
     float ordosStackWaypointY = 0.0f;
     float ordosStackWaypointZ = 0.0f;
     uint32 ordosAncientFlameRetryAt = 0;
+    uint32 ordosRaidTransitLockUntil = 0;
+    float ordosRaidTransitX = 0.0f;
+    float ordosRaidTransitY = 0.0f;
+    float ordosRaidTransitZ = 0.0f;
+    uint32 ordosRaidTransitRetryAt = 0;
     mutable ObjectGuid ordosEncounterGuid = ObjectGuid::Empty;
     mutable ObjectGuid ordosDesignatedTankGuid = ObjectGuid::Empty;
     uint32 chiJiBeaconWaypointLockUntil = 0;
