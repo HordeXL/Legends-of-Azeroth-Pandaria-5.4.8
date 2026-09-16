@@ -3589,8 +3589,31 @@ Player* BossMechanicsAction::GetOrdosDesignatedTank(Creature* ordos) const
     };
 
     Player* designatedTank = nullptr;
+
+    // The raid's main-tank flag is the shared source of truth.  Keeping only
+    // a per-action GUID allowed different bots to retain different tanks from
+    // an earlier attempt because a respawned world boss keeps its creature
+    // GUID.  Reconcile on every tick so every bot follows the same owner.
     for (GroupReference* ref = group->GetFirstMember(); ref;
         ref = ref->next())
+    {
+        Player* member = ref->GetSource();
+        if (eligibleTank(member) && PlayerBotSpec::IsMainTank(member))
+        {
+            designatedTank = member;
+            break;
+        }
+    }
+
+    ObjectGuid const previousTankGuid = ordosDesignatedTankGuid;
+    if (designatedTank)
+        ordosDesignatedTankGuid = designatedTank->GetGUID();
+
+    // Retain the local value only as a fallback for non-raid groups which do
+    // not support MEMBER_FLAG_MAINTANK.  In a staged raid the shared flag
+    // above always wins, including after wipe recovery.
+    for (GroupReference* ref = group->GetFirstMember();
+        !designatedTank && ref; ref = ref->next())
     {
         Player* member = ref->GetSource();
         if (eligibleTank(member) &&
@@ -3603,23 +3626,9 @@ Player* BossMechanicsAction::GetOrdosDesignatedTank(Creature* ordos) const
 
     if (!designatedTank)
     {
-        // Every bot independently chooses the same group main tank at pull.
-        // This prevents an assist tank's opening threat from redirecting the
-        // boss before the first balcony anchor is reached.
-        for (GroupReference* ref = group->GetFirstMember(); ref;
-            ref = ref->next())
-        {
-            Player* member = ref->GetSource();
-            if (eligibleTank(member) && PlayerBotSpec::IsMainTank(member))
-            {
-                designatedTank = member;
-                break;
-            }
-        }
-
         Player* currentTank = ordos->GetVictim() ?
             ordos->GetVictim()->ToPlayer() : nullptr;
-        if (!designatedTank && eligibleTank(currentTank))
+        if (eligibleTank(currentTank))
             designatedTank = currentTank;
 
         // A dead main tank may leave the boss on a damage dealer briefly.
@@ -3643,8 +3652,12 @@ Player* BossMechanicsAction::GetOrdosDesignatedTank(Creature* ordos) const
             }
         }
 
-        ordosDesignatedTankGuid = designatedTank ?
-            designatedTank->GetGUID() : ObjectGuid::Empty;
+        if (designatedTank)
+        {
+            ordosDesignatedTankGuid = designatedTank->GetGUID();
+            group->SetGroupMemberFlag(designatedTank->GetGUID(), true,
+                MEMBER_FLAG_MAINTANK);
+        }
     }
 
     // Persist the selected replacement after the taunt. The old main tank
@@ -3656,7 +3669,28 @@ Player* BossMechanicsAction::GetOrdosDesignatedTank(Creature* ordos) const
         {
             designatedTank = replacement;
             ordosDesignatedTankGuid = replacement->GetGUID();
+            // Publish the hand-off to the whole raid.  This keeps generic
+            // taunt policy, all BossMechanicsAction instances and wipe/death
+            // failover on one authoritative tank instead of maintaining one
+            // private answer per bot.
+            group->SetGroupMemberFlag(replacement->GetGUID(), true,
+                MEMBER_FLAG_MAINTANK);
+            group->SetTargetIcon(5, bot->GetGUID(), replacement->GetGUID(),
+                0);
         }
+
+    if (PlayerBotSpec::IsTank(bot, true) && designatedTank &&
+        previousTankGuid != designatedTank->GetGUID())
+        TC_LOG_INFO("server",
+            "Ordos tank assignment observer=%s/%u boss=%u previous=%u designated=%s/%u victim=%s/%u",
+            bot->GetName().c_str(), bot->GetGUID().GetCounter(),
+            ordos->GetGUID().GetCounter(), previousTankGuid.GetCounter(),
+            designatedTank->GetName().c_str(),
+            designatedTank->GetGUID().GetCounter(),
+            ordos->GetVictim() ? ordos->GetVictim()->GetName().c_str() :
+                "none",
+            ordos->GetVictim() ? ordos->GetVictim()->GetGUID().GetCounter() :
+                0u);
 
     return designatedTank;
 }
@@ -4416,11 +4450,38 @@ bool BossMechanicsAction::Execute(Event /*event*/)
                             OrdosStackSafetyMargin);
                     if (!waypointValid)
                     {
+                        float const previousWaypointX =
+                            ordosStackWaypointX;
+                        float const previousWaypointY =
+                            ordosStackWaypointY;
                         waypointValid = FindSafeOrdosStackAnchor(bot, ordos,
                             tank, ordosStackWaypointX,
                             ordosStackWaypointY, ordosStackWaypointZ);
                         ordosStackWaypointLockUntil = waypointValid ?
                             now + OrdosStackWaypointDuration : 0;
+                        float const waypointDx = ordosStackWaypointX -
+                            previousWaypointX;
+                        float const waypointDy = ordosStackWaypointY -
+                            previousWaypointY;
+                        if (waypointValid &&
+                            waypointDx * waypointDx +
+                                waypointDy * waypointDy > 0.25f)
+                        {
+                            int8 const anchorIndex =
+                                GetOrdosStackAnchorIndex(
+                                    ordosStackWaypointX,
+                                    ordosStackWaypointY);
+                            TC_LOG_INFO("server",
+                                "Ordos pool route tank=%s/%u anchor=%d from=(%.2f,%.2f) to=(%.2f,%.2f) in-fire=%u",
+                                bot->GetName().c_str(),
+                                bot->GetGUID().GetCounter(),
+                                int32(anchorIndex), bot->GetPositionX(),
+                                bot->GetPositionY(), ordosStackWaypointX,
+                                ordosStackWaypointY,
+                                IsPositionInsideOrdosFire(bot,
+                                    bot->GetPositionX(),
+                                    bot->GetPositionY()) ? 1u : 0u);
+                        }
                     }
 
                     // When already standing in fire, use a short, verified

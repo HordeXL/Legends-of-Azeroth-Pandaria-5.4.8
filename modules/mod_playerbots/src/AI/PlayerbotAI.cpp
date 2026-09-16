@@ -2810,6 +2810,15 @@ bool PlayerbotAI::IsGroupPveTauntAllowed(SpellInfo const* spellInfo, Unit* targe
 {
     if (!bot || !IsGroupPveActivity() || !IsTauntSpell(spellInfo)) return true;
     if (!PlayerBotSpec::IsTank(bot, true)) return false;
+
+    // Ordos uses an ordered Pool of Fire route owned by one shared raid tank.
+    // A standby tank's ordinary "lose aggro" trigger must never undo that
+    // assignment.  BossMechanicsAction performs Burning Soul/death hand-offs
+    // explicitly and first promotes the replacement to main tank.
+    if (target && target->GetEntry() == 72057 &&
+        bot->HasWorldBossStagingAccess() && !PlayerBotSpec::IsMainTank(bot))
+        return false;
+
     // Rescue with a single-target taunt. Automatic mass taunts and taunts on
     // another tank's enemy would override ownership of unrelated boss targets.
     return target && bot->IsValidAttackTarget(target) &&

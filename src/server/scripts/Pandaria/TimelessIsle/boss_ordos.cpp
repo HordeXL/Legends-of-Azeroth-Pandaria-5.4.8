@@ -21,6 +21,7 @@
 #include "ObjectAccessor.h"
 #include "ScriptMgr.h"
 #include "Group.h"
+#include "Log.h"
 #include "timeless_isle.h"
 
 enum Spells
@@ -218,7 +219,15 @@ class boss_ordos : public CreatureScript
                     case EVENT_ORDOS_POOL_OF_FIRE:
                     {
                         if (Unit* target = me->GetVictim())
+                        {
+                            TC_LOG_INFO("server",
+                                "Ordos Pool of Fire target=%s/%u position=(%.2f,%.2f,%.2f)",
+                                target->GetName().c_str(),
+                                target->GetGUID().GetCounter(),
+                                target->GetPositionX(), target->GetPositionY(),
+                                target->GetPositionZ());
                             me->CastSpell(target->GetPositionX(), target->GetPositionY(), target->GetPositionZ(), SPELL_ORDOS_POOL_OF_FIRE, false);
+                        }
 
                         Talk(SAY_ORDOS_POOL_OF_FIRE);
                         events.ScheduleEvent(EVENT_ORDOS_POOL_OF_FIRE, 31 * IN_MILLISECONDS);
