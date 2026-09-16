@@ -297,6 +297,12 @@ class spell_ordos_burning_soul : public AuraScript
 {
     PrepareAuraScript(spell_ordos_burning_soul);
 
+    bool IsRealPlayer(Player const* player) const
+    {
+        return player && player->GetSession() &&
+            !player->GetSession()->IsBot();
+    }
+
     void SendPlayerWarning(uint8 seconds)
     {
         Player* player = GetOwner()->ToPlayer();
@@ -319,15 +325,43 @@ class spell_ordos_burning_soul : public AuraScript
     bool IsOtherAffectedHuman(Player* candidate, Player* player) const
     {
         return candidate && candidate != player && candidate->IsAlive() &&
-            candidate->GetSession() && !candidate->GetSession()->IsBot() &&
+            IsRealPlayer(candidate) &&
             candidate->HasAura(SPELL_ORDOS_BURNING_SOUL);
+    }
+
+    void ClearAffectedBotMechanicMarkers(Player* player)
+    {
+        if (!player || !player->GetSession() ||
+            !player->GetSession()->IsBot())
+            return;
+
+        Group* group = player->GetGroup();
+        if (!group)
+            return;
+
+        // Square, Moon and Diamond identify the staged raid's tank, healer
+        // and main tank. Preserve those role markers. Cross and the remaining
+        // non-role icons are reserved for human Burning Soul warnings and
+        // must never remain on an affected bot.
+        static uint8 const mechanicIcons[] = { 6, 0, 1, 3, 7 };
+        for (uint8 icon : mechanicIcons)
+            if (group->GetTargetIcon(icon) == player->GetGUID())
+                group->SetTargetIcon(icon, player->GetGUID(),
+                    ObjectGuid::Empty, 0);
     }
 
     void EnsurePlayerMarker()
     {
         Player* player = GetOwner()->ToPlayer();
-        if (!player || !player->GetSession() || player->GetSession()->IsBot())
+        if (!player || !player->GetSession())
             return;
+
+        if (player->GetSession()->IsBot())
+        {
+            ClearAffectedBotMechanicMarkers(player);
+            return;
+        }
+
         Group* group = player->GetGroup();
         if (!group)
             return;
@@ -369,8 +403,10 @@ class spell_ordos_burning_soul : public AuraScript
             return;
         }
 
+        // Use non-role markers first. The staged raid reserves Diamond, Moon
+        // and Square for its main tank, healer and tank, respectively.
         static uint8 const preferredIcons[TARGETICONCOUNT - 1] =
-            { 0, 1, 2, 3, 4, 5, 7 };
+            { 0, 1, 3, 7, 2, 4, 5 };
         for (uint8 icon : preferredIcons)
         {
             ObjectGuid const iconTarget = group->GetTargetIcon(icon);
@@ -412,15 +448,27 @@ class spell_ordos_burning_soul : public AuraScript
     {
         if (Unit* owner = GetOwner()->ToUnit())
         {
+            // Trigger the explosion/knock-up first, then remove the warning
+            // marker in the same update so it disappears as soon as the
+            // mechanic has resolved.
+            owner->CastSpell(owner, SPELL_BURNING_SOUL_EFF, true);
+
             if (burningSoulMarker < TARGETICONCOUNT)
                 if (Player* player = owner->ToPlayer())
                     if (Group* group = player->GetGroup())
-                        if (group->GetTargetIcon(burningSoulMarker) ==
-                                player->GetGUID())
-                            group->SetTargetIcon(burningSoulMarker,
-                                player->GetGUID(), ObjectGuid::Empty, 0);
+                        // Another raid system can move the icon after it was
+                        // assigned. Clear whichever icon is actually on this
+                        // player instead of trusting only the stored index.
+                        for (uint8 icon = 0; icon < TARGETICONCOUNT; ++icon)
+                            if (group->GetTargetIcon(icon) ==
+                                    player->GetGUID())
+                            {
+                                group->SetTargetIcon(icon,
+                                    player->GetGUID(), ObjectGuid::Empty, 0);
+                                break;
+                            }
 
-            owner->CastSpell(owner, SPELL_BURNING_SOUL_EFF, true);
+            burningSoulMarker = TARGETICONCOUNT;
         }
     }
 
