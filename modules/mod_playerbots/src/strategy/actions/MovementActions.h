@@ -251,6 +251,7 @@ private:
     float ordosBurningSoulProgressTargetY = 0.0f;
     float ordosBurningSoulProgressDistance = 0.0f;
     uint8 ordosBurningSoulWaypointRetry = 0;
+    uint8 ordosBurningSoulAssignedArm = 4;
     bool ordosBurningSoulGateReached = false;
     uint32 xuenSpreadLockUntil = 0;
     uint32 xuenSpreadMechanic = 0;
