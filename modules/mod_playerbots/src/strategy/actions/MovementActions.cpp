@@ -4331,6 +4331,87 @@ bool BossMechanicsAction::Execute(Event /*event*/)
                         if (probe.CanAutoCast(ordos))
                             bot->CastSpell(ordos, tauntSpell, false);
                     }
+
+                // A replacement tank must not wait for the server to make it
+                // Ordos' victim before following the pool route. If a taunt
+                // is unavailable or takes a moment to win threat, the next
+                // Pool of Fire can otherwise land at the standby tank's old
+                // raid position. Select the waypoint from the authoritative
+                // pool count and move in the same takeover action.
+                float routeX = bot->GetPositionX();
+                float routeY = bot->GetPositionY();
+                float routeZ = bot->GetPositionZ();
+                bool const transitReached = IsOrdosBalconyExitTransit(
+                    bot->GetPositionX(), bot->GetPositionY());
+                bool const routeValid = FindSafeOrdosStackAnchor(bot,
+                    ordos, bot, routeX, routeY, routeZ, transitReached);
+                if (!routeValid)
+                {
+                    bot->StopMoving();
+                    return true;
+                }
+
+                float const oldWaypointDx = routeX -
+                    ordosStackWaypointX;
+                float const oldWaypointDy = routeY -
+                    ordosStackWaypointY;
+                bool const newWaypoint = oldWaypointDx * oldWaypointDx +
+                    oldWaypointDy * oldWaypointDy > 0.25f;
+                ordosStackWaypointX = routeX;
+                ordosStackWaypointY = routeY;
+                ordosStackWaypointZ = routeZ;
+                ordosStackWaypointLockUntil = getMSTime() +
+                    OrdosStackWaypointDuration;
+
+                if (newWaypoint)
+                {
+                    int8 const anchorIndex = GetOrdosStackAnchorIndex(
+                        routeX, routeY);
+                    TC_LOG_INFO("server",
+                        "Ordos takeover route tank=%s/%u anchor=%d transit=%u from=(%.2f,%.2f) to=(%.2f,%.2f) victim=%s/%u",
+                        bot->GetName().c_str(),
+                        bot->GetGUID().GetCounter(), int32(anchorIndex),
+                        IsOrdosBalconyExitTransit(routeX, routeY) ? 1u : 0u,
+                        bot->GetPositionX(), bot->GetPositionY(), routeX,
+                        routeY,
+                        ordos->GetVictim() ?
+                            ordos->GetVictim()->GetName().c_str() : "none",
+                        ordos->GetVictim() ?
+                            ordos->GetVictim()->GetGUID().GetCounter() : 0u);
+                }
+
+                // Leave a pool by a short verified segment before taking the
+                // full route, matching the normal route-owner behaviour.
+                if (IsPositionInsideOrdosFire(bot, bot->GetPositionX(),
+                        bot->GetPositionY()))
+                {
+                    float exitX = 0.0f;
+                    float exitY = 0.0f;
+                    float exitZ = 0.0f;
+                    if (FindNearestOrdosFireExit(bot, routeX, routeY, 0,
+                            exitX, exitY, exitZ))
+                    {
+                        MoveTo(bot->GetMapId(), exitX, exitY, exitZ,
+                            false, false, true, true,
+                            MovementPriority::MOVEMENT_FORCED, true);
+                        return true;
+                    }
+                }
+
+                float const routeDistance = bot->GetExactDist2d(
+                    routeX, routeY);
+                if (routeDistance <= 1.5f)
+                {
+                    ordosStackWaypointLockUntil = 0;
+                    bot->StopMoving();
+                    return true;
+                }
+
+                if (routeDistance > 12.0f)
+                    TryActivateWorldBossRunSpeed(botAI, bot);
+                MoveTo(bot->GetMapId(), routeX, routeY, routeZ, false,
+                    false, true, true, MovementPriority::MOVEMENT_FORCED,
+                    true);
                 return true;
             }
             break;
