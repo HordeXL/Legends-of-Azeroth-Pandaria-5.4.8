@@ -47,6 +47,11 @@ enum Events
     EVENT_ORDOS_MAGMA_CRUSH,
 };
 
+enum OrdosData
+{
+    DATA_ORDOS_POOL_COUNT = 1,
+};
+
 enum Creatures
 {
     NPC_ANCIENT_FLAME = 72059,
@@ -78,10 +83,12 @@ class boss_ordos : public CreatureScript
             TaskScheduler scheduler;
             SummonList summons;
             EventMap events;
+            uint32 poolOfFireCount = 0;
 
             void Reset() override
             {
                 events.Reset();
+                poolOfFireCount = 0;
                 me->RemoveAllAreasTrigger();
                 summons.DespawnAll();
                 HandleDoor(me, GO_HEATET_DOOR, true);
@@ -92,6 +99,11 @@ class boss_ordos : public CreatureScript
                 {
                     me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PACIFIED | UNIT_FLAG_NON_ATTACKABLE);
                 });
+            }
+
+            uint32 GetData(uint32 type) const override
+            {
+                return type == DATA_ORDOS_POOL_COUNT ? poolOfFireCount : 0;
             }
 
             void KilledUnit(Unit* victim) override
@@ -220,8 +232,10 @@ class boss_ordos : public CreatureScript
                     {
                         if (Unit* target = me->GetVictim())
                         {
+                            ++poolOfFireCount;
                             TC_LOG_INFO("server",
-                                "Ordos Pool of Fire target=%s/%u position=(%.2f,%.2f,%.2f)",
+                                "Ordos Pool of Fire count=%u target=%s/%u position=(%.2f,%.2f,%.2f)",
+                                poolOfFireCount,
                                 target->GetName().c_str(),
                                 target->GetGUID().GetCounter(),
                                 target->GetPositionX(), target->GetPositionY(),

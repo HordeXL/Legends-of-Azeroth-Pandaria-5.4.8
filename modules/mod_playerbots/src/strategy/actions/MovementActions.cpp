@@ -95,6 +95,10 @@ constexpr uint32 OrdosAncientFlameSpell = 144691;
 constexpr uint32 OrdosPoolOfFireSpell = 144692;
 constexpr uint32 OrdosPoolOfFireAura = 144693;
 constexpr uint32 OrdosAncientFlameEffect = 144699;
+// boss_ordosAI::GetData(DATA_ORDOS_POOL_COUNT). Keep this local constant in
+// sync with boss_ordos.cpp; playerbots cannot include encounter script
+// implementation headers.
+constexpr uint32 OrdosPoolCountData = 1;
 constexpr float OrdosMagmaShareRadius = 18.0f;
 constexpr float OrdosRaidCombatRadius = 5.5f;
 constexpr float OrdosAncientFlameClearance = 22.0f;
@@ -123,6 +127,13 @@ constexpr float OrdosTankRouteAnchorY[OrdosTankRouteAnchorCount] =
       -5431.0f, -5407.0f, -5387.0f, -5367.0f,
       -5357.0f, -5378.0f,
       -5396.0f, -5396.0f, -5396.0f };
+// The railing between the second balcony hold and the first hold behind the
+// balcony makes the direct navmesh/LOS test unreliable. This is movement
+// guidance only: the tank must immediately continue to route anchor 2 and
+// must never wait here for Pool of Fire.
+constexpr uint8 OrdosBalconyExitAnchorIndex = 2;
+constexpr float OrdosBalconyExitTransitX = -54.0f;
+constexpr float OrdosBalconyExitTransitY = -5426.0f;
 // Pack the sanctuary in overlapping rows without making the tank stand in the
 // preceding 15-yard Pool of Fire. Two points cover the balcony, four sweep
 // the edge immediately behind it, and one uses the upper outer corner. There
@@ -545,6 +556,14 @@ int8 GetOrdosStackAnchorIndex(float x, float y)
     return -1;
 }
 
+bool IsOrdosBalconyExitTransit(float x, float y)
+{
+    constexpr float transitRadius = 1.5f;
+    float const dx = x - OrdosBalconyExitTransitX;
+    float const dy = y - OrdosBalconyExitTransitY;
+    return dx * dx + dy * dy <= transitRadius * transitRadius;
+}
+
 bool IsAtOrdosStackAnchor(float x, float y)
 {
     constexpr float exactHoldRadius = 1.5f;
@@ -887,7 +906,7 @@ Player* GetOrdosBurningSoulSwapTank(Player* bot, Creature* ordos,
 }
 
 bool FindSafeOrdosStackAnchor(Player* bot, Creature* ordos, Unit* tank,
-    float& x, float& y, float& z)
+    float& x, float& y, float& z, bool balconyTransitReached = false)
 {
     if (!bot || !ordos || !tank || tank->GetMap() != bot->GetMap())
         return false;
@@ -895,9 +914,12 @@ bool FindSafeOrdosStackAnchor(Player* bot, Creature* ordos, Unit* tank,
     std::vector<OrdosFireHazard> hazards;
     CollectOrdosFireHazards(bot, hazards);
     bool const tankHasPoolAura = tank->HasAura(OrdosPoolOfFireAura);
-    uint8 const poolCount = CountUniqueOrdosPools(hazards);
-    uint8 const targetIndex = std::min<uint8>(poolCount,
-        OrdosTankRouteAnchorCount - 1);
+    uint32 const detectedPoolCount = CountUniqueOrdosPools(hazards);
+    uint32 const scriptedPoolCount = ordos->AI() ?
+        ordos->AI()->GetData(OrdosPoolCountData) : 0;
+    uint8 const targetIndex = uint8(std::min<uint32>(
+        std::max(detectedPoolCount, scriptedPoolCount),
+        OrdosTankRouteAnchorCount - 1));
     auto acceptCurrentTankPosition = [&]()
     {
         float const targetDx = tank->GetPositionX() -
@@ -932,10 +954,11 @@ bool FindSafeOrdosStackAnchor(Player* bot, Creature* ordos, Unit* tank,
     if (acceptCurrentTankPosition())
         return true;
 
-    auto tryAnchor = [&](uint8 index)
+    auto tryPosition = [&](float requestedX, float requestedY,
+        bool requireBossLos)
     {
-        float candidateX = OrdosTankRouteAnchorX[index];
-        float candidateY = OrdosTankRouteAnchorY[index];
+        float candidateX = requestedX;
+        float candidateY = requestedY;
         float candidateZ = tank->GetPositionZ();
         bot->UpdateAllowedPositionZ(candidateX, candidateY, candidateZ);
         float const tankDx = candidateX - tank->GetPositionX();
@@ -945,7 +968,8 @@ bool FindSafeOrdosStackAnchor(Player* bot, Creature* ordos, Unit* tank,
             !IsOrdosPointSafe(hazards, candidateX, candidateY,
                 OrdosStackSafetyMargin, true) ||
             !IsInsideOrdosArena(candidateX, candidateY) ||
-            !ordos->IsWithinLOS(candidateX, candidateY, candidateZ) ||
+            (requireBossLos &&
+                !ordos->IsWithinLOS(candidateX, candidateY, candidateZ)) ||
             !IsOrdosNavigationPathUsable(bot, hazards, candidateX,
                 candidateY, candidateZ, OrdosStackSafetyMargin, true,
                 nullptr, true))
@@ -957,12 +981,25 @@ bool FindSafeOrdosStackAnchor(Player* bot, Creature* ordos, Unit* tank,
         return true;
     };
 
+    // Route around the balcony railing before selecting the third pool hold.
+    // This point is transit-only and does not require boss LOS. Execute()
+    // chains the final leg immediately, so Pool of Fire is never held here.
+    if (targetIndex == OrdosBalconyExitAnchorIndex &&
+        !balconyTransitReached &&
+        !IsOrdosBalconyExitTransit(tank->GetPositionX(),
+            tank->GetPositionY()))
+        return tryPosition(OrdosBalconyExitTransitX,
+            OrdosBalconyExitTransitY, false);
+
     // Route progress is determined only by pools that actually exist. Tank
     // swaps, knockbacks, and navmesh detours therefore cannot make the route
     // skip forward or scan backward to an old free-looking anchor. If the
     // prescribed next point is temporarily unreachable, wait instead of
     // placing a pool in an arbitrary fragment of remaining floor.
-    return tryAnchor(targetIndex);
+    bool const requireBossLos = !(targetIndex ==
+        OrdosBalconyExitAnchorIndex && balconyTransitReached);
+    return tryPosition(OrdosTankRouteAnchorX[targetIndex],
+        OrdosTankRouteAnchorY[targetIndex], requireBossLos);
 }
 
 bool FindSafeOrdosAttackPosition(Player* bot, Creature* ordos, Unit* tank,
@@ -4450,10 +4487,14 @@ bool BossMechanicsAction::Execute(Event /*event*/)
                                     ordosStackWaypointX,
                                     ordosStackWaypointY);
                             TC_LOG_INFO("server",
-                                "Ordos pool route tank=%s/%u anchor=%d from=(%.2f,%.2f) to=(%.2f,%.2f) in-fire=%u",
+                                "Ordos pool route tank=%s/%u anchor=%d transit=%u from=(%.2f,%.2f) to=(%.2f,%.2f) in-fire=%u",
                                 bot->GetName().c_str(),
                                 bot->GetGUID().GetCounter(),
-                                int32(anchorIndex), bot->GetPositionX(),
+                                int32(anchorIndex),
+                                IsOrdosBalconyExitTransit(
+                                    ordosStackWaypointX,
+                                    ordosStackWaypointY) ? 1u : 0u,
+                                bot->GetPositionX(),
                                 bot->GetPositionY(), ordosStackWaypointX,
                                 ordosStackWaypointY,
                                 IsPositionInsideOrdosFire(bot,
@@ -4493,6 +4534,32 @@ bool BossMechanicsAction::Execute(Event /*event*/)
                         if (distance <= 1.5f)
                         {
                             ordosStackWaypointLockUntil = 0;
+                            if (IsOrdosBalconyExitTransit(
+                                    ordosStackWaypointX,
+                                    ordosStackWaypointY))
+                            {
+                                // Transit is never a pool hold. Chain the
+                                // short final movement around the railing
+                                // straight into the prescribed third anchor.
+                                bool const finalWaypointValid =
+                                    FindSafeOrdosStackAnchor(bot, ordos,
+                                        tank, ordosStackWaypointX,
+                                        ordosStackWaypointY,
+                                        ordosStackWaypointZ, true);
+                                if (finalWaypointValid)
+                                {
+                                    ordosStackWaypointLockUntil = now +
+                                        OrdosStackWaypointDuration;
+                                    MoveTo(bot->GetMapId(),
+                                        ordosStackWaypointX,
+                                        ordosStackWaypointY,
+                                        ordosStackWaypointZ, false, false,
+                                        true, true,
+                                        MovementPriority::MOVEMENT_FORCED,
+                                        true);
+                                    return true;
+                                }
+                            }
                             bot->StopMoving();
                             return true;
                         }
