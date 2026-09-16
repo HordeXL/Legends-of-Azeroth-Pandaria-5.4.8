@@ -103,12 +103,15 @@ constexpr uint32 OrdosPoolImminentData = 3;
 constexpr float OrdosMagmaShareRadius = 18.0f;
 constexpr float OrdosRaidCombatRadius = 5.5f;
 constexpr float OrdosRaidPositionRadius = 7.0f;
-// Pool of Fire has a 15-yard radius. Ranged damage dealers and healers hold
-// the narrow safe annulus between it and Magma Crush's 18-yard sharing edge;
-// melee use the same annulus while Pool of Fire is being cast. Do not force a
-// safe player back onto the tank merely because it is farther than melee range.
-constexpr float OrdosPoolSafeDistance = 16.25f;
-constexpr float OrdosPoolSafePositionRadius = 16.75f;
+// Ranged damage dealers and healers normally hold near Magma Crush's 18-yard
+// sharing edge so they do not chase the tank's compact route. The combat log
+// confirms that Pool of Fire still reaches this ring, so every non-tank uses a
+// separate 21-22 yard evacuation ring only during the early pool warning and
+// cast, then returns before the next Magma Crush.
+constexpr float OrdosMagmaStackMinDistance = 16.25f;
+constexpr float OrdosMagmaStackPositionRadius = 16.75f;
+constexpr float OrdosPoolEvacuationMinDistance = 21.25f;
+constexpr float OrdosPoolEvacuationPositionRadius = 22.0f;
 constexpr float OrdosRaidRelocateRadius = 17.25f;
 constexpr float OrdosRaidTankRelocateRadius = 17.75f;
 constexpr uint32 OrdosAncientFlameRetryDelay = 8 * IN_MILLISECONDS;
@@ -1072,17 +1075,18 @@ bool FindSafeOrdosAttackPosition(Player* bot, Creature* ordos, Unit* tank,
 
     bool const melee = PlayerBotSpec::IsMelee(bot, true) &&
         !PlayerBotSpec::IsHeal(bot, true);
-    bool const usePoolSafeRing = avoidIncomingPool || !melee;
-    float const positionCenterX = usePoolSafeRing ?
+    bool const useMagmaStackRing = avoidIncomingPool || !melee;
+    float const positionCenterX = useMagmaStackRing ?
         tank->GetPositionX() : ordos->GetPositionX();
-    float const positionCenterY = usePoolSafeRing ?
+    float const positionCenterY = useMagmaStackRing ?
         tank->GetPositionY() : ordos->GetPositionY();
 
     // Without fire, use the open interior side. Once a pool has appeared,
     // stand on the side opposite the closest fire source. Ordos has no frontal
     // cleave, so this side may legitimately be in front of him. Ranged and
-    // healers are centred on the tank's 16-18 yard annulus: they can attack,
-    // share Magma Crush and remain outside a new tank-centred pool.
+    // healers are normally centred on the tank's 16-18 yard Magma ring. During
+    // the early Pool of Fire warning every non-tank instead uses the temporary
+    // evacuation ring beyond the observed area-trigger radius.
     float preferredAngle = std::atan2(
         OrdosArenaCenterY - positionCenterY,
         OrdosArenaCenterX - positionCenterX);
@@ -1103,9 +1107,13 @@ bool FindSafeOrdosAttackPosition(Player* bot, Creature* ordos, Unit* tank,
         bot->GetMeleeRange(ordos) - 0.5f);
     float const attackRadius = std::min(OrdosRaidCombatRadius,
         maximumAttackRadius);
-    std::vector<float> const positionRadii = usePoolSafeRing ?
-        std::vector<float>{ OrdosPoolSafePositionRadius, 17.0f, 16.5f } :
-        std::vector<float>{ attackRadius,
+    std::vector<float> positionRadii;
+    if (avoidIncomingPool)
+        positionRadii = { OrdosPoolEvacuationPositionRadius, 21.5f, 22.5f };
+    else if (useMagmaStackRing)
+        positionRadii = { OrdosMagmaStackPositionRadius, 17.0f, 16.5f };
+    else
+        positionRadii = { attackRadius,
             std::max(1.5f, attackRadius - 1.0f),
             std::min(OrdosRaidPositionRadius, attackRadius + 1.0f),
             std::min(OrdosRaidPositionRadius, attackRadius + 3.0f),
@@ -1130,12 +1138,18 @@ bool FindSafeOrdosAttackPosition(Player* bot, Creature* ordos, Unit* tank,
             float const tankDistanceSq = tankDx * tankDx + tankDy * tankDy;
             float const bossDx = candidateX - ordos->GetPositionX();
             float const bossDy = candidateY - ordos->GetPositionY();
-            if (tankDistanceSq >
-                    OrdosMagmaShareRadius * OrdosMagmaShareRadius ||
-                (usePoolSafeRing && tankDistanceSq <
-                    OrdosPoolSafeDistance * OrdosPoolSafeDistance) ||
-                (usePoolSafeRing && bossDx * bossDx + bossDy * bossDy >
-                    OrdosRaidRelocateRadius * OrdosRaidRelocateRadius) ||
+            if ((!avoidIncomingPool && tankDistanceSq >
+                    OrdosMagmaShareRadius * OrdosMagmaShareRadius) ||
+                (avoidIncomingPool && tankDistanceSq <
+                    OrdosPoolEvacuationMinDistance *
+                        OrdosPoolEvacuationMinDistance) ||
+                (!avoidIncomingPool && useMagmaStackRing && tankDistanceSq <
+                    OrdosMagmaStackMinDistance *
+                        OrdosMagmaStackMinDistance) ||
+                (!avoidIncomingPool && useMagmaStackRing &&
+                    bossDx * bossDx + bossDy * bossDy >
+                        OrdosRaidRelocateRadius *
+                            OrdosRaidRelocateRadius) ||
                 !IsInsideOrdosArena(candidateX, candidateY) ||
                 !IsOrdosPointSafe(hazards, candidateX, candidateY, 1.0f,
                     poolHazardsOnly) ||
@@ -4033,10 +4047,11 @@ BossMechanicsAction::Reaction BossMechanicsAction::GetReaction() const
                     ordosPoolEscapeWaypointY);
 
             // The pool snapshots the tank's ground position after a short
-            // cast. Everyone else temporarily holds the 16-18 yard annulus;
-            // this is still inside Magma Crush while outside the 15-yard pool.
-            // Keep the point briefly after the cast so melee cannot charge
-            // back into the fresh pool before the tank starts the next leg.
+            // cast. Everyone else temporarily moves beyond its observed
+            // radius to the 21-22 yard evacuation ring. Pool and Magma Crush
+            // timers do not overlap; after the pool lands the raid returns to
+            // the 16-18 yard sharing ring. Keep the evacuation point briefly
+            // so melee cannot charge back before the tank starts the next leg.
             if (tank != bot &&
                 (poolImminent || poolCasting || holdingPoolEscape))
                 return Reaction::EvadeOrdosPoolCast;
