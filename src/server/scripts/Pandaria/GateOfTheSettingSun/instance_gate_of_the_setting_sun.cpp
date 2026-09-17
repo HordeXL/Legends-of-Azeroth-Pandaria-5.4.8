@@ -18,6 +18,7 @@
 #include "ScriptMgr.h"
 #include "InstanceScript.h"
 #include "ScriptedCreature.h"
+#include "Transport.h"
 #include "gate_of_the_setting_sun.h"
 
 static std::vector<DoorData> const doorData =
@@ -95,6 +96,7 @@ class instance_gate_of_the_setting_sun : public InstanceMapScript
 
                 bombarderGuids.clear();
                 fallDefendersGUIDS.clear();
+                liftDefenderGUIDS.clear();
                 bombStalkerGuids.clear();
                 mantidBombsGUIDs.clear();
                 rimokAddGenetarorsGUIDs.clear();
@@ -176,6 +178,16 @@ class instance_gate_of_the_setting_sun : public InstanceMapScript
                     case NPC_FALL_DEFENDER:
                         fallDefendersGUIDS.push_back(creature->GetGUID());
                         break;
+                    case NPC_LIFT_DEFENDER:
+                        // The three feign-death defenders lying on the Gadok lift
+                        // are world spawns. Attach them to the local transport or
+                        // they remain suspended in the shaft when the lift moves.
+                        if (creature->GetExactDist2d(&ElevatorCenterPos) < 10.0f && creature->GetPositionZ() > 425.0f)
+                        {
+                            liftDefenderGUIDS.push_back(creature->GetGUID());
+                            AttachLiftDefender(creature);
+                        }
+                        break;
                     case NPC_BOMB_STALKER:
                         bombStalkerGuids.push_back(creature->GetGUID());
                         if (braiserState == DONE)
@@ -248,6 +260,9 @@ class instance_gate_of_the_setting_sun : public InstanceMapScript
                         break;
                     case GO_ELEVATOR:
                         elevatorGUID = go->GetGUID();
+                        for (ObjectGuid const& guid : liftDefenderGUIDS)
+                            if (Creature* defender = instance->GetCreature(guid))
+                                AttachLiftDefender(defender);
                         break;
                     case GO_KIPTILAK_WALLS:
                     case GO_RIMAK_AFTER_DOOR:
@@ -702,6 +717,24 @@ class instance_gate_of_the_setting_sun : public InstanceMapScript
             ObjectGuid greatDoorGUID;
             ObjectGuid greatDoor2GUID;
 
+            void AttachLiftDefender(Creature* defender)
+            {
+                if (!defender || defender->GetTransport())
+                    return;
+
+                GameObject* elevator = instance->GetGameObject(elevatorGUID);
+                Transport* transport = elevator ? elevator->ToTransport() : nullptr;
+                if (!transport)
+                    return;
+
+                float x, y, z, o;
+                defender->GetPosition(x, y, z, o);
+                transport->CalculatePassengerOffset(x, y, z, &o);
+                defender->m_movementInfo.transport.pos.Relocate(x, y, z, o);
+                defender->SetTransportHomePosition(defender->m_movementInfo.transport.pos);
+                transport->AddPassenger(defender);
+            }
+
             void RemoveBombarder(ObjectGuid guid)
             {
                 bombarderGuids.remove(guid);
@@ -731,6 +764,7 @@ class instance_gate_of_the_setting_sun : public InstanceMapScript
             uint32 dataStorage[MAX_DATA];
             std::list<ObjectGuid> bombarderGuids;
             std::list<ObjectGuid> fallDefendersGUIDS;
+            std::list<ObjectGuid> liftDefenderGUIDS;
             std::list<ObjectGuid> bombStalkerGuids;
             std::list<ObjectGuid> mantidBombsGUIDs;
             std::list<ObjectGuid> rimokAddGenetarorsGUIDs;
