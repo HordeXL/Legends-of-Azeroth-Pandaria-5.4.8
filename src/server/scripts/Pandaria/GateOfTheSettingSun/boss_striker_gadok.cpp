@@ -123,8 +123,7 @@ enum eTalks
     SAY_INTRO       = 0,
     SAY_AGGRO       = 1,
     SAY_DEATH       = 2,
-    SAY_SLAY        = 3,
-    SAY_STIKE_EMOTE = 4
+    SAY_SLAY        = 3
 };
 
 #define MAX_DISRUPTOR   5
@@ -514,7 +513,6 @@ class boss_striker_gadok : public CreatureScript
                 }
 
                 Talk(SAY_DEATH);
-                Talk(SAY_STIKE_EMOTE);         
             }
 
         private:
@@ -784,7 +782,15 @@ class npc_flak_cannon : public CreatureScript
                 {
                     for (uint8 i = 0; i < 5; ++i)
                     {
-                        if (Creature* bombarder = instance->instance->GetCreature(instance->GetGuidData(DATA_RANDOM_BOMBARDER)))
+                        ObjectGuid bombarderGuid = instance->GetGuidData(DATA_RANDOM_BOMBARDER);
+                        if (!bombarderGuid)
+                            break;
+
+                        // Remove the GUID before selecting the next target so one cannon shot
+                        // always hits up to five different bombardiers.
+                        instance->SetGuidData(DATA_BOMBARDER_DEFEATED, bombarderGuid);
+
+                        if (Creature* bombarder = instance->instance->GetCreature(bombarderGuid))
                         {
                             me->CastSpell(bombarder, 116553, true);
                             bombarder->GetMotionMaster()->MoveFall();

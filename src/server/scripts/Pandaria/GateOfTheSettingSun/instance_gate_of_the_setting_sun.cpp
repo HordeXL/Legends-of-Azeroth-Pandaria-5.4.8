@@ -52,7 +52,8 @@ class instance_gate_of_the_setting_sun : public InstanceMapScript
 
         enum eSpells
         {
-            SPELL_SPAWNER = 115141
+            SPELL_SPAWNER          = 115141,
+            SPELL_BOMBARDMENT_FIRE = 106875
         };
 
         struct instance_gate_of_the_setting_sun_InstanceMapScript : public InstanceScript
@@ -166,13 +167,18 @@ class instance_gate_of_the_setting_sun : public InstanceMapScript
                         raigonnGuid = creature->GetGUID();
                         break;
                     case NPC_KRITHUK_BOMBARDER:
-                        bombarderGuids.push_back(creature->GetGUID());
+                        if (braiserState == DONE)
+                            creature->DespawnOrUnsummon();
+                        else
+                            bombarderGuids.push_back(creature->GetGUID());
                         break;
                     case NPC_FALL_DEFENDER:
                         fallDefendersGUIDS.push_back(creature->GetGUID());
                         break;
                     case NPC_BOMB_STALKER:
                         bombStalkerGuids.push_back(creature->GetGUID());
+                        if (braiserState == DONE)
+                            creature->RemoveAurasDueToSpell(SPELL_BOMBARDMENT_FIRE);
                         break;
                     case NPC_ADD_GENERATOR:
                         rimokAddGenetarorsGUIDs.push_back(creature->GetGUID());
@@ -226,16 +232,7 @@ class instance_gate_of_the_setting_sun : public InstanceMapScript
             void OnCreatureRemove(Creature* creature) override
             {
                 if (creature->GetEntry() == NPC_KRITHUK_BOMBARDER)
-                {
-                    for (std::list<ObjectGuid>::iterator it = bombarderGuids.begin(); it != bombarderGuids.end(); ++it)
-                    {
-                        if (*it == creature->GetGUID())
-                        {
-                            bombarderGuids.erase(it);
-                            break;
-                        }
-                    }
-                }
+                    RemoveBombarder(creature->GetGUID());
             }
 
             void OnGameObjectCreate(GameObject* go) override
@@ -496,6 +493,8 @@ class instance_gate_of_the_setting_sun : public InstanceMapScript
                         break;
                     case DATA_BRASIER_CLICKED:
                         braiserState = data;
+                        if (data == DONE)
+                            ClearBombardment();
                         break;
                     default:
                         if (type < MAX_DATA)
@@ -537,6 +536,9 @@ class instance_gate_of_the_setting_sun : public InstanceMapScript
                     case NPC_WEAK_SPOT:
                         raigonWeakGuid = data;
                         break;
+                    case DATA_BOMBARDER_DEFEATED:
+                        RemoveBombarder(data);
+                        break;
                 }
             }
 
@@ -555,9 +557,9 @@ class instance_gate_of_the_setting_sun : public InstanceMapScript
                     case NPC_WEAK_SPOT:
                         return raigonWeakGuid;
                     case DATA_RANDOM_BOMBARDER:
-                        return Trinity::Containers::SelectRandomContainerElement(bombarderGuids);
+                        return bombarderGuids.empty() ? ObjectGuid::Empty : Trinity::Containers::SelectRandomContainerElement(bombarderGuids);
                     case DATA_RANDOM_BOMB_STALKER:
-                        return Trinity::Containers::SelectRandomContainerElement(bombStalkerGuids);
+                        return bombStalkerGuids.empty() ? ObjectGuid::Empty : Trinity::Containers::SelectRandomContainerElement(bombStalkerGuids);
                     case DATA_CORNER_A:
                         return explosionTarget1GUID;
                     case DATA_CORNER_B:
@@ -633,6 +635,9 @@ class instance_gate_of_the_setting_sun : public InstanceMapScript
 
                     loadStream >> temp;
                     braiserState = temp ? DONE : NOT_STARTED;
+
+                    if (braiserState == DONE)
+                        ClearBombardment();
                 }
                 else OUT_LOAD_INST_DATA_FAIL;
 
@@ -666,6 +671,32 @@ class instance_gate_of_the_setting_sun : public InstanceMapScript
             ObjectGuid defenderBGUID;
             ObjectGuid greatDoorGUID;
             ObjectGuid greatDoor2GUID;
+
+            void RemoveBombarder(ObjectGuid guid)
+            {
+                bombarderGuids.remove(guid);
+
+                if (!bombarderGuids.empty())
+                    return;
+
+                for (ObjectGuid const& stalkerGuid : bombStalkerGuids)
+                    if (Creature* stalker = instance->GetCreature(stalkerGuid))
+                        stalker->RemoveAurasDueToSpell(SPELL_BOMBARDMENT_FIRE);
+            }
+
+            void ClearBombardment()
+            {
+                std::list<ObjectGuid> bombarders = bombarderGuids;
+                bombarderGuids.clear();
+
+                for (ObjectGuid const& bombarderGuid : bombarders)
+                    if (Creature* bombarder = instance->GetCreature(bombarderGuid))
+                        bombarder->DespawnOrUnsummon();
+
+                for (ObjectGuid const& stalkerGuid : bombStalkerGuids)
+                    if (Creature* stalker = instance->GetCreature(stalkerGuid))
+                        stalker->RemoveAurasDueToSpell(SPELL_BOMBARDMENT_FIRE);
+            }
             ObjectGuid elevatorGUID;
             uint32 dataStorage[MAX_DATA];
             std::list<ObjectGuid> bombarderGuids;

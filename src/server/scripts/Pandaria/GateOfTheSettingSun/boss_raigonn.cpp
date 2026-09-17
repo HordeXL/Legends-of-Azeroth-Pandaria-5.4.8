@@ -277,7 +277,7 @@ class boss_raigonn : public CreatureScript
                                     weakSpot->EnterVehicle(me, 0);
 
                                     if (instance)
-                                        instance->SetData64(NPC_WEAK_SPOT, weakSpot->GetGUID());
+                                        instance->SetGuidData(NPC_WEAK_SPOT, weakSpot->GetGUID());
                                 }
                             }
                             break;
@@ -321,7 +321,7 @@ class boss_raigonn : public CreatureScript
                                    if (summon->IsAIEnabled)
                                        summon->AI()->AttackStart(target);
 
-                            events.ScheduleEvent(EVENT_SUMMON_ENGULFER, urand(35, 50) * IN_MILLISECONDS);
+                            events.ScheduleEvent(EVENT_SUMMON_SWARM_BRINGER, urand(35, 50) * IN_MILLISECONDS);
                             break;
                         case EVENT_FIXATE:
                             if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 150.0f, true))

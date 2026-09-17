@@ -37,8 +37,7 @@ enum eSpells
 enum eEvents
 {
     EVENT_FRENZIED_ASSAULT        = 1,
-    EVENT_FRENZIED_ASSAULT_REMOVE = 2,
-    EVENT_SWARM                   = 3,
+    EVENT_FRENZIED_ASSAULT_REMOVE = 2
 };
 
 enum eTalks
@@ -58,20 +57,17 @@ class boss_commander_rimok : public CreatureScript
             boss_commander_rimokAI(Creature* creature) : BossAI(creature, DATA_RIMOK) { }
 
             ObjectGuid targetGUID;
-            uint8 getType;
 
             void Reset() override
             {
                 _Reset();
                 me->SetReactState(REACT_PASSIVE);
-                getType = 4;
             }
 
             void InitializeAI() override
             {
                 me->SetReactState(REACT_PASSIVE);
                 me->SetVisible(false);
-                getType = 4;
             }
 
             void JustEngagedWith(Unit* /*who*/) override
@@ -84,7 +80,6 @@ class boss_commander_rimok : public CreatureScript
                     instance->SendEncounterUnit(ENCOUNTER_FRAME_ENGAGE, me);
 
                 events.ScheduleEvent(EVENT_FRENZIED_ASSAULT, 6 * IN_MILLISECONDS);
-                events.ScheduleEvent(EVENT_SWARM, 3 * IN_MILLISECONDS);
             }
 
             void KilledUnit(Unit* victim) override
@@ -136,10 +131,6 @@ class boss_commander_rimok : public CreatureScript
                             events.ScheduleEvent(EVENT_FRENZIED_ASSAULT_REMOVE, 7500);
                             events.ScheduleEvent(EVENT_FRENZIED_ASSAULT, urand(20, 21) * IN_MILLISECONDS);
                             break;
-                        case EVENT_SWARM:
-                            SendSwarmJoinToBattle(getType == SPECIAL ? IN_PROGRESS : SPECIAL);
-                            events.ScheduleEvent(EVENT_SWARM, urand(10, 18) * IN_MILLISECONDS);
-                            break;
                         case EVENT_FRENZIED_ASSAULT_REMOVE:
                             me->RemoveChanneledCast(targetGUID);
                             // fxd: should be use at end of assault
@@ -149,17 +140,6 @@ class boss_commander_rimok : public CreatureScript
                 }
 
                 DoMeleeAttackIfReady();
-            }
-
-            void SendSwarmJoinToBattle(uint8 m_type)
-            {
-                std::list<Creature*> AddGenerator;
-                GetCreatureListWithEntryInGrid(AddGenerator, me, NPC_ADD_GENERATOR, 100.0f);
-
-                for (auto&& itr : AddGenerator)
-                    itr->AI()->DoAction(m_type);
-
-                m_type = m_type == SPECIAL ? IN_PROGRESS : SPECIAL;
             }
 
             void JustDied(Unit* /*killer*/) override
@@ -307,9 +287,11 @@ class npc_add_generator : public CreatureScript
                         summons.DespawnAll();
                         break;
                     case SPECIAL: // Only one must spawn saboteurs
+                        me->RemoveAurasDueToSpell(SPELL_PERIODIC_SPAWN_SWARMER);
                         me->CastSpell(me, SPELL_PERIODIC_SPAWN_SABOTEUR, true);
                         break;
                     case IN_PROGRESS:
+                        me->RemoveAurasDueToSpell(SPELL_PERIODIC_SPAWN_SABOTEUR);
                         me->CastSpell(me, SPELL_PERIODIC_SPAWN_SWARMER, true);
                         break;
                     default:

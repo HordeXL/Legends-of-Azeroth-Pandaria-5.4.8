@@ -35,7 +35,7 @@ enum DataTypes
     DATA_BRASIER_CLICKED        = 6,
     DATA_RANDOM_BOMBARDER       = 7,
     DATA_RANDOM_BOMB_STALKER    = 8,
-    // unused
+    DATA_BOMBARDER_DEFEATED     = 9,
     DATA_CORNER_A               = 10,
     DATA_CORNER_B               = 11,
     DATA_CORNER_C               = 12,
