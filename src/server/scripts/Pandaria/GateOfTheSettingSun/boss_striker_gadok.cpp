@@ -85,7 +85,10 @@ enum eSpells
 
     // Disruptor
     SPELL_BOMB                   = 115110,
-    SPELL_TELEPORT_VISUAL        = 52096
+    SPELL_TELEPORT_VISUAL        = 52096,
+
+    // Flak Cannon
+    SPELL_FLAK_FIRE              = 133711
 };
 
 enum eEvents
@@ -790,14 +793,12 @@ class npc_flak_cannon : public CreatureScript
 
                     if (Creature* bombarder = instance->instance->GetCreature(bombarderGuid))
                     {
-                        // The retail click spell ends in a dummy effect and this client
-                        // does not render a readable shot from it. Explicitly send the
-                        // MoP flak projectile visual so the player can see which target
-                        // the cannon fired at, then make the target fall on impact.
-                        constexpr uint32 FlakProjectileVisual = 29216;
-                        constexpr float FlakProjectileSpeed = 40.0f;
-                        me->SendPlaySpellVisual(FlakProjectileVisual, bombarderGuid, FlakProjectileSpeed);
+                        // Cast the actual MoP Flak Fire missile. A bare spell-visual
+                        // packet is not rendered by this client, while this spell has
+                        // both a travelling projectile and an impact visual.
+                        me->CastSpell(bombarder, SPELL_FLAK_FIRE, true);
 
+                        constexpr float FlakProjectileSpeed = 20.0f;
                         uint32 travelTime = uint32(me->GetDistance(bombarder) / FlakProjectileSpeed * IN_MILLISECONDS);
                         if (travelTime < 500)
                             travelTime = 500;
