@@ -620,6 +620,16 @@ class go_setting_sun_elevator_lever : public GameObjectScript
                             if (!atReadyEnd && !atActiveEnd)
                                 return;
 
+                            // The three ambient defenders at the upper landing are
+                            // regular world spawns, not transport passengers. Their
+                            // corpses must be removed before the platform moves or
+                            // they remain suspended at the old world position.
+                            std::list<Creature*> defenders;
+                            GetCreatureListWithEntryInGrid(defenders, elevator, NPC_LIFT_DEFENDER, 10.0f);
+                            for (Creature* defender : defenders)
+                                if (!defender->IsAlive())
+                                    defender->DespawnOrUnsummon();
+
                             elevator->SetGoState(atReadyEnd ? GO_STATE_ACTIVE : GO_STATE_READY);
                         }
             }
