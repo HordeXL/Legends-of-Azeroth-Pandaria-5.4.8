@@ -778,8 +778,6 @@ class npc_flak_cannon : public CreatureScript
                 if (instance->GetBossState(DATA_GADOK) != DONE)
                     return;
 
-                me->RemoveFlag(UNIT_FIELD_NPC_FLAGS, UNIT_NPC_FLAG_SPELLCLICK);
-
                 for (uint8 i = 0; i < 5; ++i)
                 {
                     ObjectGuid bombarderGuid = instance->GetGuidData(DATA_RANDOM_BOMBARDER);
@@ -797,6 +795,12 @@ class npc_flak_cannon : public CreatureScript
                         bombarder->DespawnOrUnsummon(2000);
                     }
                 }
+
+                // Eighteen bombardiers are present and one shot removes at most
+                // five. Keep both cannons usable until the final target is gone;
+                // RemoveBombarder then also clears the fire from the walkway.
+                if (!instance->GetGuidData(DATA_RANDOM_BOMBARDER))
+                    me->RemoveFlag(UNIT_FIELD_NPC_FLAGS, UNIT_NPC_FLAG_SPELLCLICK);
             }
 
         private:

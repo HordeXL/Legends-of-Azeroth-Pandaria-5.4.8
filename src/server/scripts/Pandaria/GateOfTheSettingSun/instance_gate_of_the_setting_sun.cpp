@@ -353,6 +353,7 @@ class instance_gate_of_the_setting_sun : public InstanceMapScript
                 // Corpses are not attached to the transport and otherwise remain
                 // suspended in the shaft after the elevator changes height.
                 if (creature->GetEntry() == NPC_FALL_DEFENDER ||
+                    creature->GetEntry() == NPC_LIFT_DEFENDER ||
                     creature->GetEntry() == NPC_SERPENTS_SPINE_DEFENDER)
                 {
                     creature->DespawnOrUnsummon(1 * IN_MILLISECONDS);
