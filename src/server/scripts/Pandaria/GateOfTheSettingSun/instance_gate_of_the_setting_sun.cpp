@@ -349,14 +349,18 @@ class instance_gate_of_the_setting_sun : public InstanceMapScript
                 if (!creature)
                     return;
 
-                if (creature->GetEntry() == NPC_FALL_DEFENDER)
+                // These ambient defenders can die on or above the moving elevator.
+                // Corpses are not attached to the transport and otherwise remain
+                // suspended in the shaft after the elevator changes height.
+                if (creature->GetEntry() == NPC_FALL_DEFENDER ||
+                    creature->GetEntry() == NPC_SERPENTS_SPINE_DEFENDER)
                 {
                     creature->DespawnOrUnsummon(1 * IN_MILLISECONDS);
                     return;
                 }
 
                 if (instance->IsChallengeDungeon() && !IsChallengeModeCompleted() &&
-                    creature->GetEntry() != NPC_KRITHIK_GLIDER && creature->GetEntry() != NPC_SERPENTS_SPINE_DEFENDER)
+                    creature->GetEntry() != NPC_KRITHIK_GLIDER)
                     UpdateConditionInfo(creature, ENEMIES_COUNT);
             }
 
