@@ -429,6 +429,152 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
         bot->GetSession()->HandleTimeSyncResp(response);
     }
 
+    // The Gate of the Setting Sun lift is a local transport. Server-driven
+    // playerbot movement has no client movement packet that would normally
+    // add or remove a real player as a transport passenger. Mirror the real
+    // player's lift transition for managed LFG companions so they ride the
+    // platform and leave it with the group instead of walking into the shaft.
+    constexpr uint32 GateOfTheSettingSunMap = 962;
+    constexpr uint32 GateOfTheSettingSunElevator = 211013;
+    Player* gateFollowMaster = GetMaster();
+    bool gateFollowContext = IsLfgAutoQueueControlled() && gateFollowMaster &&
+        !GET_PLAYERBOT_AI(gateFollowMaster) && gateFollowMaster->IsInWorld() &&
+        gateFollowMaster->GetMap() == bot->GetMap() &&
+        bot->GetMapId() == GateOfTheSettingSunMap &&
+        bot->IsAlive() && gateFollowMaster->IsAlive() &&
+        !bot->IsBeingTeleported() && !gateFollowMaster->IsBeingTeleported() &&
+        !bot->GetVehicle() && !gateFollowMaster->GetVehicle();
+
+    if (gateFollowContext)
+    {
+        Transport* masterTransport = gateFollowMaster->GetTransport();
+        Transport* botTransport = bot->GetTransport();
+        bool masterOnElevator = masterTransport &&
+            masterTransport->GetEntry() == GateOfTheSettingSunElevator;
+        bool botOnElevator = botTransport &&
+            botTransport->GetEntry() == GateOfTheSettingSunElevator;
+
+        auto moveBesideMaster = [&](Transport* destinationTransport)
+        {
+            float x, y, z;
+            gateFollowMaster->GetClosePoint(x, y, z, bot->GetObjectSize(),
+                2.0f, static_cast<float>(M_PI));
+            z += 0.25f;
+
+            bot->GetMotionMaster()->Clear();
+            if (Transport* oldTransport = bot->GetTransport())
+                if (oldTransport != destinationTransport)
+                    oldTransport->RemovePassenger(bot);
+
+            if (destinationTransport && bot->GetTransport() != destinationTransport)
+            {
+                destinationTransport->AddPassenger(bot);
+                float localX = x;
+                float localY = y;
+                float localZ = z;
+                float localO = gateFollowMaster->GetOrientation();
+                destinationTransport->CalculatePassengerOffset(localX, localY,
+                    localZ, &localO);
+                bot->m_movementInfo.transport.pos.Relocate(localX, localY,
+                    localZ, localO);
+            }
+
+            bot->NearTeleportTo(x, y, z, gateFollowMaster->GetOrientation());
+
+            if (Pet* pet = bot->GetPet())
+            {
+                float petX, petY, petZ;
+                gateFollowMaster->GetClosePoint(petX, petY, petZ,
+                    pet->GetObjectSize(), PET_FOLLOW_DIST,
+                    pet->GetFollowAngle());
+                petZ += 0.25f;
+                pet->GetMotionMaster()->Clear();
+                if (Transport* petTransport = pet->GetTransport())
+                    if (petTransport != destinationTransport)
+                        petTransport->RemovePassenger(pet);
+
+                if (destinationTransport &&
+                    pet->GetTransport() != destinationTransport)
+                {
+                    destinationTransport->AddPassenger(pet);
+                    float localX = petX;
+                    float localY = petY;
+                    float localZ = petZ;
+                    float localO = gateFollowMaster->GetOrientation();
+                    destinationTransport->CalculatePassengerOffset(localX,
+                        localY, localZ, &localO);
+                    pet->m_movementInfo.transport.pos.Relocate(localX, localY,
+                        localZ, localO);
+                }
+
+                pet->NearTeleportTo(petX, petY, petZ,
+                    gateFollowMaster->GetOrientation());
+            }
+        };
+
+        if (masterOnElevator && botTransport != masterTransport &&
+            bot->GetExactDist2d(gateFollowMaster) < 50.0f)
+        {
+            moveBesideMaster(masterTransport);
+            TC_LOG_INFO("server",
+                "Playerbot boarded Gate elevator with master bot=%s guid=%u",
+                bot->GetName().c_str(), bot->GetGUID().GetCounter());
+        }
+        else if (!masterOnElevator && botOnElevator)
+        {
+            moveBesideMaster(nullptr);
+            TC_LOG_INFO("server",
+                "Playerbot left Gate elevator with master bot=%s guid=%u",
+                bot->GetName().c_str(), bot->GetGUID().GetCounter());
+        }
+
+        // The descending passage immediately after the lift also has a
+        // disconnected/unsafe navmesh edge: the trace showed followers
+        // falling under the map or remaining over 100 yards behind. Allow a
+        // normal route to make progress, but recover beside the real player
+        // after five seconds with no meaningful gain.
+        float followDistance = bot->GetDistance(gateFollowMaster);
+        float verticalSeparation = std::fabs(bot->GetPositionZ() -
+            gateFollowMaster->GetPositionZ());
+        bool brokenGateFollow = !bot->GetTransport() &&
+            !gateFollowMaster->GetTransport() && !bot->IsInCombat() &&
+            !gateFollowMaster->IsInCombat() && followDistance > 45.0f &&
+            (verticalSeparation > 8.0f ||
+                !bot->IsWithinLOSInMap(gateFollowMaster));
+
+        if (brokenGateFollow)
+        {
+            uint32 now = getMSTime();
+            if (!_gateSettingSunFollowRecoverySince ||
+                followDistance + 5.0f < _gateSettingSunBestFollowDistance)
+            {
+                _gateSettingSunFollowRecoverySince = now;
+                _gateSettingSunBestFollowDistance = followDistance;
+            }
+            else if (getMSTimeDiff(_gateSettingSunFollowRecoverySince, now) >= 5000)
+            {
+                float oldDistance = followDistance;
+                moveBesideMaster(nullptr);
+                TC_LOG_WARN("server",
+                    "Playerbot recovered from broken Gate follow path bot=%s guid=%u distance=%.2f vertical=%.2f",
+                    bot->GetName().c_str(), bot->GetGUID().GetCounter(),
+                    oldDistance, verticalSeparation);
+                _gateSettingSunFollowRecoverySince = 0;
+                _gateSettingSunBestFollowDistance = 0.0f;
+            }
+        }
+        else
+        {
+            _gateSettingSunFollowRecoverySince = 0;
+            _gateSettingSunBestFollowDistance = 0.0f;
+        }
+    }
+    else
+    {
+        _gateSettingSunFollowRecoverySince = 0;
+        _gateSettingSunBestFollowDistance = 0.0f;
+    }
+
     // Instance navmeshes occasionally place a following bot on geometry
     // below a narrow ramp/platform (notably the Hollowed Out Tree in Siege of
     // Niuzao Temple). Recover only the unambiguous "directly below the real

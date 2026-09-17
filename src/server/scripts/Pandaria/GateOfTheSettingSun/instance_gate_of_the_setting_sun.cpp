@@ -21,6 +21,8 @@
 #include "Transport.h"
 #include "gate_of_the_setting_sun.h"
 
+#include <cmath>
+
 static std::vector<DoorData> const doorData =
 {
     { GO_KIPTILAK_WALLS,      DATA_KIPTILAK, DOOR_TYPE_ROOM,    BOUNDARY_E    },
@@ -74,6 +76,7 @@ class instance_gate_of_the_setting_sun : public InstanceMapScript
                 braiserState          = NOT_STARTED;
                 fallEvent             = false;
                 playersInInstanceCnt  = 0;
+                liftDefenderAttachTimer = 0;
                 kiptilakGuid = ObjectGuid::Empty;
                 gadokGuid = ObjectGuid::Empty;
                 rimokGuid = ObjectGuid::Empty;
@@ -141,6 +144,21 @@ class instance_gate_of_the_setting_sun : public InstanceMapScript
                              if (!cSpawner->HasAura(SPELL_SPAWNER))
                                    cSpawner->CastSpell(cSpawner, SPELL_SPAWNER, false);
                 }
+
+                // The lift can be at either endpoint when its world spawns are
+                // loaded. Only convert the three corpses to local passengers
+                // once the platform is physically at their upper spawn point;
+                // calculating the offset while it is downstairs leaves them
+                // suspended high above the platform for the whole trip.
+                if (liftDefenderAttachTimer <= diff)
+                {
+                    liftDefenderAttachTimer = 500;
+                    for (ObjectGuid const& guid : liftDefenderGUIDS)
+                        if (Creature* defender = instance->GetCreature(guid))
+                            AttachLiftDefender(defender);
+                }
+                else
+                    liftDefenderAttachTimer -= diff;
 
                 ScheduleBeginningTimeUpdate(diff);
                 ScheduleChallengeStartup(diff);
@@ -727,6 +745,13 @@ class instance_gate_of_the_setting_sun : public InstanceMapScript
                 if (!transport)
                     return;
 
+                // Their DB positions belong to the upper endpoint. Waiting for
+                // the moving platform to be aligned also covers either object
+                // creation order without baking in a transport-local Z offset.
+                if (defender->GetExactDist2d(elevator) > 10.0f ||
+                    std::fabs(defender->GetPositionZ() - elevator->GetPositionZ()) > 5.0f)
+                    return;
+
                 float x, y, z, o;
                 defender->GetPosition(x, y, z, o);
                 transport->CalculatePassengerOffset(x, y, z, &o);
@@ -761,6 +786,7 @@ class instance_gate_of_the_setting_sun : public InstanceMapScript
                         stalker->RemoveAurasDueToSpell(SPELL_BOMBARDMENT_FIRE);
             }
             ObjectGuid elevatorGUID;
+            uint32 liftDefenderAttachTimer;
             uint32 dataStorage[MAX_DATA];
             std::list<ObjectGuid> bombarderGuids;
             std::list<ObjectGuid> fallDefendersGUIDS;

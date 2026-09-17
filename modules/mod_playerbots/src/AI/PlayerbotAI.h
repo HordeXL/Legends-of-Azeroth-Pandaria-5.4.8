@@ -276,6 +276,8 @@ protected:
     std::atomic<bool> _lfgPreparationBuffPending{ false };
     std::atomic<uint32> _lfgAutoQueueRequesterGuid{ 0 };
     uint32 _invalidFollowPositionSince = 0;
+    uint32 _gateSettingSunFollowRecoverySince = 0;
+    float _gateSettingSunBestFollowDistance = 0.0f;
     // Some login/group/queue callbacks run on the world thread while normal
     // actions run on a map worker. Keep Engine strategy/action ownership valid
     // for the complete duration of an action selection/execution cycle.
