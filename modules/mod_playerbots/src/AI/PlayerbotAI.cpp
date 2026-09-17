@@ -528,28 +528,37 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
                 bot->GetName().c_str(), bot->GetGUID().GetCounter());
         }
 
-        // The descending passage immediately after the lift also has a
-        // disconnected/unsafe navmesh edge: the trace showed followers
-        // falling under the map or remaining over 100 yards behind. Allow a
-        // normal route to make progress, but recover beside the real player
-        // after five seconds with no meaningful gain.
+        // Several stairs and the descending passage after the lift contain
+        // disconnected/unsafe navmesh edges. Allow a normal route to make
+        // progress, but recover beside the real player after five seconds in
+        // which neither the follow distance nor the bot's world position
+        // improves. Checking actual movement also catches a close stair-edge
+        // stall without teleporting a follower that is taking a valid detour.
         float followDistance = bot->GetDistance(gateFollowMaster);
         float verticalSeparation = std::fabs(bot->GetPositionZ() -
             gateFollowMaster->GetPositionZ());
         bool brokenGateFollow = !bot->GetTransport() &&
             !gateFollowMaster->GetTransport() && !bot->IsInCombat() &&
-            !gateFollowMaster->IsInCombat() && followDistance > 45.0f &&
-            (verticalSeparation > 8.0f ||
-                !bot->IsWithinLOSInMap(gateFollowMaster));
+            !gateFollowMaster->IsInCombat() && followDistance > 12.0f;
 
         if (brokenGateFollow)
         {
             uint32 now = getMSTime();
-            if (!_gateSettingSunFollowRecoverySince ||
-                followDistance + 5.0f < _gateSettingSunBestFollowDistance)
+            float movedX = bot->GetPositionX() - _gateSettingSunFollowStartX;
+            float movedY = bot->GetPositionY() - _gateSettingSunFollowStartY;
+            float movedZ = std::fabs(bot->GetPositionZ() -
+                _gateSettingSunFollowStartZ);
+            bool madeProgress = followDistance + 5.0f <
+                _gateSettingSunBestFollowDistance ||
+                movedX * movedX + movedY * movedY > 9.0f || movedZ > 2.0f;
+
+            if (!_gateSettingSunFollowRecoverySince || madeProgress)
             {
                 _gateSettingSunFollowRecoverySince = now;
                 _gateSettingSunBestFollowDistance = followDistance;
+                _gateSettingSunFollowStartX = bot->GetPositionX();
+                _gateSettingSunFollowStartY = bot->GetPositionY();
+                _gateSettingSunFollowStartZ = bot->GetPositionZ();
             }
             else if (getMSTimeDiff(_gateSettingSunFollowRecoverySince, now) >= 5000)
             {
@@ -561,18 +570,27 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
                     oldDistance, verticalSeparation);
                 _gateSettingSunFollowRecoverySince = 0;
                 _gateSettingSunBestFollowDistance = 0.0f;
+                _gateSettingSunFollowStartX = 0.0f;
+                _gateSettingSunFollowStartY = 0.0f;
+                _gateSettingSunFollowStartZ = 0.0f;
             }
         }
         else
         {
             _gateSettingSunFollowRecoverySince = 0;
             _gateSettingSunBestFollowDistance = 0.0f;
+            _gateSettingSunFollowStartX = 0.0f;
+            _gateSettingSunFollowStartY = 0.0f;
+            _gateSettingSunFollowStartZ = 0.0f;
         }
     }
     else
     {
         _gateSettingSunFollowRecoverySince = 0;
         _gateSettingSunBestFollowDistance = 0.0f;
+        _gateSettingSunFollowStartX = 0.0f;
+        _gateSettingSunFollowStartY = 0.0f;
+        _gateSettingSunFollowStartZ = 0.0f;
     }
 
     // Instance navmeshes occasionally place a following bot on geometry
