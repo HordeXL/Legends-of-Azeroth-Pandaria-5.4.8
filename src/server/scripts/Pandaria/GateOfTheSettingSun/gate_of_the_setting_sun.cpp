@@ -22,6 +22,7 @@
 #include "MoveSplineInit.h"
 #include "GameObjectAI.h"
 #include "CombatAI.h" 
+#include "Transport.h"
 
 enum spells
 {
@@ -603,7 +604,24 @@ class go_setting_sun_elevator_lever : public GameObjectScript
 
                 if (InstanceScript* instance = me->GetInstanceScript())
                     if (GameObject* elevator = me->GetMap()->GetGameObject(instance->GetGuidData(DATA_ELEVATOR)))
-                        elevator->SetGoState(elevator->GetGoState() == GO_STATE_READY ? GO_STATE_ACTIVE : GO_STATE_READY);
+                        if (Transport* transport = elevator->ToTransport())
+                        {
+                            uint32 period = transport->GetTransportPeriod();
+                            uint32 pause = elevator->GetGOInfo()->transport.pause;
+                            if (!period || !pause)
+                                return;
+
+                            uint32 timer = transport->GetTimer() % period;
+                            bool atReadyEnd = timer == period - 1;
+                            bool atActiveEnd = timer == pause;
+
+                            // A second click while the lift is travelling must not
+                            // reverse it in the middle of the shaft.
+                            if (!atReadyEnd && !atActiveEnd)
+                                return;
+
+                            elevator->SetGoState(atReadyEnd ? GO_STATE_ACTIVE : GO_STATE_READY);
+                        }
             }
         };
 
