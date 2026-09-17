@@ -91,6 +91,7 @@ class instance_gate_of_the_setting_sun : public InstanceMapScript
                 fireSignalGuid = ObjectGuid::Empty;
                 greatDoorGUID = ObjectGuid::Empty;
                 greatDoor2GUID        = ObjectGuid::Empty;
+                elevatorGUID          = ObjectGuid::Empty;
 
                 bombarderGuids.clear();
                 fallDefendersGUIDS.clear();
@@ -245,8 +246,12 @@ class instance_gate_of_the_setting_sun : public InstanceMapScript
                     case GO_SIGNAL_FIRE:
                         fireSignalGuid = go->GetGUID();
                         break;
+                    case GO_ELEVATOR:
+                        elevatorGUID = go->GetGUID();
+                        break;
                     case GO_KIPTILAK_WALLS:
                     case GO_RIMAK_AFTER_DOOR:
+                    case GO_RAIGONN_DOOR:
                     case GO_RAIGONN_AFTER_DOOR:
                     case GO_KIPTILAK_EXIT_DOOR:
                         AddDoor(go, true);
@@ -340,10 +345,19 @@ class instance_gate_of_the_setting_sun : public InstanceMapScript
 
             void OnUnitDeath(Unit* unit) override
             {
-                if (instance->IsChallengeDungeon() && !IsChallengeModeCompleted())
-                    if (Creature* creature = unit->ToCreature())
-                        if (creature->GetEntry() != NPC_KRITHIK_GLIDER && creature->GetEntry() != NPC_SERPENTS_SPINE_DEFENDER)
-                            UpdateConditionInfo(creature, ENEMIES_COUNT);
+                Creature* creature = unit->ToCreature();
+                if (!creature)
+                    return;
+
+                if (creature->GetEntry() == NPC_FALL_DEFENDER)
+                {
+                    creature->DespawnOrUnsummon(1 * IN_MILLISECONDS);
+                    return;
+                }
+
+                if (instance->IsChallengeDungeon() && !IsChallengeModeCompleted() &&
+                    creature->GetEntry() != NPC_KRITHIK_GLIDER && creature->GetEntry() != NPC_SERPENTS_SPINE_DEFENDER)
+                    UpdateConditionInfo(creature, ENEMIES_COUNT);
             }
 
             void SetData(uint32 type, uint32 data) override
@@ -412,6 +426,15 @@ class instance_gate_of_the_setting_sun : public InstanceMapScript
                                 {
                                     if (Creature* defender = instance->GetCreature(itr))
                                     {
+                                        // Defenders can die in the ambient fight before the player
+                                        // reaches this trigger. A corpse cannot perform the scripted
+                                        // jump and would otherwise float in the moving elevator shaft.
+                                        if (!defender->IsAlive())
+                                        {
+                                            defender->DespawnOrUnsummon();
+                                            continue;
+                                        }
+
                                         if (defender->IsAIEnabled)
                                             defender->AI()->Talk(0);
 
@@ -574,6 +597,8 @@ class instance_gate_of_the_setting_sun : public InstanceMapScript
                         return traineeGUID;
                     case DATA_SIGNAL_FIRE:
                         return fireSignalGuid;
+                    case DATA_ELEVATOR:
+                        return elevatorGUID;
                     case DATA_ROPE:
                         for (auto&& guid : ropeGUIDs)
                              return guid;

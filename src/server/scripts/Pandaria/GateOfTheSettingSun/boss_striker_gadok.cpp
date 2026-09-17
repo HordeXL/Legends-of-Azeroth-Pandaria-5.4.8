@@ -770,32 +770,31 @@ class npc_flak_cannon : public CreatureScript
 
             void Reset() override { }
 
-            void SpellHit(Unit* /*caster*/, SpellInfo const* spell) override
+            void OnSpellClick(Unit* /*clicker*/, bool& result) override
             {
-                if (!instance)
+                if (!result || !instance)
                     return;
 
                 if (instance->GetBossState(DATA_GADOK) != DONE)
                     return;
 
-                if (spell->Id == 116554) // Fire Flak Cannon
+                me->RemoveFlag(UNIT_FIELD_NPC_FLAGS, UNIT_NPC_FLAG_SPELLCLICK);
+
+                for (uint8 i = 0; i < 5; ++i)
                 {
-                    for (uint8 i = 0; i < 5; ++i)
+                    ObjectGuid bombarderGuid = instance->GetGuidData(DATA_RANDOM_BOMBARDER);
+                    if (!bombarderGuid)
+                        break;
+
+                    // Remove the GUID before selecting the next target so one cannon shot
+                    // always hits up to five different bombardiers.
+                    instance->SetGuidData(DATA_BOMBARDER_DEFEATED, bombarderGuid);
+
+                    if (Creature* bombarder = instance->instance->GetCreature(bombarderGuid))
                     {
-                        ObjectGuid bombarderGuid = instance->GetGuidData(DATA_RANDOM_BOMBARDER);
-                        if (!bombarderGuid)
-                            break;
-
-                        // Remove the GUID before selecting the next target so one cannon shot
-                        // always hits up to five different bombardiers.
-                        instance->SetGuidData(DATA_BOMBARDER_DEFEATED, bombarderGuid);
-
-                        if (Creature* bombarder = instance->instance->GetCreature(bombarderGuid))
-                        {
-                            me->CastSpell(bombarder, 116553, true);
-                            bombarder->GetMotionMaster()->MoveFall();
-                            bombarder->DespawnOrUnsummon(2000);
-                        }
+                        me->CastSpell(bombarder, 116553, true);
+                        bombarder->GetMotionMaster()->MoveFall();
+                        bombarder->DespawnOrUnsummon(2000);
                     }
                 }
             }

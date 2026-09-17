@@ -48,6 +48,7 @@ enum DataTypes
     DATA_SIGNAL_FIRE            = 19,
     DATA_ROPE                   = 20,
     DATA_ARTILLERY_STATE        = 21,
+    DATA_ELEVATOR               = 22,
     MAX_DATA
 };
 
@@ -124,6 +125,9 @@ enum ObjectsIds
     GO_KIPTILAK_EXIT_DOOR       = 212983,
 
     GO_SIGNAL_FIRE              = 213507,
+
+    GO_ELEVATOR                 = 211013,
+    GO_ELEVATOR_LEVER           = 211284,
 
     GO_RIMAK_AFTER_DOOR         = 212985,
 
@@ -218,7 +222,6 @@ const float LeftCannoneerWPPath[24][3] =
 
 const float RightCannoneerWPPath[27][3] =
 {
-    { 1063.392f, 2242.182f, 296.2305f },
     { 1176.13f,  2302.667f, 388.1546f },
     { 1168.965f, 2303.122f, 388.1074f },
     { 1150.594f, 2301.951f, 388.0614f },
@@ -244,7 +247,8 @@ const float RightCannoneerWPPath[27][3] =
     { 1025.12f,  2236.528f, 296.2305f },
     { 1033.986f, 2246.701f, 296.2305f },
     { 1050.47f,  2251.889f, 296.2305f },
-    { 1061.459f, 2241.667f, 296.2305f }
+    { 1061.459f, 2241.667f, 296.2305f },
+    { 1063.392f, 2242.182f, 296.2305f }
 };
 
 enum InstanceScenarioData

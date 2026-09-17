@@ -587,6 +587,32 @@ class go_setting_sun_brasier : public GameObjectScript
         }
 };
 
+class go_setting_sun_elevator_lever : public GameObjectScript
+{
+    public:
+        go_setting_sun_elevator_lever() : GameObjectScript("go_setting_sun_elevator_lever") { }
+
+        struct go_setting_sun_elevator_leverAI : public GameObjectAI
+        {
+            go_setting_sun_elevator_leverAI(GameObject* go) : GameObjectAI(go) { }
+
+            void OnStateChanged(uint32 state, Unit* /*unit*/) override
+            {
+                if (state != GO_ACTIVATED)
+                    return;
+
+                if (InstanceScript* instance = me->GetInstanceScript())
+                    if (GameObject* elevator = me->GetMap()->GetGameObject(instance->GetGuidData(DATA_ELEVATOR)))
+                        elevator->SetGoState(elevator->GetGoState() == GO_STATE_READY ? GO_STATE_ACTIVE : GO_STATE_READY);
+            }
+        };
+
+        GameObjectAI* GetAI(GameObject* go) const override
+        {
+            return new go_setting_sun_elevator_leverAI(go);
+        }
+};
+
 class vehicle_artillery_to_wall : public CreatureScript
 {
     public:
@@ -1208,7 +1234,7 @@ class npc_gss_pandaren_cannoneer : public CreatureScript
                         case EVENT_LEFT_MOVE_AFTER_JUMP:
                         {
                             Movement::MoveSplineInit init(me);
-                            for (uint8 i = 11; i < 24; ++i)
+                            for (uint8 i = 10; i < 24; ++i)
                             {
                                 G3D::Vector3 path(LeftCannoneerWPPath[i][0], LeftCannoneerWPPath[i][1], LeftCannoneerWPPath[i][2]);
                                 init.Path().push_back(path);
@@ -1223,7 +1249,7 @@ class npc_gss_pandaren_cannoneer : public CreatureScript
                         case EVENT_RIGHT_MOVE_BEFORE_JUMP:
                         {
                             Movement::MoveSplineInit init(me);
-                            for (uint8 i = 0; i < 9; ++i)
+                            for (uint8 i = 0; i < 8; ++i)
                             {
                                 G3D::Vector3 path(RightCannoneerWPPath[i][0], RightCannoneerWPPath[i][1], RightCannoneerWPPath[i][2]);
                                 init.Path().push_back(path);
@@ -1259,7 +1285,7 @@ class npc_gss_pandaren_cannoneer : public CreatureScript
                         case EVENT_RIGHT_MOVE_AFTER_JUMP:
                         {
                             Movement::MoveSplineInit init(me);
-                            for (uint8 i = 10; i < 27; ++i)
+                            for (uint8 i = 8; i < 27; ++i)
                             {
                                 G3D::Vector3 path(RightCannoneerWPPath[i][0], RightCannoneerWPPath[i][1], RightCannoneerWPPath[i][2]);
                                 init.Path().push_back(path);
@@ -1780,6 +1806,7 @@ void AddSC_gate_of_the_setting_sun()
     new npc_gss_pandaren_cannoneer();
 
     new go_setting_sun_brasier();
+    new go_setting_sun_elevator_lever();
     new go_gss_generic();
     new vehicle_artillery_to_wall();
     new AreaTrigger_at_destroy_corner_a();
