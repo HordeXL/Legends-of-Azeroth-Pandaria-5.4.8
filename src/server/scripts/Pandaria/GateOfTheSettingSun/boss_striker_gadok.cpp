@@ -790,9 +790,25 @@ class npc_flak_cannon : public CreatureScript
 
                     if (Creature* bombarder = instance->instance->GetCreature(bombarderGuid))
                     {
-                        me->CastSpell(bombarder, 116553, true);
-                        bombarder->GetMotionMaster()->MoveFall();
-                        bombarder->DespawnOrUnsummon(2000);
+                        // The retail click spell ends in a dummy effect and this client
+                        // does not render a readable shot from it. Explicitly send the
+                        // MoP flak projectile visual so the player can see which target
+                        // the cannon fired at, then make the target fall on impact.
+                        constexpr uint32 FlakProjectileVisual = 29216;
+                        constexpr float FlakProjectileSpeed = 40.0f;
+                        me->SendPlaySpellVisual(FlakProjectileVisual, bombarderGuid, FlakProjectileSpeed);
+
+                        uint32 travelTime = uint32(me->GetDistance(bombarder) / FlakProjectileSpeed * IN_MILLISECONDS);
+                        if (travelTime < 500)
+                            travelTime = 500;
+                        else if (travelTime > 2500)
+                            travelTime = 2500;
+
+                        bombarder->m_Events.Schedule(travelTime, [bombarder]()
+                        {
+                            bombarder->GetMotionMaster()->MoveFall();
+                            bombarder->DespawnOrUnsummon(2000);
+                        });
                     }
                 }
 
