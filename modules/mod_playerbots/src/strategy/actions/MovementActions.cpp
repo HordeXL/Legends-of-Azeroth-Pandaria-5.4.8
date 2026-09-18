@@ -92,6 +92,7 @@ constexpr uint32 XinGemEntry = 63808;
 constexpr uint32 XinGlowingGemSpell = 124524;
 constexpr uint32 XinCrossbowEntry = 61679;
 constexpr uint32 XinDartAuraSpell = 120143;
+constexpr uint32 XinGemAttemptFailedData = 100;
 constexpr float XinGemRoomCenterX = -4632.8f;
 constexpr float XinGemRoomCenterY = -2615.0f;
 constexpr float XinGemClickDistance = 4.0f;
@@ -2379,7 +2380,8 @@ XinGemTask GetXinGemTask(Player* bot)
 
     Creature* xin = bot->FindNearestCreature(
         XinWeaponmasterEntry, 200.0f, true);
-    if (!xin || !xin->IsInCombat())
+    if (!xin || !xin->IsInCombat() || !bot->GetMap()->IsHeroic() ||
+        xin->AI()->GetData(XinGemAttemptFailedData) != 0)
         return task;
 
     std::list<Creature*> gemList;

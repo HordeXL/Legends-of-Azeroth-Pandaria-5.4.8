@@ -67,6 +67,11 @@ enum GuidTypes
     GUID_GEM_CLICKED = 1,
 };
 
+enum DataTypes
+{
+    DATA_GEM_ATTEMPT_FAILED = 100,
+};
+
 static const uint32 GEM_CLICK_WINDOW = 6 * IN_MILLISECONDS;
 
 // Constants to define which world triggers can be chosen as blade launchers
@@ -125,6 +130,7 @@ class boss_xin_the_weaponmaster : public CreatureScript
             ObjectGuid clickedGemGUID;
             uint32 gemClickTimer;
             bool mechanismReady;
+            bool gemAttemptFailed;
             ObjectGuid targetGUID;
 
             void InitializeAI() override
@@ -138,6 +144,7 @@ class boss_xin_the_weaponmaster : public CreatureScript
                 targetGUID = ObjectGuid::Empty;
                 gemClickTimer = 0;
                 mechanismReady = false;
+                gemAttemptFailed = false;
             }
 
             void InitializeGems()
@@ -151,6 +158,7 @@ class boss_xin_the_weaponmaster : public CreatureScript
                 clickedGemGUID = ObjectGuid::Empty;
                 gemClickTimer = 0;
                 mechanismReady = false;
+                gemAttemptFailed = false;
 
                 for (Creature* gem : gems)
                 {
@@ -170,7 +178,7 @@ class boss_xin_the_weaponmaster : public CreatureScript
                 }
             }
 
-            void DeactivateGems()
+            void DeactivateGems(bool attemptFailed = false)
             {
                 std::list<Creature*> nearbyGems;
                 GetCreatureListWithEntryInGrid(nearbyGems, me, CREATURE_FAINTLY_GLOWING_GEM, 200.0f);
@@ -181,6 +189,7 @@ class boss_xin_the_weaponmaster : public CreatureScript
                 clickedGemGUID = ObjectGuid::Empty;
                 gemClickTimer = 0;
                 mechanismReady = false;
+                gemAttemptFailed = attemptFailed;
             }
 
             void ActivateGem(uint8 index)
@@ -445,6 +454,14 @@ class boss_xin_the_weaponmaster : public CreatureScript
                     HandleGemClick(guid);
             }
 
+            uint32 GetData(uint32 type) const override
+            {
+                if (type == DATA_GEM_ATTEMPT_FAILED)
+                    return gemAttemptFailed ? 1 : 0;
+
+                return 0;
+            }
+
             void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
@@ -455,7 +472,7 @@ class boss_xin_the_weaponmaster : public CreatureScript
                 if (gemClickTimer)
                 {
                     if (gemClickTimer <= diff)
-                        DeactivateGems();
+                        DeactivateGems(true);
                     else
                         gemClickTimer -= diff;
                 }
