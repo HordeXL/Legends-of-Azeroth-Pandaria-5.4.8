@@ -90,9 +90,12 @@ constexpr uint32 MogushanPalaceMap = 994;
 constexpr uint32 XinWeaponmasterEntry = 61398;
 constexpr uint32 XinGemEntry = 63808;
 constexpr uint32 XinGlowingGemSpell = 124524;
+constexpr uint32 XinCrossbowEntry = 61679;
+constexpr uint32 XinDartAuraSpell = 120143;
 constexpr float XinGemRoomCenterX = -4632.8f;
 constexpr float XinGemRoomCenterY = -2615.0f;
 constexpr float XinGemClickDistance = 4.0f;
+constexpr float XinGemPrepareHealthPct = 45.0f;
 constexpr uint32 OrdosEntry = 72057;
 constexpr uint32 OrdosAncientFlameEntry = 72059;
 constexpr uint32 OrdosMagmaCrushSpell = 144688;
@@ -2349,6 +2352,16 @@ bool IsXinFinalMechanismGem(Creature const* gem)
         gem->GetPositionY() < XinGemRoomCenterY;
 }
 
+bool IsXinActivationGem(Creature const* gem)
+{
+    if (!gem)
+        return false;
+
+    bool const north = gem->GetPositionX() > XinGemRoomCenterX;
+    bool const west = gem->GetPositionY() > XinGemRoomCenterY;
+    return north == west;
+}
+
 bool IsXinGemActive(Creature const* gem)
 {
     return gem && gem->IsAlive() && gem->IsInWorld() &&
@@ -2371,6 +2384,7 @@ XinGemTask GetXinGemTask(Player* bot)
 
     std::list<Creature*> gemList;
     bot->GetCreatureListWithEntryInGrid(gemList, XinGemEntry, 200.0f);
+    std::vector<Creature*> activationGems;
     std::vector<Creature*> activeGems;
     for (Creature* gem : gemList)
     {
@@ -2378,26 +2392,57 @@ XinGemTask GetXinGemTask(Player* bot)
             gem->GetMap() != bot->GetMap())
             continue;
 
+        if (IsXinActivationGem(gem))
+            activationGems.push_back(gem);
         if (IsXinGemActive(gem))
             activeGems.push_back(gem);
     }
 
-    if (activeGems.empty())
-        return task;
+    auto sortByGuid = [](Creature const* left, Creature const* right)
+    {
+        return left->GetGUID() < right->GetGUID();
+    };
+    std::sort(activationGems.begin(), activationGems.end(), sortByGuid);
+    std::sort(activeGems.begin(), activeGems.end(), sortByGuid);
 
-    std::sort(activeGems.begin(), activeGems.end(),
-        [](Creature const* left, Creature const* right)
-        {
-            return left->GetGUID() < right->GetGUID();
-        });
-
-    // The first corner lights at 66%, but clicking it then would consume the
-    // six-second window before the opposite corner appears at 33%. Wait until
-    // the second activation (or until the final firing control is active).
     bool const finalStage = activeGems.size() == 1 &&
         IsXinFinalMechanismGem(activeGems.front());
-    if (activeGems.size() == 1 && !finalStage &&
-        xin->GetHealthPct() > 35.5f)
+
+    bool secondGemActivated = false;
+    std::list<Creature*> crossbows;
+    bot->GetCreatureListWithEntryInGrid(
+        crossbows, XinCrossbowEntry, 200.0f);
+    for (Creature* crossbow : crossbows)
+    {
+        if (crossbow && crossbow->IsInWorld() &&
+            crossbow->GetMap() == bot->GetMap() &&
+            crossbow->HasAura(XinDartAuraSpell))
+        {
+            secondGemActivated = true;
+            break;
+        }
+    }
+
+    // Keep doing damage when the first corner appears at 66%. Starting at
+    // 45%, send two non-tanks to the activation corners so they are ready
+    // shortly before Death From Above enables the second gem. The crossbow
+    // aura confirms the second activation event has actually run; using
+    // health alone leaves a one-second race where only the first gem is live.
+    bool const prepareCorners = !finalStage && !secondGemActivated &&
+        xin->GetHealthPct() <= XinGemPrepareHealthPct;
+    if (!finalStage && !secondGemActivated && !prepareCorners)
+        return task;
+
+    std::vector<Creature*> const* taskGems = &activeGems;
+    bool clickTaskGems = true;
+    if (prepareCorners)
+    {
+        if (activationGems.size() < 2)
+            return task;
+        taskGems = &activationGems;
+        clickTaskGems = false;
+    }
+    else if (activeGems.empty())
         return task;
 
     std::vector<Player*> candidates;
@@ -2453,8 +2498,8 @@ XinGemTask GetXinGemTask(Player* bot)
         candidates.erase(best);
     };
 
-    for (Creature* activeGem : activeGems)
-        assignGem(activeGem, true, !finalStage);
+    for (Creature* gem : *taskGems)
+        assignGem(gem, clickTaskGems, !finalStage);
 
     bool allActiveAssignmentsReady = true;
     uint32 activeAssignments = 0;
@@ -2467,7 +2512,7 @@ XinGemTask GetXinGemTask(Player* bot)
             XinGemClickDistance)
             allActiveAssignmentsReady = false;
     }
-    if (activeAssignments < activeGems.size())
+    if (activeAssignments < taskGems->size())
         allActiveAssignmentsReady = false;
 
     for (Assignment const& assignment : assignments)
@@ -2477,7 +2522,7 @@ XinGemTask GetXinGemTask(Player* bot)
 
         task.Gem = assignment.Gem;
         task.Click = assignment.Active &&
-            (activeGems.size() == 1 || allActiveAssignmentsReady);
+            (taskGems->size() == 1 || allActiveAssignmentsReady);
         return task;
     }
 
