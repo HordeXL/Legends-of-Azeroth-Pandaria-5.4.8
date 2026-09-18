@@ -537,9 +537,18 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
         float followDistance = bot->GetDistance(gateFollowMaster);
         float verticalSeparation = std::fabs(bot->GetPositionZ() -
             gateFollowMaster->GetPositionZ());
+        bool gateGroupInCombat = bot->IsInCombat() ||
+            gateFollowMaster->IsInCombat();
+        // Do not reset the recovery timer merely because an unreachable
+        // ambient pack has put either group member in combat. At the broken
+        // wall this can hold a companion on the previous platform until the
+        // scripted defender fight finishes. Preserve normal ranged combat
+        // positioning, but recover a genuinely stranded combatant once it is
+        // more than 30 yards from the real player.
+        float recoveryDistance = gateGroupInCombat ? 30.0f : 12.0f;
         bool brokenGateFollow = !bot->GetTransport() &&
-            !gateFollowMaster->GetTransport() && !bot->IsInCombat() &&
-            !gateFollowMaster->IsInCombat() && followDistance > 12.0f;
+            !gateFollowMaster->GetTransport() &&
+            followDistance > recoveryDistance;
 
         if (brokenGateFollow)
         {
