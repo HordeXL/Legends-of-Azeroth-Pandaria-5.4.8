@@ -279,12 +279,20 @@ class boss_striker_gadok : public CreatureScript
 
             void DamageTaken(Unit* /*attacker*/, uint32& damage) override
             {
-                if (isStrafing && damage >= me->GetHealth())
-                    damage = 0;
-
-                if (curPct > 0 && HealthBelowPct((uint32)curPct) && !isStrafing)
+                // Gadok is untargetable on retail while performing Strafing Run.
+                // Keep his health at the phase threshold instead of letting players
+                // reduce him to 1 HP and only preventing the lethal hit.
+                if (isStrafing)
                 {
-                    curPct -= 40;
+                    damage = 0;
+                    return;
+                }
+
+                if (curPct > 0 && me->HealthBelowPctDamaged(uint32(curPct), damage))
+                {
+                    uint32 thresholdHealth = me->CountPctFromMaxHealth(uint32(curPct));
+                    damage = me->GetHealth() > thresholdHealth ? me->GetHealth() - thresholdHealth : 0;
+                    curPct = curPct == 70 ? 30 : 0;
 
                     if (Unit* vict = me->GetVictim())
                     {
