@@ -832,6 +832,13 @@ class npc_flak_cannon : public CreatureScript
 
                         bombarder->m_Events.Schedule(travelTime, [bombarder]()
                         {
+                            // The dummy Fire Flak cast supplies the projectile,
+                            // but not a visible hit on this client. Play the
+                            // Flak Fire Impact visual at the bombarder before it
+                            // falls so the cannon hit has clear feedback.
+                            constexpr uint32 FlakImpactVisual = 12398;
+                            bombarder->SendPlaySpellVisual(FlakImpactVisual,
+                                bombarder->GetGUID(), 0.0f);
                             bombarder->GetMotionMaster()->MoveFall();
                             bombarder->DespawnOrUnsummon(2000);
                         });

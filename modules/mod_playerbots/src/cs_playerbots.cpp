@@ -2324,8 +2324,19 @@ std::vector<char const*> GetSoloArenaPreparationBuffActions(Player* bot)
                 return { "arcane brilliance on party", "molten armor" };
             return { "arcane brilliance on party", "frost armor" };
         case CLASS_PALADIN:
+            // A paladin's Kings and Might are mutually exclusive. Once this
+            // bot has supplied one blessing, keep it as that bot's assignment
+            // instead of requesting the other one every maintenance cycle.
+            // A second paladin with neither aura can still select the missing
+            // raid-buff category below.
+            if (bot->HasAura(19740, bot->GetGUID()))
+                return { "blessing of might",
+                    specialization == SPEC_PALADIN_RETRIBUTION ? "seal of truth" : "seal of insight" };
+            if (bot->HasAura(20217, bot->GetGUID()))
+                return { "blessing of kings",
+                    specialization == SPEC_PALADIN_RETRIBUTION ? "seal of truth" : "seal of insight" };
             if (specialization == SPEC_PALADIN_RETRIBUTION)
-                return { "blessing of kings", "blessing of might", "seal of truth" };
+                return { "blessing of might", "blessing of kings", "seal of truth" };
             return { "blessing of kings", "blessing of might", "seal of insight" };
         // The two shouts are exclusive only for the same caster. Raid-aware
         // coordination below lets duplicate warriors split them safely.
