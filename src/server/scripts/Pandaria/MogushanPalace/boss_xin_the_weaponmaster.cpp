@@ -48,8 +48,7 @@ enum Spells
     SPELL_DART_DAMAGE        = 120142,
 
     SPELL_GLOWING_GEM              = 124524,
-    SPELL_SECRET_DEFENSE_MECHANISM = 124527,
-    SPELL_ACTIVATE_MECHANISM       = 124537
+    SPELL_SECRET_DEFENSE_MECHANISM = 124527
 };
 
 enum Creatures
@@ -200,9 +199,6 @@ class boss_xin_the_weaponmaster : public CreatureScript
 
                 if (mechanismReady && gemGUID == mechanismGemGUID)
                 {
-                    if (Creature* gem = ObjectAccessor::GetCreature(*me, mechanismGemGUID))
-                        gem->CastSpell(me, SPELL_ACTIVATE_MECHANISM, true);
-
                     // Achievement 6736 uses spell 124527 as its DBC criterion.
                     if (instance)
                         instance->DoUpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_BE_SPELL_TARGET,

@@ -211,7 +211,9 @@ private:
         AvoidYuLonJadefireBlaze,
         AvoidYuLonJadefireBreath,
         MoveYuLonJadefireWallGap,
-        StopYuLonRunSpeed
+        StopYuLonRunSpeed,
+        PositionXinGem,
+        ActivateXinGem
     };
 
     Reaction GetReaction() const;

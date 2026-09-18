@@ -86,6 +86,13 @@ constexpr uint32 ChiJiBeaconEntry = 71978;
 constexpr uint32 YuLonEntry = 71955;
 constexpr uint32 YuLonJadefireBlazeEntry = 72016;
 constexpr uint32 YuLonJadefireWallEntry = 72020;
+constexpr uint32 MogushanPalaceMap = 994;
+constexpr uint32 XinWeaponmasterEntry = 61398;
+constexpr uint32 XinGemEntry = 63808;
+constexpr uint32 XinGlowingGemSpell = 124524;
+constexpr float XinGemRoomCenterX = -4632.8f;
+constexpr float XinGemRoomCenterY = -2615.0f;
+constexpr float XinGemClickDistance = 4.0f;
 constexpr uint32 OrdosEntry = 72057;
 constexpr uint32 OrdosAncientFlameEntry = 72059;
 constexpr uint32 OrdosMagmaCrushSpell = 144688;
@@ -2330,6 +2337,162 @@ bool IsPositionInsideChiJiFirestorm(Player* bot, float x, float y)
     return false;
 }
 
+struct XinGemTask
+{
+    Creature* Gem = nullptr;
+    bool Click = false;
+};
+
+bool IsXinFinalMechanismGem(Creature const* gem)
+{
+    return gem && gem->GetPositionX() > XinGemRoomCenterX &&
+        gem->GetPositionY() < XinGemRoomCenterY;
+}
+
+bool IsXinGemActive(Creature const* gem)
+{
+    return gem && gem->IsAlive() && gem->IsInWorld() &&
+        gem->HasAura(XinGlowingGemSpell) &&
+        gem->HasFlag(UNIT_FIELD_NPC_FLAGS, UNIT_NPC_FLAG_SPELLCLICK) &&
+        !gem->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE);
+}
+
+XinGemTask GetXinGemTask(Player* bot)
+{
+    XinGemTask task;
+    if (!bot || bot->GetMapId() != MogushanPalaceMap ||
+        PlayerBotSpec::IsTank(bot, true))
+        return task;
+
+    Creature* xin = bot->FindNearestCreature(
+        XinWeaponmasterEntry, 200.0f, true);
+    if (!xin || !xin->IsInCombat())
+        return task;
+
+    std::list<Creature*> gemList;
+    bot->GetCreatureListWithEntryInGrid(gemList, XinGemEntry, 200.0f);
+    std::vector<Creature*> activeGems;
+    Creature* finalGem = nullptr;
+    for (Creature* gem : gemList)
+    {
+        if (!gem || !gem->IsAlive() || !gem->IsInWorld() ||
+            gem->GetMap() != bot->GetMap())
+            continue;
+
+        if (IsXinFinalMechanismGem(gem))
+            finalGem = gem;
+        if (IsXinGemActive(gem))
+            activeGems.push_back(gem);
+    }
+
+    if (activeGems.empty())
+        return task;
+
+    std::sort(activeGems.begin(), activeGems.end(),
+        [](Creature const* left, Creature const* right)
+        {
+            return left->GetGUID() < right->GetGUID();
+        });
+
+    // The first corner lights at 66%, but clicking it then would consume the
+    // six-second window before the opposite corner appears at 33%. Wait until
+    // the second activation (or until the final firing control is active).
+    bool const finalStage = activeGems.size() == 1 &&
+        IsXinFinalMechanismGem(activeGems.front());
+    if (activeGems.size() == 1 && !finalStage &&
+        xin->GetHealthPct() > 35.5f)
+        return task;
+
+    std::vector<Player*> candidates;
+    if (Group* group = bot->GetGroup())
+    {
+        for (GroupReference* ref = group->GetFirstMember(); ref;
+            ref = ref->next())
+        {
+            Player* member = ref->GetSource();
+            if (!member || !member->IsAlive() || !member->IsInWorld() ||
+                member->GetMap() != bot->GetMap() ||
+                PlayerBotSpec::IsTank(member, true) ||
+                !GET_PLAYERBOT_AI(member))
+                continue;
+            candidates.push_back(member);
+        }
+    }
+    else if (GET_PLAYERBOT_AI(bot))
+        candidates.push_back(bot);
+
+    if (candidates.empty())
+        return task;
+
+    struct Assignment
+    {
+        Player* Bot;
+        Creature* Gem;
+        bool Active;
+    };
+    std::vector<Assignment> assignments;
+
+    auto assignGem = [&](Creature* gem, bool active, bool preferDamage)
+    {
+        if (!gem || candidates.empty())
+            return;
+
+        auto best = std::min_element(candidates.begin(), candidates.end(),
+            [gem, preferDamage](Player* left, Player* right)
+            {
+                bool const leftHealer = PlayerBotSpec::IsHeal(left, true);
+                bool const rightHealer = PlayerBotSpec::IsHeal(right, true);
+                if (preferDamage && leftHealer != rightHealer)
+                    return !leftHealer;
+
+                float const leftDistance = left->GetExactDist2d(gem);
+                float const rightDistance = right->GetExactDist2d(gem);
+                if (std::fabs(leftDistance - rightDistance) > 0.01f)
+                    return leftDistance < rightDistance;
+                return left->GetGUID() < right->GetGUID();
+            });
+
+        assignments.push_back({ *best, gem, active });
+        candidates.erase(best);
+    };
+
+    for (Creature* activeGem : activeGems)
+        assignGem(activeGem, true, !finalStage);
+
+    // While two corner controls are being coordinated, park one remaining
+    // non-tank at the south-east firing control. It can click immediately
+    // when the second corner enables it, still inside the same six seconds.
+    if (activeGems.size() > 1 && finalGem && !IsXinGemActive(finalGem))
+        assignGem(finalGem, false, false);
+
+    bool allActiveAssignmentsReady = true;
+    uint32 activeAssignments = 0;
+    for (Assignment const& assignment : assignments)
+    {
+        if (!assignment.Active)
+            continue;
+        ++activeAssignments;
+        if (assignment.Bot->GetExactDist2d(assignment.Gem) >
+            XinGemClickDistance)
+            allActiveAssignmentsReady = false;
+    }
+    if (activeAssignments < activeGems.size())
+        allActiveAssignmentsReady = false;
+
+    for (Assignment const& assignment : assignments)
+    {
+        if (assignment.Bot != bot)
+            continue;
+
+        task.Gem = assignment.Gem;
+        task.Click = assignment.Active &&
+            (activeGems.size() == 1 || allActiveAssignmentsReady);
+        return task;
+    }
+
+    return task;
+}
+
 // Temporary, targeted pre-pull tracing. Record the action that actually
 // submitted movement, rather than inferring it from a combat flag or class.
 void TraceManagedPveMovement(PlayerbotAI* ai, char const* action,
@@ -3926,6 +4089,15 @@ BossMechanicsAction::Reaction BossMechanicsAction::GetReaction() const
         return Reaction::None;
     }
 
+    // Xin the Weaponmaster's heroic achievement exposes its complete state
+    // through the four gem creatures. Tanks stay on Xin; the remaining bots
+    // deterministically divide active controls and re-evaluate immediately
+    // when a player or another bot clicks one.
+    XinGemTask const xinGemTask = GetXinGemTask(bot);
+    if (xinGemTask.Gem)
+        return xinGemTask.Click ? Reaction::ActivateXinGem :
+            Reaction::PositionXinGem;
+
     // Galleon (entry 62346), local boss_galion.cpp: every minute the boss
     // summons six Salyin Warmongers (entry 62351).  Damage dealers and the
     // off-tank must clear these adds; healers keep healing and the tank who is
@@ -4409,7 +4581,9 @@ bool BossMechanicsAction::Execute(Event /*event*/)
          reaction == Reaction::AvoidNiuzaoCharge ||
          reaction == Reaction::AvoidYuLonJadefireBlaze ||
          reaction == Reaction::AvoidYuLonJadefireBreath ||
-         reaction == Reaction::MoveYuLonJadefireWallGap) &&
+         reaction == Reaction::MoveYuLonJadefireWallGap ||
+         reaction == Reaction::PositionXinGem ||
+         reaction == Reaction::ActivateXinGem) &&
         bot->IsNonMeleeSpellCasted(true))
     {
         bot->CastStop();
@@ -4418,6 +4592,45 @@ bool BossMechanicsAction::Execute(Event /*event*/)
 
     switch (reaction)
     {
+        case Reaction::PositionXinGem:
+        case Reaction::ActivateXinGem:
+            {
+                // Recompute after GetReaction: a human or another bot may
+                // have clicked one of the controls during this AI update.
+                XinGemTask const task = GetXinGemTask(bot);
+                if (!task.Gem)
+                    return false;
+
+                float const distance = bot->GetExactDist2d(task.Gem);
+                if (task.Click && distance <= XinGemClickDistance &&
+                    bot->IsWithinLOSInMap(task.Gem))
+                {
+                    bot->GetMotionMaster()->Clear(false);
+                    bool const clicked = task.Gem->HandleSpellClick(bot);
+                    if (clicked)
+                    {
+                        Creature* xin = bot->FindNearestCreature(
+                            XinWeaponmasterEntry, 200.0f, true);
+                        TC_LOG_INFO("server",
+                            "Xin gem clicked bot=%s/%u gem=%u boss-health=%.1f",
+                            bot->GetName().c_str(),
+                            bot->GetGUID().GetCounter(),
+                            task.Gem->GetGUID().GetCounter(),
+                            xin ? xin->GetHealthPct() : 0.0f);
+                    }
+                    return clicked;
+                }
+
+                if (distance > 2.5f || !bot->IsWithinLOSInMap(task.Gem))
+                    return MoveTo(task.Gem, 2.0f,
+                        MovementPriority::MOVEMENT_FORCED);
+
+                // Hold the prepared corner/firing-control position until all
+                // assigned non-tanks are ready. Returning true suppresses
+                // ordinary formation movement which would pull the bot away.
+                bot->StopMoving();
+                return true;
+            }
         case Reaction::ApproachNalak:
             if (Creature* nalak = bot->FindNearestCreature(69099, 200.0f, true))
                 return MoveTo(nalak, 15.0f, MovementPriority::MOVEMENT_FORCED);
