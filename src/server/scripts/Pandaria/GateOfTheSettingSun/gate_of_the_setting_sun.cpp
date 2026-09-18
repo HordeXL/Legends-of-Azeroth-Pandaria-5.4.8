@@ -693,14 +693,7 @@ class npc_serpents_spine_marksman : public CreatureScript
 
         enum eEvents
         {
-            EVENT_MISSILE     = 1,
-            EVENT_KILL_MANTID = 2
-        };
-
-        enum eSpells
-        {
-            SPELL_MISSILE     = 106202,
-            SPELL_KILL_MANTID = 115146
+            EVENT_MISSILE = 1
         };
 
         struct npc_serpents_spine_marksmanAI : public ScriptedAI
@@ -717,7 +710,7 @@ class npc_serpents_spine_marksman : public CreatureScript
                 // the nearest reachable point.
                 me->SetReactState(REACT_PASSIVE);
                 SetCombatMovement(false);
-                events.ScheduleEvent(EVENT_MISSILE, 1 * IN_MILLISECONDS);
+                events.ScheduleEvent(EVENT_MISSILE, urand(500, 2500));
             }
 
             void DamageTaken(Unit* /*attacker*/, uint32& /*damage*/) override 
@@ -739,19 +732,30 @@ class npc_serpents_spine_marksman : public CreatureScript
                     {
                         case EVENT_MISSILE:
                         {
-                            me->CastSpell(me, SPELL_MISSILE, false);
-                            events.ScheduleEvent(urand(EVENT_MISSILE, EVENT_KILL_MANTID), 2 * IN_MILLISECONDS);
-                            break;
-                        }
-                        case EVENT_KILL_MANTID:
-                        {
-                            std::list<Creature*> spitters;
-                            me->GetCreatureListWithEntryInGrid(spitters, NPC_KRITHIK_GLIDER, 105.0f);
-                            if (!spitters.empty())
-                                if (auto creature = Trinity::Containers::SelectRandomContainerElement(spitters))
-                                    me->CastSpell(creature, SPELL_KILL_MANTID, false);
+                            std::list<Creature*> gliders;
+                            me->GetCreatureListWithEntryInGrid(gliders, NPC_KRITHIK_GLIDER, 150.0f);
+                            gliders.remove_if([](Creature* glider) { return !glider->IsAlive(); });
 
-                            events.ScheduleEvent(urand(EVENT_MISSILE, EVENT_KILL_MANTID), 2 * IN_MILLISECONDS);
+                            if (!gliders.empty())
+                            {
+                                Creature* glider = Trinity::Containers::SelectRandomContainerElement(gliders);
+                                constexpr uint32 PandaArcherProjectileVisual = 23575;
+                                constexpr float PandaArcherProjectileSpeed = 90.0f;
+
+                                me->SetFacingToObject(glider);
+                                me->SendPlaySpellVisual(PandaArcherProjectileVisual, glider->GetGUID(), PandaArcherProjectileSpeed);
+
+                                ObjectGuid gliderGuid = glider->GetGUID();
+                                uint32 travelTime = std::max<uint32>(100, uint32(me->GetDistance(glider) / PandaArcherProjectileSpeed * IN_MILLISECONDS));
+                                me->m_Events.Schedule(travelTime, [this, gliderGuid]()
+                                {
+                                    if (Creature* target = ObjectAccessor::GetCreature(*me, gliderGuid))
+                                        if (target->IsAlive())
+                                            me->Kill(target);
+                                });
+                            }
+
+                            events.ScheduleEvent(EVENT_MISSILE, urand(2000, 4000));
                         }
                         break;
 

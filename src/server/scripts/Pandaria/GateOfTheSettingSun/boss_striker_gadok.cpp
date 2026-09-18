@@ -88,7 +88,8 @@ enum eSpells
     SPELL_TELEPORT_VISUAL        = 52096,
 
     // Flak Cannon
-    SPELL_FLAK_FIRE              = 116553
+    SPELL_FLAK_FIRE              = 116553,
+    SPELL_FLAK_FIRE_IMPACT       = 133710
 };
 
 enum eEvents
@@ -520,6 +521,34 @@ class boss_striker_gadok : public CreatureScript
 
             void JustDied(Unit* /*killer*/) override
             {
+                // Creature::setDeathState starts MoveFall for flying creatures before
+                // this hook runs. Keep Gadok's corpse on the tower platform instead of
+                // letting it fall through the open lift shaft in the middle.
+                float corpseX = me->GetPositionX();
+                float corpseY = me->GetPositionY();
+                float offsetX = corpseX - ElevatorCenterPos.GetPositionX();
+                float offsetY = corpseY - ElevatorCenterPos.GetPositionY();
+                float distanceFromLift = std::sqrt(offsetX * offsetX + offsetY * offsetY);
+
+                if (distanceFromLift < 12.0f)
+                {
+                    if (distanceFromLift < 0.1f)
+                    {
+                        offsetX = 1.0f;
+                        offsetY = 0.0f;
+                        distanceFromLift = 1.0f;
+                    }
+
+                    corpseX = ElevatorCenterPos.GetPositionX() + offsetX / distanceFromLift * 12.0f;
+                    corpseY = ElevatorCenterPos.GetPositionY() + offsetY / distanceFromLift * 12.0f;
+                }
+
+                me->GetMotionMaster()->Clear(false);
+                me->StopMoving();
+                me->SetCanFly(false);
+                me->SetDisableGravity(true);
+                me->NearTeleportTo(corpseX, corpseY, 430.90f, me->GetOrientation());
+
                 _JustDied();
                 if (instance)
                 {
@@ -837,13 +866,10 @@ class npc_flak_cannon : public CreatureScript
 
                         bombarder->m_Events.Schedule(travelTime, [bombarder]()
                         {
-                            // The dummy Fire Flak cast supplies the projectile,
-                            // but not a visible hit on this client. Play the
-                            // Flak Fire Impact visual at the bombarder before it
-                            // falls so the cannon hit has clear feedback.
-                            constexpr uint32 FlakImpactVisual = 12398;
-                            bombarder->SendPlaySpellVisual(FlakImpactVisual,
-                                bombarder->GetGUID(), 0.0f);
+                            // Cast the actual client spell instead of sending its
+                            // visual ID from the target to itself. The latter packet
+                            // has no visible impact on the 5.4.8 client.
+                            bombarder->CastSpell(bombarder, SPELL_FLAK_FIRE_IMPACT, true);
                             bombarder->GetMotionMaster()->MoveFall();
                             bombarder->DespawnOrUnsummon(2000);
                         });
