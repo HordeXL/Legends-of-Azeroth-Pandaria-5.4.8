@@ -710,6 +710,13 @@ class npc_serpents_spine_marksman : public CreatureScript
             void InitializeAI() override
             {
                 me->setActive(true);
+                // These marksmen are an ambient firing line, not a normal
+                // combat pack. Keep each archer at its DB position while the
+                // scripted events fire at passing gliders; otherwise every
+                // marksman acquires the same flying target and converges at
+                // the nearest reachable point.
+                me->SetReactState(REACT_PASSIVE);
+                SetCombatMovement(false);
                 events.ScheduleEvent(EVENT_MISSILE, 1 * IN_MILLISECONDS);
             }
 
