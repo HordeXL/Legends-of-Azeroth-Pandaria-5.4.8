@@ -70,6 +70,7 @@ enum GuidTypes
 enum DataTypes
 {
     DATA_GEM_ATTEMPT_FAILED = 100,
+    DATA_SECOND_GEM_ACTIVATED = 101,
 };
 
 static const uint32 GEM_CLICK_WINDOW = 6 * IN_MILLISECONDS;
@@ -131,6 +132,7 @@ class boss_xin_the_weaponmaster : public CreatureScript
             uint32 gemClickTimer;
             bool mechanismReady;
             bool gemAttemptFailed;
+            bool secondGemActivated;
             ObjectGuid targetGUID;
 
             void InitializeAI() override
@@ -145,6 +147,7 @@ class boss_xin_the_weaponmaster : public CreatureScript
                 gemClickTimer = 0;
                 mechanismReady = false;
                 gemAttemptFailed = false;
+                secondGemActivated = false;
             }
 
             void InitializeGems()
@@ -159,6 +162,7 @@ class boss_xin_the_weaponmaster : public CreatureScript
                 gemClickTimer = 0;
                 mechanismReady = false;
                 gemAttemptFailed = false;
+                secondGemActivated = false;
 
                 for (Creature* gem : gems)
                 {
@@ -190,6 +194,7 @@ class boss_xin_the_weaponmaster : public CreatureScript
                 gemClickTimer = 0;
                 mechanismReady = false;
                 gemAttemptFailed = attemptFailed;
+                secondGemActivated = false;
             }
 
             void ActivateGem(uint8 index)
@@ -198,7 +203,13 @@ class boss_xin_the_weaponmaster : public CreatureScript
                     return;
 
                 if (Creature* gem = ObjectAccessor::GetCreature(*me, activationGemGUIDs[index]))
+                {
                     gem->AI()->DoAction(ACTION_ACTIVATE_BUTTON);
+                    TC_LOG_INFO("server",
+                        "Xin gem activated index=%u gem=%u boss-health=%.1f instance=%u",
+                        uint32(index), gem->GetGUID().GetCounter(),
+                        me->GetHealthPct(), me->GetInstanceId());
+                }
             }
 
             void HandleGemClick(ObjectGuid gemGUID)
@@ -234,6 +245,9 @@ class boss_xin_the_weaponmaster : public CreatureScript
                 {
                     clickedGemGUID = gemGUID;
                     gemClickTimer = GEM_CLICK_WINDOW;
+                    TC_LOG_INFO("server",
+                        "Xin first activation gem clicked index=%u gem=%u instance=%u",
+                        uint32(gemIndex), gemGUID.GetCounter(), me->GetInstanceId());
                     return;
                 }
 
@@ -245,6 +259,9 @@ class boss_xin_the_weaponmaster : public CreatureScript
                 // gems. Once both were pressed in time, the revealed firing
                 // control remains available until it is used or combat ends.
                 gemClickTimer = 0;
+                TC_LOG_INFO("server",
+                    "Xin activation pair completed second-index=%u gem=%u instance=%u",
+                    uint32(gemIndex), gemGUID.GetCounter(), me->GetInstanceId());
 
                 if (Creature* mechanismGem = ObjectAccessor::GetCreature(*me, mechanismGemGUID))
                     mechanismGem->AI()->DoAction(ACTION_ACTIVATE_BUTTON);
@@ -378,6 +395,11 @@ class boss_xin_the_weaponmaster : public CreatureScript
                 if (me->GetHealthPct() > 35.5f)
                     return false;
 
+                // Expose the encounter transition directly to playerbots.  A
+                // crossbow aura is a visual side effect and is not a reliable
+                // state signal when the spell fails to attach or the grid is
+                // not yet loaded for a particular bot.
+                secondGemActivated = true;
                 ActivateGem(1);
 
                 std::list<Creature*>m_lCrossbowList;
@@ -458,6 +480,8 @@ class boss_xin_the_weaponmaster : public CreatureScript
             {
                 if (type == DATA_GEM_ATTEMPT_FAILED)
                     return gemAttemptFailed ? 1 : 0;
+                if (type == DATA_SECOND_GEM_ACTIVATED)
+                    return secondGemActivated ? 1 : 0;
 
                 return 0;
             }
@@ -472,7 +496,12 @@ class boss_xin_the_weaponmaster : public CreatureScript
                 if (gemClickTimer)
                 {
                     if (gemClickTimer <= diff)
+                    {
+                        TC_LOG_INFO("server",
+                            "Xin activation gem window expired instance=%u",
+                            me->GetInstanceId());
                         DeactivateGems(true);
+                    }
                     else
                         gemClickTimer -= diff;
                 }

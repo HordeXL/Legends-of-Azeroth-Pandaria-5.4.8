@@ -90,13 +90,12 @@ constexpr uint32 MogushanPalaceMap = 994;
 constexpr uint32 XinWeaponmasterEntry = 61398;
 constexpr uint32 XinGemEntry = 63808;
 constexpr uint32 XinGlowingGemSpell = 124524;
-constexpr uint32 XinCrossbowEntry = 61679;
-constexpr uint32 XinDartAuraSpell = 120143;
 constexpr uint32 XinGemAttemptFailedData = 100;
+constexpr uint32 XinSecondGemActivatedData = 101;
 constexpr float XinGemRoomCenterX = -4632.8f;
 constexpr float XinGemRoomCenterY = -2615.0f;
 constexpr float XinGemClickDistance = 4.0f;
-constexpr float XinGemPrepareHealthPct = 45.0f;
+constexpr float XinGemPrepareHealthPct = 55.0f;
 constexpr uint32 OrdosEntry = 72057;
 constexpr uint32 OrdosAncientFlameEntry = 72059;
 constexpr uint32 OrdosMagmaCrushSpell = 144688;
@@ -2410,26 +2409,14 @@ XinGemTask GetXinGemTask(Player* bot)
     bool const finalStage = activeGems.size() == 1 &&
         IsXinFinalMechanismGem(activeGems.front());
 
-    bool secondGemActivated = false;
-    std::list<Creature*> crossbows;
-    bot->GetCreatureListWithEntryInGrid(
-        crossbows, XinCrossbowEntry, 200.0f);
-    for (Creature* crossbow : crossbows)
-    {
-        if (crossbow && crossbow->IsInWorld() &&
-            crossbow->GetMap() == bot->GetMap() &&
-            crossbow->HasAura(XinDartAuraSpell))
-        {
-            secondGemActivated = true;
-            break;
-        }
-    }
+    bool const secondGemActivated =
+        xin->AI()->GetData(XinSecondGemActivatedData) != 0;
 
     // Keep doing damage when the first corner appears at 66%. Starting at
-    // 45%, send two non-tanks to the activation corners so they are ready
-    // shortly before Death From Above enables the second gem. The crossbow
-    // aura confirms the second activation event has actually run; using
-    // health alone leaves a one-second race where only the first gem is live.
+    // 55%, send two non-tanks to the activation corners so they have enough
+    // travel time in a fast five-player kill. The encounter AI reports the
+    // exact second-gem transition, avoiding the one-second health polling race
+    // and an unreliable dependency on a crossbow's visual aura.
     bool const prepareCorners = !finalStage && !secondGemActivated &&
         xin->GetHealthPct() <= XinGemPrepareHealthPct;
     if (!finalStage && !secondGemActivated && !prepareCorners)
