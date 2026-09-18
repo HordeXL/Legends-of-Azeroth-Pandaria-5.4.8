@@ -88,7 +88,7 @@ enum eSpells
     SPELL_TELEPORT_VISUAL        = 52096,
 
     // Flak Cannon
-    SPELL_FLAK_FIRE              = 133711
+    SPELL_FLAK_FIRE              = 116553
 };
 
 enum eEvents
@@ -781,6 +781,7 @@ class npc_flak_cannon : public CreatureScript
                 if (instance->GetBossState(DATA_GADOK) != DONE)
                     return;
 
+                uint8 targetsFired = 0;
                 for (uint8 i = 0; i < 5; ++i)
                 {
                     ObjectGuid bombarderGuid = instance->GetGuidData(DATA_RANDOM_BOMBARDER);
@@ -793,12 +794,28 @@ class npc_flak_cannon : public CreatureScript
 
                     if (Creature* bombarder = instance->instance->GetCreature(bombarderGuid))
                     {
-                        // Cast the actual MoP Flak Fire missile. A bare spell-visual
-                        // packet is not rendered by this client, while this spell has
-                        // both a travelling projectile and an impact visual.
-                        me->CastSpell(bombarder, SPELL_FLAK_FIRE, true);
-
+                        constexpr uint32 FlakProjectileVisual = 23921;
+                        constexpr uint32 FlakFireSound = 33607;
                         constexpr float FlakProjectileSpeed = 20.0f;
+
+                        if (!targetsFired)
+                        {
+                            me->SetFacingToObject(bombarder);
+                            me->PlayDirectSound(FlakFireSound);
+                        }
+
+                        // 116553 is the Gate of the Setting Sun Fire Flak spell.
+                        // Send its projectile visual explicitly as well because
+                        // this client does not render the triggered dummy cast
+                        // reliably when the target is high above the walkway.
+                        me->CastSpell(bombarder, SPELL_FLAK_FIRE, true);
+                        me->SendPlaySpellVisual(FlakProjectileVisual,
+                            bombarder->GetPositionX(),
+                            bombarder->GetPositionY(),
+                            bombarder->GetPositionZ(),
+                            FlakProjectileSpeed);
+                        ++targetsFired;
+
                         uint32 travelTime = uint32(me->GetDistance(bombarder) / FlakProjectileSpeed * IN_MILLISECONDS);
                         if (travelTime < 500)
                             travelTime = 500;
@@ -812,6 +829,10 @@ class npc_flak_cannon : public CreatureScript
                         });
                     }
                 }
+
+                TC_LOG_INFO("server",
+                    "Gate flak cannon fired cannon-guid=%u targets=%u",
+                    me->GetGUID().GetCounter(), targetsFired);
 
                 // Eighteen bombardiers are present and one shot removes at most
                 // five. Keep both cannons usable until the final target is gone;
