@@ -2372,15 +2372,12 @@ XinGemTask GetXinGemTask(Player* bot)
     std::list<Creature*> gemList;
     bot->GetCreatureListWithEntryInGrid(gemList, XinGemEntry, 200.0f);
     std::vector<Creature*> activeGems;
-    Creature* finalGem = nullptr;
     for (Creature* gem : gemList)
     {
         if (!gem || !gem->IsAlive() || !gem->IsInWorld() ||
             gem->GetMap() != bot->GetMap())
             continue;
 
-        if (IsXinFinalMechanismGem(gem))
-            finalGem = gem;
         if (IsXinGemActive(gem))
             activeGems.push_back(gem);
     }
@@ -2458,12 +2455,6 @@ XinGemTask GetXinGemTask(Player* bot)
 
     for (Creature* activeGem : activeGems)
         assignGem(activeGem, true, !finalStage);
-
-    // While two corner controls are being coordinated, park one remaining
-    // non-tank at the south-east firing control. It can click immediately
-    // when the second corner enables it, still inside the same six seconds.
-    if (activeGems.size() > 1 && finalGem && !IsXinGemActive(finalGem))
-        assignGem(finalGem, false, false);
 
     bool allActiveAssignmentsReady = true;
     uint32 activeAssignments = 0;

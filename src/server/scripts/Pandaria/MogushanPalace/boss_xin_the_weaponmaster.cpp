@@ -232,7 +232,10 @@ class boss_xin_the_weaponmaster : public CreatureScript
                     return;
 
                 mechanismReady = true;
-                gemClickTimer = GEM_CLICK_WINDOW;
+                // The six-second check applies only between the two corner
+                // gems. Once both were pressed in time, the revealed firing
+                // control remains available until it is used or combat ends.
+                gemClickTimer = 0;
 
                 if (Creature* mechanismGem = ObjectAccessor::GetCreature(*me, mechanismGemGUID))
                     mechanismGem->AI()->DoAction(ACTION_ACTIVATE_BUTTON);
