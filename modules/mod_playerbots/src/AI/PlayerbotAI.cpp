@@ -545,10 +545,17 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
         // scripted defender fight finishes. Preserve normal ranged combat
         // positioning, but recover a genuinely stranded combatant once it is
         // more than 30 yards from the real player.
+        // The destructible wall near the Raigonn approach changes its collision
+        // at runtime. The navmesh still describes the intact upper corner, so a
+        // follower can keep moving around on the wall while the master has
+        // already descended roughly fifty yards. Treat a large level split as
+        // a blocked transition even when the bot is technically still moving.
+        bool gateLevelSeparated = verticalSeparation > 15.0f &&
+            followDistance > 12.0f;
         float recoveryDistance = gateGroupInCombat ? 30.0f : 12.0f;
         bool brokenGateFollow = !bot->GetTransport() &&
             !gateFollowMaster->GetTransport() &&
-            followDistance > recoveryDistance;
+            (gateLevelSeparated || followDistance > recoveryDistance);
 
         if (brokenGateFollow)
         {
@@ -559,7 +566,9 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
                 _gateSettingSunFollowStartZ);
             bool madeProgress = followDistance + 5.0f <
                 _gateSettingSunBestFollowDistance ||
-                movedX * movedX + movedY * movedY > 9.0f || movedZ > 2.0f;
+                (!gateLevelSeparated &&
+                    (movedX * movedX + movedY * movedY > 9.0f ||
+                        movedZ > 2.0f));
 
             if (!_gateSettingSunFollowRecoverySince || madeProgress)
             {
@@ -569,14 +578,18 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
                 _gateSettingSunFollowStartY = bot->GetPositionY();
                 _gateSettingSunFollowStartZ = bot->GetPositionZ();
             }
-            else if (getMSTimeDiff(_gateSettingSunFollowRecoverySince, now) >= 5000)
+            uint32 recoveryDelay = gateLevelSeparated ? 1500 : 5000;
+            if (_gateSettingSunFollowRecoverySince && !madeProgress &&
+                getMSTimeDiff(_gateSettingSunFollowRecoverySince, now) >=
+                    recoveryDelay)
             {
                 float oldDistance = followDistance;
                 moveBesideMaster(nullptr);
                 TC_LOG_WARN("server",
-                    "Playerbot recovered from broken Gate follow path bot=%s guid=%u distance=%.2f vertical=%.2f",
+                    "Playerbot recovered from broken Gate follow path bot=%s guid=%u distance=%.2f vertical=%.2f level-split=%u",
                     bot->GetName().c_str(), bot->GetGUID().GetCounter(),
-                    oldDistance, verticalSeparation);
+                    oldDistance, verticalSeparation,
+                    gateLevelSeparated ? 1u : 0u);
                 _gateSettingSunFollowRecoverySince = 0;
                 _gateSettingSunBestFollowDistance = 0.0f;
                 _gateSettingSunFollowStartX = 0.0f;
