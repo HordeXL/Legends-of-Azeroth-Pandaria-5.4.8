@@ -174,6 +174,7 @@ class boss_striker_gadok : public CreatureScript
                 me->SetAnimTier(AnimTier::Hover);
                 me->SetDisableGravity(true);
                 me->SetReactState(REACT_AGGRESSIVE);
+                me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE);
 
                 if (instance)
                     instance->SetData(DATA_GADOK, PHASE_MAIN);
@@ -334,6 +335,8 @@ class boss_striker_gadok : public CreatureScript
                         isStrafing = true;
                         me->SetSpeed(MOVE_FLIGHT, 3.5f, true);
                         me->SetReactState(REACT_PASSIVE);
+                        me->AttackStop();
+                        me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE);
                         events.CancelEventGroup(PHASE_MAIN);
 
                         move = urand(MOV_NORTH_SOUTH, MOV_EAST_WEST);
@@ -443,6 +446,8 @@ class boss_striker_gadok : public CreatureScript
                 me->m_Events.Schedule(me->GetSplineDuration(), 4, [this]()
                 {
                     me->RemoveChanneledCast(targetGUID);
+                    me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE);
+                    me->SetReactState(REACT_AGGRESSIVE);
                     isStrafing = false;
                 });
             }
