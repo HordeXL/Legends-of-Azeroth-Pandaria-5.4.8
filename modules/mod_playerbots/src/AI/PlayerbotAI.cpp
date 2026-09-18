@@ -454,11 +454,20 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
         bool botOnElevator = botTransport &&
             botTransport->GetEntry() == GateOfTheSettingSunElevator;
 
-        auto moveBesideMaster = [&](Transport* destinationTransport)
+        auto moveBesideMaster = [&](Transport* destinationTransport,
+                                    bool useExactMasterPosition)
         {
             float x, y, z;
-            gateFollowMaster->GetClosePoint(x, y, z, bot->GetObjectSize(),
-                2.0f, static_cast<float>(M_PI));
+            if (useExactMasterPosition)
+            {
+                x = gateFollowMaster->GetPositionX();
+                y = gateFollowMaster->GetPositionY();
+                z = gateFollowMaster->GetPositionZ();
+            }
+            else
+                gateFollowMaster->GetClosePoint(x, y, z,
+                    bot->GetObjectSize(), 2.0f,
+                    static_cast<float>(M_PI));
             z += 0.25f;
 
             bot->GetMotionMaster()->Clear();
@@ -484,9 +493,16 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
             if (Pet* pet = bot->GetPet())
             {
                 float petX, petY, petZ;
-                gateFollowMaster->GetClosePoint(petX, petY, petZ,
-                    pet->GetObjectSize(), PET_FOLLOW_DIST,
-                    pet->GetFollowAngle());
+                if (useExactMasterPosition)
+                {
+                    petX = x;
+                    petY = y;
+                    petZ = z;
+                }
+                else
+                    gateFollowMaster->GetClosePoint(petX, petY, petZ,
+                        pet->GetObjectSize(), PET_FOLLOW_DIST,
+                        pet->GetFollowAngle());
                 petZ += 0.25f;
                 pet->GetMotionMaster()->Clear();
                 if (Transport* petTransport = pet->GetTransport())
@@ -515,14 +531,14 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
         if (masterOnElevator && botTransport != masterTransport &&
             bot->GetExactDist2d(gateFollowMaster) < 50.0f)
         {
-            moveBesideMaster(masterTransport);
+            moveBesideMaster(masterTransport, false);
             TC_LOG_INFO("server",
                 "Playerbot boarded Gate elevator with master bot=%s guid=%u",
                 bot->GetName().c_str(), bot->GetGUID().GetCounter());
         }
         else if (!masterOnElevator && botOnElevator)
         {
-            moveBesideMaster(nullptr);
+            moveBesideMaster(nullptr, false);
             TC_LOG_INFO("server",
                 "Playerbot left Gate elevator with master bot=%s guid=%u",
                 bot->GetName().c_str(), bot->GetGUID().GetCounter());
@@ -584,7 +600,10 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
                     recoveryDelay)
             {
                 float oldDistance = followDistance;
-                moveBesideMaster(nullptr);
+                // A generated close point can lie beyond the narrow parapet or
+                // destructible wall edge. Recover at the master's known-safe
+                // position and let normal follow movement spread the group out.
+                moveBesideMaster(nullptr, true);
                 TC_LOG_WARN("server",
                     "Playerbot recovered from broken Gate follow path bot=%s guid=%u distance=%.2f vertical=%.2f level-split=%u",
                     bot->GetName().c_str(), bot->GetGUID().GetCounter(),
