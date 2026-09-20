@@ -32,7 +32,7 @@ class instance_brewmoon_festival : public InstanceMapScript
 
             uint32 m_auiEncounter[CHAPTERS];
             std::map<uint32, ObjectGuid> m_BrewmoonEncounters;
-            std::map<uint64, uint32> m_ScoutsType;
+            std::map<ObjectGuid, uint32> m_ScoutsType;
             std::list<ObjectGuid> m_vilmanGuids, m_waterspiritGuids, m_yaungolAttack;
             uint32 chapterOne, chapterTwo, chapterThree, chapterFour, m_cBridge, m_cWest, m_cCarvens, s1_chapterTwo, s2_chapterTwo, s3_chapterTwo, m_currentType;
             EventMap m_mEvents;
@@ -54,15 +54,28 @@ class instance_brewmoon_festival : public InstanceMapScript
                 s3_chapterTwo = 0;
                 m_currentType = 1;
 
+                m_BrewmoonEncounters.clear();
+                m_ScoutsType.clear();
                 m_vilmanGuids.clear();
                 m_waterspiritGuids.clear();
                 m_yaungolAttack.clear();
+                m_mEvents.Reset();
             }
 
             void OnPlayerEnter(Player* player) override
             {
-                // Init Scenario
-                sScenarioMgr->SendScenarioState(player, 1051, DATA_BREWMOON_FESTIVAL, 0);
+                uint32 currentChapter = DATA_BREWMOON_FESTIVAL;
+
+                if (chapterOne >= DONE)
+                    currentChapter = DATA_SCOUTS_REPORT;
+
+                if (chapterTwo == DONE)
+                    currentChapter = DATA_YAUNGOL_ATTACK;
+
+                if (chapterThree >= DONE)
+                    currentChapter = DATA_WARBRINGER_QOBI;
+
+                sScenarioMgr->SendScenarioState(player, 1051, currentChapter, 0);
             }
 
             void OnCreatureCreate(Creature* creature) override
@@ -71,15 +84,13 @@ class instance_brewmoon_festival : public InstanceMapScript
                 {
                     case NPC_APOTHECARY_CHENG:
                         creature->SetVisible(false);
-                        m_BrewmoonEncounters.insert(std::pair<uint32, uint64>(creature->GetEntry(), creature->GetGUID()));
+                        m_BrewmoonEncounters[creature->GetEntry()] = creature->GetGUID();
                         break;
                     case NPC_HUNGRY_VIRMEN:
                         m_vilmanGuids.push_back(creature->GetGUID());
-                        m_BrewmoonEncounters.insert(std::pair<uint32, uint64>(creature->GetEntry(), creature->GetGUID()));
                         break;
                     case NPC_WATER_SPIRIT:
                         m_waterspiritGuids.push_back(creature->GetGUID());
-                        m_BrewmoonEncounters.insert(std::pair<uint32, uint64>(creature->GetEntry(), creature->GetGUID()));
                         creature->CastSpell(creature, SPELL_WATER_SPIRIT_CHANNEL, false);
                         break;
                     case NPC_SPAWN_BURROWED:
@@ -94,7 +105,7 @@ class instance_brewmoon_festival : public InstanceMapScript
                     case NPC_WARBRINGER_QOBI:
                     case NPC_COMMANDER_HSIEH:
                     case NPC_MISTWEAVER_NIAN:
-                        m_BrewmoonEncounters.insert(std::pair<uint32, uint64>(creature->GetEntry(), creature->GetGUID()));
+                        m_BrewmoonEncounters[creature->GetEntry()] = creature->GetGUID();
                         break;
                     case NPC_SLG_GENERIC_MOP:
                         creature->SetDisplayId(11686);
@@ -146,10 +157,17 @@ class instance_brewmoon_festival : public InstanceMapScript
                             }
                             break;
                         case NPC_BATAARI_YAUNGOL:
+                        {
                             if (GetData(DATA_SCOUTS_REPORT) == DONE)
                                 break;
 
-                            if (uint32 m_val = m_ScoutsType.find(unit->GetGUID())->second)
+                            auto scoutItr = m_ScoutsType.find(unit->GetGUID());
+                            if (scoutItr == m_ScoutsType.end())
+                                break;
+
+                            uint32 m_val = scoutItr->second;
+                            m_ScoutsType.erase(scoutItr);
+                            if (m_val)
                             {
                                 switch (m_val)
                                 {
@@ -171,6 +189,7 @@ class instance_brewmoon_festival : public InstanceMapScript
                                     SetData(DATA_SCOUTS_REPORT, DONE);
                             }
                             break;
+                        }
                         case NPC_BATAARI_FLAMECALLER:
                         case NPC_BATAARI_OUTRUNNER:
                             for (std::list<ObjectGuid>::iterator it = m_yaungolAttack.begin(); it != m_yaungolAttack.end(); ++it)
@@ -200,7 +219,7 @@ class instance_brewmoon_festival : public InstanceMapScript
                     if (Creature* m_temp = instance->SummonCreature(NPC_BATAARI_YAUNGOL, m_pos))
                     {
                         if (!notSave)
-                            m_ScoutsType.insert(std::pair<uint64, uint32>(m_temp->GetGUID(), m_type));
+                            m_ScoutsType[m_temp->GetGUID()] = m_type;
 
                         m_temp->AI()->SetData(m_dataType, NOT_STARTED);
                     }
@@ -245,6 +264,9 @@ class instance_brewmoon_festival : public InstanceMapScript
                 {
                     case DATA_BREWMOON_FESTIVAL:
                     {
+                        if (chapterOne >= DONE)
+                            break;
+
                         switch (data)
                         {
                             case NPC_DEN_MOTHER_MOOF:
@@ -284,9 +306,14 @@ class instance_brewmoon_festival : public InstanceMapScript
                     }
                     case DATA_SCOUTS_REPORT:
                     {
+                        if (chapterTwo == data)
+                            break;
+
                         chapterTwo = data;
-                        SaveToDB();
-                        SetBossState(DATA_SCOUTS_REPORT, DONE);
+                        SetBossState(DATA_SCOUTS_REPORT, EncounterState(data));
+
+                        if (chapterTwo != DONE)
+                            break;
 
                         for (auto&& itr : instance->GetPlayers())
                             if (Player* player = itr.GetSource())
@@ -297,6 +324,9 @@ class instance_brewmoon_festival : public InstanceMapScript
                     }
                     case DATA_YAUNGOL_ATTACK:
                     {
+                        if (chapterThree >= DONE)
+                            break;
+
                         chapterThree++;
                         SaveToDB();
 
@@ -320,14 +350,21 @@ class instance_brewmoon_festival : public InstanceMapScript
                         break;
                     }
                     case DATA_WARBRINGER_QOBI:
+                    {
+                        if (chapterFour == data)
+                            break;
+
                         chapterFour = data;
                         SetBossState(DATA_WARBRINGER_QOBI, EncounterState(data));
                         if (chapterFour == DONE)
+                        {
                             DoFinishLFGDungeon(539);
 
-                        if (Creature* bo = instance->GetCreature(GetGuidData(NPC_BREWMASTER_BOOF)))
-                            bo->AI()->Talk(TALK_SPECIAL_8);
+                            if (Creature* bo = instance->GetCreature(GetGuidData(NPC_BREWMASTER_BOOF)))
+                                bo->AI()->Talk(TALK_SPECIAL_8);
+                        }
                         break;
+                    }
                     case DATA_CARVENS:
                     case DATA_BRIDGE:
                     case DATA_WEST:
@@ -354,6 +391,11 @@ class instance_brewmoon_festival : public InstanceMapScript
                             break;
                         case EVENT_BLOATS:
                             HandleScoutAssault(AssaultPath5[0], TYPE_PASSAGE, 2, TYPE_BLOAT);
+                            break;
+                        case EVENT_RESUME_SCOUTS:
+                            HandleScoutAssault(AssaultPath2[0], TYPE_PASSAGE, uint8(5 - m_cCarvens), TYPE_PASSAGE);
+                            HandleScoutAssault(AssaultPath1[0], TYPE_BRIDGE, uint8(4 - m_cBridge), TYPE_BRIDGE);
+                            HandleScoutAssault(AssaultPath3[0], TYPE_WEST, uint8(6 - m_cWest), TYPE_WEST);
                             break;
                         case EVENT_YAUNGOLS_ATTACK:
                             HandleYaungolAssault(NPC_BATAARI_FLAMECALLER, m_currentType);
@@ -400,7 +442,10 @@ class instance_brewmoon_festival : public InstanceMapScript
                     case NPC_WARBRINGER_QOBI:
                     case NPC_COMMANDER_HSIEH:
                     case NPC_MISTWEAVER_NIAN:
-                        return m_BrewmoonEncounters.find(type)->second;
+                    {
+                        auto itr = m_BrewmoonEncounters.find(type);
+                        return itr != m_BrewmoonEncounters.end() ? itr->second : ObjectGuid::Empty;
+                    }
                 }
 
                 return ObjectGuid::Empty;
@@ -459,28 +504,48 @@ class instance_brewmoon_festival : public InstanceMapScript
 
                 if (dataHead1 == 'B' && dataHead2 == 'F')
                 {
-                    uint32 temp = 0;
-                    loadStream >> temp; // chapterOne complete
-                    chapterOne = temp;
-                    SetData(DATA_BREWMOON_FESTIVAL, chapterOne);
-                    loadStream >> temp; // chapterTwo complete
-                    chapterTwo = temp;
-                    SetData(DATA_SCOUTS_REPORT, chapterTwo);
-                    loadStream >> temp; // chapterThree complete
-                    chapterThree = temp;
-                    SetData(DATA_YAUNGOL_ATTACK, chapterThree);
-                    loadStream >> temp; // Barrels progress
-                    chapterFour = temp;
-                    SetData(DATA_WARBRINGER_QOBI, chapterFour);
-                    loadStream >> temp; // Carvens c2 progress
-                    m_cCarvens = temp;
-                    SetData(DATA_CARVENS, m_cCarvens);
-                    loadStream >> temp; // Bridge c2 progress
-                    m_cBridge = temp;
-                    SetData(DATA_BRIDGE, m_cBridge);
-                    loadStream >> temp; // West c2 progress
-                    m_cWest = temp;
-                    SetData(DATA_WEST, m_cWest);
+                    uint32 loadedChapterOne = 0;
+                    uint32 loadedChapterTwo = 0;
+                    uint32 loadedChapterThree = 0;
+                    uint32 loadedChapterFour = 0;
+                    uint32 loadedCarvens = 0;
+                    uint32 loadedBridge = 0;
+                    uint32 loadedWest = 0;
+
+                    if (!(loadStream >> loadedChapterOne >> loadedChapterTwo >> loadedChapterThree >> loadedChapterFour
+                        >> loadedCarvens >> loadedBridge >> loadedWest))
+                    {
+                        OUT_LOAD_INST_DATA_FAIL;
+                        return;
+                    }
+
+                    chapterOne = std::min(loadedChapterOne, uint32(DONE));
+                    chapterTwo = loadedChapterTwo == DONE ? DONE : NOT_STARTED;
+                    chapterThree = std::min(loadedChapterThree, uint32(DONE));
+                    chapterFour = loadedChapterFour == DONE ? DONE : NOT_STARTED;
+                    m_cCarvens = std::min(loadedCarvens, 5u);
+                    m_cBridge = std::min(loadedBridge, 4u);
+                    m_cWest = std::min(loadedWest, 6u);
+
+                    if (m_cCarvens == 5 && m_cBridge == 4 && m_cWest == 6)
+                        chapterTwo = DONE;
+
+                    m_currentType = std::min(chapterThree + 1, uint32(TYPE_PASSAGE));
+
+                    SetBossState(DATA_BREWMOON_FESTIVAL, chapterOne == DONE ? DONE : NOT_STARTED);
+                    SetBossState(DATA_SCOUTS_REPORT, EncounterState(chapterTwo));
+                    SetBossState(DATA_YAUNGOL_ATTACK, chapterThree == DONE ? DONE : NOT_STARTED);
+                    SetBossState(DATA_WARBRINGER_QOBI, EncounterState(chapterFour));
+
+                    // Dynamic assault creatures are not persisted. Resume only the active
+                    // chapter and reset the event queue so repeated Load calls stay idempotent.
+                    m_mEvents.Reset();
+                    if (chapterOne == DONE && chapterTwo != DONE)
+                        m_mEvents.ScheduleEvent(EVENT_RESUME_SCOUTS, 1 * IN_MILLISECONDS);
+                    else if (chapterTwo == DONE && chapterThree < DONE)
+                        m_mEvents.ScheduleEvent(EVENT_YAUNGOLS_ATTACK, 1 * IN_MILLISECONDS);
+                    else if (chapterThree == DONE && chapterFour != DONE)
+                        m_mEvents.ScheduleEvent(EVENT_QOBI_ARRIVED, 1 * IN_MILLISECONDS);
                 }
                 else OUT_LOAD_INST_DATA_FAIL;
 

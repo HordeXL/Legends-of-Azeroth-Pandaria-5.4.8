@@ -182,6 +182,7 @@ enum eEvents
     EVENT_BLOATS          = 2,
     EVENT_YAUNGOLS_ATTACK = 3,
     EVENT_QOBI_ARRIVED    = 4,
+    EVENT_RESUME_SCOUTS   = 5,
 };
 
 enum eTypes
