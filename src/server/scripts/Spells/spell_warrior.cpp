@@ -1089,6 +1089,11 @@ class spell_warr_intervene : public SpellScript
 {
     PrepareSpellScript(spell_warr_intervene);
 
+    void HandleCast()
+    {
+        GetCaster()->RemoveMovementImpairingAuras();
+    }
+
     SpellCastResult CheckCast()
     {
         Unit* target = GetExplTargetUnit();
@@ -1105,6 +1110,7 @@ class spell_warr_intervene : public SpellScript
     void Register() override
     {
         OnCheckCast += SpellCheckCastFn(spell_warr_intervene::CheckCast);
+        OnCast += SpellCastFn(spell_warr_intervene::HandleCast);
     }
 };
 
