@@ -674,6 +674,11 @@ class spell_monk_touch_of_karma : public AuraScript
 
     ObjectGuid targetGuid = ObjectGuid::Empty;
 
+    bool Validate(SpellInfo const*) override
+    {
+        return ValidateSpellInfo({ SPELL_MONK_TOUCH_OF_KARMA_REDIRECT_DAMAGE });
+    }
+
     void CalculateAmount(AuraEffect const*, float& amount, bool&)
     {
         if (Unit* monk = GetCaster())
@@ -683,7 +688,11 @@ class spell_monk_touch_of_karma : public AuraScript
     void Absorb(AuraEffect* aurEff, DamageInfo& dmgInfo, uint32&)
     {
         if (Unit* target = ObjectAccessor::GetUnit(*GetUnitOwner(), targetGuid))
-            GetUnitOwner()->CastCustomSpell(SPELL_MONK_TOUCH_OF_KARMA_REDIRECT_DAMAGE, SPELLVALUE_BASE_POINT0, dmgInfo.GetDamage() / 9, target, true);
+        {
+            SpellInfo const* redirect = sSpellMgr->GetSpellInfo(SPELL_MONK_TOUCH_OF_KARMA_REDIRECT_DAMAGE);
+            uint32 ticks = redirect->GetMaxTicks();
+            GetUnitOwner()->CastCustomSpell(SPELL_MONK_TOUCH_OF_KARMA_REDIRECT_DAMAGE, SPELLVALUE_BASE_POINT0, dmgInfo.GetDamage() / ticks, target, true);
+        }
     }
 
     void HandleRemoveFromTarget(AuraEffect const*, AuraEffectHandleModes)
