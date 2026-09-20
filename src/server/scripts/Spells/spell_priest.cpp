@@ -1418,6 +1418,11 @@ class spell_pri_echo_of_light : public AuraScript
 {
     PrepareAuraScript(spell_pri_echo_of_light);
 
+    bool Validate(SpellInfo const*) override
+    {
+        return ValidateSpellInfo({ SPELL_PRIEST_ECHO_OF_LIGHT_HEAL });
+    }
+
     void HandleProc(AuraEffect const* eff, ProcEventInfo& eventInfo)
     {
         Unit* target = eventInfo.GetActionTarget();
@@ -1426,7 +1431,8 @@ class spell_pri_echo_of_light : public AuraScript
         if (!target || !heal || !bySpell)
             return;
 
-        float amount = CalculatePct(float(heal), eff->GetFloatAmount()) / 2; // tick count, hotfixed by spell mod
+        SpellInfo const* echo = sSpellMgr->GetSpellInfo(SPELL_PRIEST_ECHO_OF_LIGHT_HEAL);
+        float amount = CalculatePct(float(heal), eff->GetFloatAmount()) / echo->GetMaxTicks();
         GetCaster()->CastCustomSpell(SPELL_PRIEST_ECHO_OF_LIGHT_HEAL, SPELLVALUE_BASE_POINT0, amount, target, true, nullptr,eff);
     }
 
