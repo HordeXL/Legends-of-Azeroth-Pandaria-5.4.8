@@ -454,7 +454,7 @@ void ServiceMgr::AddSpecificPlayerData(uint32 guid, uint32 oldRace, uint32 race,
         { 0 }, // RACE_TAUNKA
         { 0 }, // RACE_NORTHREND_SKELETON
         { 0 }, // RACE_ICE_TROLL
-        { 68996, 68975, 68978, 68976, 68975, 68992 }, // RACE_WORGEN
+        { 68996, 68975, 68978, 68976, 87840, 68992 }, // RACE_WORGEN
         { 0 }, // RACE_GILNEAN
         { 0 }, // RACE_PANDAREN_NEUTRAL
         { 0 }, // RACE_PANDAREN_ALLIANCE

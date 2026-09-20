@@ -256,7 +256,7 @@ class spell_sha_glyph_of_shamanistic_rage : public SpellScript
         if (GetCaster()->HasAura(SPELL_SHA_GLYPH_OF_SHAMANISTIC_RAGE))
         {
             DispelChargesList dispelList;
-            GetCaster()->GetDispellableAuraList(GetCaster(), DISPEL_ALL_MASK, dispelList);
+            GetCaster()->GetDispellableAuraList(GetCaster(), SpellInfo::GetDispelMask(DISPEL_MAGIC), dispelList);
             for (auto&& itr : dispelList)
                 GetCaster()->RemoveAurasDueToSpellByDispel(itr.first->GetId(), GetSpellInfo()->Id, itr.first->GetCasterGUID(), GetCaster(), itr.second);
         }

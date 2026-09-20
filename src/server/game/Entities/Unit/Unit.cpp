@@ -20369,6 +20369,11 @@ void Unit::GetMovementSpeedModifiers(int32& mainBonus, float& stackBonus, float&
 
     for (auto&& itr : GetAuraEffectsByType(SPELL_AURA_MOD_SPEED_ALWAYS))
     {
+        // In 5.4.8 Cat Form's passive movement bonus no longer stacks with
+        // Stampeding Shout granted to druids through Symbiosis.
+        if (itr->GetId() == 113636 && HasAura(122294))
+            continue;
+
         if (itr->GetId() == 68992) // Darkflight doesn't stack with...
             if (nonStackBuffs.find(mainModifierId) != nonStackBuffs.end())
                 continue;
