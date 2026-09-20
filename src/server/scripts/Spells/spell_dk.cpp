@@ -32,6 +32,7 @@
 
 enum DeathKnightSpells
 {
+    SPELL_DK_ANTI_MAGIC_ZONE_DAMAGE_REDUCTION  = 40,
     SPELL_DK_RUNIC_POWER_ENERGIZE               = 49088,
     DK_SPELL_ANTI_MAGIC_SHELL_TALENT            = 51052,
     DK_SPELL_CORPSE_EXPLOSION_TRIGGERED         = 43999,
@@ -779,7 +780,7 @@ class spell_dk_outbreak : public SpellScript
     }
 };
 
-// 50462 - Anti-Magic Shell (on raid member)
+// 50462 - Anti-Magic Zone (on raid member)
 class spell_dk_anti_magic_shell_raid : public SpellScriptLoader
 {
     public:
@@ -793,13 +794,17 @@ class spell_dk_anti_magic_shell_raid : public SpellScriptLoader
 
             bool Load() override
             {
-                absorbPct = GetSpellInfo()->Effects[EFFECT_0].CalcValue(GetCaster());
+                // Patch 5.4 redesigned Anti-Magic Zone as an uncapped 40%
+                // magic-damage reduction. The hidden 50462 aura still carries
+                // the obsolete 75% value in the client data.
+                absorbPct = SPELL_DK_ANTI_MAGIC_ZONE_DAMAGE_REDUCTION;
                 return true;
             }
 
             void CalculateAmount(AuraEffect const* /*aurEff*/, float& amount, bool& /*canBeRecalculated*/)
             {
-                // TODO: this should absorb limited amount of damage, but no info on calculation formula
+                // Unlimited absorb pool; the area trigger removes the aura
+                // when the three-second Anti-Magic Zone expires.
                 amount = -1;
             }
 
@@ -821,7 +826,7 @@ class spell_dk_anti_magic_shell_raid : public SpellScriptLoader
         }
 };
 
-// 50462 - Anti-Magic Shell (on raid member)
+// 96268 - Death's Advance
 class spell_dk_deaths_advance: public SpellScriptLoader
 {
     public:
@@ -950,7 +955,9 @@ class spell_dk_anti_magic_zone : public SpellScriptLoader
 
             bool Load() override
             {
-                absorbPct = GetSpellInfo()->Effects[EFFECT_0].CalcValue(GetCaster());
+                // Keep the legacy area-aura path consistent with the active
+                // 50462 area-trigger path.
+                absorbPct = SPELL_DK_ANTI_MAGIC_ZONE_DAMAGE_REDUCTION;
                 return true;
             }
 
@@ -963,9 +970,9 @@ class spell_dk_anti_magic_zone : public SpellScriptLoader
 
             void CalculateAmount(AuraEffect const* /*aurEff*/, float& amount, bool& /*canBeRecalculated*/)
             {
-                amount = 136800;
-                if (Player* player = GetCaster()->ToPlayer())
-                     amount += int32(player->GetStat(STAT_STRENGTH) * 4);
+                // Since patch 5.4 the zone has no total absorb cap and no
+                // Strength scaling.
+                amount = -1;
             }
 
             void Absorb(AuraEffect * /*aurEff*/, DamageInfo& dmgInfo, uint32& absorbAmount)
