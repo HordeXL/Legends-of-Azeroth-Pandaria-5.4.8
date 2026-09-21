@@ -852,7 +852,7 @@ void BattlePayMgr::SendBattlePayProductList(WorldSession* session)
             bool hasProduct = false;
             if (product->Type == BATTLE_PAY_PRODUCT_TYPE_SERVICE)
             {
-                if (product->Id == BATTLE_PAY_SERVICE_BOOST)
+                if (IsCharacterBoostProduct(product->Id))
                     if (session->HasBoost())
                         hasProduct = true;
             }
@@ -1230,7 +1230,7 @@ void BattlePayMgr::SendBattlePayPurchaseUpdate(PurchaseInfo* purchase)
         if (!product || !productItems || productItems->empty() ||
             !IsBattlePayProductVisibleForSession(product, productItems, purchase->GetSession()))
             validPurchase = false;
-        else if (product->Id == BATTLE_PAY_SERVICE_BOOST && purchase->GetSession()->HasBoost())
+        else if (IsCharacterBoostProduct(product->Id) && purchase->GetSession()->HasBoost())
             validPurchase = false;
 
         uint32 serverToken = irand(1, 999999); // temp solution
@@ -1293,10 +1293,10 @@ void BattlePayMgr::SendBattlePayPurchaseUpdate(PurchaseInfo* purchase)
 
         if (product->Type == BATTLE_PAY_PRODUCT_TYPE_SERVICE)
         {
-            if (product->Id == BATTLE_PAY_SERVICE_BOOST)
+            if (IsCharacterBoostProduct(product->Id))
                 if (!purchase->GetSession()->HasBoost())
                 {
-                    SetBoosting(purchase->GetSession(), purchase->GetSession()->GetAccountId(), true);
+                    SetBoosting(purchase->GetSession(), purchase->GetSession()->GetAccountId(), true, GetCharacterBoostTierForProduct(product->Id));
                     SendBattlePayDistributionUpdate(purchase->GetSession(), BATTLE_PAY_SERVICE_BOOST, CHARACTER_BOOST_ALLOW);
                 }
         }

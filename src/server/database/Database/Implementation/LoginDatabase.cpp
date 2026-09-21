@@ -127,8 +127,8 @@ void LoginDatabaseConnection::DoPrepareStatements()
     //PrepareStatement(LOGIN_SEL_BNET_MAX_ACCOUNT_INDEX, "SELECT MAX(battlenet_index) FROM account WHERE battlenet_account = ?", CONNECTION_SYNCH);
 
     // boost
-    PrepareStatement(LOGIN_SEL_ACCOUNT_BOOST, "SELECT counter FROM account_boost WHERE id = ? AND realmid = ?", CONNECTION_SYNCH);
-    PrepareStatement(LOGIN_INS_ACCOUNT_BOOST, "REPLACE INTO account_boost (id, realmid, counter) VALUES (?, ?, ?)", CONNECTION_ASYNC);
+    PrepareStatement(LOGIN_SEL_ACCOUNT_BOOST, "SELECT counter, boost_level FROM account_boost WHERE id = ? AND realmid = ?", CONNECTION_SYNCH);
+    PrepareStatement(LOGIN_INS_ACCOUNT_BOOST, "REPLACE INTO account_boost (id, realmid, counter, boost_level) VALUES (?, ?, ?, ?)", CONNECTION_ASYNC);
     PrepareStatement(LOGIN_DEL_ACCOUNT_BOOST, "DELETE FROM account_boost WHERE id = ? AND realmid = ?", CONNECTION_ASYNC);
 
     // BattlePay

@@ -156,8 +156,10 @@ enum BattlePayResultCode
 
 enum BattlePayServices
 {
-    BATTLE_PAY_SERVICE_BOOST                  = 83,
+    BATTLE_PAY_SERVICE_BOOST                  = 83,     // legacy custom promotion
     BATTLE_PAY_SERVICE_PREMIUM                = 84,
+    BATTLE_PAY_SERVICE_BOOST_LEVEL_80         = 950080,
+    BATTLE_PAY_SERVICE_BOOST_LEVEL_90         = 950090,
 };
 
 enum BattlePayChoiceType

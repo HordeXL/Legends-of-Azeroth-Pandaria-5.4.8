@@ -714,6 +714,26 @@ struct CharStartOutfitEntry
     uint32 PetFamilyEntry;                                  // 78 Pet Family Entry for starting pet
 };
 
+// CharacterLoadout.dbc and CharacterLoadoutItem.dbc contain the equipment
+// bundles used by the client character-service flows (including the level 80
+// Scroll of Resurrection and the level 90 character boost).
+struct CharacterLoadoutEntry
+{
+    uint32 ID;                                              // 0
+    uint32 ChrClassID;                                      // 1
+    uint32 Purpose;                                         // 2
+    uint32 RaceMask;                                        // 3
+};
+
+struct CharacterLoadoutItemEntry
+{
+    uint32 ID;                                              // 0
+    uint32 CharacterLoadoutID;                              // 1
+    uint32 ItemID;                                          // 2
+    uint32 ItemDisplayInfoID;                               // 3
+    uint32 InventoryType;                                  // 4
+};
+
 struct CharTitlesEntry
 {
     uint32  ID;                                             // 0, title ids, for example in Quest::GetCharTitleId()

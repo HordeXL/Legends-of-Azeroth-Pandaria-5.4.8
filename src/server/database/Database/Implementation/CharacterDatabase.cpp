@@ -706,7 +706,7 @@ void CharacterDatabaseConnection::DoPrepareStatements()
     PrepareStatement(CHAR_SEL_CHARACTER_SKILLS_BOOST, "SELECT skill FROM character_skills WHERE guid = ?", CONNECTION_SYNCH);
     PrepareStatement(CHAR_INS_CHAR_INVENTORY, "INSERT INTO character_inventory (guid, bag, slot, item) VALUES (?, ?, ?, ?)"
                      "ON DUPLICATE KEY UPDATE item = VALUES(item)", CONNECTION_ASYNC);
-    PrepareStatement(CHAR_UPD_CHARACTER_FOR_BOOST, "UPDATE characters SET race = ?, money = money + 10000000, level = 90, position_x = ?, position_y = ?, position_z = ?, orientation = ?, map = ?, talenttree = ?,"
+    PrepareStatement(CHAR_UPD_CHARACTER_FOR_BOOST, "UPDATE characters SET race = ?, money = money + ?, level = ?, position_x = ?, position_y = ?, position_z = ?, orientation = ?, map = ?, talenttree = ?,"
                      "trans_x = 0, trans_y = 0, trans_z = 0, trans_o = 0, transguid = 0, at_login = at_login & ~ ?, activespec = 0, equipmentCache = ?, cinematic = 1 WHERE guid = ?", CONNECTION_ASYNC);
 
     // Challenge mode
