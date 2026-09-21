@@ -21,6 +21,127 @@
 #include "Player.h"
 #include "ServiceMgr.h"
 #include "Realm.h"
+#include "DBCStores.h"
+#include "SpellMgr.h"
+
+#include <set>
+
+namespace
+{
+uint8 GetCharacterBoostTargetLevel(uint8 boostTier)
+{
+    return boostTier == CHARACTER_BOOST_TIER_LEVEL_80 ? 80 : 90;
+}
+
+uint32 GetCharacterBoostLoadoutId(uint8 boostTier, uint32 specialization)
+{
+    bool level80 = boostTier == CHARACTER_BOOST_TIER_LEVEL_80;
+    switch (specialization)
+    {
+        case SPEC_MAGE_ARCANE:            return level80 ? 123 : 543;
+        case SPEC_MAGE_FIRE:              return level80 ? 124 : 544;
+        case SPEC_MAGE_FROST:             return level80 ? 125 : 545;
+        case SPEC_PALADIN_HOLY:           return level80 ? 164 : 523;
+        case SPEC_PALADIN_PROTECTION:     return level80 ? 166 : 506;
+        case SPEC_PALADIN_RETRIBUTION:    return level80 ? 168 : 524;
+        case SPEC_WARRIOR_ARMS:           return level80 ? 133 : 539;
+        case SPEC_WARRIOR_FURY:           return level80 ? 148 : 538;
+        case SPEC_WARRIOR_PROTECTION:     return level80 ? 149 : 537;
+        case SPEC_DRUID_BALANCE:          return level80 ? 109 : 549;
+        case SPEC_DRUID_FERAL:            return level80 ? 110 : 546;
+        case SPEC_DRUID_GUARDIAN:         return level80 ? 117 : 548;
+        case SPEC_DRUID_RESTORATION:      return level80 ? 111 : 547;
+        case SPEC_DEATH_KNIGHT_BLOOD:     return level80 ? 152 : 513;
+        case SPEC_DEATH_KNIGHT_FROST:     return level80 ? 153 : 514;
+        case SPEC_DEATH_KNIGHT_UNHOLY:    return level80 ? 154 : 515;
+        case SPEC_HUNTER_BEAST_MASTERY:  return level80 ? 158 : 531;
+        case SPEC_HUNTER_MARKSMANSHIP:   return level80 ? 159 : 532;
+        case SPEC_HUNTER_SURVIVAL:       return level80 ? 160 : 533;
+        case SPEC_PRIEST_DISCIPLINE:     return level80 ? 156 : 534;
+        case SPEC_PRIEST_HOLY:           return level80 ? 157 : 535;
+        case SPEC_PRIEST_SHADOW:         return level80 ? 155 : 536;
+        case SPEC_ROGUE_ASSASSINATION:   return level80 ? 129 : 510;
+        case SPEC_ROGUE_COMBAT:          return level80 ? 130 : 511;
+        case SPEC_ROGUE_SUBTLETY:        return level80 ? 131 : 512;
+        case SPEC_SHAMAN_ELEMENTAL:      return level80 ? 161 : 528;
+        case SPEC_SHAMAN_ENHANCEMENT:    return level80 ? 162 : 529;
+        case SPEC_SHAMAN_RESTORATION:    return level80 ? 163 : 530;
+        case SPEC_WARLOCK_AFFLICTION:    return level80 ? 126 : 540;
+        case SPEC_WARLOCK_DEMONOLOGY:    return level80 ? 127 : 541;
+        case SPEC_WARLOCK_DESTRUCTION:   return level80 ? 128 : 542;
+        case SPEC_MONK_BREWMASTER:       return level80 ? 352 : 525;
+        case SPEC_MONK_WINDWALKER:       return level80 ? 354 : 527;
+        case SPEC_MONK_MISTWEAVER:       return level80 ? 353 : 526;
+        default:                         return 0;
+    }
+}
+
+void AddLoadoutEquipmentItem(PreparedItemsMap& items, ItemTemplate const* item)
+{
+    if (!item)
+        return;
+
+    auto addFirstFree = [&items, item](uint8 first, uint8 second)
+    {
+        if (items.find(first) == items.end())
+            items.emplace(first, item->ItemId);
+        else if (items.find(second) == items.end())
+            items.emplace(second, item->ItemId);
+    };
+
+    switch (item->InventoryType)
+    {
+        case INVTYPE_HEAD:           items.emplace(EQUIPMENT_SLOT_HEAD, item->ItemId); break;
+        case INVTYPE_NECK:           items.emplace(EQUIPMENT_SLOT_NECK, item->ItemId); break;
+        case INVTYPE_SHOULDERS:      items.emplace(EQUIPMENT_SLOT_SHOULDERS, item->ItemId); break;
+        case INVTYPE_BODY:           items.emplace(EQUIPMENT_SLOT_BODY, item->ItemId); break;
+        case INVTYPE_CHEST:
+        case INVTYPE_ROBE:           items.emplace(EQUIPMENT_SLOT_CHEST, item->ItemId); break;
+        case INVTYPE_WAIST:          items.emplace(EQUIPMENT_SLOT_WAIST, item->ItemId); break;
+        case INVTYPE_LEGS:           items.emplace(EQUIPMENT_SLOT_LEGS, item->ItemId); break;
+        case INVTYPE_FEET:           items.emplace(EQUIPMENT_SLOT_FEET, item->ItemId); break;
+        case INVTYPE_WRISTS:         items.emplace(EQUIPMENT_SLOT_WRISTS, item->ItemId); break;
+        case INVTYPE_HANDS:          items.emplace(EQUIPMENT_SLOT_HANDS, item->ItemId); break;
+        case INVTYPE_FINGER:         addFirstFree(EQUIPMENT_SLOT_FINGER1, EQUIPMENT_SLOT_FINGER2); break;
+        case INVTYPE_TRINKET:        addFirstFree(EQUIPMENT_SLOT_TRINKET1, EQUIPMENT_SLOT_TRINKET2); break;
+        case INVTYPE_CLOAK:          items.emplace(EQUIPMENT_SLOT_BACK, item->ItemId); break;
+        case INVTYPE_SHIELD:
+        case INVTYPE_WEAPONOFFHAND:
+        case INVTYPE_HOLDABLE:       items.emplace(EQUIPMENT_SLOT_OFFHAND, item->ItemId); break;
+        case INVTYPE_WEAPON:
+        case INVTYPE_2HWEAPON:       addFirstFree(EQUIPMENT_SLOT_MAINHAND, EQUIPMENT_SLOT_OFFHAND); break;
+        case INVTYPE_WEAPONMAINHAND:
+        case INVTYPE_RANGED:
+        case INVTYPE_THROWN:
+        case INVTYPE_RANGEDRIGHT:    items.emplace(EQUIPMENT_SLOT_MAINHAND, item->ItemId); break;
+        default:                     break;
+    }
+}
+
+uint8 GetStoredCharacterBoostTier(uint32 accountId)
+{
+    if (QueryResult result = LoginDatabase.PQuery("SELECT boost_level FROM account_boost WHERE id = %u AND realmid = %u AND counter > 0", accountId, realm.Id.Realm))
+        return (*result)[0].GetUInt8();
+
+    return CHARACTER_BOOST_TIER_LEGACY;
+}
+}
+
+bool IsCharacterBoostProduct(uint32 productId)
+{
+    return productId == BATTLE_PAY_SERVICE_BOOST ||
+           productId == BATTLE_PAY_SERVICE_BOOST_LEVEL_80 ||
+           productId == BATTLE_PAY_SERVICE_BOOST_LEVEL_90;
+}
+
+uint8 GetCharacterBoostTierForProduct(uint32 productId)
+{
+    if (productId == BATTLE_PAY_SERVICE_BOOST_LEVEL_80)
+        return CHARACTER_BOOST_TIER_LEVEL_80;
+    if (productId == BATTLE_PAY_SERVICE_BOOST_LEVEL_90)
+        return CHARACTER_BOOST_TIER_LEVEL_90;
+    return CHARACTER_BOOST_TIER_LEGACY;
+}
 
 void LoadBoostItems()
 {
@@ -62,7 +183,7 @@ void LoadBoostItems()
 
 CharacterBooster::CharacterBooster(WorldSession* session) : m_session(session), m_timer(0), m_boosting(false), m_sendPacket(false) { }
 
-void SetBoosting(WorldSession* session, uint32 accountId, bool boost)
+void SetBoosting(WorldSession* session, uint32 accountId, bool boost, uint8 boostLevel)
 {
     if (!accountId && !session)
         return;
@@ -81,6 +202,8 @@ void SetBoosting(WorldSession* session, uint32 accountId, bool boost)
     {
         Field* fields = result->Fetch();
         counter = fields[0].GetUInt32();
+        if (!boost)
+            boostLevel = fields[1].GetUInt8();
     }
 
     if (!boost)
@@ -103,6 +226,7 @@ void SetBoosting(WorldSession* session, uint32 accountId, bool boost)
         stmt->setUInt32(0, accountId);
         stmt->setUInt32(1, realm.Id.Realm);
         stmt->setUInt32(2, counter);
+        stmt->setUInt8(3, boostLevel);
     }
     else
     {
@@ -115,6 +239,30 @@ void SetBoosting(WorldSession* session, uint32 accountId, bool boost)
 
 void CharacterBooster::_GetCharBoostItems(PreparedItemsMap& itemsToMail, PreparedItemsMap& itemsToEquip) const
 {
+    if (m_charBoostInfo.boostLevel == CHARACTER_BOOST_TIER_LEVEL_80 ||
+        m_charBoostInfo.boostLevel == CHARACTER_BOOST_TIER_LEVEL_90)
+    {
+        uint32 loadoutId = GetCharacterBoostLoadoutId(m_charBoostInfo.boostLevel, m_charBoostInfo.specialization);
+        CharacterLoadoutEntry const* loadout = sCharacterLoadoutStore.LookupEntry(loadoutId);
+        if (!loadout)
+        {
+            TC_LOG_ERROR("sql.sql", "Character boost loadout %u is missing from CharacterLoadout.dbc.", loadoutId);
+            return;
+        }
+
+        for (uint32 i = 0; i < sCharacterLoadoutItemStore.GetNumRows(); ++i)
+        {
+            CharacterLoadoutItemEntry const* loadoutItem = sCharacterLoadoutItemStore.LookupEntry(i);
+            if (!loadoutItem || loadoutItem->CharacterLoadoutID != loadoutId)
+                continue;
+
+            AddLoadoutEquipmentItem(itemsToEquip, sObjectMgr->GetItemTemplate(loadoutItem->ItemID));
+        }
+
+        return;
+    }
+
+    // Preserve the original custom promotion exactly as it was configured.
     switch (m_charBoostInfo.specialization)
     {
         case SPEC_MAGE_ARCANE:
@@ -130,7 +278,7 @@ void CharacterBooster::_GetCharBoostItems(PreparedItemsMap& itemsToMail, Prepare
             break;
     }  
 
-    if(m_charBoostInfo.allianceFaction)
+    if (m_charBoostInfo.allianceFaction)
         itemsToMail.emplace(1, 25472);
     else
         itemsToMail.emplace(1, 25474);
@@ -176,21 +324,18 @@ void CharacterBooster::SendCharBoostPacket(PreparedItemsMap items) const
 
 void CharacterBooster::LearnNonExistedSpell(CharacterDatabaseTransaction trans, uint32 spell) const
 {
-    CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_CHAR_SPELL);
+    if (!spell)
+        return;
+
+    CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_REP_CHAR_SPELL);
     stmt->setUInt32(0, m_charBoostInfo.charGuid.GetCounter());
     stmt->setUInt32(1, spell);
-    if (!CharacterDatabase.Query(stmt))
-    {
-        stmt = CharacterDatabase.GetPreparedStatement(CHAR_INS_CHAR_SPELL);
-        stmt->setUInt32(0, m_charBoostInfo.charGuid.GetCounter());
-        stmt->setUInt32(1, spell);
-        stmt->setUInt32(2, 1);
-        stmt->setUInt32(3, 0);
-        trans->Append(stmt);
-    }
+    stmt->setUInt32(2, 1);
+    stmt->setUInt32(3, 0);
+    trans->Append(stmt);
 }
 
-void CharacterBooster::LearnNonExistedSkill(CharacterDatabaseTransaction trans, uint32 skill) const
+void CharacterBooster::LearnNonExistedSkill(CharacterDatabaseTransaction trans, uint32 skill, uint16 value, uint16 max) const
 {
     CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_CHARACTER_SKILL_BOOST);
     stmt->setUInt32(0, m_charBoostInfo.charGuid.GetCounter());
@@ -201,8 +346,8 @@ void CharacterBooster::LearnNonExistedSkill(CharacterDatabaseTransaction trans, 
         stmt = CharacterDatabase.GetPreparedStatement(CHAR_INS_CHAR_SKILLS);
         stmt->setUInt32(0, m_charBoostInfo.charGuid.GetCounter());
         stmt->setUInt32(1, skill);
-        stmt->setUInt32(2, 600);
-        stmt->setUInt32(3, 600);
+        stmt->setUInt32(2, value);
+        stmt->setUInt32(3, max);
         trans->Append(stmt);
     }
 }
@@ -266,39 +411,38 @@ void CharacterBooster::_PrepareInventory(CharacterDatabaseTransaction trans) con
     stmt->setUInt32(0, m_charBoostInfo.charGuid.GetCounter());
     PreparedQueryResult result = CharacterDatabase.Query(stmt);
 
-    if (!result)
-        return;
-
     MailTemplateEntry const* mailTemplateEntry = sMailTemplateStore.LookupEntry(MAIL_CHARRACTER_BOOST_EQUIPED_ITEMS_BODY);
     if (!mailTemplateEntry) // should never happen
         return;
 
-    uint32 mailId = _PrepareMail(trans, mailTemplateEntry->subject[GetSession()->GetSessionDbcLocale()], mailTemplateEntry->content[GetSession()->GetSessionDbcLocale()]);
-
-    uint32 itemCount = 0;
-    do
+    if (result)
     {
-        if (itemCount > 11)
+        uint32 mailId = _PrepareMail(trans, mailTemplateEntry->subject[GetSession()->GetSessionDbcLocale()], mailTemplateEntry->content[GetSession()->GetSessionDbcLocale()]);
+        uint32 itemCount = 0;
+        do
         {
-            itemCount = 0;
-            mailId = _PrepareMail(trans, mailTemplateEntry->subject[GetSession()->GetSessionDbcLocale()], mailTemplateEntry->content[GetSession()->GetSessionDbcLocale()]);
-        }
+            if (itemCount > 11)
+            {
+                itemCount = 0;
+                mailId = _PrepareMail(trans, mailTemplateEntry->subject[GetSession()->GetSessionDbcLocale()], mailTemplateEntry->content[GetSession()->GetSessionDbcLocale()]);
+            }
 
-        uint32 itemGuid = (*result)[0].GetUInt32();
+            uint32 itemGuid = (*result)[0].GetUInt32();
 
-        stmt = CharacterDatabase.GetPreparedStatement(CHAR_INS_MAIL_ITEM);
-        stmt->setUInt32(0, mailId);
-        stmt->setUInt32(1, itemGuid);
-        stmt->setUInt32(2, m_charBoostInfo.charGuid.GetCounter());
+            stmt = CharacterDatabase.GetPreparedStatement(CHAR_INS_MAIL_ITEM);
+            stmt->setUInt32(0, mailId);
+            stmt->setUInt32(1, itemGuid);
+            stmt->setUInt32(2, m_charBoostInfo.charGuid.GetCounter());
+            trans->Append(stmt);
+
+            itemCount++;
+        } while (result->NextRow());
+
+        // Unequip after sending the old inventory to the character by mail.
+        stmt = CharacterDatabase.GetPreparedStatement(CHAR_DEL_CHAR_INVENTORY_BOOST);
+        stmt->setUInt32(0, m_charBoostInfo.charGuid.GetCounter());
         trans->Append(stmt);
-
-        itemCount++;
-    } while (result->NextRow());
-
-    // unequip after sending
-    stmt = CharacterDatabase.GetPreparedStatement(CHAR_DEL_CHAR_INVENTORY_BOOST);
-    stmt->setUInt32(0, m_charBoostInfo.charGuid.GetCounter());
-    trans->Append(stmt);
+    }
 
     // move or create hearthstone to first slot
     stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_CHAR_HEARTHSTONE_BOOST);
@@ -324,8 +468,10 @@ void CharacterBooster::_PrepareInventory(CharacterDatabaseTransaction trans) con
         trans->Append(stmt);
     }
 
-    // insert food to second slot
-    if (Item* item = Item::CreateItem(ITEM_LEMON_FLAVOUR_PUDING, 20, 0))
+    uint32 foodItem = m_charBoostInfo.boostLevel == CHARACTER_BOOST_TIER_LEVEL_80 ? ITEM_BAKED_MANTA_RAY : ITEM_LEMON_FLAVOUR_PUDING;
+
+    // Insert the loadout-appropriate stack of food in the second backpack slot.
+    if (Item* item = Item::CreateItem(foodItem, 20, 0))
     {
         item->SaveToDB(trans);
 
@@ -337,11 +483,26 @@ void CharacterBooster::_PrepareInventory(CharacterDatabaseTransaction trans) con
         trans->Append(stmt);
     }
 
+    // The original level-80 DBC loadout also contains Heavy Frostweave Bandages.
+    if (m_charBoostInfo.boostLevel == CHARACTER_BOOST_TIER_LEVEL_80)
+        if (Item* item = Item::CreateItem(ITEM_HEAVY_FROSTWEAVE_BANDAGE, 20, 0))
+        {
+            item->SaveToDB(trans);
+
+            stmt = CharacterDatabase.GetPreparedStatement(CHAR_INS_CHAR_INVENTORY);
+            stmt->setUInt32(0, m_charBoostInfo.charGuid.GetCounter());
+            stmt->setUInt32(1, 0);
+            stmt->setUInt8(2, INVENTORY_SLOT_ITEM_START + 2);
+            stmt->setUInt32(3, item->GetGUID().GetCounter());
+            trans->Append(stmt);
+        }
+
     // insert bag in inventory slots
+    uint32 bagItem = m_charBoostInfo.boostLevel == CHARACTER_BOOST_TIER_LEVEL_80 ? ITEM_FROSTWEAVE_BAG : ITEM_EMBERSILK_BAG;
     uint8 slot = INVENTORY_SLOT_BAG_START;
     for (uint8 i = 0; i < 4; i++)
     {
-        if (Item* item = Item::CreateItem(ITEM_EMBERSILK_BAG, 1, 0))
+        if (Item* item = Item::CreateItem(bagItem, 1, 0))
         {
             item->SaveToDB(trans);
 
@@ -394,13 +555,107 @@ std::string CharacterBooster::_SetSpecialization(CharacterDatabaseTransaction tr
     return talentTree.str();
 }
 
-void CharacterBooster::_LearnSpells(CharacterDatabaseTransaction trans) const
+void CharacterBooster::_LearnClassSpells(CharacterDatabaseTransaction trans, uint8 targetLevel, uint8 raceId, uint8 classId) const
 {
-    std::vector<uint32> spellsToLearn = { SPELL_ARTISAN_RIDING, SPELL_COLD_WHEATHER_FLYING, SPELL_FLIGHT_MASTER_LICENSE, SPELL_WISDOM_OF_FOUR_WINDS };
+    uint32 raceMask = 1u << (raceId - 1);
+    uint32 classMask = 1u << (classId - 1);
+    std::set<uint32> spells;
+
+    // Learn every baseline class ability that is valid for this race/class and
+    // has been reached at the target level. Talents and spells owned by a
+    // different specialization are intentionally excluded.
+    for (uint32 i = 0; i < sSkillLineAbilityStore.GetNumRows(); ++i)
+    {
+        SkillLineAbilityEntry const* ability = sSkillLineAbilityStore.LookupEntry(i);
+        if (!ability)
+            continue;
+
+        SkillLineEntry const* skill = sSkillLineStore.LookupEntry(ability->skillId);
+        if (!skill || skill->categoryId != SKILL_CATEGORY_CLASS)
+            continue;
+        if (!GetSkillRaceClassInfo(ability->skillId, raceId, classId))
+            continue;
+        if (ability->classmask && !(ability->classmask & classMask))
+            continue;
+        if (ability->racemask && !(ability->racemask & raceMask))
+            continue;
+
+        SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(ability->spellId);
+        if (!spellInfo || spellInfo->SpellLevel > targetLevel || GetTalentSpellCost(spellInfo->GetFirstRankSpell()->Id) > 0)
+            continue;
+
+        if (!spellInfo->SpecializationIdList.empty())
+        {
+            bool activeSpecialization = false;
+            for (uint32 specialization : spellInfo->SpecializationIdList)
+                if (specialization == m_charBoostInfo.specialization)
+                {
+                    activeSpecialization = true;
+                    break;
+                }
+
+            if (!activeSpecialization)
+                continue;
+        }
+
+        spells.insert(spellInfo->Id);
+    }
+
+    if (std::vector<uint32> const* specializationSpells = dbc::GetSpecializetionSpells(m_charBoostInfo.specialization))
+        for (uint32 spell : *specializationSpells)
+            if (SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spell))
+                if (spellInfo->SpellLevel <= targetLevel)
+                    spells.insert(spell);
+
+    for (uint32 spell : spells)
+        LearnNonExistedSpell(trans, spell);
+}
+
+void CharacterBooster::_UpdateWeaponSkills(CharacterDatabaseTransaction trans, uint8 targetLevel, uint8 raceId, uint8 classId) const
+{
+    PlayerInfo const* info = sObjectMgr->GetPlayerInfo(raceId, classId);
+    if (!info)
+        return;
+
+    uint16 skillValue = uint16(targetLevel) * 5;
+    for (uint32 id : info->skills)
+    {
+        SkillRaceClassInfoEntry const* raceClassInfo = sSkillRaceClassInfoStore.LookupEntry(id);
+        if (!raceClassInfo || raceClassInfo->ReqLevel > targetLevel)
+            continue;
+
+        SkillLineEntry const* skill = sSkillLineStore.LookupEntry(raceClassInfo->SkillId);
+        if (!skill || skill->categoryId != SKILL_CATEGORY_WEAPON)
+            continue;
+
+        trans->PAppend("INSERT INTO character_skills (guid, skill, value, max) VALUES (%u, %u, %u, %u) "
+                       "ON DUPLICATE KEY UPDATE value = GREATEST(value, VALUES(value)), max = GREATEST(max, VALUES(max))",
+                       m_charBoostInfo.charGuid.GetCounter(), raceClassInfo->SkillId, skillValue, skillValue);
+    }
+}
+
+void CharacterBooster::_LearnSpells(CharacterDatabaseTransaction trans, uint8 targetLevel, uint8 raceId, uint8 classId) const
+{
+    std::vector<uint32> spellsToLearn =
+    {
+        SPELL_APPRENTICE_RIDING,
+        SPELL_JOURNEYMAN_RIDING,
+        SPELL_EXPERT_RIDING,
+        SPELL_ARTISAN_RIDING,
+        SPELL_COLD_WHEATHER_FLYING,
+        SPELL_FLIGHT_MASTER_LICENSE,
+    };
+
+    if (targetLevel >= 90)
+        spellsToLearn.push_back(SPELL_WISDOM_OF_FOUR_WINDS);
+
     spellsToLearn.push_back(m_charBoostInfo.allianceFaction ? SPELL_SWIFT_PURPLE_GRYPGON : SPELL_SWIFT_PURPLE_WIND_RIDER);
 
     for (auto&& spell : spellsToLearn)
         LearnNonExistedSpell(trans, spell);
+
+    _LearnClassSpells(trans, targetLevel, raceId, classId);
+    _UpdateWeaponSkills(trans, targetLevel, raceId, classId);
 }
 
 void CharacterBooster::_GetBoostedCharacterData(uint8& raceId, uint8& classId, uint8& level) const
@@ -461,27 +716,48 @@ std::string CharacterBooster::_EquipItems(CharacterDatabaseTransaction trans, Pr
             items << "0 0 ";
     }
 
+    uint32 bagItem = m_charBoostInfo.boostLevel == CHARACTER_BOOST_TIER_LEVEL_80 ? ITEM_FROSTWEAVE_BAG : ITEM_EMBERSILK_BAG;
     for (uint32 i = INVENTORY_SLOT_BAG_START; i < INVENTORY_SLOT_BAG_END; ++i)
-        items << ITEM_EMBERSILK_BAG << " 0 ";
+        items << bagItem << " 0 ";
 
     return items.str();
 }
 
-void CharacterBooster::_SaveBoostedChar(CharacterDatabaseTransaction trans, std::string items, uint8 const raceId, uint8 const classId) const
+void CharacterBooster::_SaveBoostedChar(CharacterDatabaseTransaction trans, std::string items, uint8 targetLevel, uint8 const raceId, uint8 const classId) const
 {
-    float const* position = m_charBoostInfo.allianceFaction ? startPosition[1] : startPosition[0];
+    uint8 locationTier = targetLevel >= 90 ? 1 : 0;
+    CharacterBoostLocation const& location = boostLocations[locationTier][m_charBoostInfo.allianceFaction ? 1 : 0];
+    uint32 money = m_charBoostInfo.boostLevel == CHARACTER_BOOST_TIER_LEGACY ? 10000000 : (targetLevel >= 90 ? 1500000 : 1000000);
 
     CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_UPD_CHARACTER_FOR_BOOST);
     stmt->setUInt8(0, raceId);
-    stmt->setFloat(1, position[0]);
-    stmt->setFloat(2, position[1]);
-    stmt->setFloat(3, position[2]);
-    stmt->setFloat(4, position[3]);
-    stmt->setUInt16(5, MAP_VALE_OF_ETERNAL_BLOSSOMS);
-    stmt->setString(6, _SetSpecialization(trans, classId));
-    stmt->setUInt16(7, AT_LOGIN_FIRST);
-    stmt->setString(8, items);
-    stmt->setUInt32(9, m_charBoostInfo.charGuid.GetCounter());
+    stmt->setUInt32(1, money);
+    stmt->setUInt8(2, targetLevel);
+    stmt->setFloat(3, location.x);
+    stmt->setFloat(4, location.y);
+    stmt->setFloat(5, location.z);
+    stmt->setFloat(6, location.orientation);
+    stmt->setUInt16(7, location.map);
+    stmt->setString(8, _SetSpecialization(trans, classId));
+    stmt->setUInt16(9, AT_LOGIN_FIRST);
+    stmt->setString(10, items);
+    stmt->setUInt32(11, m_charBoostInfo.charGuid.GetCounter());
+    trans->Append(stmt);
+
+    // Keep the Hearthstone destination in sync with the selected tier's
+    // landing point, including characters that have not completed a phased
+    // race or hero-class starting experience.
+    stmt = CharacterDatabase.GetPreparedStatement(CHAR_DEL_PLAYER_HOMEBIND);
+    stmt->setUInt32(0, m_charBoostInfo.charGuid.GetCounter());
+    trans->Append(stmt);
+
+    stmt = CharacterDatabase.GetPreparedStatement(CHAR_INS_PLAYER_HOMEBIND);
+    stmt->setUInt32(0, m_charBoostInfo.charGuid.GetCounter());
+    stmt->setUInt16(1, location.map);
+    stmt->setUInt16(2, location.area);
+    stmt->setFloat(3, location.x);
+    stmt->setFloat(4, location.y);
+    stmt->setFloat(5, location.z);
     trans->Append(stmt);
 }
 
@@ -552,6 +828,12 @@ void CharacterBooster::_LearnVeteranBonuses(CharacterDatabaseTransaction trans, 
         trans->Append(stmt);
         LearnNonExistedSpell(trans, SPELL_FIRST_AID);
     }
+
+    // Blizzard's level-90 boost only raised professions already owned by a
+    // level-60+ character: both primary professions and First Aid. Keep the
+    // broader legacy custom-promotion behavior below for product 83.
+    if (m_charBoostInfo.boostLevel == CHARACTER_BOOST_TIER_LEVEL_90)
+        return;
 
     if (cookingBoosted)
     {
@@ -661,6 +943,14 @@ void CharacterBooster::_HandleCharacterBoost() const
     if (!raceId || !classId || !level)
         return;
 
+    uint8 targetLevel = GetCharacterBoostTargetLevel(m_charBoostInfo.boostLevel);
+    if (level >= targetLevel)
+    {
+        TC_LOG_ERROR("misc", "Character boost rejected for GUID %u: current level %u is not below target level %u.",
+            m_charBoostInfo.charGuid.GetCounter(), level, targetLevel);
+        return;
+    }
+
     if (ChrSpecializationEntry const* specEntry = sChrSpecializationStore.LookupEntry(m_charBoostInfo.specialization))
         if (classId != specEntry->classId)
             return;
@@ -673,12 +963,14 @@ void CharacterBooster::_HandleCharacterBoost() const
     CharacterDatabaseTransaction trans = CharacterDatabase.BeginTransaction();
     _PrepareInventory(trans);
     _SendMail(trans, itemsToMail);
-    _LearnSpells(trans);
-    _SaveBoostedChar(trans, _EquipItems(trans, itemsToEquip), raceId, classId);
-    if (level >= 60)
+    _LearnSpells(trans, targetLevel, raceId, classId);
+    _SaveBoostedChar(trans, _EquipItems(trans, itemsToEquip), targetLevel, raceId, classId);
+    if (level >= 60 && targetLevel >= 90)
         _LearnVeteranBonuses(trans, classId);
-    if (raceId == RACE_GOBLIN || raceId == RACE_WORGEN || raceId == RACE_PANDAREN_ALLIANCE || raceId == RACE_PANDAREN_HORDE || classId == CLASS_DEATH_KNIGHT)
-        sServiceMgr->AddSpecificPlayerData(m_charBoostInfo.charGuid, 0, raceId, classId, nullptr, true, false);
+    // This completes the skipped Goblin, Worgen, Pandaren and Death Knight
+    // starting chains. Other races are harmless no-ops, while class abilities
+    // (including Druid forms) are handled by _LearnClassSpells above.
+    sServiceMgr->AddSpecificPlayerData(m_charBoostInfo.charGuid, 0, raceId, classId, nullptr, true, false);
     CharacterDatabase.CommitTransaction(trans);
     SetBoosting(GetSession(), GetSession()->GetAccountId(), false);
     SendCharBoostPacket(itemsToEquip);
@@ -715,6 +1007,7 @@ void CharacterBooster::SetBoostedCharInfo(ObjectGuid guid, uint32 action, uint32
     m_charBoostInfo.charGuid = guid;
     m_charBoostInfo.action = action;
     m_charBoostInfo.specialization = specialization;
+    m_charBoostInfo.boostLevel = GetStoredCharacterBoostTier(GetSession()->GetAccountId());
     m_charBoostInfo.allianceFaction = allianceFaction;
 }
 

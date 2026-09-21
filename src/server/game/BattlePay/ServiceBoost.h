@@ -22,11 +22,17 @@ enum CharBoostMisc
 {
     // Items
     ITEM_HEARTHSTONE                         = 6948,
+    ITEM_FROSTWEAVE_BAG                      = 41599,
     ITEM_EMBERSILK_BAG                       = 54443,
+    ITEM_BAKED_MANTA_RAY                     = 42942,
+    ITEM_HEAVY_FROSTWEAVE_BANDAGE            = 34722,
     ITEM_LEMON_FLAVOUR_PUDING                = 108920,
     // Spells
     SPELL_SWIFT_PURPLE_WIND_RIDER            = 32297,
     SPELL_SWIFT_PURPLE_GRYPGON               = 32292,
+    SPELL_APPRENTICE_RIDING                  = 33388,
+    SPELL_JOURNEYMAN_RIDING                  = 33391,
+    SPELL_EXPERT_RIDING                      = 34090,
     // Misc
     MAP_VALE_OF_ETERNAL_BLOSSOMS             = 870,
     MAIL_CHARRACTER_BOOST_EQUIPED_ITEMS_BODY = 403,
@@ -53,19 +59,45 @@ enum CharBoostMisc
     SPELL_WISDOM_OF_FOUR_WINDS               = 115913,
 };
 
-float const startPosition[2][4] =
+enum CharacterBoostTier : uint8
 {
-    { 1605.908f, 921.2222f, 470.6227f, 0.124413f }, // horde
-    { 880.6965f, 296.6945f, 503.1162f, 3.779655f }  // alliance
+    CHARACTER_BOOST_TIER_LEGACY              = 0,
+    CHARACTER_BOOST_TIER_LEVEL_80            = 80,
+    CHARACTER_BOOST_TIER_LEVEL_90            = 90,
+};
+
+struct CharacterBoostLocation
+{
+    uint16 map;
+    uint16 area;
+    float x;
+    float y;
+    float z;
+    float orientation;
+};
+
+// Level 80 characters start in their faction capital. Level 90 characters
+// start at their faction shrine in the Vale of Eternal Blossoms.
+CharacterBoostLocation const boostLocations[2][2] =
+{
+    {
+        { 1, 1637, 1577.41f, -4453.68f, 15.6648f, 1.8708f }, // Horde, Orgrimmar
+        { 0, 1519, -8867.68f, 673.373f, 97.9034f, 5.3070f }, // Alliance, Stormwind
+    },
+    {
+        { 870, 6554, 1605.908f, 921.2222f, 470.6227f, 0.124413f }, // Horde shrine
+        { 870, 6553, 880.6965f, 296.6945f, 503.1162f, 3.779655f }, // Alliance shrine
+    },
 };
 
 struct CharacterBoostData
 {
-    CharacterBoostData() : charGuid(ObjectGuid::Empty), action(0), specialization(0), allianceFaction(false) { }
+    CharacterBoostData() : charGuid(ObjectGuid::Empty), action(0), specialization(0), boostLevel(CHARACTER_BOOST_TIER_LEGACY), allianceFaction(false) { }
 
     ObjectGuid charGuid;
     uint32 action;
     uint32 specialization;
+    uint8 boostLevel;
     bool allianceFaction;
 };
 
@@ -82,7 +114,9 @@ typedef std::vector<BoostItems*> BoostItemsVector;
 typedef std::map<uint8 /*slot*/, uint32 /*ItemId*/> PreparedItemsMap;
 
 void LoadBoostItems();
-void SetBoosting(WorldSession* session, uint32 accountId, bool boost);
+void SetBoosting(WorldSession* session, uint32 accountId, bool boost, uint8 boostLevel = CHARACTER_BOOST_TIER_LEGACY);
+bool IsCharacterBoostProduct(uint32 productId);
+uint8 GetCharacterBoostTierForProduct(uint32 productId);
 
 static BoostItemsVector mBoostItemsMap;
 
@@ -104,15 +138,17 @@ class CharacterBooster
         std::string _EquipItems(CharacterDatabaseTransaction trans, PreparedItemsMap itemsToEquip) const;
         void _GetBoostedCharacterData(uint8& raceId, uint8& classId, uint8& level) const;
         void _HandleCharacterBoost() const;
-        void _LearnSpells(CharacterDatabaseTransaction trans) const;
+        void _LearnSpells(CharacterDatabaseTransaction trans, uint8 targetLevel, uint8 raceId, uint8 classId) const;
+        void _LearnClassSpells(CharacterDatabaseTransaction trans, uint8 targetLevel, uint8 raceId, uint8 classId) const;
+        void _UpdateWeaponSkills(CharacterDatabaseTransaction trans, uint8 targetLevel, uint8 raceId, uint8 classId) const;
         void _PrepareInventory(CharacterDatabaseTransaction trans) const;
         uint32 _PrepareMail(CharacterDatabaseTransaction trans, std::string const subject, std::string const body) const;
         std::string _SetSpecialization(CharacterDatabaseTransaction trans, uint8 const classId) const;
-        void _SaveBoostedChar(CharacterDatabaseTransaction trans, std::string items, uint8 const raceId, uint8 const classId) const;
+        void _SaveBoostedChar(CharacterDatabaseTransaction trans, std::string items, uint8 targetLevel, uint8 const raceId, uint8 const classId) const;
         void _SendMail(CharacterDatabaseTransaction trans, PreparedItemsMap items) const;
         void _LearnVeteranBonuses(CharacterDatabaseTransaction trans, uint8 const classId) const;
         void LearnNonExistedSpell(CharacterDatabaseTransaction trans, uint32 spell) const;
-        void LearnNonExistedSkill(CharacterDatabaseTransaction trans, uint32 skill) const;
+        void LearnNonExistedSkill(CharacterDatabaseTransaction trans, uint32 skill, uint16 value = 600, uint16 max = 600) const;
         WorldSession* GetSession() const { return m_session; }
 
         CharacterBoostData m_charBoostInfo;

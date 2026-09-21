@@ -112,7 +112,9 @@ DROP TABLE IF EXISTS `account_boost`;
 CREATE TABLE `account_boost`  (
   `id` int NOT NULL DEFAULT 0,
   `realmid` int UNSIGNED NOT NULL DEFAULT 1,
-  `counter` int UNSIGNED NOT NULL DEFAULT 0
+  `counter` int UNSIGNED NOT NULL DEFAULT 0,
+  `boost_level` tinyint UNSIGNED NOT NULL DEFAULT 0 COMMENT '0 = legacy promotion, 80/90 = DBC character boost tier',
+  PRIMARY KEY (`id`, `realmid`)
 ) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_bin ROW_FORMAT = Dynamic;
 
 -- ----------------------------
