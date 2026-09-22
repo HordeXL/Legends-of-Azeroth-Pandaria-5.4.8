@@ -52,10 +52,12 @@ INSERT INTO `smart_scripts` (`entryorguid`, `source_type`, `id`, `link`, `event_
 
 -- 6) Toya's template had an empty AIName, so the SmartAI above never ran
 --    (the server logged "Creature entry 56348 has SmartAI scripts, but its
---    AIName is not 'SmartAI'").  Fix it, and drop the QUESTTAKEN(29925)
---    condition that hid the ride option while the quest was not active -
---    the Blizzard data has no such condition for Toya, and the ride is
---    harmless without the quest.
+--    AIName is not 'SmartAI'").  Fix it.
 UPDATE `creature_template` SET `AIName` = 'SmartAI' WHERE `entry` = 56348;
 
+-- The ride option is gated behind QUESTTAKEN(29925): Toya is both the quest
+-- giver and the ride NPC, so the "I'm ready to see Lorewalker Cho." option
+-- must only appear while quest 29925 is active.  (Kept idempotent.)
 DELETE FROM `conditions` WHERE `SourceTypeOrReferenceId` = 15 AND `SourceGroup` = 56348 AND `SourceEntry` = 0 AND `SourceId` = 0 AND `ElseGroup` = 0;
+INSERT INTO `conditions` (`SourceTypeOrReferenceId`, `SourceGroup`, `SourceEntry`, `SourceId`, `ElseGroup`, `ConditionTypeOrReference`, `ConditionTarget`, `ConditionValue1`, `ConditionValue2`, `ConditionValue3`, `NegativeCondition`, `ErrorType`, `ErrorTextId`) VALUES
+(15, 56348, 0, 0, 0, 9, 0, 29925, 0, 0, 0, 0, 0);
