@@ -30,8 +30,15 @@
 -- rescue chain; 80989 has no restrictions at all, which gives the same effect
 -- here without side effects elsewhere.
 --
--- Apply notes: worldserver restart or ".reload item_template" +
--- ".reload smart_scripts".
+-- Additionally: General Nazgrim (64360) was spawned at 718.4,-1865.5 while the
+-- quest's own map marker (quest_poi_points) sits at 777,-1909 - a ~73 yd gap,
+-- so players following the quest tracker could not find him.  He is moved onto
+-- the marker.  The other three survivors already sit within 2-10 yd of their
+-- markers, so they are left alone.
+--
+-- Apply notes: worldserver restart (creature spawns are loaded at startup) or
+-- ".reload item_template" + ".reload smart_scripts"; the spawn move needs the
+-- restart (or a ".npc move" by a GM).
 
 -- 1) Cho's Fireworks: only the targeted signal spell remains on use.  The
 --    original 125700 is dropped so its target requirement can no longer pop up.
@@ -50,3 +57,8 @@ INSERT INTO `smart_scripts` (`entryorguid`, `source_type`, `id`, `link`, `event_
 (64362, 0, 1, 0, 8, 0, 100, 0, 80989, 0, 0, 0, 0, 33, 64362, 0, 0, 0, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 0, 'On SpellHit firework - credit Shademaster Kiryn rescue (30504)'),
 (64363, 0, 1, 0, 8, 0, 100, 0, 80989, 0, 0, 0, 0, 33, 64363, 0, 0, 0, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 0, 'On SpellHit firework - credit Shokia rescue (30504)'),
 (64364, 0, 1, 0, 8, 0, 100, 0, 80989, 0, 0, 0, 0, 33, 64364, 0, 0, 0, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 0, 'On SpellHit firework - credit Rivett Clutchpop rescue (30504)');
+
+-- 4) Move General Nazgrim onto the quest's map marker so he can be found.
+UPDATE `creature` SET
+  `position_x` = 777, `position_y` = -1909, `position_z` = 59.8
+WHERE `guid` = 457630;
