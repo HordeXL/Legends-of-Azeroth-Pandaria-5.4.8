@@ -20,6 +20,8 @@
 #include "ScriptedGossip.h"
 #include "ScriptedEscortAI.h"
 #include "CreatureTextMgr.h"
+#include "ObjectAccessor.h"
+#include "EventProcessor.h"
 
 const Position MySerpentPath[2]
 {
@@ -4735,6 +4737,58 @@ class scene_jade_forest_jade_serpent : public SceneScript
         }
 };
 
+// SceneId 66 (Temple of the Jade Serpent entry scene)
+// Started from smart_scripts on Elder Sage Wind-Yi (57242) gossip (quest 29932).
+// When the scene finishes (or is skipped), teleport the player into the temple courtyard.
+//
+// NOTE: The teleport MUST be delayed. OnSceneComplete/OnSceneCancel run inside
+// scene packet processing - teleporting immediately there desyncs the client
+// (stuck black screen when skipping) and has caused assert crashes.
+enum
+{
+    MAP_THE_JADE_FOREST = 870,
+};
+
+class JadeTempleDelayedTeleportEvent : public BasicEvent
+{
+    public:
+        explicit JadeTempleDelayedTeleportEvent(ObjectGuid playerGuid) : _playerGuid(playerGuid) { }
+
+        bool Execute(uint64 /*eventTime*/, uint32 /*updateTime*/) override
+        {
+            if (Player* player = ObjectAccessor::FindConnectedPlayer(_playerGuid))
+                if (player->IsInWorld() && !player->GetSession()->PlayerLogout())
+                    player->TeleportTo(MAP_THE_JADE_FOREST, 918.0f, -2597.0f, 181.0f, -1.177f);
+            return true;
+        }
+
+    private:
+        ObjectGuid _playerGuid;
+};
+
+class scene_jade_temple_teleport : public SceneScript
+{
+    public:
+        scene_jade_temple_teleport() : SceneScript("scene_jade_temple_teleport") { }
+
+        void OnSceneComplete(Player* player, uint32 /*sceneInstanceID*/, SceneTemplate const* /*sceneTemplate*/) override
+        {
+            ScheduleTeleport(player);
+        }
+
+        void OnSceneCancel(Player* player, uint32 /*sceneInstanceID*/, SceneTemplate const* /*sceneTemplate*/) override
+        {
+            // Player skipped the cutscene - keep the flow consistent.
+            ScheduleTeleport(player);
+        }
+
+    private:
+        static void ScheduleTeleport(Player* player)
+        {
+            player->m_Events.AddEventAtOffset(new JadeTempleDelayedTeleportEvent(player->GetGUID()), 2000);
+        }
+};
+
 enum instantMessagesType
 {
     SPELL_SUMMON_CAMERA       = 105971,
@@ -4932,6 +4986,7 @@ void AddSC_jade_forest()
     new spell_script<spell_jade_forest_nazgrims_flare_gun>("spell_jade_forest_nazgrims_flare_gun");
     new creature_script<npc_jade_forest_playful_colored_serpent>("npc_jade_forest_playful_colored_serpent");
     new scene_jade_forest_jade_serpent();
+    new scene_jade_temple_teleport();
     new creature_script<npc_jade_forest_instant_message_camera_bunny>("npc_jade_forest_instant_message_camera_bunny");
     new aura_script<spell_jade_forest_signal_flare_initialize>("spell_jade_forest_signal_flare_initialize");
     new spell_script<spell_reverse_cast_ride_seat_1>("spell_reverse_cast_ride_seat_1");
