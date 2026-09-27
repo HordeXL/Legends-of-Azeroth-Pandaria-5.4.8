@@ -4771,21 +4771,26 @@ class scene_jade_temple_teleport : public SceneScript
     public:
         scene_jade_temple_teleport() : SceneScript("scene_jade_temple_teleport") { }
 
-        void OnSceneComplete(Player* player, uint32 /*sceneInstanceID*/, SceneTemplate const* /*sceneTemplate*/) override
+        // Retail-style flow: teleport while the cutscene covers the screen, so the
+        // player is already standing at the destination when the scene ends (or is
+        // skipped). The short delay lets the client enter cinematic state first;
+        // the event-queue execution keeps us out of the packet-processing context.
+        void OnSceneStart(Player* player, uint32 /*sceneInstanceID*/, SceneTemplate const* /*sceneTemplate*/) override
         {
-            ScheduleTeleport(player);
+            player->m_Events.AddEventAtOffset(new JadeTempleDelayedTeleportEvent(player->GetGUID()), 400);
         }
 
-        void OnSceneCancel(Player* player, uint32 /*sceneInstanceID*/, SceneTemplate const* /*sceneTemplate*/) override
+        void OnSceneComplete(Player* player, uint32 sceneInstanceID, SceneTemplate const* /*sceneTemplate*/) override
         {
-            // Player skipped the cutscene - keep the flow consistent.
-            ScheduleTeleport(player);
+            // Scene 66 flags (9) lack SCENEFLAG_CANCEL_AT_END, so SceneMgr will not
+            // send SMSG_CANCEL_SCENE by itself. Send it explicitly so the client
+            // cleanly leaves the scene state.
+            player->GetSceneMgr().CancelScene(sceneInstanceID, false);
         }
 
-    private:
-        static void ScheduleTeleport(Player* player)
+        void OnSceneCancel(Player* player, uint32 sceneInstanceID, SceneTemplate const* /*sceneTemplate*/) override
         {
-            player->m_Events.AddEventAtOffset(new JadeTempleDelayedTeleportEvent(player->GetGUID()), 2000);
+            player->GetSceneMgr().CancelScene(sceneInstanceID, false);
         }
 };
 
