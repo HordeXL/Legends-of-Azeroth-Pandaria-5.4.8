@@ -57,6 +57,10 @@ UsableSeatNum(0), _me(unit), _vehicleInfo(vehInfo), _creatureEntry(creatureEntry
     // Set inmunities since db ones are rewritten with player's ones
     switch (GetVehicleInfo()->m_ID)
     {
+        case 139: // Scarlet Cannon (Massacre at Light's Point)
+            if (_creatureEntry == 28833)
+                _me->SetControlled(true, UNIT_STATE_ROOT);
+            break;
         // Strand of the Ancients
         case 160: // Antipersonnel Cannon
                   // Wintergrasp
@@ -283,6 +287,10 @@ void Vehicle::ApplyAllImmunities()
     // Different immunities for vehicles goes below
     switch (GetVehicleInfo()->m_ID)
     {
+        case 139: // Scarlet Cannon (Massacre at Light's Point)
+            if (_creatureEntry == 28833)
+                _me->SetControlled(true, UNIT_STATE_ROOT);
+            break;
         // code below prevents a bug with movable cannons
         // Strand of the Ancients
         case 160: // Antipersonnel Cannon
