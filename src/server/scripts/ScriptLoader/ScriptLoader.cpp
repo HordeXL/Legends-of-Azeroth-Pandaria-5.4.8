@@ -2145,6 +2145,7 @@ void AddSC_custom_items();
 void AddSC_solocraft_system();
 void AddSC_vip_utility_master();
 void AddSC_quest_completer();
+void AddSC_npc_giant_plainshawk_29918();
 
 void AddCustomScripts()
 {
@@ -2158,6 +2159,7 @@ void AddCustomScripts()
 	AddSC_solocraft_system();
     AddSC_vip_utility_master();
     AddSC_quest_completer();
+    AddSC_npc_giant_plainshawk_29918();
 
 #endif
     AddSC_Anticheat();
