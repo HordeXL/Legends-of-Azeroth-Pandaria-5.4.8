@@ -218,9 +218,9 @@ public:
         void SpawnAmbush(bool first)
         {
             _spawnId = first ? 0 : 1;
-            me->SummonCreature(NPC_RANGER, RinjiAmbushSpawn[_spawnId], TEMPSUMMON_TIMED_OR_CORPSE_DESPAWN, 60000);
+            me->SummonCreature(NPC_RANGER, RinjiAmbushSpawn[_spawnId], TEMPSUMMON_TIMED_OR_CORPSE_DESPAWN, Milliseconds(60000));
             for (uint8 i = 0; i < 2; ++i)
-                me->SummonCreature(NPC_OUTRUNNER, RinjiAmbushSpawn[_spawnId], TEMPSUMMON_TIMED_OR_CORPSE_DESPAWN, 60000);
+                me->SummonCreature(NPC_OUTRUNNER, RinjiAmbushSpawn[_spawnId], TEMPSUMMON_TIMED_OR_CORPSE_DESPAWN, Milliseconds(60000));
         }
 
         void JustSummoned(Creature* summoned) override

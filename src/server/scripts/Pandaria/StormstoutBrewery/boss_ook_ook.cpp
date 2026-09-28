@@ -191,7 +191,7 @@ class boss_ook_ook : public CreatureScript
                 if (!IsEncounterUnlocked())
                 {
                     me->CombatStop(true);
-                    me->DeleteThreatList();
+                    me->GetThreatManager().ClearAllThreat();
                     return;
                 }
 

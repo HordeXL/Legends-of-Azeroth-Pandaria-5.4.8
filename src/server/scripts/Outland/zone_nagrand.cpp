@@ -513,10 +513,10 @@ public:
     {
         if (quest->GetQuestId() == QUEST_TOTEM_KARDASH_A)
         {
-            if (npc_kurenai_captiveAI* EscortAI = dynamic_cast<npc_kurenai_captiveAI*>(creature->AI()))
+            if (npc_kurenai_captiveAI* npc_escortAI = dynamic_cast<npc_kurenai_captiveAI*>(creature->AI()))
             {
                 creature->SetStandState(UNIT_STAND_STATE_STAND);
-                EscortAI->Start(true, false, player->GetGUID(), quest);
+                npc_escortAI->Start(true, false, player->GetGUID(), quest);
                 creature->AI()->Talk(SAY_KUR_START);
 
                 creature->SummonCreature(NPC_KUR_MURK_RAIDER, kurenaiAmbushA[0]+2.5f, kurenaiAmbushA[1]-2.5f, kurenaiAmbushA[2], 0.0f, TEMPSUMMON_TIMED_DESPAWN_OUT_OF_COMBAT, 25000ms);

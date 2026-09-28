@@ -90,7 +90,7 @@ public:
             me->GetMotionMaster()->MoveChase(victim);
         }
 
-        void EnterEvadeMode() override
+        void EnterEvadeMode(EvadeReason /*why*/) override
         {
             // restore natural state: un-ground, fly back to the original air home
             _lassoed = false;

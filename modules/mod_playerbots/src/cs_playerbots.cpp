@@ -499,7 +499,7 @@ void PrepareSoloArenaBotForLogout(Player* bot, char const* context)
     // stale hostile reference for a few updates after leaving the instance,
     // so clear both sides before RandomPlayerbotMgr saves and logs the bot out.
     bot->CombatStop();
-    bot->getHostileRefManager().deleteReferences();
+    bot->GetThreatManager().ClearAllThreat();
 
     if (!bot->IsAlive())
     {
@@ -5375,7 +5375,7 @@ void PrepareWorldBossBotForSummon(Player* bot)
     if (bot->IsCharmed())
         bot->RemoveCharmAuras();
     bot->CombatStop();
-    bot->getHostileRefManager().deleteReferences();
+    bot->GetThreatManager().ClearAllThreat();
     if (!bot->IsAlive())
     {
         bot->ResurrectPlayer(1.0f, false);

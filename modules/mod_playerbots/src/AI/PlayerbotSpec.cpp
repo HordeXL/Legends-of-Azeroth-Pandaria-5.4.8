@@ -340,7 +340,7 @@ bool GroupPveCombat::IsEngaged(Player* player, Unit* target)
         if (Player* member = ref->GetSource())
             if (member->IsAlive() && member->IsInWorld() && member->GetMap() == player->GetMap() &&
                 (member->GetVictim() == target || (target->CanHaveThreatList() &&
-                    target->GetThreatManager().getThreat(member) > 0.0f))) return true;
+                    target->GetThreatManager().GetThreat(member) > 0.0f))) return true;
     return false;
 }
 
@@ -486,8 +486,9 @@ bool GroupPveCombat::TankOwnsTarget(Player* player, Unit* target)
     // Use the threat victim rather than a scripted temporary spell target.
     // World bosses can cast at a random raid member without changing the
     // player who actually controls their facing.
-    HostileReference* reference = target->GetThreatManager().getCurrentVictim();
-    Unit* victim = reference ? reference->getTarget() : target->GetVictim();
+    Unit* victim = target->GetThreatManager().GetCurrentVictim();
+    if (!victim)
+        victim = target->GetVictim();
     Player* owner = victim ?
         victim->GetCharmerOrOwnerPlayerOrPlayerItself() : nullptr;
     return owner && owner->IsAlive() && group->IsMember(owner->GetGUID()) &&
@@ -540,8 +541,9 @@ bool GroupPveCombat::NeedsRescue(Player* player, Unit* target)
         GetActiveGroup(player)->IsMember(attackingOwner->GetGUID()) &&
         PlayerBotSpec::IsTank(attackingOwner, true)) return false;
     // Threat victim, not the temporary target of a scripted boss ability.
-    HostileReference* reference = target->GetThreatManager().getCurrentVictim();
-    Unit* victim = reference ? reference->getTarget() : target->GetVictim();
+    Unit* victim = target->GetThreatManager().GetCurrentVictim();
+    if (!victim)
+        victim = target->GetVictim();
     Player* owner = victim ? victim->GetCharmerOrOwnerPlayerOrPlayerItself() : nullptr;
     Group* group = GetActiveGroup(player);
     return owner && owner->IsAlive() && group->IsMember(owner->GetGUID()) &&

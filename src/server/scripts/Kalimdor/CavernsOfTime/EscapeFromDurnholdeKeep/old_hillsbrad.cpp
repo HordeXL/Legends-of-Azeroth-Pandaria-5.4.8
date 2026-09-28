@@ -568,9 +568,9 @@ enum Taretha
     GOSSIP_ITEM_EPOCH2_OID  = 0                            //We'll get you out, Taretha. Don't worry. I doubt the wizard would wander too far away.
 };
 
-// struct npc_taretha : public EscortAI
+// struct npc_taretha : public npc_escortAI
 // {
-//     npc_taretha(Creature* creature) : EscortAI(creature)
+//     npc_taretha(Creature* creature) : npc_escortAI(creature)
 //     {
 //         instance = creature->GetInstanceScript();
 //     }

@@ -4580,5 +4580,5 @@ bool PlayerbotAI::HasEngagedTarget(Unit* target) const
     // positive threat entry proves that this owner actually engaged the PvE
     // target; target combat caused solely by another group member does not.
     return target->CanHaveThreatList() &&
-        target->GetThreatManager().getThreat(bot) > 0.0f;
+        target->GetThreatManager().GetThreat(bot) > 0.0f;
 }

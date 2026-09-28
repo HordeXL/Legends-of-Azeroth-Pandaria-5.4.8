@@ -1168,7 +1168,7 @@ bool IsAfflictionEngaged(Player* player, Unit* target)
         target->HasAura(AfflictionAssistant::Agony, player->GetGUID()) ||
         target->HasAura(AfflictionAssistant::CorruptionAura, player->GetGUID()) ||
         target->HasAura(AfflictionAssistant::UnstableAffliction, player->GetGUID()) ||
-        (target->CanHaveThreatList() && target->GetThreatManager().getThreat(player) > 0.0f);
+        (target->CanHaveThreatList() && target->GetThreatManager().GetThreat(player) > 0.0f);
 }
 
 uint32 AfflictionCastTime(Player* player, uint32 spellId)

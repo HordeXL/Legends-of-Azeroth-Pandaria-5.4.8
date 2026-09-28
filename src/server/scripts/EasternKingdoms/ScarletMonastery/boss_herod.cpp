@@ -66,7 +66,7 @@ public:
         void JustDied(Unit* /*killer*/) override
         {
             for (uint8 i = 0; i < 20; ++i)
-                me->SummonCreature(NPC_SCARLET_TRAINEE, ScarletTraineeSpawn, TEMPSUMMON_TIMED_OR_DEAD_DESPAWN, 600000);
+                me->SummonCreature(NPC_SCARLET_TRAINEE, ScarletTraineeSpawn, TEMPSUMMON_TIMED_OR_DEAD_DESPAWN, Milliseconds(600000));
         }
 
         void DamageTaken(Unit* /*attacker*/, uint32& damage) override

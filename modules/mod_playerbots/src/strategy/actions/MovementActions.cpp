@@ -4717,7 +4717,7 @@ bool BossMechanicsAction::Execute(Event /*event*/)
                 float x = galleon->GetPositionX();
                 float y = galleon->GetPositionY();
                 float z = galleon->GetPositionZ();
-                galleon->GetNearPoint(bot, x, y, z, bot->GetObjectSize(),
+                galleon->GetNearPoint(bot, x, y, z,
                     24.0f, angle);
                 return MoveTo(bot->GetMapId(), x, y, z, false, false, false,
                     true, MovementPriority::MOVEMENT_FORCED);
@@ -4773,7 +4773,7 @@ bool BossMechanicsAction::Execute(Event /*event*/)
                 float x = oondasta->GetPositionX();
                 float y = oondasta->GetPositionY();
                 float z = oondasta->GetPositionZ();
-                oondasta->GetNearPoint(bot, x, y, z, bot->GetObjectSize(),
+                oondasta->GetNearPoint(bot, x, y, z,
                     10.0f, Position::NormalizeOrientation(
                         oondasta->GetOrientation() + float(M_PI)));
                 return MoveTo(bot->GetMapId(), x, y, z, false, false, false,
@@ -6175,7 +6175,7 @@ bool BossMechanicsAction::Execute(Event /*event*/)
                 float x = yulon->GetPositionX();
                 float y = yulon->GetPositionY();
                 float z = yulon->GetPositionZ();
-                yulon->GetNearPoint(bot, x, y, z, bot->GetObjectSize(),
+                yulon->GetNearPoint(bot, x, y, z,
                     10.0f, Position::NormalizeOrientation(
                         yulon->GetOrientation() + float(M_PI)));
                 return MoveTo(bot->GetMapId(), x, y, z, false, false, false,
@@ -7225,7 +7225,7 @@ bool TankFaceAction::Execute(Event /*event*/)
         float x = target->GetPositionX();
         float y = target->GetPositionY();
         float z = target->GetPositionZ();
-        target->GetNearPoint(bot, x, y, z, 0.0f,
+        target->GetNearPoint(bot, x, y, z,
             std::max(0.5f, dist), tankAngle);
         if (!bot->GetMap()->CheckCollisionAndGetValidCoords(bot,
                 bot->GetPositionX(), bot->GetPositionY(),
