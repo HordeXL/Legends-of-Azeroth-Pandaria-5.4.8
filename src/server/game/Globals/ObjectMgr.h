@@ -46,6 +46,7 @@
 #include "Containers.h"
 #include "ItemSpec.h"
 #include <atomic>
+#include <mutex>
 #include "Hash.h"
 
 class AreaTrigger;
@@ -1823,6 +1824,7 @@ class ObjectMgr
         template<HighGuid high>
         inline ObjectGuidGeneratorBase& GetGuidSequenceGenerator()
         {
+            std::lock_guard<std::mutex> guard(_guidGeneratorsLock);
             auto itr = _guidGenerators.find(high);
             if (itr == _guidGenerators.end())
                 itr = _guidGenerators.insert(std::make_pair(high, std::unique_ptr<ObjectGuidGenerator<high>>(new ObjectGuidGenerator<high>()))).first;
@@ -1831,6 +1833,7 @@ class ObjectMgr
         }
 
         std::map<HighGuid, std::unique_ptr<ObjectGuidGeneratorBase>> _guidGenerators;
+        std::mutex _guidGeneratorsLock;
 
         QuestMap _questTemplates;
         QuestObjectivesByIdContainer _questObjectives;
