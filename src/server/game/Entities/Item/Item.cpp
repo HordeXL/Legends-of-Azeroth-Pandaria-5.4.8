@@ -17,6 +17,7 @@
 
 #include "Common.h"
 #include "Item.h"
+#include <atomic>
 #include "ObjectMgr.h"
 #include "WorldPacket.h"
 #include "DatabaseEnv.h"
@@ -1906,7 +1907,9 @@ void Item::AddToUpdate()
     //     return;
     // }
 
-    owner->FindMap()->AddUpdateObject(this);
+    // remember the map: the owner may change maps before the item leaves this update list
+    m_updateMap = owner->FindMap();
+    m_updateMap->AddUpdateObject(this);
     m_objectUpdated = true;
 }
 
@@ -1916,16 +1919,21 @@ void Item::RemoveFromUpdate()
     // owner is still registered and retains its map while items leave the
     // update set, even though FindPlayer's IsInWorld filter would reject it.
     Player* owner = ObjectAccessor::FindConnectedPlayer(GetOwnerGUID());
-    if (!owner)
+    // The item leaves the update list of the map it was queued on: the owner may
+    // have changed maps (or left the world) since AddToUpdate.
+    Map* ownerMap = owner ? owner->FindMap() : nullptr;
+    Map* map = m_updateMap ? m_updateMap : ownerMap;
+    if (m_updateMap && ownerMap && ownerMap != m_updateMap)
     {
-        TC_LOG_ERROR("shitlog", "Item::RemoveFromUpdate - owner not found, guid %u, entry %u, owner %u\n",
-            GetGUID().GetCounter(), GetEntry(), GetOwnerGUID().GetCounter());
-        return;
+        static std::atomic<uint32> mismatches{ 0 };
+        uint32 n = ++mismatches;
+        if (n == 1 || n % 100 == 0)
+            TC_LOG_ERROR("shitlog", "Item::RemoveFromUpdate - owner is on map %u but the item was queued on map %u (%u times)\n",
+                ownerMap->GetId(), m_updateMap->GetId(), n);
     }
-
-    if (!owner->FindMap())
+    if (!map)
     {
-        TC_LOG_ERROR("shitlog", "Item::RemoveFromUpdate - owner hasn't map, guid %u, entry %u, owner %u\n",
+        TC_LOG_ERROR("shitlog", "Item::RemoveFromUpdate - no map, guid %u, entry %u, owner %u\n",
             GetGUID().GetCounter(), GetEntry(), GetOwnerGUID().GetCounter());
         return;
     }
@@ -1937,7 +1945,8 @@ void Item::RemoveFromUpdate()
     //     return;
     // }
 
-    owner->FindMap()->RemoveUpdateObject(this);
+    map->RemoveUpdateObject(this);
+    m_updateMap = nullptr;
     m_objectUpdated = false;
 }
 
