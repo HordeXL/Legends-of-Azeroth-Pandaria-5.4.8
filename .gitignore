@@ -18,3 +18,5 @@ vmap4extractor.exe
 /.codex/
 /bin-clang
 /bin
+/.workbuddy/
+/build_addon.log
