@@ -1539,6 +1539,13 @@ void ScriptMgr::OnPlayerChat(Player* player, uint32 type, uint32 lang, std::stri
     FOREACH_SCRIPT(PlayerScript)->OnChat(player, type, lang, msg, channel);
 }
 
+void ScriptMgr::OnPlayerAddonMessage(Player* player, uint32 type, std::string const& prefix, std::string const& msg)
+{
+#ifdef ELUNA
+    sHookMgr->OnAddonMessage(player, type, prefix, msg);
+#endif
+}
+
 void ScriptMgr::OnPlayerEmote(Player* player, uint32 emote)
 {
 #ifdef ELUNA

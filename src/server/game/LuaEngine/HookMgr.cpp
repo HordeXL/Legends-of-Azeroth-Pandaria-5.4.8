@@ -903,6 +903,21 @@ void HookMgr::OnMapChanged(Player* player)
     }
 }
 
+void HookMgr::OnAddonMessage(Player* pPlayer, uint32 type, std::string const& prefix, std::string const& msg)
+{
+    for (std::vector<int>::const_iterator itr = sEluna->PlayerEventBindings[PLAYER_EVENT_ON_ADDON_MESSAGE].begin();
+        itr != sEluna->PlayerEventBindings[PLAYER_EVENT_ON_ADDON_MESSAGE].end(); ++itr)
+    {
+        sEluna->BeginCall((*itr));
+        sEluna->Push(sEluna->L, PLAYER_EVENT_ON_ADDON_MESSAGE);
+        sEluna->Push(sEluna->L, pPlayer);
+        sEluna->Push(sEluna->L, msg);
+        sEluna->Push(sEluna->L, prefix);
+        sEluna->Push(sEluna->L, type);
+        sEluna->ExecuteCall(5, 0);
+    }
+}
+
 bool HookMgr::OnChat(Player* pPlayer, uint32 type, uint32 lang, std::string& msg)
 {
     bool Result = true;

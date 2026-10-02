@@ -510,6 +510,7 @@ ElunaRegister<Player> PlayerMethods[] =
     {"SendBroadcastMessage", &LuaPlayer::SendBroadcastMessage},                                               // :SendBroadcastMessage(message)
     {"SendAreaTriggerMessage", &LuaPlayer::SendAreaTriggerMessage},                                           // :SendAreaTriggerMessage(message) - Sends a yellow message in the middle of your screen
     {"SendNotification", &LuaPlayer::SendNotification},     // :SendNotification(message) - Sends a red message in the middle of your screen
+    {"SendAddonMessage", &LuaPlayer::SendAddonMessage},     // :SendAddonMessage(prefix, message, receiver) - Sends an addon message to the receiver (fires CHAT_MSG_ADDON client-side)
     {"SendPacketToPlayer", &LuaPlayer::SendPacketToPlayer}, // :SendPacketToPlayer(packet) - Sends a specified packet to the player
     {"SendPacket", &LuaPlayer::SendPacket},                 // :SendPacket(packet) - Sends a specified packet
     // {"SendPacketToGroup", &LuaPlayer::SendPacketToGroup},// :SendPacketToGroup(packet[, sendToPlayersInBattleground(bool)]) - Sends a specified packet to the group with the choice (true/false) to send it to players in a battleground

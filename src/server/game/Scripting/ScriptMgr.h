@@ -1198,6 +1198,7 @@ public: /* PlayerScript */
     void OnPlayerChat(Player* player, uint32 type, uint32 lang, std::string& msg, Group* group);
     void OnPlayerChat(Player* player, uint32 type, uint32 lang, std::string& msg, Guild* guild);
     void OnPlayerChat(Player* player, uint32 type, uint32 lang, std::string& msg, Channel* channel);
+    void OnPlayerAddonMessage(Player* player, uint32 type, std::string const& prefix, std::string const& msg);
     void OnPlayerEmote(Player* player, uint32 emote);
     void OnPlayerTextEmote(Player* player, uint32 textEmote, uint32 emoteNum, ObjectGuid guid);
     void OnPlayerSpellCast(Player* player, Spell* spell, bool skipCheck);

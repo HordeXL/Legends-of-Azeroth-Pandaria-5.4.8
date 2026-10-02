@@ -452,6 +452,8 @@ namespace LuaPlayer
 
     int SendNotification(lua_State* L, Player* player);
 
+    int SendAddonMessage(lua_State* L, Player* player);
+
     int SendPacketToPlayer(lua_State* L, Player* player);
 
     int SendPacket(lua_State* L, Player* player);

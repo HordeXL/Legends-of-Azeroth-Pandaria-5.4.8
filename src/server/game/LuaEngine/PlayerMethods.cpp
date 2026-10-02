@@ -1951,6 +1951,19 @@ namespace LuaPlayer
         return 0;
     }
 
+    int SendAddonMessage(lua_State* L, Player* player)
+    {
+        std::string prefix = luaL_checkstring(L, 1);
+        std::string message = luaL_checkstring(L, 2);
+        Player* receiver = sEluna->CHECK_PLAYER(L, 3);
+        if (!receiver || prefix.empty() || message.empty())
+            return 0;
+        if (prefix.length() > 16 || message.length() > 255)
+            return 0;
+        player->WhisperAddon(message, prefix, receiver);
+        return 0;
+    }
+
     int SendPacketToPlayer(lua_State* L, Player* player)
     {
         WorldPacket* data = sEluna->CHECK_PACKET(L, 1);

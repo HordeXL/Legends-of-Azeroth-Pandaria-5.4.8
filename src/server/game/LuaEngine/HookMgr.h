@@ -133,6 +133,7 @@ enum PlayerEvents
     PLAYER_EVENT_ON_REPOP                   =     35,       // (event, player)
     PLAYER_EVENT_ON_RESURRECT               =     36,       // (event, player)
     PLAYER_EVENT_ON_LOOT_MONEY              =     37,       // (event, player, amount)
+    PLAYER_EVENT_ON_ADDON_MESSAGE           =     38,       // (event, player, msg, prefix, type)
 
     PLAYER_EVENT_COUNT
 };
@@ -331,6 +332,7 @@ struct HookMgr
     bool OnChat(Player* pPlayer, uint32 type, uint32 lang, std::string& msg, Group* pGroup);
     bool OnChat(Player* pPlayer, uint32 type, uint32 lang, std::string& msg, Guild* pGuild);
     bool OnChat(Player* pPlayer, uint32 type, uint32 lang, std::string& msg, Channel* pChannel);
+    void OnAddonMessage(Player* pPlayer, uint32 type, std::string const& prefix, std::string const& msg);
     void OnEmote(Player* pPlayer, uint32 emote);
     void OnTextEmote(Player* pPlayer, uint32 textEmote, uint32 emoteNum, uint64 guid);
     void OnSpellCast(Player* pPlayer, Spell* pSpell, bool skipCheck);

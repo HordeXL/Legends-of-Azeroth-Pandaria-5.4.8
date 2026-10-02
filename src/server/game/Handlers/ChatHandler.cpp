@@ -740,6 +740,11 @@ void WorldSession::HandleAddonMessagechatOpcode(WorldPacket& recvData)
     if (!sWorld->getBoolConfig(CONFIG_ADDON_CHANNEL))
         return;
 
+#ifdef ELUNA
+    // Eluna: forward addon messages to Lua (PLAYER_EVENT_ON_ADDON_MESSAGE = 38)
+    sScriptMgr->OnPlayerAddonMessage(sender, uint32(type), prefix, message);
+#endif
+
     switch (type)
     {
         case CHAT_MSG_INSTANCE_CHAT:

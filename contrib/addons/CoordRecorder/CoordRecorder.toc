@@ -1,0 +1,7 @@
+## Interface: 50400
+## Title: |cff39c0bb坐标记录器|r |cff9d9d9dCoordRecorder|r
+## Notes: 获取/保存/传送/清空 坐标点。需配合服务端 lua_scripts/CoordRecorder.lua (Eluna)
+## Author: WorkBuddy
+## Version: 1.0
+## SavedVariables: CoordRecorderDB
+CoordRecorder.lua
