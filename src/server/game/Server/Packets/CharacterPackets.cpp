@@ -53,7 +53,8 @@ void WorldPackets::Character::PlayerLogin::Read()
 WorldPacket const* WorldPackets::Character::LogoutResponse::Write()
 {
     _worldPacket << uint32(LogoutResult);
-    _worldPacket << uint8(Instant);
+    _worldPacket.WriteBit(Instant);
+    _worldPacket.FlushBits();
     return &_worldPacket;
 }
 

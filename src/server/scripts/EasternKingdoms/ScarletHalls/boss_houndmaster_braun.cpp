@@ -67,7 +67,11 @@ Creature* SelectedObedientHound(WorldObject* owner)
     std::list<Creature*> ObediendHounds;
     GetCreatureListWithEntryInGrid(ObediendHounds, owner, NPC_OBEDIEND_HOUND, 200.0f);
 
-    return Trinity::Containers::SelectRandomContainerElement(ObediendHounds);
+    ObediendHounds.remove_if([](Creature* hound)
+    {
+        return !hound->IsAlive() || !hound->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE);
+    });
+    return ObediendHounds.empty() ? nullptr : Trinity::Containers::SelectRandomContainerElement(ObediendHounds);
 }
 
 class boss_houndmaster_braun : public CreatureScript
@@ -96,11 +100,23 @@ class boss_houndmaster_braun : public CreatureScript
                 events.Reset();
                 me->setRegeneratingHealth(true);
                 me->SetReactState(REACT_AGGRESSIVE);
+                me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE);
                 GetRage = false;
                 Scenario = false;
                 SudenDeath = false;
                 Phase = 0;
-                HandleDoors(true);
+                if (me->IsAlive())
+                {
+                    std::list<Creature*> hounds;
+                    GetCreatureListWithEntryInGrid(hounds, me, NPC_OBEDIEND_HOUND, 200.0f);
+                    for (Creature* hound : hounds)
+                    {
+                        if (hound->isDead())
+                            hound->Respawn();
+                        else
+                            hound->AI()->EnterEvadeMode();
+                    }
+                }
             }
 
             void JustDied(Unit* /*killer*/) override
@@ -114,7 +130,6 @@ class boss_houndmaster_braun : public CreatureScript
                 }
                 me->RemoveAllAuras();
                 HandleSendActionOnHounds(ACTION_MOVE_TO);
-                HandleDoors(true);
             }
 
             void EnterEvadeMode(EvadeReason why = EVADE_REASON_OTHER) override
@@ -126,7 +141,6 @@ class boss_houndmaster_braun : public CreatureScript
                     instance->SetData(BOSS_HOUNDMASTER_BRAUN, FAIL);
                 }
                 summons.DespawnAll();
-                HandleDoors(true);
             }
 
             void JustEngagedWith(Unit* /*who*/) override
@@ -140,26 +154,26 @@ class boss_houndmaster_braun : public CreatureScript
                 }
                 events.ScheduleEvent(EVENT_PIERCING_THROW, 7000);
                 events.ScheduleEvent(EVENT_DEATH_BLOSSOM, urand(11000, 12000));
-                HandleDoors();
-            }
-
-            void HandleDoors(bool reset = false)
-            {
-                if (instance)
-                    if (GameObject* Idoor = GetClosestGameObjectWithEntry(me, GO_COMANDER_LINDON_EXIT, 150.0f))
-                        instance->HandleGameObject(ObjectGuid::Empty, reset, Idoor);
             }
 
             void DamageTaken(Unit* /*attacker*/, uint32& damage) override
             {
-                if (HealthBelowPct(50) && !GetRage) 
+                if (Scenario)
+                {
+                    if (!SudenDeath)
+                        damage = 0;
+                    return;
+                }
+
+                if (me->HealthBelowPctDamaged(50, damage) && !GetRage)
                 { 
                     me->CastSpell(me, SPELL_BLOODY_RAGE, false); 
                     GetRage = true; 
                     Talk(TALK_DOGFAIL); 
                 }
 
-                if (HealthBelowPct(15) && !Scenario)
+                // A large hit must not skip the hound outro and its gate guards.
+                if (me->HealthBelowPctDamaged(15, damage))
                 {
                     damage = 0;
                     Scenario = true;
@@ -171,15 +185,14 @@ class boss_houndmaster_braun : public CreatureScript
                     me->SetReactState(REACT_PASSIVE);
                     me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE);
                     me->AttackStop();
-
+                    return;
                 }
 
-                if ((Phase == 0 && HealthBelowPct(90))
-                    || (Phase == 1 && HealthBelowPct(80))
-                    || (Phase == 2 && HealthBelowPct(70))
-                    || (Phase == 3 && HealthBelowPct(60)))
+                while (Phase < 4 && me->HealthBelowPctDamaged(90 - Phase * 10, damage))
                 {
                     Phase++;
+                    if (Creature* hound = SelectedObedientHound(me))
+                        hound->AI()->DoAction(ACTION_ACTIVATE_DOG);
                 }            
             }
 
@@ -189,7 +202,8 @@ class boss_houndmaster_braun : public CreatureScript
                 GetCreatureListWithEntryInGrid(ObedientHounds, me, NPC_OBEDIEND_HOUND, 200.0f);
 
                 for (auto&& itr : ObedientHounds)
-                    itr->AI()->DoAction(actionId);
+                    if (itr->IsAlive())
+                        itr->AI()->DoAction(actionId);
             }
 
             void UpdateAI(uint32 diff) override
@@ -263,6 +277,8 @@ class npc_obediend_hound : public CreatureScript
 
             void Reset() override 
             {
+                events.Reset();
+                me->RestoreFaction();
                 me->SetReactState(REACT_PASSIVE);
                 me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE);
             }
@@ -322,6 +338,13 @@ class npc_obediend_hound : public CreatureScript
                         break;
                     case ACTION_MOVE_TO:
                         events.Reset();
+                        me->AttackStop();
+                        me->CombatStop(true);
+                        me->DeleteThreatList();
+                        me->SetFaction(35);
+                        me->SetReactState(REACT_PASSIVE);
+                        me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE);
+                        me->SetWalk(false);
                         me->GetMotionMaster()->MovePoint(1, EndScenario);
                         break;
                     case ACTION_EATING:

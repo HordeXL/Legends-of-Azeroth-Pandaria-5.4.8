@@ -78,3 +78,99 @@ changing that setting. Keep the original config backed up and use one game
 instance for the test (another `_Wow-64.exe` process from September 7 was still
 running during inspection). A successful D3D9 test would be evidence for a
 workaround/path-specific trigger, not proof of a complete root-cause repair.
+
+## Scarlet Halls exit recurrence (2026-10-03)
+
+`Errors/2026-10-03 11.38.56 Crash - 14812.txt` reports another build 18414
+access violation. Image base `0x00007FF641C40000` and fault address
+`0x00007FF64240A3CB` again give RVA `0x7CA3CB`, matching the September teardown
+failure. The next caller is at RVA `0xE73640`, also matching that cleanup path.
+`gx.log` records `D3D11 Device Destroyed` at 11:38:56.618, approximately 74 ms
+before the crash at 11:38:56.692. The report lists no loaded addons. The server
+later completed all four filler-bot cleanup operations and halted normally.
+
+This report predates the first Scarlet Halls progression build installation
+(11:45), and does not establish that the bucket mechanic caused the crash.
+It establishes the same client teardown failure, not its original corruption
+source. No speculative network packet or client binary patch was made.
+
+With the game closed, the active client's `WTF/Config.wtf` was backed up to
+`WTF/Config.before-exit-crash-20261003-115446.wtf` and only `gxApi` was changed
+from `D3D11` to `D3D9`. The reverse replacement was compared with the original
+text to verify no other setting changed. The dump, text report and relevant
+logs are preserved in `Build/scarlet-halls-audit/client-exit-20261003`.
+
+This is a reversible workaround and diagnostic comparison, not a verified crash
+fix. Repeat the same dungeon entry/combat/leave/game-exit sequence with D3D9.
+If it still crashes, compare the new report's relative fault address and graphics
+shutdown log before making further changes.
+
+## D3D9 retest still crashes (2026-10-03 13:07)
+
+The user repeated dungeon entry followed by logout/game exit in another dungeon.
+The corresponding server log records bot preparation on map 1004 (Scarlet
+Monastery), followed by all four bot cleanup completions and normal server
+shutdown. This recurrence is not confined to the Scarlet Halls script.
+
+`2026-10-03 13.07.58 Crash - 22448.txt` again reports `_Wow-64.exe`, build 18414,
+image base `0x00007FF641C40000`, and fault `0x00007FF64240A3CB` (RVA `0x7CA3CB`).
+The invalid read is from `0x000000006E92CA80`. The caller remains RVA `0xE73640`
+inside graphics-resource list cleanup during exit callbacks. No addons were
+loaded. Both the saved config and the D3D9 device initialization in `gx.log`
+confirm that this run used D3D9. Therefore switching from D3D11 to D3D9 did not
+resolve the crash; it must no longer be presented as a successful workaround.
+
+The loaded-module list includes NVIDIA `nvspcap64.dll` and `nvppex.dll`, but
+their presence alone does not establish responsibility for the invalid pointer.
+The immediate fault still does not identify the operation that first damaged
+or invalidated the resource list. Neither a driver fault nor malformed server
+data has been proven.
+
+Crash text/dump, graphics/connection logs, server log, and both local x64 client
+executable hashes are preserved under
+`Build/scarlet-halls-audit/client-exit-20261003-130758`. No executable patch or
+additional graphics-setting change was applied. The next requested isolation
+test is to start the same client and exit from the login screen without logging
+into an account. A reproduction there would demonstrate that the failure can
+occur without a world-server session; a clean exit there would leave the
+world-entry/exit path under investigation.
+
+## Isolation results and logout response regression (2026-10-03)
+
+The user subsequently confirmed two clean exit cases with the same client:
+exit directly from the login screen, and character login/logout in the ordinary
+world without joining a dungeon or bot group. The reproduced failure therefore
+currently requires more than merely starting the client or entering the world.
+Dungeon travel and the managed group lifecycle remain relevant differences;
+these comparisons alone do not distinguish between them.
+
+The logout audit found a separate, concrete wire-format regression in
+`WorldPackets::Character::LogoutResponse::Write()`. Commit `c8a926633ccc8701ff7661fd3b403b36ff5edf69`
+(2024-06-16) moved serialization out of `HandleLogoutRequestOpcode`, changing
+the original `WriteBit(instantLogout); FlushBits();` into `uint8(Instant)`.
+Both the pre-refactor implementation and the local SkyFire 5.4.8 implementation
+write the reason first and then the MSB-first flag. The repair restores that
+encoding: an accepted instant response is `00 00 00 00 80`, rather than
+`00 00 00 00 01`. The opcode remains `0x008F`, payload length five bytes.
+This common server serializer serves both client architectures.
+
+`contrib/logout_protocol_548/test.ps1` links the actual built game/shared
+libraries and verifies opcode, size, and exact payload for ten combinations of
+reason and instant flag. All cases pass. A separate local negative-control
+build using the old production serializer fails the accepted-instant case,
+confirming the test catches this regression. The x64 RelWithDebInfo game build,
+staged worldserver link, and executable `--version` check pass.
+
+After the user stopped worldserver, the staged executable/PDB were installed
+and hash-verified; the previous pair is backed up in
+`Build/server-before-logout-response-20261003-134633`. An isolated localhost
+startup on port 18086 initialized the world in 23 seconds with an empty
+`DBErrors.log`, then received `server shutdown 0`. Logs are under
+`Build/logout-response-smoke`. The normal server config was not modified.
+
+This repair is **not yet a demonstrated fix for the graphics teardown crash**.
+The user's clean ordinary-world logout is an additional reason not to equate
+the packet defect with the dungeon-specific reproduction. Repeat the failing
+dungeon/leave/logout/exit sequence with the installed build. If it persists,
+capture the world packet sequence and isolate dungeon travel from bot-group
+cleanup before changing another packet or graphics setting.

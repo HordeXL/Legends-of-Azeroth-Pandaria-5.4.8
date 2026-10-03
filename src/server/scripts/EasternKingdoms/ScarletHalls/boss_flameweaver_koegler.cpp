@@ -111,10 +111,6 @@ class boss_flameweaver_koegler : public CreatureScript
             {
                 Intro = false;
                 Reset();
-
-                if (instance)
-                    if (Creature* Crusader = ObjectAccessor::GetCreature(*me, instance->GetGuidData(NPC_HOODED_CRUSADER)))
-                        Crusader->SetVisible(false);
             }
 
             void MoveInLineOfSight(Unit* who) override
