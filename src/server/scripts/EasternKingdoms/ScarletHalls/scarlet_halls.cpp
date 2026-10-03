@@ -92,6 +92,16 @@ enum Weapons
     W_COURAGE                 = 37401,
 };
 
+enum ScarletHallsGuidTypes
+{
+    GUID_DOG_FOOD_TARGET = 1,
+};
+
+enum ScarletHallsFactions
+{
+    FACTION_FEEDING_HOUND = 1665, // Friendly to players, hostile to the watchman's faction (14).
+};
+
 // Starving hound 58876
 class npc_starving_hound : public CreatureScript
 {
@@ -103,12 +113,65 @@ class npc_starving_hound : public CreatureScript
             npc_starving_houndAI(Creature* creature) : ScriptedAI(creature) { }
 
             EventMap events;
-            bool attacked;
+            ObjectGuid foodTargetGUID;
+            bool fed = false;
 
             void Reset() override
             {
                 events.Reset();
-                attacked = false;
+                foodTargetGUID = ObjectGuid::Empty;
+                fed = false;
+                me->RestoreFaction();
+                me->SetReactState(REACT_AGGRESSIVE);
+                me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PACIFIED);
+                me->SetStandState(UNIT_STAND_STATE_STAND);
+                me->HandleEmoteStateCommand(EMOTE_STATE_NONE);
+            }
+
+            void SetGUID(ObjectGuid guid, int32 type) override
+            {
+                if (type != GUID_DOG_FOOD_TARGET || fed || foodTargetGUID || !me->IsAlive())
+                    return;
+
+                Creature* watchman = ObjectAccessor::GetCreature(*me, guid);
+                if (!watchman || !watchman->IsAlive() || watchman->GetEntry() != NPC_VIGILANT_WATCHMAN)
+                    return;
+
+                // Dog Food is a dummy effect, not an aura to poll on the watchman.
+                foodTargetGUID = guid;
+                events.Reset();
+                me->CombatStop(true);
+                me->DeleteThreatList();
+                me->GetMotionMaster()->Clear();
+                me->GetMotionMaster()->MoveIdle();
+                me->SetFaction(FACTION_FEEDING_HOUND);
+                me->SetReactState(REACT_PASSIVE);
+                AttackStart(watchman);
+                me->CastSpell(watchman, SPELL_DOG_LEAP, true);
+            }
+
+            void MovementInform(uint32 type, uint32 /*id*/) override
+            {
+                if (type == EFFECT_MOTION_TYPE && foodTargetGUID)
+                    if (Creature* watchman = ObjectAccessor::GetCreature(*me, foodTargetGUID))
+                        if (watchman->IsAlive())
+                            me->GetMotionMaster()->MoveChase(watchman);
+            }
+
+            void FinishFeeding()
+            {
+                foodTargetGUID = ObjectGuid::Empty;
+                fed = true;
+                events.Reset();
+                me->CombatStop(true);
+                me->DeleteThreatList();
+                me->GetMotionMaster()->Clear();
+                me->GetMotionMaster()->MoveIdle();
+                me->SetFaction(35);
+                me->SetReactState(REACT_PASSIVE);
+                me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PACIFIED);
+                me->HandleEmoteStateCommand(EMOTE_STATE_NONE);
+                me->SetStandState(UNIT_STAND_STATE_SLEEP);
             }
 
             void JustEngagedWith(Unit* /*who*/) override
@@ -123,17 +186,26 @@ class npc_starving_hound : public CreatureScript
 
             void UpdateAI(uint32 diff) override
             {
-                events.Update(diff);
+                if (fed)
+                    return;
 
-                if (CanAttackMyOwner() && !attacked)
+                if (foodTargetGUID)
                 {
-                    attacked = true;
-                    me->SetFaction(15);
+                    Creature* watchman = ObjectAccessor::GetCreature(*me, foodTargetGUID);
+                    if (!watchman || !watchman->IsAlive())
+                    {
+                        FinishFeeding();
+                        return;
+                    }
 
-                    if (Unit* owner = GetClosestCreatureWithEntry(me, NPC_VIGILANT_WATCHMAN, 30.0f, true))
-                        me->Attack(owner, true);
+                    // Keep the food target even if a player/pet previously held threat.
+                    if (me->GetVictim() != watchman)
+                        AttackStart(watchman);
+                    DoMeleeAttackIfReady();
+                    return;
                 }
 
+                events.Update(diff);
                 if (!UpdateVictim())
                     return;
 
@@ -153,15 +225,6 @@ class npc_starving_hound : public CreatureScript
                 DoMeleeAttackIfReady();
             }
 
-        private:
-            bool CanAttackMyOwner()
-            {
-                if (Unit* owner = GetClosestCreatureWithEntry(me, NPC_VIGILANT_WATCHMAN, 30.0f, true))
-                    if (owner->HasAura(SPELL_DOG_FOOD))
-                        return true;
-
-                return false;
-            }
         };
 
         CreatureAI* GetAI(Creature* creature) const override
@@ -361,19 +424,18 @@ class npc_commander_lindon : public CreatureScript
             TALK_MELEE_REACH = 3,
         };
 
-        struct npc_commander_lindonAI : public BossAI
+        struct npc_commander_lindonAI : public ScriptedAI
         {
-            npc_commander_lindonAI(Creature* creature) : BossAI(creature, DATA_COMANDER_LINDON) { }
+            npc_commander_lindonAI(Creature* creature) : ScriptedAI(creature), instance(creature->GetInstanceScript()) { }
 
-            EventMap nonCombatEvents;
+            InstanceScript* instance;
+            EventMap events, nonCombatEvents;
             bool Melee, initCombat, explosion;
 
             void InitializeAI() override 
             {
-                Melee      = false;
-                initCombat = false;
-                explosion  = false;
-                me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_DISABLE_MOVE);
+                if (me->IsAlive())
+                    Reset();
             }
 
             void MoveInLineOfSight(Unit* who) override
@@ -401,33 +463,26 @@ class npc_commander_lindon : public CreatureScript
 
             void Reset() override 
             {
-                _Reset();
                 Melee = false;
+                initCombat = false;
+                explosion = false;
                 events.Reset();
+                nonCombatEvents.Reset();
+                me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_DISABLE_MOVE);
+                if (instance && instance->GetData(DATA_COMANDER_LINDON) != DONE)
+                    instance->SetData(DATA_COMANDER_LINDON, NOT_STARTED);
             }
 
             void JustEngagedWith(Unit* /*who*/) override 
             {
-                _JustEngagedWith();
-                HandleDoors();
                 if (instance)
                     instance->SetData(DATA_COMANDER_LINDON, IN_PROGRESS);
             }
 
-            void HandleDoors(bool reset = false)
-            {
-                if (instance)
-                    if (GameObject* Idoor = GetClosestGameObjectWithEntry(me, GO_COMANDER_LINDON_EXIT, 150.0f))
-                        instance->HandleGameObject(ObjectGuid::Empty, reset, Idoor);
-            }
-
             void JustDied(Unit* /*killer*/) override 
             {
-                _JustDied();
                 if (instance)
                     instance->SetData(DATA_COMANDER_LINDON, DONE);
-
-                HandleDoors(true);
             }
 
             void JustSummoned(Creature* summon) override
@@ -1391,7 +1446,7 @@ class EatenPredicate
 
         bool operator()(WorldObject* object)
         {
-            return object && object->ToCreature() && object->ToCreature()->GetEntry() != NPC_VIGILANT_WATCHMAN;
+            return !object || !object->ToCreature() || object->ToCreature()->GetEntry() != NPC_VIGILANT_WATCHMAN;
         }
 };
 
@@ -1412,8 +1467,13 @@ class spell_scarlet_halls_dog_food : public SpellScriptLoader
 
             void HandleHitEffect(SpellEffIndex /*effIndex*/)
             {
-                if (Creature* target = GetHitUnit()->ToCreature())
+                if (Creature* target = GetHitCreature())
                 {
+                    if (target->GetEntry() != NPC_VIGILANT_WATCHMAN || !target->IsAlive())
+                        return;
+
+                    target->GetMotionMaster()->Clear();
+                    target->GetMotionMaster()->MoveIdle();
                     target->StopMoving();
                     target->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PACIFIED);
                     target->AddAura(SPELL_EATEN, target);
@@ -1422,11 +1482,8 @@ class spell_scarlet_halls_dog_food : public SpellScriptLoader
                     GetCreatureListWithEntryInGrid(Hounds, target, NPC_STARVING_HOUND, 10.0f);
 
                     for (auto&& sHound : Hounds)
-                    {
-                        sHound->StopMoving();
-                        sHound->CastSpell(target, SPELL_DOG_LEAP, false);
-                        sHound->HandleEmoteStateCommand(EMOTE_STATE_EAT);
-                    }
+                        if (sHound->IsAlive())
+                            sHound->AI()->SetGUID(target->GetGUID(), GUID_DOG_FOOD_TARGET);
                 }
             }
 

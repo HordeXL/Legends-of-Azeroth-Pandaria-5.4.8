@@ -78,3 +78,29 @@ changing that setting. Keep the original config backed up and use one game
 instance for the test (another `_Wow-64.exe` process from September 7 was still
 running during inspection). A successful D3D9 test would be evidence for a
 workaround/path-specific trigger, not proof of a complete root-cause repair.
+
+## Scarlet Halls exit recurrence (2026-10-03)
+
+`Errors/2026-10-03 11.38.56 Crash - 14812.txt` reports another build 18414
+access violation. Image base `0x00007FF641C40000` and fault address
+`0x00007FF64240A3CB` again give RVA `0x7CA3CB`, matching the September teardown
+failure. The next caller is at RVA `0xE73640`, also matching that cleanup path.
+`gx.log` records `D3D11 Device Destroyed` at 11:38:56.618, approximately 74 ms
+before the crash at 11:38:56.692. The report lists no loaded addons. The server
+later completed all four filler-bot cleanup operations and halted normally.
+
+This report predates the first Scarlet Halls progression build installation
+(11:45), and does not establish that the bucket mechanic caused the crash.
+It establishes the same client teardown failure, not its original corruption
+source. No speculative network packet or client binary patch was made.
+
+With the game closed, the active client's `WTF/Config.wtf` was backed up to
+`WTF/Config.before-exit-crash-20261003-115446.wtf` and only `gxApi` was changed
+from `D3D11` to `D3D9`. The reverse replacement was compared with the original
+text to verify no other setting changed. The dump, text report and relevant
+logs are preserved in `Build/scarlet-halls-audit/client-exit-20261003`.
+
+This is a reversible workaround and diagnostic comparison, not a verified crash
+fix. Repeat the same dungeon entry/combat/leave/game-exit sequence with D3D9.
+If it still crashes, compare the new report's relative fault address and graphics
+shutdown log before making further changes.
