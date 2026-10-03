@@ -1100,3 +1100,131 @@ VALUES
 UPDATE `smart_scripts`
 SET `comment` = 'Nourished Yak - Reached Lead Point 18 - Cast Eject Passengers on Cart'
 WHERE `source_type` = 0 AND `entryorguid` = -562165 AND `id` = 1;
+
+
+-- ############################################################
+-- ## SECTION 21: Farm cart 59497 / yak 59499 -> full 57709/57710
+-- ##             logic (measured 16-pt path, despawn+respawn)
+-- ############################################################
+-- User-provided in-game measured data (CoordRecorder plugin):
+--   * yak 59499 (guid 563607) spawn 587.61/3161.91/89.3097/4.3633
+--   * cart 59497 (guid 563614) spawn 588.7/3165.63/88.8542/4.4158
+--   * lead path 5949900: 16 measured pts (bridge head -> Dai-Lo
+--     Farmstead), point 16 = arrival.
+-- Upgrades over SECTION 11/12 (mirrors SECTION 13~20 exactly):
+--   * path 15 estimated pts -> 16 measured pts
+--   * arrival: MOVE_TO_POS home -> yak ForceDespawn 5s + remote
+--     despawn list on the cart (no spell dependency)
+--   * cart despawn 1s -> 5s, with STOP_FOLLOW before it
+--   * follow: angle 0 -> 180 (directly behind), search 15 -> 40yd
+--   * both creatures spawntimesecs 600/300 -> 10 (respawn at home)
+-- Eject chain (50630 cast) keeps 15yd on purpose, same as 57709.
+-- Requires: WORLDSERVER RESTART (creature spawn + waypoints are
+-- cached; smart_scripts alone would hot-reload).
+
+-- 1) Spawn points (user-measured) + unified 10s respawn
+UPDATE `creature`
+SET `position_x` = 587.61, `position_y` = 3161.91,
+    `position_z` = 89.3097, `orientation` = 4.3633, `spawntimesecs` = 10
+WHERE `guid` = 563607 AND `id` = 59499;
+
+UPDATE `creature`
+SET `position_x` = 588.7, `position_y` = 3165.63,
+    `position_z` = 88.8542, `orientation` = 4.4158, `spawntimesecs` = 10
+WHERE `guid` = 563614 AND `id` = 59497;
+
+-- 2) Lead path 5949900: 16 measured points (point 16 = arrival)
+DELETE FROM `waypoints` WHERE `entry` = 5949900;
+
+INSERT INTO `waypoints`
+    (`entry`, `pointid`, `position_x`, `position_y`, `position_z`, `orientation`, `delay`, `point_comment`)
+VALUES
+    (5949900,  1, 578.57, 3148.01,  87.54, 2.8493, 0, 'farm lead (recorded in-game)'),
+    (5949900,  2, 559.11, 3155.11,  79.65, 2.2446, 0, NULL),
+    (5949900,  3, 547.98, 3172.16,  77.00, 1.7066, 0, NULL),
+    (5949900,  4, 514.41, 3227.26,  73.98, 1.8401, 0, NULL),
+    (5949900,  5, 507.10, 3258.04,  77.57, 1.3767, 0, NULL),
+    (5949900,  6, 518.08, 3314.13,  73.16, 0.9958, 0, NULL),
+    (5949900,  7, 546.84, 3361.44,  77.29, 0.5560, 0, NULL),
+    (5949900,  8, 573.65, 3376.82,  81.16, 0.1868, 0, NULL),
+    (5949900,  9, 622.22, 3386.04,  89.59, 0.4421, 0, NULL),
+    (5949900, 10, 651.11, 3403.06,  98.10, 0.8112, 0, NULL),
+    (5949900, 11, 679.68, 3434.20, 108.47, 1.1332, 0, NULL),
+    (5949900, 12, 693.24, 3467.59, 117.76, 0.4774, 0, NULL),
+    (5949900, 13, 746.18, 3495.02, 135.55, 1.1961, 0, NULL),
+    (5949900, 14, 757.46, 3523.51, 139.14, 1.9933, 0, NULL),
+    (5949900, 15, 740.82, 3560.20, 140.52, 1.6163, 0, NULL),
+    (5949900, 16, 741.75, 3593.69, 140.58, 1.5102, 0, 'arrival (eject + despawn)');
+
+-- 3) Yak -563607: arrival point 15 -> 16; link 11 Move Home ->
+--    ForceDespawn 5s (mirror of -562165 SECTION 13/15); cascade to
+--    direct cart despawn list (mirror of SECTION 20)
+UPDATE `smart_scripts`
+SET `event_param1` = 16,
+    `comment` = 'Nourished Yak (Farm) - Reached Lead Point 16 - Cast Eject Passengers on Cart'
+WHERE `source_type` = 0 AND `entryorguid` = -563607 AND `id` = 1;
+
+UPDATE `smart_scripts`
+SET `action_type` = 41, `action_param1` = 5000, `link` = 13,
+    `comment` = 'Nourished Yak (Farm) - Link - Force Despawn (5s)'
+WHERE `source_type` = 0 AND `entryorguid` = -563607 AND `id` = 11;
+
+DELETE FROM `smart_scripts`
+WHERE `source_type` = 0 AND `entryorguid` = -563607 AND `id` = 13;
+
+INSERT INTO `smart_scripts`
+    (`entryorguid`, `source_type`, `id`, `link`, `event_type`, `event_phase_mask`, `event_chance`, `event_flags`,
+     `event_param1`, `event_param2`, `event_param3`, `event_param4`, `event_param5`,
+     `action_type`, `action_param1`, `action_param2`, `action_param3`, `action_param4`, `action_param5`, `action_param6`,
+     `target_type`, `target_param1`, `target_param2`, `target_param3`, `target_param4`, `target_x`, `target_y`, `target_z`, `target_o`, `comment`)
+VALUES
+    (-563607, 0, 13, 0, 61, 0, 100, 0, 0, 0, 0, 0, 0,
+     80, 5949702, 2, 0, 0, 0, 0, 19, 59497, 40, 0, 0, 0, 0, 0, 0,
+     'Nourished Yak (Farm) - Link - Run Cart Despawn List 5949702 on Closest 59497 (40yd)');
+
+-- 4) Cart despawn actionlist (runs ON the cart; param2=param1 per
+--    the SECTION 12 timed-list lesson)
+DELETE FROM `smart_scripts`
+WHERE `source_type` = 9 AND `entryorguid` = 5949702;
+
+INSERT INTO `smart_scripts`
+    (`entryorguid`, `source_type`, `id`, `link`, `event_type`, `event_phase_mask`, `event_chance`, `event_flags`,
+     `event_param1`, `event_param2`, `event_param3`, `event_param4`, `event_param5`,
+     `action_type`, `action_param1`, `action_param2`, `action_param3`, `action_param4`, `action_param5`, `action_param6`,
+     `target_type`, `target_param1`, `target_param2`, `target_param3`, `target_param4`, `target_x`, `target_y`, `target_z`, `target_o`, `comment`)
+VALUES
+    (5949702, 9, 0, 0, 0, 0, 100, 0, 100, 100, 0, 0, 0,
+     205, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0,
+     'Farm Cart Despawn List - Stop Following the Yak'),
+    (5949702, 9, 1, 0, 0, 0, 100, 0, 200, 200, 0, 0, 0,
+     41, 5000, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0,
+     'Farm Cart Despawn List - Force Despawn (5s) -> respawn at home (spawntimesecs=10)');
+
+-- 5) Cart 59497: release follow before the delayed despawn
+--    (cascade 11 -> 12, mirror of 57710 SECTION 20b)
+DELETE FROM `smart_scripts`
+WHERE `source_type` = 0 AND `entryorguid` = 59497 AND `id` IN (11, 12);
+
+INSERT INTO `smart_scripts`
+    (`entryorguid`, `source_type`, `id`, `link`, `event_type`, `event_phase_mask`, `event_chance`, `event_flags`,
+     `event_param1`, `event_param2`, `event_param3`, `event_param4`, `event_param5`,
+     `action_type`, `action_param1`, `action_param2`, `action_param3`, `action_param4`, `action_param5`, `action_param6`,
+     `target_type`, `target_param1`, `target_param2`, `target_param3`, `target_param4`, `target_x`, `target_y`, `target_z`, `target_o`, `comment`)
+VALUES
+    (59497, 0, 11, 12, 61, 0, 100, 0, 0, 0, 0, 0, 0,
+     205, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0,
+     'Delivery Cart (Farm) - Link - Stop Following the Yak'),
+    (59497, 0, 12, 0, 61, 0, 100, 0, 0, 0, 0, 0, 0,
+     41, 5000, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0,
+     'Delivery Cart (Farm) - Link - Force Despawn (5s)');
+
+-- 6) Ride actionlist 5949701: follow directly behind (180 deg) and
+--    widen search to 40yd (mirror of SECTION 14 + 18)
+UPDATE `smart_scripts`
+SET `action_param2` = 180, `target_param2` = 40,
+    `comment` = 'Delivery Cart (Farm) - Follow Lead Yak (behind, speed sync)'
+WHERE `source_type` = 9 AND `entryorguid` = 5949701 AND `id` = 2;
+
+UPDATE `smart_scripts`
+SET `target_param2` = 40
+WHERE `source_type` = 9 AND `entryorguid` = 5949701 AND `id` = 1;
