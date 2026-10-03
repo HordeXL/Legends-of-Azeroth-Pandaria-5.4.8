@@ -1781,7 +1781,10 @@ void Creature::ForcedDespawn(uint32 timeMSToDespawn)
     if (IsAlive())
         setDeathState(JUST_DIED);
 
-    RemoveCorpse(false);
+    // Static (DB-spawned) creatures must keep their respawn timer after a
+    // forced despawn (e.g. SAI action 41 scripted exit), otherwise they can
+    // never come back until grid reload. Summons keep the old behavior.
+    RemoveCorpse(!IsSummon());
 }
 
 void Creature::DespawnOrUnsummon(uint32 msTimeToDespawn /*= 0*/)
