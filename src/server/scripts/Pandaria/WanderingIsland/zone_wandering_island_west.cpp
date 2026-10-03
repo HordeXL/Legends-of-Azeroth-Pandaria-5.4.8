@@ -783,21 +783,55 @@ class spell_grab_air_balloon: public SpellScriptLoader
         {
             PrepareSpellScript(spell_grab_air_balloon_SpellScript);
 
-            void HandleScriptEffect(SpellEffIndex /*effIndex*/)
+            // 95247 官方效果：EFFECT_0 = PHASE(261, 相位399 剧情相位)，EFFECT_1 = CONTROL_VEHICLE(236, 作用于点击的静态气球)。
+            // 两个原光环都必须阻止：
+            //  - PHASE 会把玩家切进相位 399，本服相关 NPC 未配置该相位，玩家将看不到气球；
+            //  - CONTROL_VEHICLE 以点击目标（静态气球 55918）为载具，会把玩家从脚本气球拽走/顶飞（实测弹人根因）。
+            // 载客改用 VEHICLE_SPELL_RIDE_HARDCODED(46598)：以玩家为施法者对脚本气球施放，
+            // 光环加在气球身上并触发 HandleAuraControlVehicle 正常登乘，客户端认可该乘坐不会弹人。
+            void HandleScriptEffect(SpellEffIndex effIndex)
             {
                 PreventHitAura();
 
-                if (Unit* caster = GetCaster())
-                    if (Creature* balloon = caster->SummonCreature(55649, 915.55f, 4563.66f, 230.68f, 2.298090f, TEMPSUMMON_MANUAL_DESPAWN, 0ms))
+                if (effIndex != EFFECT_0)
+                    return;
+
+                Unit* caster = GetCaster();
+                if (!caster)
+                    return;
+
+                // 仅玩家施法有效。实测 accessory 乘客（Ji/Aysa/灵兔）会被来源不明的
+                // 触发施放 95247，若放行将召唤出无人气球形成自我 perpetuating 的废气球链。
+                if (caster->GetTypeId() != TYPEID_PLAYER)
+                    return;
+
+                if (Creature* balloon = caster->SummonCreature(55649, 915.55f, 4563.66f, 230.68f, 2.298090f, TEMPSUMMON_MANUAL_DESPAWN, 0ms))
+                {
+                    // 注意：不要 SetExplicitSeerGuid —— 它会让气球与 accessory 乘客
+                    // （seer=0）在 CanNeverSee 规则下互不可见，破坏载具乘客关系。
+                    // 登乘必须延迟执行：钩子运行时召唤物尚未 AddToWorld，地图更新末尾的
+                    // AddToWorld -> AIM_Initialize -> Vehicle::Reset -> RemoveAllPassengers
+                    // 会把此时已上车的乘客全部弹掉（实测弹人日志签名：accessory 被卸载后重装）。
+                    ObjectGuid riderGuid = caster->GetGUID();
+                    balloon->m_Events.Schedule(200, [balloon, riderGuid]()
                     {
-                        balloon->SetExplicitSeerGuid(caster->GetGUID());
-                        caster->EnterVehicle(balloon, 0);
-                    }
+                        if (!balloon->IsInWorld() || !balloon->GetVehicleKit())
+                            return;
+
+                        Player* rider = ObjectAccessor::GetPlayer(*balloon, riderGuid);
+                        if (!rider || !rider->IsAlive() || rider->IsOnVehicle())
+                            return;
+
+                        int32 seatBp = 1; // 座位号 + 1（核心惯例：m_amount - 1 = 座位索引）
+                        rider->CastCustomSpell(balloon, VEHICLE_SPELL_RIDE_HARDCODED, &seatBp, 0, 0, true);
+                    });
+                }
             }
 
             void Register() override
             {
                 OnEffectLaunchTarget += SpellEffectFn(spell_grab_air_balloon_SpellScript::HandleScriptEffect, EFFECT_0, SPELL_EFFECT_APPLY_AURA);
+                OnEffectLaunchTarget += SpellEffectFn(spell_grab_air_balloon_SpellScript::HandleScriptEffect, EFFECT_1, SPELL_EFFECT_APPLY_AURA);
             }
         };
 
@@ -819,12 +853,16 @@ class npc_shang_xi_air_balloon : public CreatureScript
             ObjectGuid playerGUID;
             uint32 eventTimer;
             uint32 phase;
+            bool everBoarded;
+            uint32 noPlayerTimer;
 
             void Reset() override
             {
                 playerGUID = ObjectGuid::Empty;
                 eventTimer = 250;
                 phase = 0;
+                everBoarded = false;
+                noPlayerTimer = 0;
 
                 me->setActive(true);
                 me->SetReactState(REACT_PASSIVE);
@@ -873,13 +911,20 @@ class npc_shang_xi_air_balloon : public CreatureScript
 
             void UpdateAI(uint32 diff) override final
             {
+                // 无玩家自毁宽限：从未被乘坐等 60 秒（给玩家反应时间），
+                // 玩家乘坐后离开则 3 秒自毁
                 if (playerGUID == 0)
                 {
-                    RemoveNpcPassengers();
-                    me->DespawnOrUnsummon();
+                    noPlayerTimer += diff;
+                    uint32 const noPlayerTimeout = everBoarded ? 3000 : 60000;
+                    if (noPlayerTimer >= noPlayerTimeout)
+                    {
+                        RemoveNpcPassengers();
+                        me->DespawnOrUnsummon();
+                    }
                     return;
                 }
-
+                noPlayerTimer = 0;
                 if (phase <= 24)
                 {
                     if (eventTimer <= diff)
@@ -1039,13 +1084,11 @@ class npc_shang_xi_air_balloon : public CreatureScript
                 {
                     auto const player = passenger->ToPlayer();
 
-                    if (auto const firepaw = player->SummonCreature(56660, player->GetPositionX(), player->GetPositionY(), player->GetPositionZ(), 0.f, TEMPSUMMON_TIMED_DESPAWN, 300000ms))
-                        firepaw->EnterVehicle(me, 1);
-
-                    if (auto const aysa = player->SummonCreature(56662, player->GetPositionX(), player->GetPositionY(), player->GetPositionZ(), 0.f, TEMPSUMMON_TIMED_DESPAWN, 300000ms))
-                        aysa->EnterVehicle(me, 2);
-
+                    // 乘客（Ji 56660@1、Aysa 56661@2、双灵兔@3/4）由 vehicle_template_accessory
+                    // 随载具自动生成，此处不再重复召唤（旧代码召唤 56660/56662 因座位被占
+                    // 上不了车，会留在地面 5 分钟造成重复 NPC）。
                     playerGUID = player->GetGUID();
+                    everBoarded = true;
 
                     player->KilledMonsterCredit(56378);
                 }
@@ -1118,7 +1161,9 @@ public:
         if (quest->GetQuestId() == 29791)
             sCreatureTextMgr->SendChat(creature, 1);
 
-        creature->CastSpell(player, 95247, true);
+        // 仅由玩家自身施放 95247（召唤气球并登乘）。
+        // 移除 creature->CastSpell：NPC 施放会产生施法者=NPC 的废气球（NPC 上座 0 后
+        // 因 playerGUID==0 立即自毁），且每次接任务都多发一枚气球。
         player->CastSpell(player, 95247, true);
         return true;
     }

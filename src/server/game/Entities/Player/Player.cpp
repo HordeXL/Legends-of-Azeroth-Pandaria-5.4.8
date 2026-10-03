@@ -967,8 +967,8 @@ void Player::HandleDrowning(uint32 time_diff)
             SendMirrorTimer(BREATH_TIMER, UnderWaterTime, m_MirrorTimer[BREATH_TIMER], 10);
     }
 
-    // In dark water
-    if (m_MirrorTimerFlags & UNDERWATER_INDARKWATER)
+    // In dark water (乘坐载具的玩家豁免：载具飞越深海不应触发疲劳，如迷踪岛气球任务 29791)
+    if ((m_MirrorTimerFlags & UNDERWATER_INDARKWATER) && !IsOnVehicle())
     {
         // Vash'jir zones
         if (m_zoneUpdateId == 4815) return;

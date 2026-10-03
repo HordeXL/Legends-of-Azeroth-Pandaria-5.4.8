@@ -1,0 +1,62 @@
+-- ============================================================================
+-- Quest 29791 "The Suffering of Shen-zin Su" - hot air balloon ride fix
+-- Applied: 2026-10-03 (final revision - supersedes the vehicle-91 attempt)
+-- ============================================================================
+-- Symptom: accepting the quest summons the scripted balloon 55649, the player
+-- boards (PassengerBoarded fires, credit 56378 granted) - but is dropped
+-- within a tick, NPC passengers unload, the balloon despawns, and the ride
+-- never takes off ("escort Start()" never reached).  Later rounds also showed
+-- junk balloons summoned by NPC casters and duplicated ground NPCs.
+--
+-- FINAL root-cause chain (multi-round [Q29791] instrumentation):
+--
+--   1) SUMMON-TIME PASSENGER WIPE - the killer.  The spell hook summoned the
+--      balloon and boarded the player INSIDE the same map-update tick.  The
+--      temp summon's AddToWorld (deferred to the end of that update) runs
+--      Creature::AIM_Initialize -> Vehicle::Reset -> InstallAllAccessories
+--      -> RemoveAllPassengers, wiping everyone who boarded early.  Log
+--      signature: player boards via 46598 aura -> accessories unload
+--      (seats 1-4) -> player unloads -> accessories re-install.
+--      NOTE: this also explains why every earlier seat/vehicle swap appeared
+--      to be "cured" by nothing - the client was never the ejector.
+--
+--   2) CONTROL_VEHICLE AURA IS THE CLIENT-LEGIT BOARDING PATH.  Manual
+--      EnterVehicle is tolerated server-side but the client drops the rider
+--      unless the ride is aura-driven (95247's own CONTROL_VEHICLE effect
+--      targets the caster and is dead code; VEHICLE_SPELL_RIDE_HARDCODED
+--      46598 applies a proper aura with the vehicle as target).
+--
+--   3) JUNK BALLOON CHAIN - accessory passengers (Ji/Aysa/bunnies) get
+--      spell 95247 launched from them by an unidentified trigger (no SAI /
+--      Eluna / template spells / spell-trigger chain found).  Each NPC cast
+--      summoned a riderless balloon.  Fixed in C++: the hook ignores
+--      non-PLAYER casters.
+--
+--   4) DUPLICATE GROUND NPCs - the escort AI's PassengerBoarded summoned
+--      Ji 56660 / Aysa 56662 again with a 5-min timed despawn; the seats were
+--      already taken by vehicle_template_accessory, so the summons lingered
+--      on the ground.  Fixed in C++: summon block removed (accessory config
+--      is the single source of passengers; 56661 is the correct Aysa entry -
+--      it owns the full dialogue groups 0-10, while 56662 only has 0-2).
+--
+-- Fix (this file): keep the ORIGINAL vehicle.  VehicleId 1820 is what the
+-- official data uses for this balloon; its seat 0 (entry 10373) provides the
+-- correct basket riding pose.  Vehicle::AddPassenger with an explicit seat
+-- index does NOT validate CAN_ENTER_OR_EXIT, and the rider is bound through
+-- the 46598 aura anyway, so the missing seat flag is irrelevant.  An earlier
+-- attempt swapped 55649 to VehicleId 91; that is reverted here because seat
+-- 1472 renders a wrong riding pose.
+-- ============================================================================
+
+-- ---------------------------------------------------------------------------
+-- SECTION 1: scripted balloon 55649 keeps its official vehicle 1820
+-- (reverts the interim VehicleId=91 swap; pose + seat layout back to official)
+-- ---------------------------------------------------------------------------
+UPDATE `creature_template` SET `VehicleId` = 1820 WHERE `entry` = 55649;
+
+-- Verification (expect vehicle_id = 1820):
+-- SELECT entry, name, VehicleId, ScriptName FROM creature_template WHERE entry = 55649;
+-- Effective after server restart or .reload creature_template (summons read the template cache).
+-- NOTE: the static clickable balloon 55918 (vehicle 1887, with its own
+-- accessory passengers Aysa 56662 / Ji 56663 / bunnies) is scenery; boarding
+-- is always done on the summoned 55649.
