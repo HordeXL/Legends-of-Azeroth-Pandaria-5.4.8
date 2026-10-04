@@ -13695,6 +13695,12 @@ void Unit::AddToWorld()
     RebuildTerrainSwaps();
 }
 
+void Unit::RemoveAllFollowers()
+{
+    while (!_followers.empty())
+        (*_followers.begin())->SetTarget(nullptr);
+}
+
 void Unit::RemoveFromWorld()
 {
     // cleanup
@@ -13724,6 +13730,11 @@ void Unit::RemoveFromWorld()
         RemoveAllControlled();
 
         RemoveAreaAurasDueToLeaveWorld();
+
+        // All followers must be notified before the unit is destroyed, otherwise
+        // their AbstractFollower::_target becomes a dangling pointer and crashes
+        // (e.g. in ChaseMovementGenerator::~ChaseMovementGenerator -> SetTarget).
+        RemoveAllFollowers();
 
         if (!GetCharmerGUID().IsEmpty())
         {

@@ -141,7 +141,7 @@ class npc_starving_hound : public CreatureScript
                 foodTargetGUID = guid;
                 events.Reset();
                 me->CombatStop(true);
-                me->DeleteThreatList();
+                me->GetThreatManager().ClearAllThreat();
                 me->GetMotionMaster()->Clear();
                 me->GetMotionMaster()->MoveIdle();
                 me->SetFaction(FACTION_FEEDING_HOUND);
@@ -164,7 +164,7 @@ class npc_starving_hound : public CreatureScript
                 fed = true;
                 events.Reset();
                 me->CombatStop(true);
-                me->DeleteThreatList();
+                me->GetThreatManager().ClearAllThreat();
                 me->GetMotionMaster()->Clear();
                 me->GetMotionMaster()->MoveIdle();
                 me->SetFaction(35);

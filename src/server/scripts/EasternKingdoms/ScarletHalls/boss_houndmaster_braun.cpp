@@ -340,7 +340,7 @@ class npc_obediend_hound : public CreatureScript
                         events.Reset();
                         me->AttackStop();
                         me->CombatStop(true);
-                        me->DeleteThreatList();
+                        me->GetThreatManager().ClearAllThreat();
                         me->SetFaction(35);
                         me->SetReactState(REACT_PASSIVE);
                         me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE);
