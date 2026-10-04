@@ -12,10 +12,11 @@
 --     20-point lead path (run); 900ms cart FOLLOWs 5yd behind at
 --     180deg (mirror of proven 29775 / 57709+57710 pattern);
 --     1200/1400ms rope visuals.
---   * At point 20 (Temple of Five Dawns): yak ejects cart, cart
---     spellhit chain credits quest 29800 to vehicle passengers
---     (requires SpecialFlags bit 2), ejects player, stops follow,
---     both NPCs despawn and respawn at home in 5s.
+--   * At point 20 (Temple of Five Dawns): yak dispatches the cart's
+--     own arrival list 5774301 which credits quest 29800 to vehicle
+--     passengers (requires SpecialFlags bit 2), self-casts 50630 to
+--     eject, stops follow, and force-despawns; both NPCs despawn
+--     and respawn at home in 5s.
 --   * Rope visuals are a CONSTANT cart<->yak state regardless of
 --     quest: respawn list casts on yak with retries at 3s/3.2s;
 --     conditions (source 13 SPELL_IMPLICIT_TARGET) lock the rope
@@ -32,6 +33,12 @@
 --   4. TARGET_UNIT_NEARBY_ENTRY (38) does NO entry filtering in
 --      this core -> rope bound to the nearest unit (Delivery Cart
 --      Tender 57712) when the yak had not respawned yet.
+--   5. 50630 self-cast + a cart SPELLHIT(50630) row linking to
+--      another 50630 self-cast = infinite SYNCHRONOUS recursion
+--      (Spell.cpp fires AI()->SpellHit inside the hit processing)
+--      -> stack overflow, crash handler writes 0-byte dmp/txt.
+--      The spellhit chain was removed; arrival work lives solely
+--      in actionlist 5774301.
 -- ============================================================
 
 -- ------------------------------------------------------------
@@ -73,17 +80,20 @@ DELETE FROM `smart_scripts` WHERE `entryorguid` IN (57741,57743)
  OR (`source_type`=9 AND `entryorguid` IN (5774100,5774101,5774301));
 
 INSERT INTO `smart_scripts` (`entryorguid`,`source_type`,`id`,`link`,`event_type`,`event_phase_mask`,`event_chance`,`event_flags`,`event_param1`,`event_param2`,`event_param3`,`event_param4`,`event_param5`,`action_type`,`action_param1`,`action_param2`,`action_param3`,`action_param4`,`action_param5`,`action_param6`,`target_type`,`target_param1`,`target_param2`,`target_param3`,`target_x`,`target_y`,`target_z`,`target_o`,`comment`) VALUES
--- Cart 57741: boarding chain + eject spellhit chain + respawn rope
+-- Cart 57741: boarding chain + respawn rope
+-- NOTE: there is deliberately NO SPELLHIT event for 50630 on the
+-- cart. Spell.cpp calls AI()->SpellHit() synchronously inside the
+-- hit processing; a spellhit->cast 50630(self)->spellhit->...
+-- chain is an infinite synchronous recursion -> stack overflow
+-- (crash handler dies before writing anything: 0-byte dmp/txt).
+-- Quest credit / eject / stop follow / despawn all live in list
+-- 5774301, so the spellhit chain is redundant as well.
 (57741, 0, 0, 1, 27, 0, 100, 0, 0, 0, 0, 0, 0, 19, 16384, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 'Delivery Cart (29800) - On Passenger Boarded - Remove Disable Move Flag'),
 (57741, 0, 1, 0, 61, 0, 100, 0, 0, 0, 0, 0, 0, 80, 5774101, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 'Delivery Cart (29800) - Link - Start Ride Script 5774101'),
-(57741, 0, 2, 3, 31, 0, 100, 0, 50630, 0, 0, 0, 0, 15, 29800, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 'Delivery Cart (29800) - On Eject Spellhit From Yak - Quest Credit 29800 To Vehicle Passengers'),
-(57741, 0, 3, 4, 61, 0, 100, 0, 0, 0, 0, 0, 0, 11, 50630, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 'Delivery Cart (29800) - Link - Cast Eject Passengers (Self)'),
-(57741, 0, 4, 5, 61, 0, 100, 0, 0, 0, 0, 0, 0, 205, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 'Delivery Cart (29800) - Link - Stop Following the Yak'),
-(57741, 0, 5, 0, 61, 0, 100, 0, 0, 0, 0, 0, 0, 41, 5000, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 'Delivery Cart (29800) - Link - Force Despawn (5s) -> Respawn At Home'),
-(57741, 0, 6, 0, 11, 0, 100, 0, 0, 0, 0, 0, 0, 80, 5774100, 2, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 'Delivery Cart (29800) - On Respawn - Restore Rope Visual (List 5774100)'),
+(57741, 0, 2, 0, 11, 0, 100, 0, 0, 0, 0, 0, 0, 80, 5774100, 2, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 'Delivery Cart (29800) - On Respawn - Restore Rope Visual (List 5774100)'),
 -- Yak 57743: lead path, arrival eject, despawn cascade
 (57743, 0, 0, 0, 38, 0, 100, 0, 1, 1, 0, 0, 0, 53, 1, 5774000, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 'Nourished Yak (29800) - On Data Set 1/1 - Start Lead Path 5774000 (Run, No Repeat)'),
-(57743, 0, 1, 3, 40, 0, 100, 0, 20, 5774000, 0, 0, 0, 11, 50630, 0, 0, 0, 0, 0, 19, 57741, 15, 0, 0, 0, 0, 0, 'Nourished Yak (29800) - Reached Lead Point 20 (Temple) - Cast Eject Passengers on Closest Cart (15yd)'),
+(57743, 0, 1, 2, 40, 0, 100, 0, 20, 5774000, 0, 0, 0, 11, 50630, 0, 0, 0, 0, 0, 19, 57741, 15, 0, 0, 0, 0, 0, 'Nourished Yak (29800) - Reached Lead Point 20 (Temple) - Cast Eject Passengers on Closest Cart (15yd)'),
 (57743, 0, 2, 3, 61, 0, 100, 0, 0, 0, 0, 0, 0, 41, 5000, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 'Nourished Yak (29800) - Link - Force Despawn (5s) -> Respawn At Home'),
 (57743, 0, 3, 0, 61, 0, 100, 0, 0, 0, 0, 0, 0, 80, 5774301, 2, 0, 0, 0, 0, 19, 57741, 40, 0, 0, 0, 0, 0, 'Nourished Yak (29800) - Link - Run Cart Despawn List 5774301 on Closest Cart (40yd)'),
 (57743, 0, 4, 2, 58, 0, 100, 0, 0, 5774000, 0, 0, 0, 11, 50630, 0, 0, 0, 0, 0, 19, 57741, 15, 0, 0, 0, 0, 0, 'Nourished Yak (29800) - Lead Path Ended (Backup) - Cast Eject Passengers on Closest Cart'),
@@ -97,9 +107,17 @@ INSERT INTO `smart_scripts` (`entryorguid`,`source_type`,`id`,`link`,`event_type
 (5774101, 9, 1, 0, 0, 0, 100, 0, 900, 900, 0, 0, 0, 29, 5, 180, 0, 0, 0, 0, 19, 57743, 40, 0, 0, 0, 0, 0, 'Cart Ride Script (29800) - Follow Lead Yak (5yd Behind, 180deg) SECOND'),
 (5774101, 9, 2, 0, 0, 0, 100, 0, 1200, 1200, 0, 0, 0, 11, 120795, 3, 0, 0, 0, 0, 19, 57743, 40, 0, 0, 0, 0, 0, 'Cart Ride Script (29800) - Ox Cart Rope Left 120795 (Triggered+InterruptPrevious bypasses casting-state delay)'),
 (5774101, 9, 3, 0, 0, 0, 100, 0, 1400, 1400, 0, 0, 0, 11, 111810, 3, 0, 0, 0, 0, 19, 57743, 40, 0, 0, 0, 0, 0, 'Cart Ride Script (29800) - Ox Cart Rope Right 111810 (Triggered+InterruptPrevious)'),
--- Actionlist 5774301: cart cleanup when yak despawns
+-- Actionlist 5774301: cart arrival/cleanup dispatched by the yak at point 20.
+-- NOTE: spell 50630 (Eject All Passengers) has implicit target
+-- TARGET_UNIT_CASTER - it only works as a SELF-cast by the vehicle.
+-- The yak cannot eject the cart; the cart must do everything itself:
+-- credit while the player is still aboard, then self-cast 50630.
+-- The 50630 self-hit must NOT trigger any cart SPELLHIT scripts
+-- (none exist on 57741 anymore) or it would recurse infinitely.
 (5774301, 9, 0, 0, 0, 0, 100, 0, 100, 100, 0, 0, 0, 205, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 'Cart Despawn List (29800) - Stop Following the Yak'),
-(5774301, 9, 1, 0, 0, 0, 100, 0, 200, 200, 0, 0, 0, 41, 5000, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 'Cart Despawn List (29800) - Force Despawn (5s) -> Respawn At Home');
+(5774301, 9, 1, 0, 0, 0, 100, 0, 200, 200, 0, 0, 0, 15, 29800, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 'Cart Despawn List (29800) - Quest Credit 29800 To Vehicle Passengers (player still aboard)'),
+(5774301, 9, 2, 0, 0, 0, 100, 0, 300, 300, 0, 0, 0, 11, 50630, 3, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 'Cart Despawn List (29800) - Cast Eject All Passengers On SELF (no spellhit scripts on cart, safe)'),
+(5774301, 9, 3, 0, 0, 0, 100, 0, 400, 400, 0, 0, 0, 41, 5000, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 'Cart Despawn List (29800) - Force Despawn (5s) fallback, Respawn At Home');
 
 -- ------------------------------------------------------------
 -- 4) Quest 29800: SpecialFlags |= 2 (FLAGS_EXPLORATION_OR_EVENT)
