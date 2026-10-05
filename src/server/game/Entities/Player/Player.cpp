@@ -26356,7 +26356,10 @@ bool Player::HasQuestForGO(int32 goId) const
 
 void Player::UpdateForQuestWorldObjects()
 {
-    if (m_clientGUIDs.empty())
+    // Leaving an LFG group can teleport us before the group refreshes quest
+    // objects. The old visibility cache survives until AddPlayerToMap, but
+    // the client has already received SMSG_NEW_WORLD and retired those objects.
+    if (!IsInWorld() || m_clientGUIDs.empty())
         return;
 
     UpdateData udata(GetMapId());
