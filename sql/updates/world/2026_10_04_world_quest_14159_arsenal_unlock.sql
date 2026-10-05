@@ -1,0 +1,21 @@
+-- Quest 14159 "The Rebel Lord's Arsenal" (叛军领主的军械库) unobtainable fix
+--
+-- Root cause: quest 14159 depends (via DependentPreviousQuests) on BOTH
+--   26129 "Brothers In Arms" (own PrevQuestID + 26129.NextQuestID)
+--   24930 "While You're At It" (24930.NextQuestID -> 14159)
+-- Quest 26129 sits in NEGATIVE exclusive group -24930; this fork's
+-- Player::SatisfyQuestDependentPreviousQuests requires ALL quests of a
+-- negative exclusive group to be rewarded before the shared next quest
+-- unlocks. But 24930's own prev is -14157 (only takeable while 14157 is
+-- active), so any player who finished 14157 without doing 24930 is
+-- permanently soft-locked out of 14159.
+--
+-- Official design: 14159 requires only "Brothers In Arms" (14159.PrevQuestID=26129
+-- still enforced by SatisfyQuestPreviousQuest). The -24930 group has no
+-- take-side effect in this fork (SatisfyQuestExclusiveGroup passes for <= 0),
+-- its only effect was creating this deadlock, so clearing it is safe.
+--
+-- Applies to: quest_template_addon
+-- Verified against: Player.cpp:17051 SatisfyQuestDependentPreviousQuests (group >= 0 -> skip all-required check)
+
+UPDATE `quest_template_addon` SET `ExclusiveGroup` = 0 WHERE `ID` IN (24930, 26129);

@@ -22,6 +22,7 @@
 #include "Vehicle.h"
 #include "GameObjectAI.h"
 #include "TaskScheduler.h"
+#include "ObjectAccessor.h"
 
 enum Gilneas
 {
@@ -1340,7 +1341,20 @@ public:
                     escort->AddWaypoint(42, -1768.24f, 1410.2f, 19.7833f);
                     escort->AddWaypoint(43, -1772.26f, 1420.48f, 19.9029f);
                     escort->AddWaypoint(44, -1776.98f, 1436.13f, 19.632f);
-                    player->EnterVehicle(horse, 0);
+                    // Delayed boarding: same-tick manual EnterVehicle is unreliable (client may not recognize the seat, vehicle not fully initialized).
+                    // Standard pattern: cast VEHICLE_SPELL_RIDE_HARDCODED (46598) with bp = seatId + 1 after the vehicle had a tick to initialize.
+                    ObjectGuid riderGuid = player->GetGUID();
+                    horse->m_Events.AddLambdaEventAtOffset([horse, riderGuid]()
+                    {
+                        if (!horse->IsInWorld() || !horse->IsAlive() || !horse->GetVehicleKit())
+                            return;
+
+                        if (Player* rider = ObjectAccessor::GetPlayer(*horse, riderGuid))
+                        {
+                            int32 bp = 1; // seat 0 + 1
+                            rider->CastCustomSpell(horse, VEHICLE_SPELL_RIDE_HARDCODED, &bp, 0, 0, true);
+                        }
+                    }, 1000);
                 }
             }
         }
@@ -1410,7 +1424,7 @@ public:
         {
             if (who->GetTypeId() == TYPEID_PLAYER)
             {
-                _playerSeated = true;
+                _playerSeated = apply;
 
                 if (apply)
                 {
@@ -1540,7 +1554,7 @@ public:
             npc_escortAI::UpdateAI(diff);
             Player* player = GetPlayerForEscort();
 
-            if (_playerSeated)
+            if (_playerSeated && player)
             {
                 player->SetClientControl(me, 0);
                 _playerSeated = false;

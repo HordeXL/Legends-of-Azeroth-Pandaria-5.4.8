@@ -826,6 +826,7 @@ enum ActiveStates
     ACT_ENABLED = 0xC1,                                    // 0x40 | 0x80 - auto cast + castable
     ACT_COMMAND = 0x07,                                    // 0x01 | 0x02 | 0x04
     ACT_REACTION = 0x06,                                    // 0x02 | 0x04
+    ACT_VEHICLE_SPELL = 0x08,                               // 5.4.8 client: vehicle action bar button
     ACT_DECIDE = 0x00                                     // custom
 };
 
