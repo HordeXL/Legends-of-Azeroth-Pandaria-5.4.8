@@ -165,6 +165,8 @@ enum Gilneas
     EVENT_CHECK_OWNER                       = 2,
 
     NPC_LORNA_CROWLEY_2                     = 36457,
+    NPC_MOUNTAIN_HORSE                      = 36540,
+    NPC_MOUNTAIN_HORSE_SUMMONED             = 36555,
 
     QUEST_THE_HUNGRY_ETTIN                  = 14416,
 
@@ -1996,6 +1998,10 @@ public:
                     if (me->GetVehicleKit()->GetPassenger(0))
                         break;
 
+                    // make the horse untargetable right away - DespawnOrUnsummon
+                    // delays removal by 1s and a re-cast in that window would
+                    // create a second follower horse from the same animal
+                    me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE);
                     me->DespawnOrUnsummon(1);
                     break;
                 }
@@ -2053,6 +2059,17 @@ struct npc_mountain_horse_summoned : public ScriptedAI
         if (!summoner)
             return;
 
+        // 14416 anti-exploit: Round Up (68908) summons a follower wherever the
+        // player casts it - including on an existing rope horse or any other
+        // unit, which allowed farming rescue credits next to Lorna without
+        // catching wild horses. Only one follower horse per player is allowed.
+        if (Creature* existing = summoner->FindNearestCreature(NPC_MOUNTAIN_HORSE_SUMMONED, 100.0f, true))
+            if (existing != me && existing->GetCharmerOrOwner() == summoner)
+            {
+                me->DespawnOrUnsummon();
+                return;
+            }
+
         Unit* followTarget = GetFollowTarget();
         if (!followTarget)
             followTarget = summoner;
@@ -2105,7 +2122,20 @@ struct npc_mountain_horse_summoned : public ScriptedAI
                         if (Unit* owner = me->GetCharmerOrOwner())
                         {
                             if (owner->GetTypeId() == TYPEID_PLAYER)
+                            {
                                 owner->ToPlayer()->KilledMonsterCredit(QUEST_CREDIT_HORSE);
+                                // Force dismount and despawn the ride horse on
+                                // delivery: without this the player stays mounted
+                                // next to Lorna with Round Up still on the action
+                                // bar and can keep spam-casting it (even on the
+                                // rope horse itself) to farm rescue credits.
+                                if (Unit* vehicleBase = owner->GetVehicleBase())
+                                {
+                                    owner->ExitVehicle();
+                                    if (Creature* rideHorse = vehicleBase->ToCreature())
+                                        rideHorse->DespawnOrUnsummon(1000);
+                                }
+                            }
                         }
                         events.CancelEvent(EVENT_CHECK_LORNA);
                         me->DespawnOrUnsummon(1);
