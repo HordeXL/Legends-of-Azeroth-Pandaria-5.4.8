@@ -1,5 +1,6 @@
 // Executes the production Starving Hound AI and Dog Food hit callback.
 #include <cassert>
+#include <algorithm>
 #include <cstdint>
 #include <iostream>
 #include <list>
@@ -7,6 +8,7 @@
 using uint32 = uint32_t;
 using int32 = int32_t;
 using SpellEffIndex = int;
+uint32 const IN_MILLISECONDS = 1000;
 struct ObjectGuid
 {
     uint32 value;
@@ -49,6 +51,7 @@ struct AI
     virtual void MovementInform(uint32, uint32) { }
     virtual void JustEngagedWith(Unit*) { }
     virtual void JustDied(Unit*) { }
+    virtual void KilledUnit(Unit*) { }
     virtual void UpdateAI(uint32) { }
 };
 struct Creature : Unit
@@ -58,6 +61,9 @@ struct Creature : Unit
     uint32 sleepVisualCasts = 0;
     bool sleepVisual = false;
     bool sleepZzz = false;
+    uint32 bloodPoolCasts = 0, summons = 0, summonDuration = 0, corpseDelay = 60;
+    Creature* summonResult = nullptr;
+    Position summonPosition;
     bool alive = true, combat = false, threat = false;
     Unit* victim = nullptr;
     ::AI* ai = nullptr;
@@ -74,6 +80,16 @@ struct Creature : Unit
     Motion* GetMotionMaster() { return &motion; }
     Map* GetMap() { return &map; }
     Position const& GetPosition() const { return position; }
+    float GetPositionX() const { return position.x; }
+    float GetPositionY() const { return position.y; }
+    float GetPositionZ() const { return position.z; }
+    float GetOrientation() const { return position.orientation; }
+    uint32 GetCorpseDelay() const { return corpseDelay; }
+    Creature* SummonTrigger(float x, float y, float z, float orientation, uint32 duration)
+    {
+        ++summons; summonDuration = duration; summonPosition = {x, y, z, orientation};
+        return summonResult;
+    }
     void SetFacingTo(float orientation) { position.orientation = orientation; }
     void RestoreFaction() { faction = 16; }
     void SetFaction(uint32 value) { faction = value; }
@@ -90,6 +106,7 @@ struct Creature : Unit
         ++casts;
         if (spell == 113114) { sleepVisual = true; ++sleepVisualCasts; }
         else if (spell == 55474) sleepZzz = true;
+        else if (spell == 146012) ++bloodPoolCasts;
         else motion.kind = Motion::Jump;
     }
     void RemoveAurasDueToSpell(uint32 spell)
@@ -137,6 +154,9 @@ int main()
 {
     Creature watchman(NPC_VIGILANT_WATCHMAN, 1), otherWatchman(NPC_VIGILANT_WATCHMAN, 2);
     Creature dog(NPC_STARVING_HOUND, 3), deadDog(NPC_STARVING_HOUND, 4);
+    Creature bloodPool(12999, 5);
+    dog.summonResult = &bloodPool;
+    watchman.position = {50, 60, 30, 2.0f};
     objects = {{1, &watchman}, {2, &otherWatchman}, {3, &dog}, {4, &deadDog}};
     npc_starving_houndAI ai(&dog), deadAI(&deadDog);
     ai.Reset();
@@ -160,8 +180,17 @@ int main()
     dog.victim = &previousVictim;
     ai.UpdateAI(100);
     assert(dog.victim == &watchman); // Previous player/pet aggro cannot steal the food target.
+    ai.KilledUnit(&watchman); // Still alive: no pool.
+    ai.KilledUnit(&previousVictim); // Not the food target.
+    assert(dog.summons == 0);
     dog.position = {50, 60, 30, 0}; // The food target is away from the dog's patrol.
     watchman.alive = false;
+    ai.KilledUnit(&watchman);
+    assert(dog.summons == 1 && bloodPool.bloodPoolCasts == 1 && bloodPool.faction == 35);
+    assert(dog.summonPosition.x == 50 && dog.summonPosition.y == 60 && dog.summonPosition.z == 30);
+    assert(dog.summonDuration == watchman.corpseDelay * IN_MILLISECONDS);
+    ai.KilledUnit(&watchman);
+    assert(dog.summons == 1); // Finishing the feeding prevents duplicate pools.
     ai.UpdateAI(100);
     assert(ai.fed && !dog.combat && !dog.threat && dog.victim == nullptr && dog.faction == 35);
     assert(dog.motion.kind == Motion::Point && dog.stand == UNIT_STAND_STATE_STAND);
@@ -195,6 +224,7 @@ int main()
     ai.SetGUID(otherWatchman.guid, GUID_DOG_FOOD_TARGET);
     objects.erase(otherWatchman.guid);
     ai.UpdateAI(100);
+    assert(dog.summons == 1); // Missing targets do not create a pool at the dog's feet.
     assert(ai.fed && !dog.combat && dog.motion.kind == Motion::Point);
     ai.Reset(); // A late arrival from a previous feeding must not sleep a reset hound.
     ai.MovementInform(POINT_MOTION_TYPE, dog.motion.pointId);

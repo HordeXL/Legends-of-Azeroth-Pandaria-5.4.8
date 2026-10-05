@@ -59,6 +59,7 @@ enum Spells
     SPELL_EATEN               = 122916,
     SPELL_SLEEPING_DOG        = 113114,
     SPELL_SLEEP_ZZZ           = 55474,
+    SPELL_EATEN_BLOOD_POOL    = 146012, // Cosmetic only: sloppy_blood_pool_nofade.
     SPELL_PLAYER_VEHICLE_AURA = 113399,
 };
 
@@ -208,6 +209,27 @@ class npc_starving_hound : public CreatureScript
             void JustDied(Unit* /*killer*/) override
             {
                 me->GetMap()->SetWorldState(WORLDSTATE_HUMANE_SOCIETY, 0);
+            }
+
+            void KilledUnit(Unit* victim) override
+            {
+                Creature* watchman = victim ? victim->ToCreature() : nullptr;
+                if (!foodTargetGUID || !watchman || watchman->IsAlive() ||
+                    watchman->GetGUID() != foodTargetGUID || watchman->GetEntry() != NPC_VIGILANT_WATCHMAN)
+                    return;
+
+                // Only the killing hound creates the pool, not every pack
+                // member observing the corpse. The cosmetic cannot target a
+                // dead unit, so keep it on a stationary invisible trigger.
+                uint32 const lifetime = std::max<uint32>(1, watchman->GetCorpseDelay()) * IN_MILLISECONDS;
+                if (Creature* blood = me->SummonTrigger(watchman->GetPositionX(), watchman->GetPositionY(),
+                    watchman->GetPositionZ(), watchman->GetOrientation(), lifetime))
+                {
+                    blood->SetFaction(35);
+                    blood->SetReactState(REACT_PASSIVE);
+                    blood->CastSpell(blood, SPELL_EATEN_BLOOD_POOL, true);
+                }
+                FinishFeeding();
             }
 
             void UpdateAI(uint32 diff) override

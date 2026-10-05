@@ -211,3 +211,31 @@ The x64 build was installed with backup
 `Build/server-before-logout-response-20261005-152621`.
 Its isolated smoke run in `Build/hound-sleep-visual-smoke` initialized in
 23 seconds, produced an empty DBErrors.log and shut down normally.
+
+## Eaten watchman's blood pool (2026-10-05)
+
+When a feeding hound kills its selected Vigilant Watchman, `KilledUnit` creates
+one stationary invisible world trigger at the watchman's death coordinates and
+applies cosmetic Blood Pool (146012). Only the killing hound does this; other
+pack members merely finish feeding and return. Normal kills, living targets,
+unrelated victims and missing targets do not create pools. The killing hound
+then clears its food target, preventing duplicate callbacks from creating more.
+
+The installed data resolves spell 146012 to visual 33170, persistent visual kit
+35889, model attachment 22965 and effect 17156:
+`spells\sloppy_blood_pool_nofade.mdx`. Its only effect is a self-targeted dummy
+aura, with no damage, stun or feign-death behavior. It cannot target a dead unit,
+so the visual lives on a friendly passive trigger instead of the corpse. The
+trigger expires after the watchman's configured corpse delay (minimum one
+second), and therefore cannot leave a permanent cosmetic actor behind.
+
+Production-AI regression checks cover the single pool, death position, lifetime,
+alive/unrelated target exclusions, duplicate callbacks and missing targets,
+alongside the existing return/sleep and dungeon progression checks. The scripts
+and x64 server build pass. Installed backup:
+`Build/server-before-logout-response-20261005-153156`. Client rendering and the
+exact size/appearance compared with the screenshot still require an in-game
+check; this is an implementation using a verified cosmetic model, not evidence
+of the original encounter's exact spell ID.
+The isolated smoke run in `Build/hound-blood-pool-smoke` initialized in
+24 seconds, kept DBErrors.log empty and shut down normally.
