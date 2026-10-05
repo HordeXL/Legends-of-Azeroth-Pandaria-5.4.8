@@ -5359,7 +5359,7 @@ class spell_jade_forest_acid_rain_blossom : public SpellScript
     }
     void Register() override
     {
-        OnEffectHitTarget += SpellEffectFn(spell_jade_forest_acid_rain_blossom::Hit, EFFECT_0, SPELL_EFFECT_FORCE_CAST);
+        OnEffectHitTarget += SpellEffectFn(spell_jade_forest_acid_rain_blossom::Hit, EFFECT_0, SPELL_EFFECT_SCRIPT_EFFECT);
     }
 };
 
