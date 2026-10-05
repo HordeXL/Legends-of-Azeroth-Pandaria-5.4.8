@@ -41,6 +41,7 @@ CasterShamanStrategy::CasterShamanStrategy(PlayerbotAI* botAI) : GenericShamanSt
 NextAction** CasterShamanStrategy::getDefaultActions()
 {
     return NextAction::array(0,
+                             new NextAction("shaman opening", ACTION_HIGH + 4.0f),
                              new NextAction("pve ascendance", ACTION_DEFAULT + 0.4f),
                              new NextAction("lava burst", ACTION_DEFAULT + 0.3f),
                              new NextAction("earth shock", ACTION_DEFAULT + 0.2f),

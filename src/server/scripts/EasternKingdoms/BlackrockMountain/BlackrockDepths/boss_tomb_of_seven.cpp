@@ -197,8 +197,8 @@ public:
 
         void JustDied(Unit* /*killer*/) override
         {
-            if (instance)
-                instance->SetData(DATA_GHOSTKILL, 1);
+            // The instance-wide OnUnitDeath handler advances all seven
+            // guardians consistently, including those without a custom AI.
         }
 
         void UpdateAI(uint32 diff) override

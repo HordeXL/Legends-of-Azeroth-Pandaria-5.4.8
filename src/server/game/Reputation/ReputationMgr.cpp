@@ -43,6 +43,32 @@ const int32 ReputationMgr::PointsInRank[MAX_REPUTATION_RANK] = {36000, 3000, 300
 const int32 ReputationMgr::Reputation_Cap = 42999;
 const int32 ReputationMgr::Reputation_Bottom = -42000;
 
+namespace
+{
+    struct GrandCommendation
+    {
+        uint32 FactionId;
+        uint32 SpellId;
+    };
+
+    GrandCommendation const GrandCommendations[] =
+    {
+        { 1302, 135704 }, // The Anglers
+        { 1376, 135710 }, // Operation: Shieldwall
+        { 1375, 135711 }, // Dominance Offensive
+        { 1345, 135712 }, // The Lorewalkers
+        { 1271, 135713 }, // Order of the Cloud Serpent
+        { 1272, 135714 }, // The Tillers
+        { 1270, 135715 }, // Shado-Pan
+        { 1341, 135716 }, // The August Celestials
+        { 1269, 135717 }, // Golden Lotus
+        { 1337, 135719 }, // The Klaxxi
+        { 1387, 140226 }, // Kirin Tor Offensive
+        { 1388, 140228 }, // Sunreaver Onslaught
+        { 1435, 140235 }  // Shado-Pan Assault
+    };
+}
+
 ReputationRank ReputationMgr::ReputationToRank(int32 standing)
 {
     int32 limit = Reputation_Cap + 1;
@@ -135,6 +161,15 @@ ReputationRank ReputationMgr::GetBaseRank(FactionEntry const* factionEntry) cons
 {
     int32 reputation = GetBaseReputation(factionEntry);
     return ReputationToRank(reputation);
+}
+
+bool ReputationMgr::HasBonusReputation(uint32 factionId) const
+{
+    for (GrandCommendation const& commendation : GrandCommendations)
+        if (commendation.FactionId == factionId)
+            return _player->HasSpell(commendation.SpellId);
+
+    return false;
 }
 
 void ReputationMgr::ApplyForceReaction(uint32 faction_id, ReputationRank rank, bool apply)
@@ -244,7 +279,7 @@ void ReputationMgr::SendInitialReputations()
         data << uint32(itr->second.Standing);
 
         // Bonus reputation (Your account has unlocked bonus reputation gain with this faction.)
-        bitData.WriteBit(0);
+        bitData.WriteBit(HasBonusReputation(itr->second.ID));
 
         itr->second.needSend = false;
 

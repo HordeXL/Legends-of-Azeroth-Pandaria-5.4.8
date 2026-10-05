@@ -7,6 +7,7 @@
 #include "RandomPlayerbotFactory.h"
 
 #include "AccountMgr.h"
+#include "CryptoRandom.h"
 #include "DBCStore.h"
 #include "DatabaseEnv.h"
 #include "CharacterCache.h"
@@ -640,3 +641,229 @@ void RandomPlayerbotFactory::CreateRandomBots()
     TC_LOG_INFO("server.loading", ">> %u random bot accounts with %u characters available", sPlayerbotAIConfig->randomBotAccounts.size(), totalRandomBotChars);
 }
 
+
+void RandomPlayerbotFactory::CreatePlayerbotPool()
+{
+    if (!sPlayerbotAIConfig->playerbotPoolEnabled)
+        return;
+
+    TC_LOG_INFO("playerbots", "Creating offline PvE Playerbot pool...");
+
+    sPlayerbotAIConfig->playerbotPoolAccounts.clear();
+
+    std::unordered_map<Gender, std::vector<std::string>> nameCache;
+    QueryResult result = CharacterDatabase.Query(
+        "SELECT name, gender FROM playerbots_names");
+
+    if (!result)
+    {
+        TC_LOG_ERROR("playerbots",
+            "Cannot create Playerbot pool: no unused names available");
+        return;
+    }
+
+    do
+    {
+        Field* fields = result->Fetch();
+        std::string name = fields[0].GetString();
+        Gender gender = static_cast<Gender>(fields[1].GetUInt8());
+
+        if (sObjectMgr->CheckPlayerName(name) ==
+            ResponseCodes::CHAR_NAME_SUCCESS)
+            nameCache[gender].push_back(name);
+    }
+    while (result->NextRow());
+
+    uint32 accountsCreated = 0;
+
+    // Create missing pool accounts.
+    for (uint32 accountNumber = 0;
+         accountNumber < sPlayerbotAIConfig->playerbotPoolAccountCount;
+         ++accountNumber)
+    {
+        std::ostringstream out;
+        out << sPlayerbotAIConfig->playerbotPoolAccountPrefix
+            << accountNumber;
+
+        std::string const accountName = out.str();
+
+        LoginDatabasePreparedStatement* stmt =
+            LoginDatabase.GetPreparedStatement(
+                LOGIN_GET_ACCOUNT_ID_BY_USERNAME);
+        stmt->setString(0, accountName);
+
+        if (LoginDatabase.Query(stmt))
+            continue;
+
+        // Pool accounts must not accept their public account name as a password.
+        static char const passwordChars[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+        std::string password;
+        for (uint8 byte : Trinity::Crypto::GetRandomBytes<16>())
+            password += passwordChars[byte & 63];
+        AccountOpResult res =
+            sAccountMgr->CreateAccount(accountName, password, "");
+
+        if (res == AccountOpResult::AOR_OK)
+        {
+            ++accountsCreated;
+            TC_LOG_INFO("playerbots",
+                "Created PvE Playerbot pool account %s",
+                accountName.c_str());
+        }
+        else
+        {
+            TC_LOG_ERROR("playerbots",
+                "Failed to create PvE Playerbot pool account %s",
+                accountName.c_str());
+        }
+    }
+
+    if (accountsCreated)
+    {
+        TC_LOG_INFO("playerbots",
+            "Waiting for %u Playerbot pool accounts...",
+            accountsCreated);
+
+        std::this_thread::sleep_for(
+            std::chrono::milliseconds(10) *
+            sPlayerbotAIConfig->playerbotPoolAccountCount);
+    }
+
+    uint32 botsCreated = 0;
+    std::vector<WorldSession*> sessions;
+
+    // Load exact pool account IDs and fill each account to 10 characters.
+    for (uint32 accountNumber = 0;
+         accountNumber < sPlayerbotAIConfig->playerbotPoolAccountCount;
+         ++accountNumber)
+    {
+        std::ostringstream out;
+        out << sPlayerbotAIConfig->playerbotPoolAccountPrefix
+            << accountNumber;
+
+        std::string accountName = out.str();
+        std::transform(accountName.begin(), accountName.end(),
+            accountName.begin(), ::toupper);
+
+        LoginDatabasePreparedStatement* stmt =
+            LoginDatabase.GetPreparedStatement(
+                LOGIN_GET_ACCOUNT_ID_BY_USERNAME);
+        stmt->setString(0, accountName);
+
+        PreparedQueryResult accountResult = LoginDatabase.Query(stmt);
+        if (!accountResult)
+            continue;
+
+        uint32 accountId =
+            accountResult->Fetch()[0].GetUInt32();
+
+        sPlayerbotAIConfig->playerbotPoolAccounts.push_back(accountId);
+
+        uint32 characterCount =
+            AccountMgr::GetCharactersCount(accountId);
+
+        if (characterCount >= 10)
+            continue;
+
+        TC_LOG_INFO("playerbots",
+            "Creating PvE pool characters for account [%u/%u]",
+            accountNumber + 1,
+            sPlayerbotAIConfig->playerbotPoolAccountCount);
+
+        RandomPlayerbotFactory factory(accountId);
+
+        WorldSession* session = new WorldSession(
+            accountId, nullptr, AccountTypes::SEC_PLAYER,
+            EXPANSION_MISTS_OF_PANDARIA, time_t(0),
+            LOCALE_enUS, 0, false, false, true);
+
+        sessions.push_back(session);
+
+        for (uint8 cls = CLASS_WARRIOR;
+             cls < MAX_CLASSES && characterCount < 10;
+             ++cls)
+        {
+            if (!((1 << (cls - 1)) & CLASSMASK_ALL_PLAYABLE) ||
+                !sChrClassesStore.LookupEntry(cls))
+                continue;
+
+            if (cls == CLASS_DEATH_KNIGHT &&
+                sWorld->getIntConfig(WorldIntConfigs::CONFIG_EXPANSION) <
+                    EXPANSION_WRATH_OF_THE_LICH_KING)
+                continue;
+
+            if (cls == CLASS_MONK &&
+                sWorld->getIntConfig(WorldIntConfigs::CONFIG_EXPANSION) <
+                    EXPANSION_MISTS_OF_PANDARIA)
+                continue;
+
+            if (cls > CLASS_DRUID)
+                continue;
+
+            Player* playerBot =
+                factory.CreateRandomBot(
+                    session, static_cast<Classes>(cls), nameCache);
+
+            if (!playerBot)
+            {
+                TC_LOG_ERROR("playerbots",
+                    "Failed to create PvE pool character for account %u",
+                    accountId);
+                continue;
+            }
+
+            playerBot->SaveToDB(true);
+
+            sWorld->AddCharacterNameData(
+                playerBot->GetGUID(),
+                playerBot->GetName(),
+                playerBot->GetGender(),
+                playerBot->GetRace(),
+                playerBot->GetClass(),
+                playerBot->GetLevel());
+
+            sCharacterCache->AddCharacterCacheEntry(
+                playerBot->GetGUID(),
+                accountId,
+                playerBot->GetName(),
+                playerBot->GetGender(),
+                playerBot->GetRace(),
+                playerBot->GetClass(),
+                playerBot->GetLevel());
+
+            playerBot->CleanupsBeforeDelete();
+            delete playerBot;
+            session->SetPlayer(nullptr);
+
+            ++characterCount;
+            ++botsCreated;
+        }
+    }
+
+    if (botsCreated)
+    {
+        TC_LOG_INFO("playerbots",
+            "Waiting for %u Playerbot pool characters...",
+            botsCreated);
+
+        std::this_thread::sleep_for(
+            std::chrono::seconds(5) +
+            botsCreated * std::chrono::milliseconds(5));
+    }
+
+    for (WorldSession* session : sessions)
+        delete session;
+
+    uint32 totalCharacters = 0;
+    for (uint32 accountId :
+         sPlayerbotAIConfig->playerbotPoolAccounts)
+    {
+        totalCharacters +=
+            AccountMgr::GetCharactersCount(accountId);
+    }
+
+    TC_LOG_INFO("server.loading",
+        ">> %u offline PvE Playerbot pool accounts with %u characters available",
+        uint32(sPlayerbotAIConfig->playerbotPoolAccounts.size()),
+        totalCharacters);
+}

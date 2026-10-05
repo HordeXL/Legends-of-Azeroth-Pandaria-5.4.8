@@ -128,6 +128,16 @@ public:
 
         void JustSummoned(Creature* summoned) override
         {
+            // This override replaces BossAI::JustSummoned, including its
+            // registration. Without it, death/reset cleanup misses every
+            // Pure Energy and its follow movement and Energy Bolt aura.
+            if (!me->IsAlive())
+            {
+                summoned->DespawnOrUnsummon();
+                return;
+            }
+            summons.Summon(summoned);
+
             if (Unit* temp = SelectTarget(SELECT_TARGET_RANDOM, 0))
                 summoned->GetMotionMaster()->MoveFollow(temp, 0, 0);
 

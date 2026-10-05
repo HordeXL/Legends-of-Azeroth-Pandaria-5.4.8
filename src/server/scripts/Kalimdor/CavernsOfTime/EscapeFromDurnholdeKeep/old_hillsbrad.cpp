@@ -286,6 +286,7 @@ public:
         InstanceScript* instance;
 
         ObjectGuid TarethaGUID;
+        ObjectGuid SkarlocGUID;
 
         bool LowHp;
         bool HadMount;
@@ -336,7 +337,9 @@ public:
                     break;
                 case 29:
                     Talk(SAY_TH_SKARLOC_MEET);
-                    me->SummonCreature(ENTRY_SCARLOC, 2036.48f, 271.22f, 63.43f, 5.27f, TEMPSUMMON_TIMED_DESPAWN_OUT_OF_COMBAT, 30000);
+                    // This boss gates the escort's next dialogue. Do not remove
+                    // him alive if combat drops or the party needs time to pull.
+                    me->SummonCreature(ENTRY_SCARLOC, 2036.48f, 271.22f, 63.43f, 5.27f, TEMPSUMMON_CORPSE_TIMED_DESPAWN, 300000);
                     //temporary, skarloc should rather be triggered to walk up to thrall
                     break;
                 case 30:
@@ -506,6 +509,9 @@ public:
 
         void JustSummoned(Creature* summoned) override
         {
+            if (summoned->GetEntry() == ENTRY_SCARLOC)
+                SkarlocGUID = summoned->GetGUID();
+
              switch (summoned->GetEntry())
              {
             /// @todo make Scarloc start into event instead, and not start attack directly
@@ -527,6 +533,13 @@ public:
         }
         void JustDied(Unit* slayer) override
         {
+            // A failed escort may be restarted. Remove its surviving boss so
+            // the next attempt cannot leave two living Skarlocs in the keep.
+            if (Creature* skarloc = ObjectAccessor::GetCreature(*me, SkarlocGUID))
+                if (skarloc->IsAlive())
+                    skarloc->DespawnOrUnsummon();
+            SkarlocGUID.Clear();
+
             if (instance)
                 instance->SetData(TYPE_THRALL_EVENT, FAIL);
 

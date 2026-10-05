@@ -21,6 +21,10 @@
 #include <cstdlib>
 #include <thread>
 #include <cstdarg>
+#if defined(__linux__)
+#include <execinfo.h>
+#include <unistd.h>
+#endif
 
 /**
     @file Errors.cpp
@@ -49,6 +53,18 @@ extern "C" { char const* TrinityAssertionFailedMessage = nullptr; }
 
 namespace
 {
+    // Only emitted for a fatal assertion, never during ordinary gameplay.
+    void PrintAssertionBacktrace()
+    {
+#if defined(__linux__)
+        void* frames[64];
+        int count = backtrace(frames, 64);
+        fputs("Assertion backtrace:\n", stderr);
+        fflush(stderr);
+        backtrace_symbols_fd(frames, count, STDERR_FILENO);
+#endif
+    }
+
     std::string FormatAssertionMessage(char const* format, va_list args)
     {
         std::string formatted;
@@ -72,6 +88,7 @@ void Assert(char const* file, int line, char const* function, std::string debugI
     std::string formattedMessage = StringFormat("\n%s:%i in %s ASSERTION FAILED:\n  %s\n", file, line, function, message) + debugInfo + '\n';
     fprintf(stderr, "%s", formattedMessage.c_str());
     fflush(stderr);
+    PrintAssertionBacktrace();
     Crash(formattedMessage.c_str());
 }
 
@@ -86,6 +103,7 @@ void Assert(char const* file, int line, char const* function, std::string debugI
     fprintf(stderr, "%s", formattedMessage.c_str());
     fflush(stderr);
 
+    PrintAssertionBacktrace();
     Crash(formattedMessage.c_str());
 }
 

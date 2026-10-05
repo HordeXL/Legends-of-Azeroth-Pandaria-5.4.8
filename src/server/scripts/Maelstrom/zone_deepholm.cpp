@@ -120,8 +120,16 @@ struct npc_deepholm_wyvern : public CreatureAI
 
     void OnSpellClick(Unit* clicker, bool& /*result*/) override
     {
-        if (clicker && clicker->ToPlayer() && clicker->ToPlayer()->GetQuestStatus(QUEST_DEEPHOLM_REALM_OF_EARTH) == QUEST_STATUS_COMPLETE)
-            clicker->CastSpell(clicker, SPELL_DEEPHOLM_INTRO_TAXI, true);
+        Player* player = clicker ? clicker->ToPlayer() : nullptr;
+        if (!player || player->GetVehicle())
+            return;
+
+        // This quest has no explicit objective row, so different quest-state
+        // paths can leave it either incomplete or ready for turn-in before
+        // the ride.  Both states must be allowed to start the transport.
+        QuestStatus status = player->GetQuestStatus(QUEST_DEEPHOLM_REALM_OF_EARTH);
+        if (status == QUEST_STATUS_INCOMPLETE || status == QUEST_STATUS_COMPLETE)
+            player->CastSpell(player, SPELL_DEEPHOLM_INTRO_TAXI, true);
     }
 
     void UpdateAI(const uint32 /*diff*/) override { }

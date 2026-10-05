@@ -2,6 +2,7 @@
 #define _PLAYERBOT_PLAYERBOTAI_H
 
 #include <atomic>
+#include <functional>
 #include <mutex>
 
 #include <queue>
@@ -29,6 +30,12 @@ enum BotRoles : uint8
     BOT_ROLE_TANK = 0x01,
     BOT_ROLE_HEALER = 0x02,
     BOT_ROLE_DPS = 0x04
+};
+
+enum class BotCheatMask : uint32
+{
+    none = 0,
+    raid = 1
 };
 
 // A single environment classification used by combat actions.  Keeping this
@@ -146,6 +153,26 @@ public:
     virtual bool DoSpecificAction(std::string const name, Event event = Event(), bool silent = false, std::string const qualifier = "");
 
     void ResetStrategies();
+    void ApplyInstanceStrategies(uint32 mapId, bool tellMaster = false);
+    bool IsTank(Player* player) const;
+    bool IsHeal(Player* player) const;
+    bool IsDps(Player* player) const;
+    bool IsRanged(Player* player) const;
+    bool IsRangedDps(Player* player) const;
+    bool IsMelee(Player* player) const;
+    bool IsMainTank(Player* player) const;
+    bool IsAssistTank(Player* player) const;
+    bool IsAssistTankOfIndex(Player* player, int index) const;
+    bool IsAssistHealOfIndex(Player* player, uint8 index, bool livingOnly = false) const;
+    bool IsAssistRangedDpsOfIndex(Player* player, uint8 index, bool livingOnly = false) const;
+    int32 GetGroupSlotIndex(Player* player) const;
+    int32 GetClassIndex(Player* player, uint8 playerClass) const;
+    int32 GetRangedIndex(Player* player) const;
+    int32 GetRangedDpsIndex(Player* player) const;
+    bool CanCastVehicleSpell(uint32 spellId, Unit* target) const;
+    bool CastVehicleSpell(uint32 spellId, Unit* target);
+    bool EqualLowercaseName(std::string const& first, std::string const& second) const;
+    bool HasCheat(BotCheatMask /*mask*/) const { return false; }
     void ChangeStrategy(std::string const name, BotState type);
     void ClearStrategies(BotState type);
     std::vector<std::string> GetStrategies(BotState type);
@@ -211,6 +238,10 @@ public:
     bool CanMove();
 
     uint32 GetReactDelay();
+    void AddTimedEvent(std::function<void()> callback, uint32 delayMs);
+    std::vector<Item*> GetInventoryItems();
+    bool HasItemInInventory(uint32 itemId);
+    void ImbueItem(Item* item, Unit* target);
     void InterruptSpell();
     bool TryGroupPveCoordinatedInterrupt();
     virtual bool IsInterruptableSpellCasting(Unit* player, std::string const spell);
@@ -274,6 +305,7 @@ protected:
     std::atomic<bool> _lfgAutoQueueReserved{ false };
     std::atomic<bool> _lfgAutoQueueInitializePending{ false };
     std::atomic<bool> _lfgPreparationBuffPending{ false };
+    uint32 _groupPreparationBuffTimer = 0;
     std::atomic<uint32> _lfgAutoQueueRequesterGuid{ 0 };
     uint32 _invalidFollowPositionSince = 0;
     uint32 _gateSettingSunFollowRecoverySince = 0;

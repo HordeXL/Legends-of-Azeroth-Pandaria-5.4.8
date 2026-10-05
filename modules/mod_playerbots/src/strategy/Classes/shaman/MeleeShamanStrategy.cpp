@@ -52,7 +52,8 @@ MeleeShamanStrategy::MeleeShamanStrategy(PlayerbotAI* botAI) : GenericShamanStra
 NextAction** MeleeShamanStrategy::getDefaultActions()
 {
     return NextAction::array(
-        0, new NextAction("stormstrike", ACTION_DEFAULT + 0.5f), new NextAction("lava lash", ACTION_DEFAULT + 0.4f),
+        0, new NextAction("shaman opening", ACTION_HIGH + 4.0f),
+        new NextAction("stormstrike", ACTION_DEFAULT + 0.5f), new NextAction("lava lash", ACTION_DEFAULT + 0.4f),
         new NextAction("earth shock", ACTION_DEFAULT + 0.3f), new NextAction("feral spirit", ACTION_DEFAULT + 0.2f),
         new NextAction("melee", ACTION_DEFAULT), NULL);
 }

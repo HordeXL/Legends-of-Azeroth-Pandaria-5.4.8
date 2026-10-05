@@ -2624,7 +2624,8 @@ void WorldObject::ResetMap()
 
 Map const* WorldObject::GetBaseMap() const
 {
-    ASSERT(m_currMap);
+    ASSERT(m_currMap, "Object type=%u entry=%u guid=" UI64FMTD " mapId=%u instanceId=%u inWorld=%u",
+        uint32(GetTypeId()), GetEntry(), uint64(GetGUID()), GetMapId(), GetInstanceId(), uint32(IsInWorld()));
     return m_currMap->GetParent();
 }
 
@@ -3641,6 +3642,16 @@ bool WorldObject::IsPhased(WorldObject const* obj) const
 
 bool WorldObject::InSamePhase(WorldObject const* obj) const
 {
+    // Quest phases must not hide the graveyard resurrection service. Keep
+    // battleground spirit guides phased and retain the ghost visibility check.
+    if (ToPlayer())
+        if (Creature const* healer = obj->ToCreature())
+            if (healer->IsSpiritHealer() && !healer->IsSpiritGuide())
+                return true;
+    if (obj->ToPlayer())
+        if (Creature const* healer = ToCreature())
+            if (healer->IsSpiritHealer() && !healer->IsSpiritGuide())
+                return true;
     return InSamePhase(obj->GetPhaseMask()) && IsPhased(obj);
 }
 

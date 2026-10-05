@@ -5,10 +5,14 @@
 #include <cstdlib>
 using uint32=unsigned;
 struct Unit; struct Player; struct Group; struct AI;
+struct ThreatManager { Player* owner=nullptr; float amount=0; float getThreat(Player* p){return p==owner?amount:0;} };
 struct WorldObject {virtual Unit* ToUnit(){return nullptr;}};
 struct Unit:WorldObject {
  bool alive=true,inWorld=true,isPlayer=false,attackable=true,melee=false;
  int map=1; float distance=30; Unit* victim=nullptr;
+ bool combat=true,threatList=true; ThreatManager threat;
+ bool IsInCombat(){return combat;} bool CanHaveThreatList(){return threatList;}
+ ThreatManager& GetThreatManager(){return threat;}
  Unit* ToUnit() override {return this;}
  Player* ToPlayer();
  bool IsAlive() const{return alive;} bool IsInWorld() const{return inWorld;}
@@ -21,6 +25,7 @@ struct Unit:WorldObject {
 using Pet=Unit;
 struct Player:Unit {
  unsigned id=0; bool tank=false,pvp=false; Group* group=nullptr; AI* ai=nullptr; Pet* pet=nullptr;
+ Unit* selected=nullptr; Unit* GetSelectedUnit(){return selected;}
  Player(){isPlayer=true;}
  unsigned GetGUID() const{return id;}
  bool InBattleground()const{return pvp;} bool InArena()const{return false;}
@@ -126,6 +131,23 @@ bool MovementAction::WaitForTankPull(WorldObject* object)
     Group* group = bot->GetGroup(GroupSlot::Instance);
     if (!group)
         group = bot->GetGroup();
+
+    // Ranged auto-attacks and spells need not set the master's melee victim.
+    // Let DPS approach a real master's selected enemy once that master has
+    // actually engaged it. Selection or another party member's threat alone
+    // must not authorize a new pull. Keep tank-led collection behavior intact.
+    Player* master = botAI->GetMaster();
+    PlayerbotAI* masterAI = master ? GET_PLAYERBOT_AI(master) : nullptr;
+    bool masterAttacking = master && group && group->IsMember(master->GetGUID()) &&
+        master->IsInWorld() && master->IsAlive() && master->GetMap() == bot->GetMap() &&
+        (!masterAI || masterAI->IsRealPlayer()) && !PlayerBotSpec::IsTank(master, true) &&
+        target->IsInCombat() &&
+        (master->GetVictim() == target ||
+            (master->GetSelectedUnit() == target && target->CanHaveThreatList() &&
+                target->GetThreatManager().getThreat(master) > 0.0f));
+    if (masterAttacking)
+        return false;
+
     // Defending a ranged party member must not turn into a long chase into
     // the next pack. Let the tank collect it; still allow local self-defence
     // and targets explicitly being attacked by the real requester.
@@ -196,6 +218,21 @@ int main(){
  off.pvp=true;check(PlayerBotSpec::GetGroupPvePullTank(&off)==nullptr,"PvP anchor disabled");off.pvp=false;
  check(!move.WaitForTankPull(nullptr),"null movement object");
  enemy.alive=false;check(!move.WaitForTankPull(&enemy),"dead movement target");enemy.alive=true;
+ // Real ranged master must not require the target to be within tank melee range.
+ off.tank=false;ai.master=&other;other.selected=&enemy;enemy.victim=&main;
+ enemy.threat.owner=&other;enemy.threat.amount=1;
+ check(!move.WaitForTankPull(&enemy),"DPS approaches ranged master's engaged target at 30 yards");
+ enemy.threat.amount=0;check(move.WaitForTankPull(&enemy),"selection without master threat cannot authorize approach");
+ enemy.threat.amount=1;enemy.threat.owner=&main;
+ check(move.WaitForTankPull(&enemy),"another member's threat cannot impersonate a ranged master attack");
+ enemy.threat.owner=&other;other.selected=nullptr;
+ check(move.WaitForTankPull(&enemy),"old threat on an unselected target does not authorize approach");
+ other.selected=&enemy;other.map=2;
+ check(move.WaitForTankPull(&enemy),"master on another map cannot authorize approach");other.map=1;
+ ai.allowed=false;check(move.WaitForTankPull(&enemy),"ranged assist retains engagement authorization");ai.allowed=true;
+ enemy.combat=false;check(move.WaitForTankPull(&enemy),"idle enemy with stale threat stays protected");enemy.combat=true;
+ ai.master=&main;main.selected=&enemy;enemy.threat.owner=&main;
+ check(move.WaitForTankPull(&enemy),"tank master's ranged pull still waits for collection");
  Pet pet;off.pet=&pet;CastKillCommandAction kill;kill.botAI=&ai;kill.bot=&off;kill.target=&enemy;
  check(!kill.isUseful(),"Kill Command cannot launch idle pet");
  pet.victim=&enemy;check(!kill.isUseful(),"Kill Command waits until pet reaches enemy");

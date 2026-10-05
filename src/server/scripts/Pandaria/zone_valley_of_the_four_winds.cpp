@@ -2283,6 +2283,46 @@ class spell_vfw_breaking_barrel : public AuraScript
     }
 };
 
+enum SaviorOfStoneplow
+{
+    QUEST_THE_SAVIOR_OF_STONEPLOW = 30627,
+    NPC_IKTHIK_COLOSSUS            = 56703,
+
+    GOSSIP_ACTION_START_FANNY      = GOSSIP_ACTION_INFO_DEF + 1,
+};
+
+// Miss Fanny 59857 - The Savior of Stoneplow 30627
+class npc_vfw_miss_fanny : public CreatureScript
+{
+public:
+    npc_vfw_miss_fanny() : CreatureScript("npc_vfw_miss_fanny") { }
+
+    bool OnGossipHello(Player* player, Creature* creature) override
+    {
+        if (player->GetQuestStatus(QUEST_THE_SAVIOR_OF_STONEPLOW) == QUEST_STATUS_INCOMPLETE)
+            player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "Let's go, Miss Fanny.", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_START_FANNY);
+
+        player->SEND_GOSSIP_MENU(player->GetGossipTextId(creature), creature->GetGUID());
+        return true;
+    }
+
+    bool OnGossipSelect(Player* player, Creature* /*creature*/, uint32 sender, uint32 action) override
+    {
+        player->CLOSE_GOSSIP_MENU();
+
+        if (sender != GOSSIP_SENDER_MAIN || action != GOSSIP_ACTION_START_FANNY)
+            return true;
+
+        // The retail sequence used a latency-sensitive vehicle ride and an
+        // internal vehicle fight. That data is absent here, so award the exact
+        // kill objective instead of leaving the player trapped in a dead event.
+        if (player->GetQuestStatus(QUEST_THE_SAVIOR_OF_STONEPLOW) == QUEST_STATUS_INCOMPLETE)
+            player->KilledMonsterCredit(NPC_IKTHIK_COLOSSUS);
+
+        return true;
+    }
+};
+
 void AddSC_valley_of_the_four_winds()
 {
     // Rare Mobs
@@ -2333,4 +2373,5 @@ void AddSC_valley_of_the_four_winds()
     new aura_script<spell_vfw_krungko_timer>("spell_vfw_krungko_timer");
     new atrigger_script<sat_vfw_ground_and_pound>("sat_vfw_ground_and_pound");
     new aura_script<spell_vfw_breaking_barrel>("spell_vfw_breaking_barrel");
+    new npc_vfw_miss_fanny();
 }

@@ -58,5 +58,6 @@ bool CastAutomatedRoleMode(Player* bot);
 bool CastAutomatedPvpPreparationBuff(Player* bot);
 void UpdateAutomatedPvpLoadoutRecovery(uint32 diff);
 void UpdateWorldBossStagedRaid(uint32 diff);
+void UpdateLegacyRaidStagedRaid(uint32 diff);
 
 #endif

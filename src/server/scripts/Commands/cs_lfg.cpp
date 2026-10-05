@@ -22,6 +22,7 @@
 #include "Group.h"
 #include "Player.h"
 #include "Config.h"
+#include "DBCStores.h"
 
 static void GetPlayerInfo(ChatHandler* handler, Player* player)
 {

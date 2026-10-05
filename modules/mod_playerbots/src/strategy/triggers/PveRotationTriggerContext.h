@@ -4,7 +4,7 @@
 #include "Playerbots.h"
 #include "GenericTriggers.h"
 #include "HealthTriggers.h"
-#include "PlayerBotSpec.h"
+#include "PlayerbotSpec.h"
 #include "PveDispelAction.h"
 #include "PveWeaponImbueAction.h"
 

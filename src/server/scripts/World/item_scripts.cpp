@@ -409,6 +409,110 @@ public:
     }
 };
 
+enum PatchingUp
+{
+    QUEST_PATCHING_UP          = 11894,
+    ITEM_UNCURED_CARIBOU_HIDE = 35288,
+    ITEM_STEAM_CURED_HIDE     = 35289
+};
+
+class item_uncured_caribou_hide : public ItemScript
+{
+public:
+    item_uncured_caribou_hide() : ItemScript("item_uncured_caribou_hide") { }
+
+    bool OnUse(Player* player, Item* item, SpellCastTargets const& /*targets*/) override
+    {
+        if (player->GetQuestStatus(QUEST_PATCHING_UP) != QUEST_STATUS_INCOMPLETE)
+        {
+            player->SendEquipError(EQUIP_ERR_CLIENT_LOCKED_OUT, item, nullptr);
+            return true;
+        }
+
+        ItemPosCountVec destination;
+        InventoryResult result = player->CanStoreNewItem(NULL_BAG, NULL_SLOT, destination, ITEM_STEAM_CURED_HIDE, 1);
+        if (result != EQUIP_ERR_OK)
+        {
+            player->SendEquipError(result, item, nullptr);
+            return true;
+        }
+
+        if (Item* curedHide = player->StoreNewItem(destination, ITEM_STEAM_CURED_HIDE, true,
+                Item::GenerateItemRandomPropertyId(ITEM_STEAM_CURED_HIDE)))
+        {
+            player->DestroyItemCount(ITEM_UNCURED_CARIBOU_HIDE, 1, true);
+            player->SendNewItem(curedHide, 1, true, false);
+        }
+
+        return true;
+    }
+};
+
+enum HeadGames
+{
+    QUEST_HEAD_GAMES           = 13129,
+    NPC_NOVOS_THE_SUMMONER     = 26631,
+    ITEM_KURZELS_BLOUSE_SCRAP = 43214,
+    ITEM_ICHOR_STAINED_CLOTH   = 43215
+};
+
+class item_kurzels_blouse_scrap : public ItemScript
+{
+public:
+    item_kurzels_blouse_scrap() : ItemScript("item_kurzels_blouse_scrap") { }
+
+    bool OnUse(Player* player, Item* item, SpellCastTargets const& targets) override
+    {
+        if (player->GetQuestStatus(QUEST_HEAD_GAMES) != QUEST_STATUS_INCOMPLETE)
+        {
+            player->SendEquipError(EQUIP_ERR_CLIENT_LOCKED_OUT, item, nullptr);
+            return true;
+        }
+
+        Creature* novos = nullptr;
+        if (Unit* target = targets.GetUnitTarget())
+            if (target->GetTypeId() == TYPEID_UNIT && target->GetEntry() == NPC_NOVOS_THE_SUMMONER &&
+                !target->IsAlive())
+                novos = target->ToCreature();
+
+        if (!novos)
+            novos = player->FindNearestCreature(NPC_NOVOS_THE_SUMMONER, 30.0f, false);
+
+        // Instance boss corpses may already have been removed from the object
+        // grid by the time the player uses the quest item.  The original use
+        // spell still considers Novos' remains location valid, so accept the
+        // immediate boss arena as a fallback.
+        bool atNovosRemains = novos ||
+            (player->GetMapId() == 600 &&
+             player->GetDistance2d(-379.27f, -737.728f) <= 45.0f &&
+             player->GetPositionZ() >= 10.0f && player->GetPositionZ() <= 45.0f);
+
+        if (!atNovosRemains)
+        {
+            player->SendEquipError(EQUIP_ERR_OUT_OF_RANGE, item, nullptr);
+            return true;
+        }
+
+        ItemPosCountVec destination;
+        InventoryResult result = player->CanStoreNewItem(NULL_BAG, NULL_SLOT, destination,
+            ITEM_ICHOR_STAINED_CLOTH, 1);
+        if (result != EQUIP_ERR_OK)
+        {
+            player->SendEquipError(result, item, nullptr);
+            return true;
+        }
+
+        if (Item* cloth = player->StoreNewItem(destination, ITEM_ICHOR_STAINED_CLOTH, true,
+                Item::GenerateItemRandomPropertyId(ITEM_ICHOR_STAINED_CLOTH)))
+        {
+            player->DestroyItemCount(ITEM_KURZELS_BLOUSE_SCRAP, 1, true);
+            player->SendNewItem(cloth, 1, true, false);
+        }
+
+        return true;
+    }
+};
+
 // Primal Egg - 94295
 class item_primal_egg : public ItemScript
 {
@@ -456,6 +560,8 @@ void AddSC_item_scripts()
     new item_dehta_trap_smasher();
     new item_trident_of_nazjan();
     new item_captured_frog();
+    new item_uncured_caribou_hide();
+    new item_kurzels_blouse_scrap();
     new item_primal_egg();
     new item_unhatched_jubling_egg();
 }

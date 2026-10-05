@@ -481,6 +481,37 @@ QueueManager::QueueManager()
         uint32 dps  = dungeon->dpsNeeded;
 
         bool raid = map && map->IsRaid();
+
+        // Legacy raids have no LFG role requirements in LfgDungeons.dbc.
+        // Give them a native queue composition so request-driven poolbots
+        // can fill the missing raid roles.
+        if (raid && dungeon->category == LFG_CATEGORY_LFR &&
+            !tank && !heal && !dps)
+        {
+            if (MapDifficulty const* mapDiff =
+                    GetMapDifficultyData(dungeon->map, Difficulty(dungeon->difficulty)))
+            {
+                if (mapDiff->maxPlayers >= 40)
+                {
+                    tank = 2;
+                    heal = 8;
+                    dps = mapDiff->maxPlayers - tank - heal;
+                }
+                else if (mapDiff->maxPlayers >= 25)
+                {
+                    tank = 2;
+                    heal = 6;
+                    dps = mapDiff->maxPlayers - tank - heal;
+                }
+                else if (mapDiff->maxPlayers >= 10)
+                {
+                    tank = 2;
+                    heal = 2;
+                    dps = mapDiff->maxPlayers - tank - heal;
+                }
+            }
+        }
+
         if (raid && sWorld->getBoolConfig(CONFIG_LFG_OVERRIDE_ROLES_REQUIRED))
         {
             tank = sWorld->getIntConfig(CONFIG_LFG_TANKS_NEEDED);

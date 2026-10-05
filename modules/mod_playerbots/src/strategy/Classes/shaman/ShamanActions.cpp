@@ -29,6 +29,42 @@ bool CastEarthShockAction::isUseful()
     return CastSpellAction::isUseful();
 }
 
+bool CastShamanOpeningAction::isUseful()
+{
+    Unit* target = GetTarget();
+    if (!botAI->IsGroupPveActivity() || !bot->IsAlive() || !target ||
+        !target->IsAlive() || !target->IsInWorld() ||
+        target->GetMap() != bot->GetMap() || !target->CanHaveThreatList())
+        return false;
+
+    bool const hasOwnFlameShock = botAI->HasAura("flame shock", target, true);
+    bool const hasOwnThreat = target->GetThreatManager().getThreat(bot) > 0.0f;
+    return !hasOwnFlameShock && !hasOwnThreat;
+}
+
+bool CastShamanOpeningAction::Execute(Event /*event*/)
+{
+    Unit* target = GetTarget();
+    if (!target)
+        return false;
+
+    // Enhancement should strike immediately once it reaches melee range.
+    // Flame Shock is the instant ranged fallback and also gives Elemental and
+    // Restoration immediate damage while Lightning Bolt is being prepared.
+    if (bot->GetSpecialization() == SPEC_SHAMAN_ENHANCEMENT &&
+        bot->IsWithinMeleeRange(target) &&
+        botAI->CanCastSpell("stormstrike", target) &&
+        botAI->CastSpell("stormstrike", target))
+        return true;
+
+    if (botAI->CanCastSpell("flame shock", target) &&
+        botAI->CastSpell("flame shock", target))
+        return true;
+
+    return botAI->CanCastSpell("lightning bolt", target) &&
+        botAI->CastSpell("lightning bolt", target);
+}
+
 bool CastPveAscendanceAction::isUseful()
 {
     if (bot->GetSpecialization() != SPEC_SHAMAN_ELEMENTAL ||

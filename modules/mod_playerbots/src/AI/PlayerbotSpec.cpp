@@ -406,7 +406,11 @@ PvePullState<ObjectGuid> ObserveGroupPull(Player* player)
 Unit* GroupPveCombat::OpeningTarget(Player* player)
 {
     if (!player) return nullptr;
-    ObjectGuid guid = ObserveGroupPull(player).OpeningTarget(getMSTime());
+    // Ordinary single-target caster damage only needs a brief tank lead. AoE
+    // still uses Ready()'s full three-second collection window, and staged
+    // world bosses retain three seconds for formation positioning.
+    uint32 const delay = player->HasWorldBossStagingAccess() ? 3000u : 750u;
+    ObjectGuid guid = ObserveGroupPull(player).OpeningTarget(getMSTime(), delay);
     return guid ? ObjectAccessor::GetUnit(*player, guid) : nullptr;
 }
 

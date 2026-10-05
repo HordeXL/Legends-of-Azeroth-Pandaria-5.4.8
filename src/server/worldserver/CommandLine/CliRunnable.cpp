@@ -27,6 +27,8 @@
 #if TRINITY_PLATFORM != TRINITY_PLATFORM_WINDOWS
 //#include "ChatCommand.h"
 #include <cstring>
+#include <iostream>
+#include <unistd.h>
 #include <readline/readline.h>
 #include <readline/history.h>
 #endif
@@ -177,10 +179,23 @@ void CliThread()
         if (!ReadWinConsole(command))
             continue;
 #else
-        char* command_str = readline(CLI_PREFIX);
-        ::rl_bind_key('\t', ::rl_complete);
-        if (command_str != nullptr)
+        if (!isatty(STDIN_FILENO))
         {
+            // Systemd supplies /dev/null rather than a terminal. Readline
+            // can spin at EOF without setting feof(stdin); use an ordinary
+            // stream for redirected input and stop only the console thread.
+            if (!std::getline(std::cin, command))
+                return;
+        }
+        else
+        {
+            char* command_str = readline(CLI_PREFIX);
+            if (!command_str)
+            {
+                World::StopNow(SHUTDOWN_EXIT_CODE);
+                return;
+            }
+            ::rl_bind_key('\t', ::rl_complete);
             command = command_str;
             free(command_str);
         }

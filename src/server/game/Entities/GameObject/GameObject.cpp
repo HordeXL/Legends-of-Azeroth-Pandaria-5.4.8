@@ -1153,6 +1153,14 @@ void GameObject::ForcedDespawn(uint32 msTimeToDespawn /*= 0*/)
 
 bool GameObject::ActivateToQuest(Player* target) const
 {
+    // Forged of Shadow and Flame (25575) credits the invisible creature
+    // objective 40858 through spell 76225.  The objective references neither
+    // this GO nor an item, so the Twilight Arms Crate (203066) is absent from
+    // ObjectMgr's quest-object cache and must be handled before that lookup.
+    if (GetEntry() == 203066 &&
+        target->GetQuestStatus(25575) == QUEST_STATUS_INCOMPLETE)
+        return true;
+
     if (target->HasQuestForGO(GetEntry()))
         return true;
 
@@ -1164,6 +1172,10 @@ bool GameObject::ActivateToQuest(Player* target) const
         // scan GO chest with loot including quest items
         case GAMEOBJECT_TYPE_CHEST:
         {
+            if (GetGOInfo()->chest.questId &&
+                target->GetQuestStatus(GetGOInfo()->chest.questId) == QUEST_STATUS_INCOMPLETE)
+                return true;
+
             if (LootTemplates_Gameobject.HaveQuestLootForPlayer(GetGOInfo()->GetLootId(), target))
             {
                 if (Battleground const* bg = target->GetBattleground())
@@ -2144,6 +2156,13 @@ bool GameObject::IsAtInteractDistance(Player const* player, SpellInfo const* spe
             distance = 0.0f;
             break;
         case GAMEOBJECT_TYPE_QUESTGIVER:
+            // Twilight Cauldron (quest 25297) has a large scaled visual whose
+            // usable point is offset from the nearby ingredient/brazier area.
+            // The default questgiver radius rejects both the initial gossip
+            // and the reward packet while the cauldron still appears close
+            // enough to use on the client.
+            distance = GetEntry() == 202706 ? 15.0f : 5.5555553f;
+            break;
         case GAMEOBJECT_TYPE_TEXT:
         case GAMEOBJECT_TYPE_FLAGSTAND:
         case GAMEOBJECT_TYPE_FLAGDROP:
@@ -2685,8 +2704,14 @@ void GameObject::BuildValuesUpdate(uint8 updateType, ByteBuffer* data, Player* t
                 int16 pathProgress = -1;
                 switch (GetGoType())
                 {
+                    case GAMEOBJECT_TYPE_DOOR:
+                        // Instance scripts may highlight an unlocked access panel.
+                        dynFlags |= GetUInt16Value(OBJECT_FIELD_DYNAMIC_FLAGS, 0) &
+                            (GO_DYNFLAG_LO_ACTIVATE | GO_DYNFLAG_LO_SPARKLE);
+                        break;
                     case GAMEOBJECT_TYPE_CHEST:
                     case GAMEOBJECT_TYPE_GOOBER:
+                    case GAMEOBJECT_TYPE_SPELLCASTER:
                         if (ActivateToQuest(target))
                             dynFlags |= GO_DYNFLAG_LO_ACTIVATE | GO_DYNFLAG_LO_SPARKLE;
                         else if (targetIsGM)

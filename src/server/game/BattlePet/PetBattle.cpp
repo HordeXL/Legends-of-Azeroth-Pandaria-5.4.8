@@ -22,6 +22,46 @@
 #include "Player.h"
 #include "Random.h"
 
+namespace
+{
+struct PetBattleTrainerTeam
+{
+    uint32 TrainerEntry;
+    uint8 Level;
+    std::array<uint32, PET_BATTLE_MAX_TEAM_PETS> PetCreatureEntries;
+};
+
+// The Eastern Kingdoms trainer teams used by quests 31902 and 31903.
+// Pet creature entries and levels are the original 5.0/5.4 compositions.
+std::array<PetBattleTrainerTeam, 5> const EasternKingdomsTrainerTeams =
+{{
+    { 66478, 13, {{ 66482, 66481, 66483 }} }, // David Kosse: Subject 142, Corpsefeeder, Plop
+    { 66512, 14, {{ 66486, 66487, 66485 }} }, // Deiza Plaguehorn: Carrion, Bleakspinner, Plaguebringer
+    { 66515, 15, {{ 66490, 66488, 66489 }} }, // Kortas Darkhammer: Garnestrasz, Veridia, Obsidion
+    { 66518, 16, {{ 66492, 66493, 66494 }} }, // Everessa: Croaker, Dampwing, Anklor
+    { 66520, 17, {{ 66497, 66496, 66495 }} }, // Durin Darkhammer: Comet, Ignious, Moltar
+}};
+
+PetBattleTrainerTeam const* GetPetBattleTrainerTeam(uint32 creatureEntry)
+{
+    for (PetBattleTrainerTeam const& team : EasternKingdomsTrainerTeams)
+        if (team.TrainerEntry == creatureEntry)
+            return &team;
+
+    return nullptr;
+}
+
+BattlePetSpeciesEntry const* GetBattlePetSpeciesByCreature(uint32 creatureEntry)
+{
+    for (uint32 speciesId = 0; speciesId < sBattlePetSpeciesStore.GetNumRows(); ++speciesId)
+        if (BattlePetSpeciesEntry const* species = sBattlePetSpeciesStore.LookupEntry(speciesId))
+            if (species->NpcId == creatureEntry)
+                return species;
+
+    return nullptr;
+}
+}
+
 void PetBattleTeam::AddPlayer(Player* player)
 {
     m_owner = player;
@@ -65,6 +105,42 @@ void PetBattleTeam::AddWildBattlePet(Creature* creature)
         m_wildBattlePet = creature;
         SetActivePet(battlePet);
     }
+}
+
+bool PetBattleTeam::AddTrainerBattlePets(Creature* trainer)
+{
+    PetBattleTrainerTeam const* trainerTeam = GetPetBattleTrainerTeam(trainer->GetEntry());
+    if (!trainerTeam)
+        return false;
+
+    for (uint32 petCreatureEntry : trainerTeam->PetCreatureEntries)
+    {
+        BattlePetSpeciesEntry const* species = GetBattlePetSpeciesByCreature(petCreatureEntry);
+        if (!species)
+        {
+            TC_LOG_ERROR("battlepets", "Pet battle trainer %u references creature %u with no BattlePetSpecies entry",
+                trainer->GetEntry(), petCreatureEntry);
+            m_ownedBattlePets.clear();
+            BattlePets.clear();
+            return false;
+        }
+
+        uint8 breed = sObjectMgr->BattlePetGetRandomBreed(species->SpeciesId);
+        if (!breed)
+            breed = 3;
+
+        std::unique_ptr<BattlePet> battlePet(new BattlePet(0, species->SpeciesId, species->FamilyId,
+            trainerTeam->Level, ITEM_QUALITY_UNCOMMON, breed));
+        battlePet->SetBattleInfo(m_teamIndex, ConvertToGlobalIndex(BattlePets.size()));
+        battlePet->InitialiseAbilities(true);
+        BattlePets.push_back(battlePet.get());
+        m_ownedBattlePets.push_back(std::move(battlePet));
+    }
+
+    m_wildBattlePet = trainer;
+    m_isTrainer = true;
+    SetActivePet(BattlePets.front());
+    return true;
 }
 
 void PetBattleTeam::ActivePetPrepareCast(uint32 abilityId)
@@ -112,6 +188,9 @@ uint8 PetBattleTeam::GetTrapStatus() const
 
     if (m_teamIndex == PET_BATTLE_TEAM_OPPONENT)
         return PET_BATTLE_TRAP_STATUS_DISABLED;
+
+    if (m_petBattle->Opponent()->IsTrainer())
+        return PET_BATTLE_TRAP_STATUS_CANT_TRAP_NPC_PET;
 
     auto &battlePetMgr = m_owner->GetBattlePetMgr();
 
@@ -322,6 +401,18 @@ void PetBattleTeam::TurnFinished()
     // Do next turn for PvE team
     if (!m_ready && !m_owner)
     {
+        if (!m_activePet->IsAlive())
+        {
+            for (BattlePet* battlePet : BattlePets)
+                if (battlePet->IsAlive())
+                {
+                    SetPendingMove(PET_BATTLE_MOVE_TYPE_SWAP_DEAD_PET, 0, battlePet);
+                    return;
+                }
+
+            return;
+        }
+
         std::vector<uint32> avaliableAbilities;
         for (uint8 i = 0; i < BATTLE_PET_MAX_ABILITIES; i++)
             if (m_activePet->Abilities[i])
@@ -388,7 +479,11 @@ PetBattle::PetBattle(uint32 battleId, PetBattleRequest const& request)
 
     if (m_type == PET_BATTLE_TYPE_PVE)
     {
-        opponentTeam->AddWildBattlePet(request.Opponent->ToCreature());
+        Creature* opponent = request.Opponent->ToCreature();
+        if (IsTrainer(opponent->GetEntry()))
+            opponentTeam->AddTrainerBattlePets(opponent);
+        else
+            opponentTeam->AddWildBattlePet(opponent);
 
         // TODO: nearby wild battle pets should join the pet battle as well
         // ...
@@ -399,6 +494,19 @@ PetBattle::PetBattle(uint32 battleId, PetBattleRequest const& request)
     m_teams[PET_BATTLE_TEAM_OPPONENT] = opponentTeam;
 
     SendFinalizeLocation(request);
+}
+
+bool PetBattle::IsTrainer(uint32 creatureEntry)
+{
+    PetBattleTrainerTeam const* team = GetPetBattleTrainerTeam(creatureEntry);
+    if (!team)
+        return false;
+
+    for (uint32 petCreatureEntry : team->PetCreatureEntries)
+        if (!GetBattlePetSpeciesByCreature(petCreatureEntry))
+            return false;
+
+    return true;
 }
 
 PetBattle::~PetBattle()
@@ -532,6 +640,11 @@ void PetBattle::EndBattle(PetBattleTeam* lostTeam, bool forfeit)
                     for (auto&& pet : Opponent()->BattlePets)
                         familyMask |= (1 << pet->GetFamilty());
                 player->UpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_WIN_PET_BATTLE, 1, familyMask, 0, player);
+
+                if (GetType() == PET_BATTLE_TYPE_PVE && Opponent()->IsTrainer())
+                    if (Creature* trainer = Opponent()->GetWildBattlePet())
+                        player->QuestObjectiveSatisfy(trainer->GetEntry(), 1,
+                            QUEST_OBJECTIVE_WINPETBATTLEAGAINSTNPC, trainer->GetGUID());
             }
             else
                 player->ResetCriterias(CRITERIA_RESET_TYPE_LOSE_PET_BATTLE, 0);
@@ -549,7 +662,16 @@ void PetBattle::EndBattle(PetBattleTeam* lostTeam, bool forfeit)
         }
 
         if (auto creature = team->GetWildBattlePet())
-            sBattlePetSpawnMgr->LeftBattle(creature, team == lostTeam);
+        {
+            if (team->IsTrainer())
+            {
+                creature->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PACIFIED | UNIT_FLAG_IMMUNE_TO_PC);
+                creature->SetControlled(false, UNIT_STATE_ROOT);
+                creature->SetTarget(ObjectGuid::Empty);
+            }
+            else
+                sBattlePetSpawnMgr->LeftBattle(creature, team == lostTeam);
+        }
     }
 
     m_state = PetBattleState::Finished;

@@ -722,7 +722,7 @@ void Vehicle::RelocatePassengers()
 
             passenger->UpdatePosition(px, py, pz, po);
         }
-    }
+}
 }
 
 /**

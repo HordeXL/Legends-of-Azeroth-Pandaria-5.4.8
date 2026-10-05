@@ -15,6 +15,9 @@ set(scripts_STAT_SRCS
   Pandaria/boss_sha_of_anger.cpp
   Pandaria/boss_galion.cpp
   Pandaria/zone_dread_wastes.cpp
+  Pandaria/quest_poisoned_mind.cpp
+  Pandaria/quest_scouting_reports.cpp
+  Pandaria/quest_daily_repairs.cpp
   Pandaria/zone_isle_of_giants.cpp
   Pandaria/zone_isle_of_thunder.cpp
   Pandaria/zone_krasarang_wilds.cpp

@@ -18,6 +18,36 @@ bool CastRemoveShadowformAction::Execute(Event event)
     return true;
 }
 
+bool CastShadowOpeningAction::isUseful()
+{
+    Unit* target = GetTarget();
+    if (!botAI->IsGroupPveActivity() || !bot->IsAlive() || !target ||
+        !target->IsAlive() || !target->IsInWorld() ||
+        target->GetMap() != bot->GetMap() || !target->CanHaveThreatList())
+        return false;
+
+    bool const hasOwnDot = botAI->HasAura("shadow word: pain", target, true) ||
+        botAI->HasAura("vampiric touch", target, true);
+    bool const hasOwnThreat = target->GetThreatManager().getThreat(bot) > 0.0f;
+    return !hasOwnDot && !hasOwnThreat;
+}
+
+bool CastShadowOpeningAction::Execute(Event /*event*/)
+{
+    Unit* target = GetTarget();
+    if (!target)
+        return false;
+
+    // Prefer direct damage. Shadow Word: Pain remains an instant fallback
+    // while the bot is still settling into its caster position.
+    if (botAI->CanCastSpell("mind blast", target) &&
+        botAI->CastSpell("mind blast", target))
+        return true;
+
+    return botAI->CanCastSpell("shadow word: pain", target) &&
+        botAI->CastSpell("shadow word: pain", target);
+}
+
 Unit* CastPowerWordShieldOnAlmostFullHealthBelowAction::GetTarget()
 {
     Group* group = bot->GetGroup();

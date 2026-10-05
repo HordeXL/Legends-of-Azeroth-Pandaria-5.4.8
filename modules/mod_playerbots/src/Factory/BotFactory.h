@@ -21,12 +21,14 @@ public:
     static void Init();
     void Refresh();
     void Randomize(bool incremental);
+    void PrepareManagedLevel();
     void ClearEverything();
 
     void InitBags();
     void InitEquipment(bool incremental, bool second_chance = false);
     void InitMissingEquipment();
     void InitEquipmentForSpec();
+    void RepairEquipmentProficiencies();
     void InitManagedEquipmentForSpec(uint32 minimumItemLevel,
                                      ManagedLoadoutMode mode);
     uint32 InitManagedEnhancements(ManagedLoadoutMode mode);
@@ -40,6 +42,7 @@ public:
     void InitGlyphs();
     void InitManagedTalentsAndGlyphs(ManagedLoadoutMode mode);
 private:
+    void UpgradePveEquipment();
     void InitTalentsTreeForMode(bool reset,
                                 ManagedLoadoutMode mode,
                                 bool ignorePremadeProfile);
@@ -60,6 +63,8 @@ private:
                                    bool genuineItemsOnly,
                                    bool pveOnly);
     bool MoveEquippedItemToBag(uint8 slot);
+    bool EquipOwnedManagedItem(EquipmentSlots slot, uint32 minimumItemLevel,
+                               bool genuineItemsOnly, bool pveOnly);
     uint32 GetWeaponReferenceItemLevel() const;
     void Prepare();
     void CancelAuras();

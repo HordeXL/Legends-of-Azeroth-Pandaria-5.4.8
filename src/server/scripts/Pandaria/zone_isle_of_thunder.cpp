@@ -4645,6 +4645,68 @@ class sat_spirital_guide : public IAreaTriggerAura
     }
 };
 
+// PvP dailies: use the existing prison and bomb-placement spawns.
+namespace ThunderDaily
+{
+    struct Objective
+    {
+        uint32 object, quest, credit, counter, required;
+    };
+
+    Objective const Objectives[] =
+    {
+        { 216315, 32262, 70217, 270224, 5 }, // Sunreaver captive
+        { 216987, 32636, 70220, 270225, 5 }, // Kirin Tor captive
+        { 218731, 32268, 69560, 270013, 1 }, // Alliance ship
+        { 218732, 32268, 69605, 270021, 1 }, // Alliance supplies
+        { 218733, 32268, 69607, 270022, 1 }, // Alliance construct
+        { 218734, 32628, 69560, 270174, 1 }, // Sunreaver ship
+        { 218735, 32628, 69607, 270176, 1 }, // Scrying crystals on the hill
+        { 218736, 32628, 69605, 270175, 1 }, // Bridge at the waterline
+    };
+}
+
+
+
+class go_thunder_daily_objective : public GameObjectScript
+{
+public:
+    go_thunder_daily_objective() : GameObjectScript("go_thunder_daily_objective") { }
+
+    bool OnGossipHello(Player* player, GameObject* go) override
+    {
+        if (!player->IsAlive() || go->GetMapId() != 1064 ||
+            !go->IsWithinDistInMap(player, INTERACTION_DISTANCE))
+            return true;
+
+        for (ThunderDaily::Objective const& objective : ThunderDaily::Objectives)
+        {
+            if (go->GetEntry() != objective.object)
+                continue;
+            if (player->GetQuestStatus(objective.quest) != QUEST_STATUS_INCOMPLETE ||
+                player->GetQuestObjectiveCounter(objective.counter) >= objective.required)
+                return true;
+
+            if (objective.required == 5)
+            {
+                // Empty runes do not count. Despawn immediately so repeated clicks
+                // or a second player cannot free the same captive twice.
+                Creature* captive = go->FindNearestCreature(objective.credit, 3.0f, true);
+                if (!captive)
+                    return true;
+                captive->DespawnOrUnsummon();
+            }
+            else if (!player->HasItemCount(94905, 1))
+                return true;
+
+            player->KilledMonsterCredit(objective.credit);
+            go->SendCustomAnim(go->GetGoAnimProgress());
+            return true;
+        }
+        return true;
+    }
+};
+
 class go_thunder_isle_altar : public GameObjectScript
 {
     public:
@@ -4670,6 +4732,7 @@ class transport_zandalari_ship : public TransportScript
 
 void AddSC_isle_of_thunder()
 {
+
     new npc_sunreaver_construct();
     new npc_mumta();
     new creature_script<npc_thunder_pterodactyls>("npc_thunder_pterodactyls");
@@ -4764,6 +4827,7 @@ void AddSC_isle_of_thunder()
     new atrigger_script<sat_rune_of_the_storm>("sat_rune_of_the_storm");
     new atrigger_script<sat_wrath_of_the_direhorn>("sat_wrath_of_the_direhorn");
     new atrigger_script<sat_spirital_guide>("sat_spirital_guide");
+    new go_thunder_daily_objective();
     new go_thunder_isle_altar();
     new transport_zandalari_ship();
 }

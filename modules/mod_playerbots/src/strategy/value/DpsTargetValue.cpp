@@ -1,9 +1,11 @@
+#include "AhnQirajStrategy.h"
 #include "DpsTargetValue.h"
 
 #include "PlayerbotAIConfig.h"
 #include "Playerbots.h"
 #include "PlayerbotSpec.h"
 #include "GroupPveCombat.h"
+#include "AttackersValue.h"
 
 namespace
 {
@@ -27,8 +29,14 @@ Unit* GetGroupPveTankFocus(PlayerbotAI* botAI)
         return target && target->IsAlive() && target->GetMap() == bot->GetMap() &&
             bot->IsValidAttackTarget(target) &&
             !target->HasBreakableByDamageCrowdControlAura() &&
-            std::find(attackers.begin(), attackers.end(), target->GetGUID()) !=
-                attackers.end();
+            (std::find(attackers.begin(), attackers.end(), target->GetGUID()) !=
+                attackers.end() ||
+                // The attacker cache requires LOS. Keep the tank's engaged
+                // enemy available so assist can path around an obstruction.
+                (bot->GetDistance(target) <= sPlayerbotAIConfig->sightDistance &&
+                    AttackersValue::IsPossibleTarget(target, bot) &&
+                    botAI->CanLfgAutoQueueEngage(target) &&
+                    GroupPveCombat::IsEngaged(bot, target)));
     };
 
     // Prefer the real player's tank target. If the player is not the tank,
@@ -343,6 +351,8 @@ protected:
 
 Unit* DpsTargetValue::Calculate()
 {
+    if (AhnQirajStrategy::IsActive(bot))
+        return AhnQirajStrategy::BuildPlan(bot).target;
     if (botAI->IsGroupPveActivity())
         if (Unit* opening = GroupPveCombat::OpeningTarget(bot))
             return opening;
@@ -382,6 +392,15 @@ public:
             ObjectGuid guid = group->GetTargetIcon(4);
             if (guid && attacker->GetGUID() == guid)
                 return;
+        }
+
+        if (foundHighPriority)
+            return;
+        if (IsHighPriority(attacker))
+        {
+            result = attacker;
+            foundHighPriority = true;
+            return;
         }
 
         if (!result || result->GetHealth() < attacker->GetHealth())

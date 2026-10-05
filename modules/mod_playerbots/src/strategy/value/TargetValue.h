@@ -52,6 +52,17 @@ protected:
     Unit* FindTarget(FindTargetStrategy* strategy);
 };
 
+// Name-qualified lookup used by the ported raid strategies.
+class FindTargetValue : public UnitCalculatedValue, public Qualified
+{
+public:
+    FindTargetValue(PlayerbotAI* botAI)
+        : UnitCalculatedValue(botAI, "find target") {}
+
+protected:
+    Unit* Calculate() override;
+};
+
 class PullTargetValue : public ManualSetValue<ObjectGuid>
 {
 public:

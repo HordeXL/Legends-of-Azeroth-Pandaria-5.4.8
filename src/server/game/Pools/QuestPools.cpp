@@ -121,6 +121,80 @@ void QuestPoolMgr::LoadFromDB()
         } while (result->NextRow());
     }
 
+    // Quest pools may be children of a mother pool. The Klaxxi rotation uses
+    // this to select one daily quest hub (Zan'vess, Heart of Fear, Terrace of
+    // Gurthan or Lake of Stars), with every quest in the selected child pool
+    // active together. Treating each child as an independent quest pool makes
+    // its max_limit=0 activate no quests at all.
+    {
+        struct MotherPool
+        {
+            std::vector<QuestPool>* storage = nullptr;
+            uint32 numActive = 0;
+            QuestPool::Members members;
+        };
+
+        std::unordered_map<uint32, MotherPool> mothers;
+        std::unordered_set<uint32> childPools;
+        QueryResult result = WorldDatabase.Query(
+            "SELECT pp.pool_id, pp.mother_pool, pt.max_limit "
+            "FROM pool_pool pp "
+            "JOIN pool_template pt ON pt.entry = pp.mother_pool "
+            "ORDER BY pp.mother_pool, pp.pool_id");
+        if (result)
+        {
+            do
+            {
+                Field* fields = result->Fetch();
+                uint32 const childId = fields[0].GetUInt32();
+                uint32 const motherId = fields[1].GetUInt32();
+                auto childItr = lookup.find(childId);
+                if (childItr == lookup.end() || !childItr->second.first)
+                    continue; // An ordinary creature/gameobject child pool.
+
+                std::vector<QuestPool>* storage = childItr->second.first;
+                QuestPool const& child = (*storage)[childItr->second.second];
+                QuestPool::Member member;
+                for (QuestPool::Member const& quests : child.members)
+                    member.insert(member.end(), quests.begin(), quests.end());
+                if (member.empty())
+                    continue;
+
+                MotherPool& mother = mothers[motherId];
+                if (mother.storage && mother.storage != storage)
+                {
+                    TC_LOG_ERROR("sql.sql", "Quest mother pool %u mixes daily, weekly or monthly child pools. Child pool %u skipped.", motherId, childId);
+                    continue;
+                }
+
+                mother.storage = storage;
+                mother.numActive = fields[2].GetUInt32();
+                mother.members.push_back(std::move(member));
+                childPools.insert(childId);
+            } while (result->NextRow());
+        }
+
+        for (auto& [motherId, data] : mothers)
+        {
+            if (!data.storage || data.members.empty())
+                continue;
+
+            data.storage->emplace_back();
+            uint32 const index = data.storage->size() - 1;
+            QuestPool& mother = data.storage->back();
+            mother.poolId = motherId;
+            mother.numActive = data.numActive;
+            mother.members = std::move(data.members);
+            lookup[motherId] = {data.storage, index};
+        }
+
+        // Only the mother participates in saving, regeneration and quest
+        // lookup. The child objects remain harmless storage entries with a
+        // zero limit and are not exposed as independent rotations.
+        for (uint32 childId : childPools)
+            lookup.erase(childId);
+    }
+
     // load saved spawns from character DB
     {
         QueryResult result = CharacterDatabase.Query("SELECT pool_id, quest_id FROM pool_quest_save");

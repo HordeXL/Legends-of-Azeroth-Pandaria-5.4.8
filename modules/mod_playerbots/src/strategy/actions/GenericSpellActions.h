@@ -113,6 +113,8 @@ class CastBuffSpellAction : public CastAuraSpellAction
 public:
     CastBuffSpellAction(PlayerbotAI* botAI, std::string const spell, bool checkIsOwner = false, uint32 beforeDuration = 0);
 
+    bool isUseful() override;
+
     std::string const GetTargetName() override { return "self target"; }
 };
 

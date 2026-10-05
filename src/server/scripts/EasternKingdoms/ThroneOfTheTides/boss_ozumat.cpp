@@ -106,6 +106,14 @@ enum Actions
     ACTION_OZUMAT_DEAD          = 6,
 };
 
+enum OzumatPhases
+{
+    PHASE_OZUMAT_IDLE,
+    PHASE_OZUMAT_DEFENSE,
+    PHASE_OZUMAT_SAPPERS,
+    PHASE_OZUMAT_BOSS,
+};
+
 enum Achievement
 {
     SPELL_KILL_OZUMAT   = 95673,
@@ -163,6 +171,9 @@ class npc_neptulon : public CreatureScript
             npc_neptulonAI(Creature* creature) : ScriptedAI(creature), summons(me)
             {
                 instance = creature->GetInstanceScript();
+                // Neptulon drives the entire Ozumat encounter. Keep his grid active
+                // while players move between the arena entrances and the add waves.
+                me->setActive(true);
                 me->SetReactState(REACT_PASSIVE);
             }
 
@@ -171,6 +182,7 @@ class npc_neptulon : public CreatureScript
             SummonList summons;
             uint32 uiMindLasherCount;
             uint32 uiSapperCount;
+            uint8 phase;
             bool bActive;
             bool b50;
             bool b25;
@@ -184,7 +196,11 @@ class npc_neptulon : public CreatureScript
                 bTidalSurgeSaid = false;
                 uiMindLasherCount = 0;
                 uiSapperCount = 0;
-                me->SetFlag(UNIT_FIELD_NPC_FLAGS, UNIT_NPC_FLAG_GOSSIP);
+                phase = PHASE_OZUMAT_IDLE;
+                if (instance && instance->GetBossState(DATA_OZUMAT) == DONE)
+                    me->RemoveFlag(UNIT_FIELD_NPC_FLAGS, UNIT_NPC_FLAG_GOSSIP);
+                else
+                    me->SetFlag(UNIT_FIELD_NPC_FLAGS, UNIT_NPC_FLAG_GOSSIP);
                 events.Reset();
                 summons.DespawnAll();
                 me->SetHealth(me->GetMaxHealth());
@@ -206,7 +222,13 @@ class npc_neptulon : public CreatureScript
                 }
                 else if (action == ACTION_NEPTULON_START)
                 {
+                    // The area-trigger intro schedules EVENT_INTRO_2, which sets
+                    // bActive to false when it finishes. If the player selected the
+                    // gossip option during those seven seconds, that stale event
+                    // stopped the newly-started encounter before its first wave.
+                    events.Reset();
                     bActive = true;
+                    phase = PHASE_OZUMAT_DEFENSE;
                     Talk(SAY_INTRO_3_1);
                     events.ScheduleEvent(EVENT_INTRO_3_2, 30000);
                     events.ScheduleEvent(EVENT_SUMMON_MURLOC, urand(5000, 8000));
@@ -230,11 +252,17 @@ class npc_neptulon : public CreatureScript
                 summons.Despawn(summon);
                 if (summon->GetEntry() == NPC_VICIOUS_MINDLASHER)
                 {
+                    if (phase != PHASE_OZUMAT_DEFENSE)
+                        return;
+
                     uiMindLasherCount++;
-                    if (uiMindLasherCount > 2)
+                    if (uiMindLasherCount >= 3)
                     {
+                        phase = PHASE_OZUMAT_SAPPERS;
                         Talk(SAY_PHASE_2_2);
                         events.CancelEvent(EVENT_SUMMON_MURLOC);
+                        events.CancelEvent(EVENT_SUMMON_MINDLASHER);
+                        events.CancelEvent(EVENT_SUMMON_BEHEMOTH);
                         events.ScheduleEvent(EVENT_PHASE_2_2, 10000);
                         events.ScheduleEvent(EVENT_SUMMON_SAPPER, 8000);
                         events.ScheduleEvent(EVENT_SUMMON_BEAST, 14000);
@@ -247,13 +275,20 @@ class npc_neptulon : public CreatureScript
                 }
                 else if (summon->GetEntry() == NPC_FACELESS_SAPPER)
                 {
+                    if (phase != PHASE_OZUMAT_SAPPERS)
+                        return;
+
                     uiSapperCount++;
-                    if (uiSapperCount > 2)
+                    if (uiSapperCount >= 3)
                     {
+                        phase = PHASE_OZUMAT_BOSS;
                         Talk(SAY_PHASE_3_2);
                         events.CancelEvent(EVENT_BLIGHT_OF_OZUMAT);
                         events.CancelEvent(EVENT_SUMMON_BEAST);
                         events.CancelEvent(EVENT_SUMMON_MINDLASHER);
+                        events.CancelEvent(EVENT_SUMMON_MURLOC);
+                        events.CancelEvent(EVENT_SUMMON_BEHEMOTH);
+                        events.CancelEvent(EVENT_SUMMON_SAPPER);
                         events.ScheduleEvent(EVENT_PLAYER_CHECK, 1000);
                         DoCastAOE(SPELL_BLIGHT_OF_OZUMAT_SUMMON_2, true);
                         DoCastAOE(SPELL_TIDAL_SURGE);
@@ -345,25 +380,42 @@ class npc_neptulon : public CreatureScript
                             Talk(SAY_PHASE_2_1);
                             break;
                         case EVENT_SUMMON_MINDLASHER:
+                            if (phase != PHASE_OZUMAT_DEFENSE)
+                                break;
+
                             if (Creature* pMindlasher = me->SummonCreature(NPC_VICIOUS_MINDLASHER, spawnPos[urand(0, 1)]))
                             {
+                                pMindlasher->AI()->DoZoneInCombat();
                                 pMindlasher->AddThreat(me, 1.0f);
                                 pMindlasher->AI()->AttackStart(me);
                             }
                             break;
                         case EVENT_SUMMON_BEHEMOTH:
+                            if (phase != PHASE_OZUMAT_DEFENSE)
+                                break;
+
                             if (Creature* pBehemoth = me->SummonCreature(NPC_UNYIELDING_BEHEMOTH, spawnPos[urand(0, 1)]))
                             {
+                                pBehemoth->AI()->DoZoneInCombat();
                                 pBehemoth->AddThreat(me, 1.0f);
                                 pBehemoth->AI()->AttackStart(me);
                             }
                             break;
                         case EVENT_SUMMON_SAPPER:
+                            if (phase != PHASE_OZUMAT_SAPPERS)
+                                break;
+
                             for (uint8 i = 2; i < 5; i++)
                                 if (Creature* pSapper = me->SummonCreature(NPC_FACELESS_SAPPER, spawnPos[i]))
+                                {
+                                    pSapper->AI()->DoZoneInCombat();
                                     pSapper->CastSpell(me, SPELL_ENTANGLING_GRASP, false);
+                                }
                             break;
                         case EVENT_SUMMON_BEAST:
+                            if (phase != PHASE_OZUMAT_SAPPERS)
+                                break;
+
                             if (Creature* pBeast = me->SummonCreature(NPC_BLIGHT_BEAST,
                                 me->GetPositionX(),
                                 me->GetPositionY(),
@@ -374,10 +426,14 @@ class npc_neptulon : public CreatureScript
                             events.ScheduleEvent(EVENT_SUMMON_BEAST, urand(15000, 24000));
                             break;
                         case EVENT_SUMMON_MURLOC:
+                            if (phase != PHASE_OZUMAT_DEFENSE)
+                                break;
+
                             for (uint8 i = 0; i < 5; i++)
                             {
                                 if (Creature* pMurloc = me->SummonCreature(NPC_DEEP_MURLOC_INVADER, spawnPos[urand(0, 1)]))
                                 {
+                                    pMurloc->AI()->DoZoneInCombat();
                                     pMurloc->AddThreat(me, 1.0f);
                                     pMurloc->AI()->AttackStart(me);
                                 }
@@ -385,6 +441,9 @@ class npc_neptulon : public CreatureScript
                             events.ScheduleEvent(EVENT_SUMMON_MURLOC, urand(10000, 17000));
                             break;
                         case EVENT_BLIGHT_OF_OZUMAT:
+                            if (phase != PHASE_OZUMAT_SAPPERS)
+                                break;
+
                             if (Player* target = GetRandomPlayer())
                                 if (Creature* ozumat = ObjectAccessor::GetCreature(*me, instance->GetGuidData(DATA_OZUMAT)))
                                     ozumat->CastSpell(target, SPELL_BLIGHT_OF_OZUMAT_MISSILE, true);

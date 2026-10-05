@@ -1,0 +1,367 @@
+quest	title	status	notes
+10999	One Shot, One Kill	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+11335	Call to Arms: Arathi Basin	version_review	Legacy battleground daily variant; review against 5.4 reward system before restoring.
+11336	Call to Arms: Alterac Valley	version_review	Legacy battleground daily variant; review against 5.4 reward system before restoring.
+11337	Call to Arms: Eye of the Storm	version_review	Legacy battleground daily variant; review against 5.4 reward system before restoring.
+11338	Call to Arms: Warsong Gulch	version_review	Legacy battleground daily variant; review against 5.4 reward system before restoring.
+11339	Call to Arms: Arathi Basin	version_review	Legacy battleground daily variant; review against 5.4 reward system before restoring.
+11340	Call to Arms: Alterac Valley	version_review	Legacy battleground daily variant; review against 5.4 reward system before restoring.
+11341	Call to Arms: Eye of the Storm	version_review	Legacy battleground daily variant; review against 5.4 reward system before restoring.
+11342	Call to Arms: Warsong Gulch	version_review	Legacy battleground daily variant; review against 5.4 reward system before restoring.
+11401	Call the Headless Horseman	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+11402	Clayton's Quest: Extreme!!	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+11404	Call the Headless Horseman	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+11405	Call the Headless Horseman	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+11496	The Sanctum Wards	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+11513	Intercepting the Mana Cells	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+11520	Discovering Your Roots	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+11524	Erratic Behavior	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+11532	Distraction at the Dead Scar	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+11535	Making Ready	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+11539	Taking the Harbor	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+11542	Intercept the Reinforcements	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+11545	A Charitable Donation	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+11691	Summon Ahune	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+12001	zzOLDHunting Tarot: Lesser Beasts	placeholder_or_obsolete	Development/obsolete title; not safe to expose as a playable quest.
+12062	Insult Coren Direbrew	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+13405	Call to Arms: Strand of the Ancients	version_review	Legacy battleground daily variant; review against 5.4 reward system before restoring.
+13407	Call to Arms: Strand of the Ancients	version_review	Legacy battleground daily variant; review against 5.4 reward system before restoring.
+13427	Call to Arms: Alterac Valley	version_review	Legacy battleground daily variant; review against 5.4 reward system before restoring.
+13428	Call to Arms: Alterac Valley	version_review	Legacy battleground daily variant; review against 5.4 reward system before restoring.
+13627	Jack Me Some Lumber	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+13681	A Chip Off the Ulduar Block	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+13692	The Sword and the Sea	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+14163	Call to Arms: Isle of Conquest	version_review	Legacy battleground daily variant; review against 5.4 reward system before restoring.
+14164	Call to Arms: Isle of Conquest	version_review	Legacy battleground daily variant; review against 5.4 reward system before restoring.
+14178	Call to Arms: Arathi Basin	version_review	Legacy battleground daily variant; review against 5.4 reward system before restoring.
+14179	Call to Arms: Eye of the Storm	version_review	Legacy battleground daily variant; review against 5.4 reward system before restoring.
+14180	Call to Arms: Warsong Gulch	version_review	Legacy battleground daily variant; review against 5.4 reward system before restoring.
+14181	Call to Arms: Arathi Basin	version_review	Legacy battleground daily variant; review against 5.4 reward system before restoring.
+14182	Call to Arms: Eye of the Storm	version_review	Legacy battleground daily variant; review against 5.4 reward system before restoring.
+14183	Call to Arms: Warsong Gulch	version_review	Legacy battleground daily variant; review against 5.4 reward system before restoring.
+14488	You've Been Served	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+24216	Call to Arms: Warsong Gulch	version_review	Legacy battleground daily variant; review against 5.4 reward system before restoring.
+24217	Call to Arms: Warsong Gulch	version_review	Legacy battleground daily variant; review against 5.4 reward system before restoring.
+24218	Call to Arms: Warsong Gulch	version_review	Legacy battleground daily variant; review against 5.4 reward system before restoring.
+24219	Call to Arms: Warsong Gulch	version_review	Legacy battleground daily variant; review against 5.4 reward system before restoring.
+24220	Call to Arms: Arathi Basin	version_review	Legacy battleground daily variant; review against 5.4 reward system before restoring.
+24221	Call to Arms: Arathi Basin	version_review	Legacy battleground daily variant; review against 5.4 reward system before restoring.
+24223	Call to Arms: Arathi Basin	version_review	Legacy battleground daily variant; review against 5.4 reward system before restoring.
+24224	Call to Arms: Warsong Gulch	version_review	Legacy battleground daily variant; review against 5.4 reward system before restoring.
+24225	Call to Arms: Warsong Gulch	version_review	Legacy battleground daily variant; review against 5.4 reward system before restoring.
+24226	Call to Arms: Arathi Basin	version_review	Legacy battleground daily variant; review against 5.4 reward system before restoring.
+24426	Call to Arms: Alterac Valley	version_review	Legacy battleground daily variant; review against 5.4 reward system before restoring.
+24427	Call to Arms: Alterac Valley	version_review	Legacy battleground daily variant; review against 5.4 reward system before restoring.
+24661	REUSE ME	placeholder_or_obsolete	Development/obsolete title; not safe to expose as a playable quest.
+26178	Planning for the Future	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+29140	Under the Skylord's Gaze	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+29258	Meteorite Hunt	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+29271	Bound for Warmer Weather	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+29291	Straight Chuting	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+29292	Hawk Fire	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+29294	Animate Embers	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+30153	Full Speed Ahead	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+30190	Sprite Plight	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+30191	Steer Clear of the Beer Here	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+30192	My Town, It's on Fire	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+30193	Meating Expectations	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+30194	Encroaching Storm	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+30195	Blooming Blossoms	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+30196	Lushroom Rush	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+30197	Cart Ride	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+30200	In Ashen Webs	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+30204	That's Not a Rock!	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+30205	Runelocked	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+30206	Runes in the Ruins	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+30225	The Ashweb Matriarch	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+30226	Blood on the Rise	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+30227	Wulon, the Granite Sentinel	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+30228	Troubling the Troublemakers	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+30231	Pomfruit Pickup	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+30232	Ruffling Some Feathers	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+30233	Cracklefang	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+30234	Vicejaw	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+30235	Quid Pro Quo	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+30236	Aetha	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+30237	The Pandaren Uprising Relived	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+30238	Return to Rest	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+30239	Lao-Fe the Slavebinder	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+30244	Along the Serpent's Spine	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+30245	Lost Scouts	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+30246	Upon the Ramparts	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+30247	Roll Club: Vale of Eternal Blossoms	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+30248	The Butcher	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+30249	Under the Setting Sun	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+30250	Survival Ring: Thunder	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+30251	Vyraxxis, the Krik'thik Swarm-Lord	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+30263	Clearing in the Forest	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+30264	Enemy at the Gates	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+30265	Sparkle in the Eye	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+30281	The Silent Approach	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+30282	Burning Away the Filth	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+30283	A Smashing Impression	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+30284	A Thousand Pointy Teeth	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+30285	Wu Kao Scouting Reports	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+30286	Backed Into a Corner	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+30287	Mogu Make Poor House Guests	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+30288	My Town, It's On Fire Again	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+30289	Freeing Mind and Body	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+30290	Stonebound Killers	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+30291	Stunning Display	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+30292	Rude Awakenings	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+30293	In Enemy Hands	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+30294	Small Comforts	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+30296	Gaohun the Soul-Severer	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+30297	Baolai the Immolator	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+30298	Painting the Ruins Red	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+30299	No Stone Unturned	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+30300	The Key to Success	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+30301	Offering a Warm Welcome	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+30302	The Imperion Threat	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+30304	Hard as a Rock	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+30305	He Knows What He's Doing	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+30307	The Eternal Vigil	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+30308	Stone Hard Quilen	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+30309	Set in Stone	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+30310	Thundering Skies	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+30311	High Standards	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+30312	Given a Second Chance	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+30313	The Moving Mists	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+30314	The Displaced Paleblade	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+30316	Longshot	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+30320	Free Spirits	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+30338	A Weighty Task	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+30339	Getting your Hands Dirty	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+30340	Stick in the Mud	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+30341	Under Watchful Eyes	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+30342	Fiery Tongue, Fragile Feet	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+30385	Setting Sun Garrison	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+30442	Blanche's Boomer Brew	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+30444	No Reprieve	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+30481	Carved in Stone	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+30482	The Soul-Gatherer	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+30677	Shuttle Service	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+30965	Herding Cats	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+31131	Whitepetal Lake	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+31136	Behind Our Lines	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+31218	FLAG - Unlocked Tenwu	internal_tracking	Internal tracking title, not an ordinary daily questgiver task; do not add questgiver relations.
+31219	FLAG - Unlocked Nurong	internal_tracking	Internal tracking title, not an ordinary daily questgiver task; do not add questgiver relations.
+31240	Guo-Lai Infestation	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+31242	Mistfall Village	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+31243	Attack on Mistfall Village	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+31244	Guo-Lai Encampment	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+31245	Mistfall Village	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+31246	Attack on Mistfall Village	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+31247	Setting Sun Garrison	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+31248	The Ruins of Guo-Lai	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+31249	Mistfall Village	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+31250	Setting Sun Garrison	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+31273	Relics of the Swarm	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+31289	Research Project: The Pandaren Empire	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+31293	Mogu Make Poor House Guests	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+31294	The Ruins of Guo-Lai	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+31295	Mogu within the Ruins of Guo-Lai	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+31296	The Ruins of Guo-Lai	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+31297	Setting Sun Garrison	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+31376	Attack At The Temple of the Jade Serpent	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+31377	Attack At The Temple of the Jade Serpent	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+31378	Challenge At The Temple of the Red Crane	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+31379	Challenge At The Temple of the Red Crane	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+31380	Trial At The Temple of the White Tiger	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+31381	Trial At The Temple of the White Tiger	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+31382	Defense At Niuzao Temple	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+31383	Defense At Niuzao Temple	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+31466	FLAG - Took Loot	internal_tracking	Internal tracking title, not an ordinary daily questgiver task; do not add questgiver relations.
+31491	The Ten Foot Pole	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+31492	The Torch of Strength	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+31545	The Finer Things	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+31557	The Finer Things	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+31558	The Finer Things	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+31559	The Finer Things	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+31560	The Finer Things	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+31561	The Finer Things	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+31562	The Finer Things	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+31563	The Finer Things	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+31564	The Finer Things	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+31565	The Finer Things	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+31566	The Finer Things	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+31567	The Finer Things	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+31665	FLAG - Vegetron 4000 Converted	internal_tracking	Internal tracking title, not an ordinary daily questgiver task; do not add questgiver relations.
+31754	Cannonfire	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+31755	Acts of Cruelty	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+31756	High Chance of Rain	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+31757	Unleashed Spirits	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+31758	Laosy Scouting	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+31759	[RESCUE GOLDEN LOTUS SQUAD] [GET RID OF THIS?]	placeholder_or_obsolete	Development/obsolete title; not safe to expose as a playable quest.
+31760	Striking First	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+31761	Breaking Their Spirits (Not Yet Implemented)	placeholder_or_obsolete	Development/obsolete title; not safe to expose as a playable quest.
+31762	Crumbling Behemoth	version_review	Golden Lotus content changed in 5.4; validate individual availability before restoring. Blizzard 5.4 Vale announcement confirms removal of much of the old daily system.
+31763	[KILL GIANT SERPENT] [GET RID OF THIS?]	placeholder_or_obsolete	Development/obsolete title; not safe to expose as a playable quest.
+31781	Lindsay	pet_battle_work_required	Trainer/legendary pet battle and objective-credit support requires implementation; adding giver relations alone is insufficient.
+31819	Dagra the Fierce	pet_battle_work_required	Trainer/legendary pet battle and objective-credit support requires implementation; adding giver relations alone is insufficient.
+31850	Eric Davidson	pet_battle_work_required	Trainer/legendary pet battle and objective-credit support requires implementation; adding giver relations alone is insufficient.
+31851	Bill Buckler	pet_battle_work_required	Trainer/legendary pet battle and objective-credit support requires implementation; adding giver relations alone is insufficient.
+31852	Steven Lisbane	pet_battle_work_required	Trainer/legendary pet battle and objective-credit support requires implementation; adding giver relations alone is insufficient.
+31854	Analynn	pet_battle_work_required	Trainer/legendary pet battle and objective-credit support requires implementation; adding giver relations alone is insufficient.
+31862	Zonya the Sadist	pet_battle_work_required	Trainer/legendary pet battle and objective-credit support requires implementation; adding giver relations alone is insufficient.
+31871	Traitor Gluk	pet_battle_work_required	Trainer/legendary pet battle and objective-credit support requires implementation; adding giver relations alone is insufficient.
+31872	Merda Stronghoof	pet_battle_work_required	Trainer/legendary pet battle and objective-credit support requires implementation; adding giver relations alone is insufficient.
+31888	Pet Battle Trainers: Kalimdor	pet_battle_work_required	Trainer/legendary pet battle and objective-credit support requires implementation; adding giver relations alone is insufficient.
+31890	Pet Battle Trainers: Kalimdor	pet_battle_work_required	Trainer/legendary pet battle and objective-credit support requires implementation; adding giver relations alone is insufficient.
+31904	Cassandra Kaboom	pet_battle_work_required	Trainer/legendary pet battle and objective-credit support requires implementation; adding giver relations alone is insufficient.
+31905	Grazzle the Great	pet_battle_work_required	Trainer/legendary pet battle and objective-credit support requires implementation; adding giver relations alone is insufficient.
+31906	Kela Grimtotem	pet_battle_work_required	Trainer/legendary pet battle and objective-credit support requires implementation; adding giver relations alone is insufficient.
+31907	Zoltan	pet_battle_work_required	Trainer/legendary pet battle and objective-credit support requires implementation; adding giver relations alone is insufficient.
+31908	Elena Flutterfly	pet_battle_work_required	Trainer/legendary pet battle and objective-credit support requires implementation; adding giver relations alone is insufficient.
+31910	David Kosse	pet_battle_work_required	Trainer/legendary pet battle and objective-credit support requires implementation; adding giver relations alone is insufficient.
+31911	Deiza Plaguehorn	pet_battle_work_required	Trainer/legendary pet battle and objective-credit support requires implementation; adding giver relations alone is insufficient.
+31912	Kortas Darkhammer	pet_battle_work_required	Trainer/legendary pet battle and objective-credit support requires implementation; adding giver relations alone is insufficient.
+31913	Everessa	pet_battle_work_required	Trainer/legendary pet battle and objective-credit support requires implementation; adding giver relations alone is insufficient.
+31914	Durin Darkhammer	pet_battle_work_required	Trainer/legendary pet battle and objective-credit support requires implementation; adding giver relations alone is insufficient.
+31916	Grand Master Lydia Accoste	pet_battle_work_required	Trainer/legendary pet battle and objective-credit support requires implementation; adding giver relations alone is insufficient.
+31922	Nicki Tinytech	pet_battle_work_required	Trainer/legendary pet battle and objective-credit support requires implementation; adding giver relations alone is insufficient.
+31923	Ras'an	pet_battle_work_required	Trainer/legendary pet battle and objective-credit support requires implementation; adding giver relations alone is insufficient.
+31924	Narrok	pet_battle_work_required	Trainer/legendary pet battle and objective-credit support requires implementation; adding giver relations alone is insufficient.
+31925	Morulu The Elder	pet_battle_work_required	Trainer/legendary pet battle and objective-credit support requires implementation; adding giver relations alone is insufficient.
+31926	Grand Master Antari	pet_battle_work_required	Trainer/legendary pet battle and objective-credit support requires implementation; adding giver relations alone is insufficient.
+31931	Beegle Blastfuse	pet_battle_work_required	Trainer/legendary pet battle and objective-credit support requires implementation; adding giver relations alone is insufficient.
+31932	Nearly Headless Jacob	pet_battle_work_required	Trainer/legendary pet battle and objective-credit support requires implementation; adding giver relations alone is insufficient.
+31933	Okrut Dragonwaste	pet_battle_work_required	Trainer/legendary pet battle and objective-credit support requires implementation; adding giver relations alone is insufficient.
+31934	Gutretch	pet_battle_work_required	Trainer/legendary pet battle and objective-credit support requires implementation; adding giver relations alone is insufficient.
+31935	Grand Master Payne	pet_battle_work_required	Trainer/legendary pet battle and objective-credit support requires implementation; adding giver relations alone is insufficient.
+31954	Grand Master Mo'ruk	pet_battle_work_required	Trainer/legendary pet battle and objective-credit support requires implementation; adding giver relations alone is insufficient.
+31971	Grand Master Obalis	pet_battle_work_required	Trainer/legendary pet battle and objective-credit support requires implementation; adding giver relations alone is insufficient.
+31972	Brok	pet_battle_work_required	Trainer/legendary pet battle and objective-credit support requires implementation; adding giver relations alone is insufficient.
+31973	Bordin Steadyfist	pet_battle_work_required	Trainer/legendary pet battle and objective-credit support requires implementation; adding giver relations alone is insufficient.
+31974	Goz Banefury	pet_battle_work_required	Trainer/legendary pet battle and objective-credit support requires implementation; adding giver relations alone is insufficient.
+32107	Flying Tiger Gourami	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+32116	Priorities, People!	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+32123	Death on Two Legs	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+32129	Defense Daily 06	placeholder_or_obsolete	Development/obsolete title; not safe to expose as a playable quest.
+32130	Good Luck, Have Fun	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+32131	We Require More Minerals!	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+32132	Worker Harassment	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+32133	Sentry Wards	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+32134	Hard Counter	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+32135	Hero Killer	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+32138	Work Order: Lumber	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+32142	We Will Rock You	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+32143	A Kind of Magic	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+32144	Under Pressure	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+32145	Don't Lose Your Head	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+32146	Hammer to Fall	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+32147	Attack Daily 06	placeholder_or_obsolete	Development/obsolete title; not safe to expose as a playable quest.
+32148	Attack! Move!	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+32149	Resource Gathering	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+32150	Supply Block	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+32151	Tower Defense	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+32152	Siege Damage	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+32153	Hero Killer	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+32154	Burn Out!	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+32155	Necessary Breaks	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+32156	It's Only Right	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+32157	The Only Good Goblin...	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+32158	Two Step Program	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+32159	Circle of Life	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+32173	Build Portal 01	placeholder_or_obsolete	Development/obsolete title; not safe to expose as a playable quest.
+32174	Build Portal 01	placeholder_or_obsolete	Development/obsolete title; not safe to expose as a playable quest.
+32181	Beastmaster's Quarry: The Crane	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+32182	Beastmaster's Quarry: The Tiger	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+32183	Beastmaster's Quarry: The Crab	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+32184	Beastmaster's Quarry: The Crane	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+32185	Beastmaster's Quarry: The Tiger	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+32186	Beastmaster's Quarry: The Crab	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+32197	Mystery Meatloaf	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+32199	Krasarang Steampot	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+32205	Gather Scout Reports	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+32210	Kill mogu boss for key, use object behind jumping puzzle	placeholder_or_obsolete	Development/obsolete title; not safe to expose as a playable quest.
+32214	Bilgewater Infiltrators	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+32221	Storming the Beach	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+32229	Kill Roaming Troll War Party	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+32262	Captive Audience	implemented	Existing objects now execute quest-gated interactions; four obsolete blockers removed with approval; in-game test pending.
+32268	Tactical Mana Bombs	implemented	Existing objects now execute quest-gated interactions; four obsolete blockers removed with approval; in-game test pending.
+32275	Surgical Death	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+32286	Kill Mogu Blood-seekers (Roaming pairs, actively fighting scouts, and performing rituals on corpses)	placeholder_or_obsolete	Development/obsolete title; not safe to expose as a playable quest.
+32292	Forge Ahead!	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+32294	Raining Bones	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+32306	Lumber Collection Tracking	internal_tracking	Internal tracking title, not an ordinary daily questgiver task; do not add questgiver relations.
+32433	Undermining the Under Miner	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+32440	Whispering Pandaren Spirit	pet_battle_work_required	Trainer/legendary pet battle and objective-credit support requires implementation; adding giver relations alone is insufficient.
+32446	Dis-Assembly Required	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+32450	The Time Is Now!	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+32451	Send A Message	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+32452	And Then There Were Goblins	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+32492	Destroy Cauldrons	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+32521	Encroaching Force	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+32522	Imposing Threat	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+32523	The Beast Pens	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+32524	The Beating of Troll Drums	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+32561	Competing Magic	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+32563	Encroaching Force	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+32564	Zandalari on the Rise	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+32565	Encroaching Force	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+32567	The Beast Pens	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+32568	No Time To Rest	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+32570	Gather Scout Reports	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+32579	Competing Magic	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+32580	Encroaching Force	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+32581	Imposing Threat	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+32582	Raining Bones	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+32583	Zandalari on the Rise	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+32584	Encroaching Force	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+32585	Encroaching Force	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+32587	Forge Ahead!	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+32604	Beasts of Fable Book I	pet_battle_work_required	Trainer/legendary pet battle and objective-credit support requires implementation; adding giver relations alone is insufficient.
+32628	Tactical Mana Bombs	implemented	Existing objects now execute quest-gated interactions; four obsolete blockers removed with approval; in-game test pending.
+32636	Captive Audience	implemented	Existing objects now execute quest-gated interactions; four obsolete blockers removed with approval; in-game test pending.
+32722	Forge Ahead!	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+32723	reuse me	placeholder_or_obsolete	Development/obsolete title; not safe to expose as a playable quest.
+32724	Forge Ahead!	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+32730	Ihgaluk Crag	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+32826	Re-Use Me	placeholder_or_obsolete	Development/obsolete title; not safe to expose as a playable quest.
+32827	Re-Use Me	placeholder_or_obsolete	Development/obsolete title; not safe to expose as a playable quest.
+32868	Beasts of Fable Book II	pet_battle_work_required	Trainer/legendary pet battle and objective-credit support requires implementation; adding giver relations alone is insufficient.
+32869	Beasts of Fable Book III	pet_battle_work_required	Trainer/legendary pet battle and objective-credit support requires implementation; adding giver relations alone is insufficient.
+32910	reuse me	placeholder_or_obsolete	Development/obsolete title; not safe to expose as a playable quest.
+32949	Tracking Quest: Guru Kukuru	internal_tracking	Internal tracking title, not an ordinary daily questgiver task; do not add questgiver relations.
+32959	Tracking Quest - Daily - Zhu-Gon the Sour/Skunky Beer	internal_tracking	Internal tracking title, not an ordinary daily questgiver task; do not add questgiver relations.
+32961	Scary Ghosts and Nice Sprites - Tracking Quest	internal_tracking	Internal tracking title, not an ordinary daily questgiver task; do not add questgiver relations.
+32962	"""Tom"" Bone Apart - Tracking Quest"	internal_tracking	Internal tracking title, not an ordinary daily questgiver task; do not add questgiver relations.
+32964	Tracking Quest: Ghost Pirate Battle - Completed	internal_tracking	Internal tracking title, not an ordinary daily questgiver task; do not add questgiver relations.
+32965	Tracking Quest: Ghost Pirate Battle - Looted Treasure	internal_tracking	Internal tracking title, not an ordinary daily questgiver task; do not add questgiver relations.
+32966	Tracking Quest - Daily - Chelon	internal_tracking	Internal tracking title, not an ordinary daily questgiver task; do not add questgiver relations.
+32972	Avatar of Flame Transform Tracking Quest	internal_tracking	Internal tracking title, not an ordinary daily questgiver task; do not add questgiver relations.
+32973	Avatar of Flame Kill Tracking Quest	internal_tracking	Internal tracking title, not an ordinary daily questgiver task; do not add questgiver relations.
+33124	Fishing with Fin - Tracking Quest	internal_tracking	Internal tracking title, not an ordinary daily questgiver task; do not add questgiver relations.
+33146	Noodle Time	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+33292	Tracking Quest - Daily - Karkanos	internal_tracking	Internal tracking title, not an ordinary daily questgiver task; do not add questgiver relations.
+33293	Tracking Quest - Daily - Spirit of Jadefire	internal_tracking	Internal tracking title, not an ordinary daily questgiver task; do not add questgiver relations.
+33294	Tracking Quest - Daily - Gu'chi the Swarmbringer	internal_tracking	Internal tracking title, not an ordinary daily questgiver task; do not add questgiver relations.
+33295	Tracking Quest - Daily - Emerald Gander	internal_tracking	Internal tracking title, not an ordinary daily questgiver task; do not add questgiver relations.
+33296	Tracking Quest - Daily - Ironfur Steelhorn	internal_tracking	Internal tracking title, not an ordinary daily questgiver task; do not add questgiver relations.
+33297	Tracking Quest - Daily - Great Turtle Furyshell	internal_tracking	Internal tracking title, not an ordinary daily questgiver task; do not add questgiver relations.
+33298	Tracking Quest - Daily - Leafmender	internal_tracking	Internal tracking title, not an ordinary daily questgiver task; do not add questgiver relations.
+33299	Tracking Quest - Daily - Champion of the Black Flame	internal_tracking	Internal tracking title, not an ordinary daily questgiver task; do not add questgiver relations.
+33300	Tracking Quest - Daily - Garnia	internal_tracking	Internal tracking title, not an ordinary daily questgiver task; do not add questgiver relations.
+33301	Tracking Quest - Daily - Bufo	internal_tracking	Internal tracking title, not an ordinary daily questgiver task; do not add questgiver relations.
+33302	Tracking Quest - Daily - Monstrous Spineclaw	internal_tracking	Internal tracking title, not an ordinary daily questgiver task; do not add questgiver relations.
+33303	Tracking Quest - Daily - Imperial Python	internal_tracking	Internal tracking title, not an ordinary daily questgiver task; do not add questgiver relations.
+33304	Tracking Quest - Daily - Tsavo'ka	internal_tracking	Internal tracking title, not an ordinary daily questgiver task; do not add questgiver relations.
+33305	Tracking Quest - Daily - Stinkbraid	internal_tracking	Internal tracking title, not an ordinary daily questgiver task; do not add questgiver relations.
+33306	Tracking Quest - Daily - Jakur of Ordon	internal_tracking	Internal tracking title, not an ordinary daily questgiver task; do not add questgiver relations.
+33307	Tracking Quest - Daily - Rock Moss	internal_tracking	Internal tracking title, not an ordinary daily questgiver task; do not add questgiver relations.
+33308	Tracking Quest - Daily - Urdur the Cauterizer	internal_tracking	Internal tracking title, not an ordinary daily questgiver task; do not add questgiver relations.
+33309	Tracking Quest - Daily - Flintlord Gairan	internal_tracking	Internal tracking title, not an ordinary daily questgiver task; do not add questgiver relations.
+33310	Tracking Quest - Daily - Cinderfall	internal_tracking	Internal tracking title, not an ordinary daily questgiver task; do not add questgiver relations.
+33311	Tracking Quest - Daily - Huolon	internal_tracking	Internal tracking title, not an ordinary daily questgiver task; do not add questgiver relations.
+33312	Tracking Quest - Daily - Archiereus of Flame	internal_tracking	Internal tracking title, not an ordinary daily questgiver task; do not add questgiver relations.
+33313	Tracking Quest - Daily - Evermaw	internal_tracking	Internal tracking title, not an ordinary daily questgiver task; do not add questgiver relations.
+33314	Tracking Quest - Daily - Dread Ship Vazuvius	internal_tracking	Internal tracking title, not an ordinary daily questgiver task; do not add questgiver relations.
+33315	Tracking Quest - Daily - Golganarr	internal_tracking	Internal tracking title, not an ordinary daily questgiver task; do not add questgiver relations.
+33316	Tracking Quest - Daily - Zesqua	internal_tracking	Internal tracking title, not an ordinary daily questgiver task; do not add questgiver relations.
+33322	Tracking Quest - Daily - Watcher Osu	internal_tracking	Internal tracking title, not an ordinary daily questgiver task; do not add questgiver relations.
+33348	"""Tom"" Bone Apart - Intro Tracking Quest"	internal_tracking	Internal tracking title, not an ordinary daily questgiver task; do not add questgiver relations.
+33358	Noodle Time: Bonus	needs_individual_review	Missing static quest relation is not enough evidence to add one; availability/objective source still needs verification.
+34060	Krasarang RRP - Daily Vignette - Rogue Boss	internal_tracking	Internal tracking title, not an ordinary daily questgiver task; do not add questgiver relations.
+34061	Krasarang RRP - Daily Vignette - Priest Boss	internal_tracking	Internal tracking title, not an ordinary daily questgiver task; do not add questgiver relations.
+34062	Krasarang RRP - Daily Vignette - Warrior Boss	internal_tracking	Internal tracking title, not an ordinary daily questgiver task; do not add questgiver relations.

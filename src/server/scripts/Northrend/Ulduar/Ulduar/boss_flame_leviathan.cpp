@@ -1556,13 +1556,15 @@ class npc_vehicle_ulduar : public CreatureScript
             npc_vehicle_ulduarAI(Creature* creature) : VehicleAI(creature)
             {
                 pInstance = creature->GetInstanceScript();
-                me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE);
             }
 
             void Reset() override
             {
-                if (pInstance->GetData(DATA_SHIELD_DISABLED))
-                    me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE);
+                // The raid must be able to board the salvaged vehicles before
+                // starting Brann's assault.  Playerbots use HandleSpellClick as
+                // well, so keeping the vehicles unselectable here prevents both
+                // players and bots from ever entering them.
+                me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE);
 
                 me->SetVisible(true);
             }

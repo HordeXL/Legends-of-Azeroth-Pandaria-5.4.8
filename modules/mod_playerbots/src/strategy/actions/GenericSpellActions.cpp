@@ -390,6 +390,62 @@ CastBuffSpellAction::CastBuffSpellAction(PlayerbotAI* botAI, std::string const s
     range = botAI->GetRange("spell");
 }
 
+bool CastBuffSpellAction::isUseful()
+{
+    // These raid buffs are cast on self, but must be refreshed for members
+    // who joined late, resurrected, or missed the previous cast.
+    SpellGroup group = SPELL_GROUP_NONE;
+    if (spell == "blessing of kings") group = SpellGroup(1118);
+    else if (spell == "blessing of might") group = SpellGroup(1127);
+    else if (spell == "battle shout" || spell == "horn of winter") group = SpellGroup(1137);
+    else if (spell == "commanding shout") group = SpellGroup(1109);
+
+    if (GetTarget() != bot || !bot->GetGroup() ||
+        (group == SPELL_GROUP_NONE && spell != "dark intent"))
+        return CastAuraSpellAction::isUseful();
+    // A normal class strategy must respect the preparation assignment too.
+    // Otherwise Battle Shout would immediately remove our Commanding Shout.
+    if ((spell == "battle shout" && bot->HasAura(469, bot->GetGUID())) ||
+        (spell == "commanding shout" && bot->HasAura(6673, bot->GetGUID())))
+        return false;
+    if (!CastSpellAction::isUseful())
+        return false;
+
+    uint32 spellId = AI_VALUE2(uint32, "spell id", spell);
+    SpellInfo const* info = sSpellMgr->GetSpellInfo(spellId);
+    if (!info)
+        return false;
+    float radius = 0.0f;
+    for (uint8 i = 0; i < MAX_SPELL_EFFECTS; ++i)
+        if (info->Effects[i].IsEffect())
+            radius = std::max(radius, info->Effects[i].CalcRadius(bot));
+    if (radius <= 0.0f)
+        return CastAuraSpellAction::isUseful();
+
+    for (GroupReference* ref = bot->GetGroup()->GetFirstMember(); ref; ref = ref->next())
+    {
+        Player* member = ref->GetSource();
+        if (!member || !member->IsInWorld() || !member->IsAlive() ||
+            member->GetMap() != bot->GetMap() ||
+            !bot->IsWithinDistInMap(member, radius) || !bot->IsWithinLOSInMap(member))
+            continue;
+
+        bool covered = botAI->HasAura(spell, member);
+        if (!covered && group != SPELL_GROUP_NONE)
+            for (auto const& pair : member->GetAppliedAuras())
+                if (AuraApplication const* application = pair.second)
+                    if (Aura const* aura = application->GetBase())
+                        if (sSpellMgr->IsSpellMemberOfSpellGroup(aura->GetId(), group))
+                        {
+                            covered = true;
+                            break;
+                        }
+        if (!covered)
+            return true;
+    }
+    return false;
+}
+
 Value<Unit*>* CastSpellOnEnemyHealerAction::GetTargetValue()
 {
     return context->GetValue<Unit*>("enemy healer target", spell);

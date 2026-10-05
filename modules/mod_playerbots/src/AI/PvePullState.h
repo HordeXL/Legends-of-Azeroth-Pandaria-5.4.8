@@ -32,7 +32,10 @@ public:
         active = true;
     }
     bool Ready(std::uint32_t now) const { return active && std::uint32_t(now - started) >= 3000u; }
-    Key OpeningTarget(std::uint32_t now) const { return active && !Ready(now) ? focus : Key{}; }
+    Key OpeningTarget(std::uint32_t now, std::uint32_t delay = 3000u) const
+    {
+        return active && std::uint32_t(now - started) < delay ? focus : Key{};
+    }
 private:
     std::vector<Key> enemies;
     Key focus{};

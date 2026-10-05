@@ -58,7 +58,7 @@ public:
     {
         boss_aeonusAI(Creature* creature) : BossAI(creature, TYPE_AEONUS) { }
 
-        void Reset() override { }
+        void Reset() override { events.Reset(); }
 
         void JustEngagedWith(Unit* /*who*/) override
         {
@@ -117,7 +117,7 @@ public:
                     switch (eventId)
                     {
                         case EVENT_SANDBREATH:
-                            DoCastVictim(SPELL_SAND_BREATH);
+                            DoCastVictim(IsHeroic() ? H_SPELL_SAND_BREATH : SPELL_SAND_BREATH);
                             events.ScheduleEvent(EVENT_SANDBREATH, urand(15000, 25000));
                             break;
                         case EVENT_TIMESTOP:

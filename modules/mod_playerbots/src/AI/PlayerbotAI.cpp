@@ -1,4 +1,5 @@
-﻿/*
+﻿#include "AhnQirajStrategy.h"
+/*
 * This file is part of the Legends of Azeroth Pandaria Project. See THANKS file for Copyright information
 *
 * This program is free software; you can redistribute it and/or modify it
@@ -242,6 +243,9 @@ bool PlayerbotAI::IsPvpActivity() const
 
 bool PlayerbotAI::CanLfgAutoQueueEngage(Unit const* target) const
 {
+    if (AhnQirajStrategy::IsActive(bot))
+        return AhnQirajStrategy::AllowsTarget(bot, target);
+
     uint32 requesterGuid = _lfgAutoQueueRequesterGuid.load();
     if (!requesterGuid)
         return true;
@@ -259,6 +263,15 @@ bool PlayerbotAI::CanLfgAutoQueueEngage(Unit const* target) const
         target->GetMap() != bot->GetMap() ||
         target->GetMap() != requester->GetMap())
         return false;
+
+    // Skull and cross assigned by the party leader/assistant form an explicit
+    // kill order. Let managed LFG fillers engage them even before the
+    // requester has generated combat or threat; all regular target, range and
+    // movement checks are still performed by the selecting action.
+    if ((group->GetTargetIcon(7) == target->GetGUID() ||
+         group->GetTargetIcon(6) == target->GetGUID()) &&
+        bot->IsValidAttackTarget(target))
+        return true;
 
     // The old check allowed every hostile target as soon as the requester was
     // in combat. That let a filler chain-pull unrelated packs while the real
@@ -351,6 +364,74 @@ uint32 PlayerbotAI::GetReactDelay()
     // In other cases, return 20-200 times the base
     multiplier = urand(20, 200);
     return base * multiplier;
+}
+
+void PlayerbotAI::AddTimedEvent(std::function<void()> callback, uint32 delayMs)
+{
+    class PlayerbotLambdaEvent final : public BasicEvent
+    {
+    public:
+        explicit PlayerbotLambdaEvent(std::function<void()> cb) : _callback(std::move(cb)) { }
+
+        bool Execute(uint64 /*execTime*/, uint32 /*diff*/) override
+        {
+            _callback();
+            return true;
+        }
+
+    private:
+        std::function<void()> _callback;
+    };
+
+    bot->m_Events.AddEvent(new PlayerbotLambdaEvent(std::move(callback)),
+        bot->m_Events.CalculateTime(delayMs));
+}
+
+std::vector<Item*> PlayerbotAI::GetInventoryItems()
+{
+    std::vector<Item*> items;
+    for (uint8 bagSlot = INVENTORY_SLOT_BAG_START; bagSlot < INVENTORY_SLOT_BAG_END; ++bagSlot)
+        if (Bag* bag = bot->GetBagByPos(bagSlot))
+            for (uint32 slot = 0; slot < bag->GetBagSize(); ++slot)
+                if (Item* item = bag->GetItemByPos(slot))
+                    items.push_back(item);
+
+    for (uint8 slot = INVENTORY_SLOT_ITEM_START; slot < INVENTORY_SLOT_ITEM_END; ++slot)
+        if (Item* item = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot))
+            items.push_back(item);
+
+    return items;
+}
+
+bool PlayerbotAI::HasItemInInventory(uint32 itemId)
+{
+    for (Item* item : GetInventoryItems())
+        if (item && item->GetEntry() == itemId)
+            return true;
+    return false;
+}
+
+void PlayerbotAI::ImbueItem(Item* item, Unit* target)
+{
+    if (!item || !target)
+        return;
+
+    uint32 spellId = 0;
+    for (uint8 i = 0; i < MAX_ITEM_PROTO_SPELLS; ++i)
+        if (item->GetTemplate()->Spells[i].SpellId > 0 &&
+            item->GetTemplate()->Spells[i].SpellTrigger == ITEM_SPELLTRIGGER_ON_USE)
+        {
+            spellId = item->GetTemplate()->Spells[i].SpellId;
+            break;
+        }
+
+    if (!spellId)
+        return;
+
+    WorldPacket packet(CMSG_USE_ITEM);
+    packet << item->GetBagSlot() << item->GetSlot() << uint8(1) << spellId << item->GetGUID()
+           << uint32(0) << uint8(0) << uint32(TARGET_FLAG_UNIT) << target->GetGUID().WriteAsPacked();
+    bot->GetSession()->HandleUseItemOpcode(packet);
 }
 
 void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
@@ -641,7 +722,7 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
     // second. The narrow 2D/vertical limits avoid skipping legitimate paths
     // between different dungeon floors.
     Player* followRecoveryMaster = GetMaster();
-    bool canRecoverFollow = followRecoveryMaster &&
+    bool canRecoverFollow = !AhnQirajStrategy::IsActive(bot) && followRecoveryMaster &&
         !GET_PLAYERBOT_AI(followRecoveryMaster) &&
         followRecoveryMaster->IsInWorld() &&
         followRecoveryMaster->GetMap() == bot->GetMap() &&
@@ -696,6 +777,70 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
     else
         _invalidFollowPositionSince = 0;
 
+
+    // Keep living playerbots close to their real player master.
+    // If normal follow movement leaves the bot more than 140 yards away,
+    // recover directly beside the master. This only applies to the same
+    // map, living real-player follow context.
+    Player* distanceRecoveryMaster = GetMaster();
+    // Encounter positioning (especially C'Thun's separate stomach floor)
+    // must not be undone by generic catch-up teleports to the raid leader.
+    bool tooFarFromMaster = !AhnQirajStrategy::IsActive(bot) && distanceRecoveryMaster &&
+        !GET_PLAYERBOT_AI(distanceRecoveryMaster) &&
+        distanceRecoveryMaster->IsInWorld() &&
+        distanceRecoveryMaster->GetMap() == bot->GetMap() &&
+        bot->IsAlive() &&
+        distanceRecoveryMaster->IsAlive() &&
+        !bot->IsBeingTeleported() &&
+        !distanceRecoveryMaster->IsBeingTeleported() &&
+        !bot->GetVehicle() &&
+        !distanceRecoveryMaster->GetVehicle() &&
+        !bot->GetTransport() &&
+        !distanceRecoveryMaster->GetTransport() &&
+        bot->GetDistance(distanceRecoveryMaster) > 140.0f;
+
+    if (tooFarFromMaster)
+    {
+        float x, y, z;
+        distanceRecoveryMaster->GetClosePoint(
+            x, y, z,
+            bot->GetObjectSize(),
+            1.5f,
+            static_cast<float>(M_PI));
+
+        z += 0.5f;
+
+        float oldDistance = bot->GetDistance(distanceRecoveryMaster);
+
+        bot->GetMotionMaster()->Clear();
+        bot->NearTeleportTo(
+            x, y, z,
+            distanceRecoveryMaster->GetOrientation());
+
+        if (Pet* pet = bot->GetPet())
+        {
+            float petX, petY, petZ;
+            bot->GetClosePoint(
+                petX, petY, petZ,
+                pet->GetObjectSize(),
+                PET_FOLLOW_DIST,
+                pet->GetFollowAngle());
+
+            petZ += 0.5f;
+            pet->GetMotionMaster()->Clear();
+            pet->NearTeleportTo(
+                petX, petY, petZ,
+                bot->GetOrientation());
+        }
+
+        TC_LOG_WARN("server",
+            "Playerbot recovered to real master bot=%s guid=%u distance=%.2f master=%s",
+            bot->GetName().c_str(),
+            bot->GetGUID().GetCounter(),
+            oldDistance,
+            distanceRecoveryMaster->GetName().c_str());
+    }
+
     // Strategy containers belong to this map update thread. The LFG
     // coordinator only posts an atomic request so actions cannot be destroyed
     // while Engine::DoNextAction is using them.
@@ -727,11 +872,11 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
         }
     }
 
-    // Buff maintenance is requested by the world coordinator but executed on
-    // this bot's map thread. Never cast during a pull, teleport, cleanup, or
-    // while any same-map party member is fighting. A later periodic request
-    // retries naturally if the group was busy on this tick.
-    if (_lfgPreparationBuffPending.exchange(false))
+    // Maintain buffs for every bot group, including manually formed parties.
+    // Run on the map thread and retry after combat/teleport/casting has ended.
+    bool groupBuffDue = _groupPreparationBuffTimer <= elapsed;
+    _groupPreparationBuffTimer = groupBuffDue ? 5000 : _groupPreparationBuffTimer - elapsed;
+    if (_lfgPreparationBuffPending.exchange(false) || (groupBuffDue && bot->GetGroup()))
     {
         uint32 requesterGuid = _lfgAutoQueueRequesterGuid.load();
         Player* requester = requesterGuid ?
@@ -745,11 +890,12 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
         if (requester && !requesterGroup)
             requesterGroup = requester->GetGroup();
 
-        bool safe = requester && requester->IsInWorld() &&
-            requester->GetMap() == bot->GetMap() && group &&
-            requesterGroup == group && bot->IsAlive() &&
-            !bot->IsBeingTeleported() && !requester->IsBeingTeleported() &&
-            !bot->IsPlayerbotCleanupPending();
+        bool safe = !IsRealPlayer() && !IsLfgAutoQueueReserved() && group && bot->IsAlive() &&
+            !bot->IsBeingTeleported() && !bot->IsPlayerbotCleanupPending() &&
+            !bot->IsNonMeleeSpellCasted(true) && !bot->HasUnitState(UNIT_STATE_IN_FLIGHT) &&
+            (!requesterGuid || (requester && requester->IsInWorld() &&
+                requester->GetMap() == bot->GetMap() && requesterGroup == group &&
+                !requester->IsBeingTeleported()));
         if (safe)
         {
             for (GroupReference* ref = group->GetFirstMember(); ref;
@@ -772,12 +918,7 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
         // with one normal raid buff from the same request.
         bool cast = safe && CastAutomatedRoleMode(bot);
         if (safe && !cast)
-            cast = CastAutomatedPvpPreparationBuff(bot);
-        if (cast)
-            TC_LOG_INFO("server",
-                "AutoQueue LFG map-thread preparation cast bot=%s guid=%u requester=%u map=%u",
-                bot->GetName().c_str(), bot->GetGUID().GetCounter(),
-                requesterGuid, bot->GetMapId());
+            CastAutomatedPvpPreparationBuff(bot);
     }
 
     // A bot logged in only to fill an LFG request must not wander, grind or
@@ -850,7 +991,7 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
         }
     }
 
-    if (IsGroupPveActivity())
+    if (IsGroupPveActivity() && !AhnQirajStrategy::IsActive(bot))
     {
         Unit* opening = GroupPveCombat::OpeningTarget(bot);
         if (opening && !PlayerBotSpec::IsTank(bot, true) && !PlayerBotSpec::IsHeal(bot, true))
@@ -877,6 +1018,12 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
     // the failure mode where only bots which happened to acquire the boss in
     // the brief opening window ever entered their combat rotation.
     TryWorldBossEngagement();
+
+    if (DoSpecificAction("aq40 encounter", Event(), true))
+    {
+        YieldThread(GetReactDelay());
+        return;
+    }
 
     if (TryGroupPveTankRescue())
     {
@@ -1517,11 +1664,190 @@ void PlayerbotAI::ResetStrategies()
     AiFactory::AddDefaultCombatStrategies(bot, this, _engines[BOT_STATE_COMBAT]);
     AiFactory::AddDefaultNonCombatStrategies(bot, this, _engines[BOT_STATE_NON_COMBAT]);
     AiFactory::AddDefaultDeadStrategies(bot, this, _engines[BOT_STATE_DEAD]);
-    //if (sPlayerbotAIConfig->applyInstanceStrategies)
-        //ApplyInstanceStrategies(bot->GetMapId());
+    if (sPlayerbotAIConfig->applyInstanceStrategies)
+        ApplyInstanceStrategies(bot->GetMapId());
 
     for (uint8 i = 0; i < BOT_STATE_MAX; i++)
         _engines[i]->Init();
+}
+
+void PlayerbotAI::ApplyInstanceStrategies(uint32 mapId, bool tellMaster)
+{
+    static std::vector<std::string> const raidStrategies =
+    {
+        "aq20", "bwl", "gruulslair", "icc", "karazhan", "magtheridon",
+        "moltencore", "naxx", "onyxia", "rs", "uld", "voa", "wotlk-eoe", "wotlk-os"
+    };
+
+    for (std::string const& strategy : raidStrategies)
+    {
+        _engines[BOT_STATE_COMBAT]->removeStrategy(strategy);
+        _engines[BOT_STATE_NON_COMBAT]->removeStrategy(strategy);
+    }
+
+    std::string strategyName;
+    switch (mapId)
+    {
+        case 249: strategyName = "onyxia"; break;
+        case 409: strategyName = "moltencore"; break;
+        case 469: strategyName = "bwl"; break;
+        case 509: strategyName = "aq20"; break;
+        case 532: strategyName = "karazhan"; break;
+        case 533: strategyName = "naxx"; break;
+        case 544: strategyName = "magtheridon"; break;
+        case 565: strategyName = "gruulslair"; break;
+        case 603: strategyName = "uld"; break;
+        case 615: strategyName = "wotlk-os"; break;
+        case 616: strategyName = "wotlk-eoe"; break;
+        case 624: strategyName = "voa"; break;
+        case 631: strategyName = "icc"; break;
+        case 724: strategyName = "rs"; break;
+        default: return;
+    }
+
+    _engines[BOT_STATE_COMBAT]->addStrategy(strategyName);
+    _engines[BOT_STATE_NON_COMBAT]->addStrategy(strategyName);
+
+    if (tellMaster)
+        TellMasterNoFacing("Added " + strategyName + " raid strategy");
+}
+
+bool PlayerbotAI::IsTank(Player* player) const { return PlayerBotSpec::IsTank(player, true); }
+bool PlayerbotAI::IsHeal(Player* player) const { return PlayerBotSpec::IsHeal(player, true); }
+bool PlayerbotAI::IsDps(Player* player) const { return PlayerBotSpec::IsDps(player, true); }
+bool PlayerbotAI::IsRanged(Player* player) const { return PlayerBotSpec::IsRanged(player, true); }
+bool PlayerbotAI::IsRangedDps(Player* player) const { return PlayerBotSpec::IsRangedDps(player, true); }
+bool PlayerbotAI::IsMelee(Player* player) const { return PlayerBotSpec::IsMelee(player, true); }
+bool PlayerbotAI::IsMainTank(Player* player) const { return PlayerBotSpec::IsMainTank(player); }
+bool PlayerbotAI::IsAssistTank(Player* player) const { return PlayerBotSpec::IsAssistTank(player); }
+bool PlayerbotAI::IsAssistTankOfIndex(Player* player, int index) const
+{
+    return PlayerBotSpec::IsAssistTankOfIndex(bot, player, index);
+}
+
+namespace
+{
+template <typename RoleCheck>
+bool IsOrderedRaidRole(Player* player, uint8 wantedIndex, bool livingOnly, RoleCheck roleCheck)
+{
+    Group* group = player ? player->GetGroup() : nullptr;
+    if (!group || !roleCheck(player) || (livingOnly && !player->IsAlive()))
+        return false;
+
+    std::vector<Player*> assistants;
+    std::vector<Player*> members;
+    for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+    {
+        Player* member = ref->GetSource();
+        if (!member || (livingOnly && !member->IsAlive()) || !roleCheck(member))
+            continue;
+        (group->IsAssistant(member->GetGUID()) ? assistants : members).push_back(member);
+    }
+    assistants.insert(assistants.end(), members.begin(), members.end());
+    return wantedIndex < assistants.size() && assistants[wantedIndex] == player;
+}
+}
+
+bool PlayerbotAI::IsAssistHealOfIndex(Player* player, uint8 index, bool livingOnly) const
+{
+    return IsOrderedRaidRole(player, index, livingOnly,
+        [](Player* member) { return PlayerBotSpec::IsHeal(member, true); });
+}
+
+bool PlayerbotAI::IsAssistRangedDpsOfIndex(Player* player, uint8 index, bool livingOnly) const
+{
+    return IsOrderedRaidRole(player, index, livingOnly,
+        [](Player* member) { return PlayerBotSpec::IsRangedDps(member, true); });
+}
+
+int32 PlayerbotAI::GetGroupSlotIndex(Player* player) const
+{
+    Group* group = bot->GetGroup();
+    if (!group)
+        return 0;
+
+    int32 index = 0;
+    for (GroupReference* reference = group->GetFirstMember(); reference; reference = reference->next())
+    {
+        Player* member = reference->GetSource();
+        if (!member)
+            continue;
+        if (member == player)
+            return index;
+        ++index;
+    }
+    return 0;
+}
+
+namespace
+{
+template <typename Predicate>
+int32 GetRoleIndex(Player* player, Predicate predicate)
+{
+    if (!player || !predicate(player))
+        return -1;
+    Group* group = player->GetGroup();
+    if (!group)
+        return -1;
+    int32 index = 0;
+    for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+    {
+        Player* member = ref->GetSource();
+        if (!member || !predicate(member))
+            continue;
+        if (member == player)
+            return index;
+        ++index;
+    }
+    return -1;
+}
+}
+
+int32 PlayerbotAI::GetClassIndex(Player* player, uint8 playerClass) const
+{
+    return GetRoleIndex(player, [playerClass](Player* member) { return member->GetClass() == playerClass; });
+}
+
+int32 PlayerbotAI::GetRangedIndex(Player* player) const
+{
+    return GetRoleIndex(player, [](Player* member) { return PlayerBotSpec::IsRanged(member, true); });
+}
+
+int32 PlayerbotAI::GetRangedDpsIndex(Player* player) const
+{
+    return GetRoleIndex(player, [](Player* member) { return PlayerBotSpec::IsRangedDps(member, true); });
+}
+
+bool PlayerbotAI::CanCastVehicleSpell(uint32 spellId, Unit* target) const
+{
+    Vehicle* vehicle = bot->GetVehicle();
+    Unit* vehicleBase = vehicle ? vehicle->GetBase() : nullptr;
+    SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
+    if (!vehicleBase || !spellInfo)
+        return false;
+
+    Unit* spellTarget = target ? target : vehicleBase;
+    if (Creature* creature = vehicleBase->ToCreature())
+        if (creature->HasSpellCooldown(spellId))
+            return false;
+
+    return vehicleBase == spellTarget || vehicleBase->GetDistance(spellTarget) <= 120.0f;
+}
+
+bool PlayerbotAI::CastVehicleSpell(uint32 spellId, Unit* target)
+{
+    if (!CanCastVehicleSpell(spellId, target))
+        return false;
+
+    Unit* vehicleBase = bot->GetVehicle()->GetBase();
+    vehicleBase->CastSpell(target ? target : vehicleBase, spellId, false);
+    SetNextCheckDelay(sPlayerbotAIConfig->globalCoolDown);
+    return true;
+}
+
+bool PlayerbotAI::EqualLowercaseName(std::string const& first, std::string const& second) const
+{
+    return StringEqualI(first, second);
 }
 
 void PlayerbotAI::ReInitCurrentEngine()
@@ -1825,8 +2151,8 @@ void PlayerbotAI::HandleTeleportAck()
             bot->GetSession()->HandleMoveWorldportAck();
         }
         // SetNextCheckDelay(urand(2000, 5000));
-        //if (sPlayerbotAIConfig->applyInstanceStrategies)
-            //ApplyInstanceStrategies(bot->GetMapId(), true);
+        if (sPlayerbotAIConfig->applyInstanceStrategies)
+            ApplyInstanceStrategies(bot->GetMapId(), true);
         Reset(true);
     }
     SetNextCheckDelay(sPlayerbotAIConfig->globalCoolDown);
@@ -3015,6 +3341,8 @@ bool PlayerbotAI::IsGroupPveTauntAllowed(SpellInfo const* spellInfo, Unit* targe
 {
     if (!bot || !IsGroupPveActivity() || !IsTauntSpell(spellInfo)) return true;
     if (!PlayerBotSpec::IsTank(bot, true)) return false;
+    if (AhnQirajStrategy::IsActive(bot))
+        return target && target->GetEntry() != 15276 && AhnQirajStrategy::AllowsTarget(bot, target);
 
     // Ordos uses an ordered Pool of Fire route owned by one shared raid tank.
     // A standby tank's ordinary "lose aggro" trigger must never undo that
@@ -3032,6 +3360,9 @@ bool PlayerbotAI::IsGroupPveTauntAllowed(SpellInfo const* spellInfo, Unit* targe
 
 bool PlayerbotAI::IsGroupPveOpeningSpellAllowed(SpellInfo const* info, Unit* target)
 {
+    if (target && bot->IsValidAttackTarget(target) && AhnQirajStrategy::IsActive(bot))
+        return AhnQirajStrategy::AllowsTarget(bot, target);
+
     if (!IsGroupPveActivity() || !info || !target || !bot->IsValidAttackTarget(target) ||
         PlayerBotSpec::IsTank(bot, true)) return true;
     // Interrupts/dispel/control are not damage-rotation target changes.
@@ -3044,6 +3375,8 @@ bool PlayerbotAI::IsGroupPveOpeningSpellAllowed(SpellInfo const* info, Unit* tar
 
 bool PlayerbotAI::TryGroupPveTankRescue()
 {
+    // AQ40 assigns tanks by side; generic rescue would taunt across the room.
+    if (AhnQirajStrategy::IsActive(bot)) return false;
     if (!IsGroupPveActivity() || !bot->IsAlive() || !PlayerBotSpec::IsTank(bot, true)) return false;
     Group* group = bot->GetGroup(GroupSlot::Instance);
     if (!group) group = bot->GetGroup();
@@ -4539,6 +4872,10 @@ bool PlayerbotAI::HasAggro(Unit* unit)
 
 bool PlayerbotAI::CanPetEngageTarget(Unit* target)
 {
+    // Melee pets trigger Veklor's Arcane Burst and cannot damage him.
+    if (AhnQirajStrategy::IsActive(bot))
+        return target && target->GetEntry() != 15276 &&
+            AhnQirajStrategy::AllowsTarget(bot, target) && HasEngagedTarget(target);
     if (!IsGroupPveActivity()) return HasEngagedTarget(target);
     Guardian* pet = bot->GetGuardianPet();
     return pet && pet->IsAlive() && bot->IsAlive() && bot->IsInCombat() &&

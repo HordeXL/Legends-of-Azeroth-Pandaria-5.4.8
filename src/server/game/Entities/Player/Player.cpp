@@ -16,6 +16,7 @@
 */
 
 #include "Player.h"
+#include "CustomTransmogrification.h"
 #include "AccountMgr.h"
 #include "AchievementMgr.h"
 #include "Battlefield.h"
@@ -7091,6 +7092,9 @@ float Player::CalculateReputationGain(ReputationSource source, uint32 creatureOr
     if (source != REPUTATION_SOURCE_SPELL && GetsRecruitAFriendBonus(false))
         percent *= 1.0f + sWorld->getRate(RATE_REPUTATION_RECRUIT_A_FRIEND_BONUS);
 
+    if (rep > 0 && GetReputationMgr().HasBonusReputation(faction))
+        percent *= 2.0f;
+
     return CalculatePct(val, percent);
 }
 
@@ -13039,6 +13043,7 @@ Item* Player::_StoreItem(uint16 pos, Item* pItem, uint32 count, bool clone, bool
         AddEnchantmentDurations(pItem);
         AddItemDurations(pItem);
 
+        if (IsInWorld()) sTransmogrification->LearnAppearance(this, pItem->GetEntry());
         return pItem;
     }
     else
@@ -13075,6 +13080,7 @@ Item* Player::_StoreItem(uint16 pos, Item* pItem, uint32 count, bool clone, bool
 
         pItem2->SetState(ITEM_CHANGED, this);
 
+        if (IsInWorld()) sTransmogrification->LearnAppearance(this, pItem2->GetEntry());
         return pItem2;
     }
 }
@@ -13317,6 +13323,7 @@ void Player::VisualizeItem(uint8 slot, Item* pItem)
         SetVisibleItemSlot(slot, pItem);
 
     pItem->SetState(ITEM_CHANGED, this);
+    if (IsInWorld()) sTransmogrification->LearnAppearance(this, pItem->GetEntry());
 }
 
 Item* Player::BankItem(ItemPosCountVec const& dest, Item* pItem, bool update)
@@ -17746,6 +17753,38 @@ void Player::SwapQuestSlot(uint16 slot1, uint16 slot2)
     }
 }
 
+void Player::CreditQuestAreaTriggerObjective(uint32 questId, uint32 objectiveId)
+{
+    Quest const* quest = sObjectMgr->GetQuestTemplate(questId);
+    uint16 slot = FindQuestSlot(questId);
+    QuestStatus status = GetQuestStatus(questId);
+    if (!quest || slot >= MAX_QUEST_LOG_SIZE ||
+        (status != QUEST_STATUS_INCOMPLETE && status != QUEST_STATUS_COMPLETE))
+        return;
+    for (auto const& objective : quest->Objectives)
+        if (objective.ID == objectiveId && objective.Type == QUEST_OBJECTIVE_AREATRIGGER)
+        {
+            if (GetQuestObjectiveCounter(objectiveId) &&
+                (GetQuestSlotState(slot) & (256u << objective.StorageIndex)))
+                return;
+            if (!GetQuestObjectiveCounter(objectiveId))
+            {
+                if (status != QUEST_STATUS_INCOMPLETE)
+                    return;
+                m_questObjectiveStatus[objectiveId] = 1;
+                MarkQuestObjectiveToSave(questId, objectiveId);
+            }
+            // Area trigger progress uses a completion bit, not a kill counter.
+            if (!(GetQuestSlotState(slot) & (256u << objective.StorageIndex)))
+                SendQuestUpdateAddCreditSimple(quest, &objective);
+            if (quest->HasFlag(QUEST_FLAGS_COMPLETION_AREA_TRIGGER))
+                AreaExploredOrEventHappens(questId);
+            if (status == QUEST_STATUS_INCOMPLETE && CanCompleteQuest(questId))
+                CompleteQuest(questId);
+            return;
+        }
+}
+
 void Player::AreaExploredOrEventHappens(uint32 questId)
 {
     if (questId)
@@ -17828,7 +17867,9 @@ void Player::ItemAddedQuestCheck(uint32 entry, uint32 count)
                 if (CanCompleteQuest(questid))
                     CompleteQuest(questid);
 
-                return;
+                // Other active quests can require the same item (for example
+                // AQ40 scarabs and idols). Update each quest's counter.
+                break;
             }
         }
     }
@@ -18072,7 +18113,7 @@ void Player::ReputationChangedQuestCheck(FactionEntry const* factionEntry)
     for (uint8 i = 0; i < MAX_QUEST_LOG_SIZE; ++i)
     {
         uint32 questId = GetQuestSlotQuestId(i);
-        if (questId)
+        if (!questId)
             continue;
 
         Quest const* qInfo = sObjectMgr->GetQuestTemplate(questId);
@@ -18083,7 +18124,10 @@ void Player::ReputationChangedQuestCheck(FactionEntry const* factionEntry)
 
         for (auto const& questObjective : qInfo->Objectives)
         {
-            // I'm not sure what this is needed
+            // A change to another faction must not invalidate a completed quest.
+            if (questObjective.ObjectID != factionEntry->ID)
+                continue;
+
             if (questObjective.Type == QUEST_OBJECTIVE_MIN_REPUTATION)
             {
                 if (questStatus.Status == QUEST_STATUS_INCOMPLETE)
@@ -21106,9 +21150,11 @@ void Player::SaveToDB(bool create /*=false*/)
         stmt->setString(index++, ss.str());
 
         ss.str("");
-        // cache equipment...
+        // Cache committed equipment only; temporary transmog previews must
+        // never leak into the character-selection display on autosave.
         for (uint32 i = 0; i < EQUIPMENT_SLOT_END * 2; ++i)
-            ss << GetUInt32Value(PLAYER_FIELD_VISIBLE_ITEMS + i) << ' ';
+            ss << (i % 2 ? GetUInt32Value(PLAYER_FIELD_VISIBLE_ITEMS + i) :
+                sTransmogrification->GetVisibleEntryForSave(this, i / 2)) << ' ';
 
         // ...and bags for enum opcode
         for (uint32 i = INVENTORY_SLOT_BAG_START; i < INVENTORY_SLOT_BAG_END; ++i)
@@ -21236,9 +21282,11 @@ void Player::SaveToDB(bool create /*=false*/)
         stmt->setString(index++, ss.str());
 
         ss.str("");
-        // cache equipment...
+        // Cache committed equipment only; temporary transmog previews must
+        // never leak into the character-selection display on autosave.
         for (uint32 i = 0; i < EQUIPMENT_SLOT_END * 2; ++i)
-            ss << GetUInt32Value(PLAYER_FIELD_VISIBLE_ITEMS + i) << ' ';
+            ss << (i % 2 ? GetUInt32Value(PLAYER_FIELD_VISIBLE_ITEMS + i) :
+                sTransmogrification->GetVisibleEntryForSave(this, i / 2)) << ' ';
 
         // ...and bags for enum opcode
         for (uint32 i = INVENTORY_SLOT_BAG_START; i < INVENTORY_SLOT_BAG_END; ++i)

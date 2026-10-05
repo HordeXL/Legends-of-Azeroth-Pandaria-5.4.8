@@ -50,6 +50,9 @@ class ReachSpellAction : public ReachTargetAction
 {
 public:
     ReachSpellAction(PlayerbotAI* botAI);
+
+    bool Execute(Event event) override;
+    bool isUseful() override;
 };
 
 class ReachPartyMemberToHealAction : public ReachTargetAction

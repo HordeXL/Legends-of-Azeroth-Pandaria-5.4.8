@@ -86,6 +86,7 @@ class instance_ramparts : public InstanceMapScript
                     case GO_HELLFIRE_SUPLICE_H:
                         if (teamInInstance == ALLIANCE)
                             go->SetRespawnTime(72000);
+                        break;
                     case GO_HELLFIRE_SUPLICE_A:
                         if (teamInInstance == HORDE)
                             go->SetRespawnTime(72000);

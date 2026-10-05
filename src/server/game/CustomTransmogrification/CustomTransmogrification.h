@@ -25,6 +25,7 @@
 #include "ScriptedGossip.h"
 #include "GameEventMgr.h"
 #include <unordered_map>
+#include <mutex>
 
 #define PRESETS // comment this line to disable preset feature totally
 #define MAX_OPTIONS 25 // do not alter
@@ -58,9 +59,38 @@ class Transmogrification
 private:
     Transmogrification();
     ~Transmogrification();
+    std::mutex collectionMutex;
+    std::unordered_map<uint32, std::set<uint32>> collections;
+    void LoadCollection(uint32 account); // collectionMutex must be held
+    struct PreviewItem
+    {
+        ObjectGuid item;
+        uint32 originalEntry;
+        uint32 entry;
+    };
+    struct PreviewSession
+    {
+        ObjectGuid npc;
+        uint32 remaining = 300000;
+        std::map<uint8, PreviewItem> items;
+    };
+    std::mutex previewMutex;
+    std::unordered_map<ObjectGuid, PreviewSession> previews;
 
 public:
     static Transmogrification* instance();
+    void LearnAppearance(Player* player, uint32 entry, bool notify = true);
+    void CollectInventory(Player* player);
+    std::vector<uint32> GetCollection(Player* player);
+    bool HasAppearance(Player* player, uint32 entry);
+    TransmogTrinityStrings TransmogrifyAppearance(Player* player, uint32 entry, uint8 slot);
+    TransmogTrinityStrings PreviewAppearance(Player* player, Creature* npc, uint32 entry, uint8 slot);
+    TransmogTrinityStrings AcceptPreview(Player* player, Creature* npc);
+    void CancelPreview(Player* player);
+    void UpdatePreview(Player* player, uint32 diff);
+    uint32 GetPreviewEntry(Player* player, uint8 slot);
+    bool HasPreview(Player* player);
+    uint32 GetVisibleEntryForSave(Player* player, uint8 slot);
     typedef std::unordered_map<ObjectGuid, ObjectGuid> transmogData;
     typedef std::unordered_map<ObjectGuid, transmogData> transmogMap;
     transmogMap entryMap; // entryMap[pGUID][iGUID] = entry
@@ -148,8 +178,8 @@ public:
     void SetFakeEntry(Player* player, uint32 newEntry, uint8 slot, Item* itemTransmogrified);
 
     TransmogTrinityStrings Transmogrify(Player* player, ObjectGuid itemGUID, uint8 slot, /*uint32 newEntry, */bool no_cost = false);
-    bool CanTransmogrifyItemWithItem(Player* player, ItemTemplate const* destination, ItemTemplate const* source) const;
-    bool SuitableForTransmogrification(Player* player, ItemTemplate const* proto) const;
+    bool CanTransmogrifyItemWithItem(Player* player, ItemTemplate const* destination, ItemTemplate const* source, bool collected = false) const;
+    bool SuitableForTransmogrification(Player* player, ItemTemplate const* proto, bool ignoreQuality = false) const;
     // bool CanBeTransmogrified(Item const* item);
     // bool CanTransmogrify(Item const* item);
     uint32 GetSpecialPrice(ItemTemplate const* proto) const;

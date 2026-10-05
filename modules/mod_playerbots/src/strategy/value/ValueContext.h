@@ -36,6 +36,7 @@
 #include "SpellCastUsefulValue.h"
 #include "SpellIdValue.h"
 #include "TankTargetValue.h"
+#include "TargetValue.h"
 #include "ThreatValues.h"
 #include "PossibleTargetsValue.h"
 #include "RandomBotUpdateValue.h"
@@ -103,6 +104,7 @@ public:
         creators["self target"] = &ValueContext::self_target;
         creators["pet target"] = &ValueContext::pet_target;
         creators["current target"] = &ValueContext::current_target;
+        creators["find target"] = &ValueContext::find_target;
         creators["old target"] = &ValueContext::old_target;
         creators["grind target"] = &ValueContext::grind_target;
         creators["pull target"] = &ValueContext::pull_target;
@@ -215,6 +217,7 @@ private:
     static UntypedValue* self_target(PlayerbotAI* botAI) { return new SelfTargetValue(botAI); }
     static UntypedValue* pet_target(PlayerbotAI* botAI) { return new PetTargetValue(botAI); }
     static UntypedValue* current_target(PlayerbotAI* botAI) { return new CurrentTargetValue(botAI); }
+    static UntypedValue* find_target(PlayerbotAI* botAI) { return new FindTargetValue(botAI); }
     static UntypedValue* possible_triggers(PlayerbotAI* botAI) { return new PossibleTriggersValue(botAI); }
     static UntypedValue* possible_targets(PlayerbotAI* botAI) { return new PossibleTargetsValue(botAI); }
     static UntypedValue* possible_targets_no_los(PlayerbotAI* botAI) { return new PossibleTargetsValue(botAI, "possible targets", sPlayerbotAIConfig->sightDistance, true); }

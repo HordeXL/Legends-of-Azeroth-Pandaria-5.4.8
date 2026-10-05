@@ -772,7 +772,7 @@ void Guild::Member::SaveProfessionsToDB(CharacterDatabaseTransaction trans)
 
     std::ostringstream ss;
     for (auto&& it : m_professions[0].Recipes)
-        ss << it << ' ';
+        ss << uint32(it) << ' ';
 
     stmt->setString(3, ss.str());
     stmt->setUInt16(4, m_professions[1].SkillId);
@@ -781,7 +781,7 @@ void Guild::Member::SaveProfessionsToDB(CharacterDatabaseTransaction trans)
 
     ss.str("");
     for (auto&& it : m_professions[1].Recipes)
-        ss << it << ' ';
+        ss << uint32(it) << ' ';
 
     stmt->setString(7, ss.str());
 

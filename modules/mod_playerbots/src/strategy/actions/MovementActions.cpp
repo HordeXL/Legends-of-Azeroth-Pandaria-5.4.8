@@ -1,4 +1,7 @@
-﻿/*
+#include "AhnQirajStrategy.h"
+#include "CellImpl.h"
+#include "Cell.h"
+/*
  * Copyright (C) 2016+ AzerothCore <www.azerothcore.org>, released under GNU GPL v2 license, you may redistribute it
  * and/or modify it under version 2 of the License, or (at your option), any later version.
  */
@@ -10,6 +13,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <iomanip>
+#include <limits>
 #include <string>
 #include <algorithm>
 
@@ -488,6 +492,77 @@ bool GetPersistentSpellHazard(WorldObject* object, Unit*& caster,
     }
 
     return false;
+}
+
+bool SpellCanDamageUnit(SpellInfo const* spellInfo, uint8 depth = 0)
+{
+    if (!spellInfo)
+        return false;
+
+    for (SpellEffectInfo const& effect : spellInfo->Effects)
+    {
+        switch (effect.Effect)
+        {
+            case SPELL_EFFECT_INSTAKILL:
+            case SPELL_EFFECT_SCHOOL_DAMAGE:
+            case SPELL_EFFECT_ENVIRONMENTAL_DAMAGE:
+            case SPELL_EFFECT_HEALTH_LEECH:
+            case SPELL_EFFECT_POWER_BURN:
+            case SPELL_EFFECT_DAMAGE_FROM_MAX_HEALTH_PCT:
+                return true;
+            default:
+                break;
+        }
+
+        switch (effect.ApplyAuraName)
+        {
+            case SPELL_AURA_PERIODIC_DAMAGE:
+            case SPELL_AURA_PERIODIC_DAMAGE_PERCENT:
+            case SPELL_AURA_PERIODIC_LEECH:
+                return true;
+            default:
+                break;
+        }
+
+        // Many ground emitters carry a harmless-looking controller aura which
+        // periodically fires the actual damage spell.  Follow that short
+        // trigger chain instead of depending solely on the controller's
+        // positivity flag.
+        if (depth < 2 && effect.TriggerSpell &&
+            SpellCanDamageUnit(sSpellMgr->GetSpellInfo(effect.TriggerSpell),
+                depth + 1))
+            return true;
+    }
+
+    return false;
+}
+
+bool IsAvoidableGroundSpell(SpellInfo const* spellInfo)
+{
+    return spellInfo && !sPlayerbotAIConfig->aoeAvoidSpellWhitelist.count(
+        spellInfo->Id) &&
+        (!spellInfo->IsPositive() || SpellCanDamageUnit(spellInfo));
+}
+
+float GetSpellAreaRadius(SpellInfo const* spellInfo, Unit* caster,
+    uint8 depth = 0)
+{
+    if (!spellInfo)
+        return 0.0f;
+
+    float radius = 0.0f;
+    for (SpellEffectInfo const& effect : spellInfo->Effects)
+    {
+        if (!effect.IsEffect())
+            continue;
+
+        radius = std::max(radius, effect.CalcRadius(caster));
+        if (depth < 2 && effect.TriggerSpell)
+            radius = std::max(radius, GetSpellAreaRadius(
+                sSpellMgr->GetSpellInfo(effect.TriggerSpell), caster,
+                depth + 1));
+    }
+    return radius;
 }
 
 void CollectOrdosFireHazards(Player* bot,
@@ -2530,24 +2605,32 @@ void TraceManagedPveMovement(PlayerbotAI* ai, char const* action,
     if (!master || !master->IsInWorld() || master->GetMap() != bot->GetMap() ||
         master->GetVictim())
         return;
-
-    Unit* target = ai->GetAiObjectContext()->GetValue<Unit*>("current target")->Get();
-    TC_LOG_INFO("server",
-        "AutoQueue LFG prepull movement bot=%s guid=%u action=%s motion=%s state=%u combat=%u map=%u from=(%.2f,%.2f,%.2f) to=(%.2f,%.2f,%.2f) master=%s master-pos=(%.2f,%.2f,%.2f) master-combat=%u target=%s target-entry=%u target-guid=%u",
-        bot->GetName().c_str(), bot->GetGUID().GetCounter(), action, motion,
-        uint32(ai->GetState()), bot->IsInCombat() ? 1u : 0u, bot->GetMapId(),
-        bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(), x, y, z,
-        master->GetName().c_str(), master->GetPositionX(), master->GetPositionY(),
-        master->GetPositionZ(), master->IsInCombat() ? 1u : 0u,
-        target ? target->GetName().c_str() : "<none>",
-        target ? target->GetEntry() : 0u,
-        target ? target->GetGUID().GetCounter() : 0u);
 }
 }
 
 MovementAction::MovementAction(PlayerbotAI* botAI, std::string const name) : Action(botAI, name)
 {
     bot = botAI->GetBot();
+}
+
+bool MovementAction::JumpTo(uint32 mapId, float x, float y, float z, MovementPriority priority)
+{
+    if (!IsMovingAllowed(mapId, x, y, z) || IsDuplicateMove(mapId, x, y, z) ||
+        IsWaitingForLastMove(priority))
+        return false;
+
+    float const speed = bot->GetSpeed(MOVE_RUN);
+    bot->GetMotionMaster()->Clear();
+    bot->GetMotionMaster()->MoveJump(x, y, z, speed, speed);
+    SetNextMovementDelay(sPlayerbotAIConfig->globalCoolDown);
+    return true;
+}
+
+void MovementAction::SetNextMovementDelay(float delayMillis)
+{
+    AI_VALUE(LastMovement&, "last movement").Set(bot->GetMapId(), bot->GetPositionX(),
+        bot->GetPositionY(), bot->GetPositionZ(), bot->GetOrientation(), delayMillis,
+        MovementPriority::MOVEMENT_FORCED);
 }
 
 void MovementAction::ClearIdleState()
@@ -2639,6 +2722,23 @@ bool MovementAction::WaitForTankPull(WorldObject* object)
     Group* group = bot->GetGroup(GroupSlot::Instance);
     if (!group)
         group = bot->GetGroup();
+
+    // Ranged auto-attacks and spells need not set the master's melee victim.
+    // Let DPS approach a real master's selected enemy once that master has
+    // actually engaged it. Selection or another party member's threat alone
+    // must not authorize a new pull. Keep tank-led collection behavior intact.
+    Player* master = botAI->GetMaster();
+    PlayerbotAI* masterAI = master ? GET_PLAYERBOT_AI(master) : nullptr;
+    bool masterAttacking = master && group && group->IsMember(master->GetGUID()) &&
+        master->IsInWorld() && master->IsAlive() && master->GetMap() == bot->GetMap() &&
+        (!masterAI || masterAI->IsRealPlayer()) && !PlayerBotSpec::IsTank(master, true) &&
+        target->IsInCombat() &&
+        (master->GetVictim() == target ||
+            (master->GetSelectedUnit() == target && target->CanHaveThreatList() &&
+                target->GetThreatManager().getThreat(master) > 0.0f));
+    if (masterAttacking)
+        return false;
+
     // Defending a ranged party member must not turn into a long chase into
     // the next pack. Let the tank collect it; still allow local self-defence
     // and targets explicitly being attacked by the real requester.
@@ -2817,6 +2917,17 @@ bool MovementAction::MoveTo(WorldObject* target, float distance, MovementPriorit
     float tz = target->GetPositionZ();
 
     float distanceToTarget = bot->GetDistance(target);
+    // Capture objects can be on hills or tower floors. Interpolating their Z
+    // into a short straight step can put the requested point below the hill.
+    // Let the navigation mesh choose the intermediate position instead.
+    if (bot->InBattleground() && target->ToGameObject() && distance <= 4.0f &&
+        !bot->IsFlying() && !bot->IsInWater() && !bot->GetVehicle())
+    {
+        if (distanceToTarget <= distance)
+            return false;
+        return MoveTo(target->GetMapId(), tx, ty, tz, false, false,
+            false, false, priority);
+    }
     float angle = bot->GetAngle(target);
     float needToGo = distanceToTarget - distance;
 
@@ -2859,13 +2970,34 @@ bool MovementAction::MoveTo(uint32 mapId, float x, float y, float z, bool idle, 
     bool generatePath = !bot->IsFlying() && !bot->IsUnderWater() && !bot->IsInWater();
     bool disableMoveSplinePath = sPlayerbotAIConfig->disableMoveSplinePath >= 2 ||
         (sPlayerbotAIConfig->disableMoveSplinePath == 1 && bot->InBattleground());
+    if (bot->InBattleground() && generatePath &&
+        !bot->GetVehicle())
+    {
+        PathGenerator path(bot);
+        if (!path.CalculatePath(x, y, z, false))
+            return false;
+        PathType const type = path.GetPathType();
+        if (!(type & (PATHFIND_NORMAL | PATHFIND_INCOMPLETE)) ||
+            (type & (PATHFIND_NOPATH | PATHFIND_SHORTCUT |
+                PATHFIND_NOT_USING_PATH | PATHFIND_FARFROMPOLY_END)))
+            return false;
+        Movement::PointsArray const& points = path.GetPath();
+        if (points.size() < 2)
+            return false;
+        // Long routes may be partial; only advance to the last reachable
+        // mesh point and continue the objective route on the next update.
+        x = points.back().x;
+        y = points.back().y;
+        z = points.back().z;
+        exact_waypoint = true;
+    }
     if (Vehicle* vehicle = bot->GetVehicle())
     {
         VehicleSeatEntry const* seat = vehicle->GetSeatForPassenger(bot);
         Unit* vehicleBase = vehicle->GetBase();
-        generatePath = vehicleBase->CanFly();
         if (!vehicleBase || !seat || !seat->CanControl())  // is passenger and cant move anyway
             return false;
+        generatePath = !vehicleBase->CanFly();
 
         float distance = vehicleBase->GetExactDist(x, y, z);  // use vehicle distance, not bot
         if (distance > 0.01f)
@@ -3068,6 +3200,39 @@ bool MoveRandomAction::isUseful()
         !bot->HasWorldBossStagingAccess();
 }
 
+bool MoveInsideAction::Execute(Event /*event*/)
+{
+    return MoveInside(bot->GetMapId(), x, y, bot->GetPositionZ(), distance);
+}
+
+bool RotateAroundTheCenterPointAction::Execute(Event /*event*/)
+{
+    uint32 nextPoint = GetCurrWaypoint();
+    if (nextPoint >= waypoints.size())
+        return false;
+    if (!MoveTo(bot->GetMapId(), waypoints[nextPoint].first, waypoints[nextPoint].second,
+        bot->GetPositionZ(), false, false, false, false, MovementPriority::MOVEMENT_COMBAT))
+        return false;
+    ++call_counters;
+    return true;
+}
+
+uint32 RotateAroundTheCenterPointAction::FindNearestWaypoint()
+{
+    uint32 nearest = 0;
+    float nearestDistance = std::numeric_limits<float>::max();
+    for (uint32 i = 0; i < waypoints.size(); ++i)
+    {
+        float distance = bot->GetExactDist2d(waypoints[i].first, waypoints[i].second);
+        if (distance < nearestDistance)
+        {
+            nearestDistance = distance;
+            nearest = i;
+        }
+    }
+    return nearest;
+}
+
 bool MovementAction::IsMovingAllowed(WorldObject* target)
 {
     if (!target)
@@ -3077,7 +3242,7 @@ bool MovementAction::IsMovingAllowed(WorldObject* target)
         return false;
 
     if (Unit* unit = target->ToUnit())
-        if (bot->IsValidAttackTarget(unit) &&
+        if (bot->IsValidAttackTarget(unit) && !bot->InBattleground() &&
             !botAI->CanLfgAutoQueueEngage(unit))
             return false;
 
@@ -3213,6 +3378,13 @@ bool MovementAction::Follow(Unit* target, float distance, float angle)
         return false;
     }
 
+    // Keep the active follow generator and its path. GetChaseTarget only
+    // recognizes CHASE_MOTION_TYPE, so using it here restarted follow on every
+    // AI decision (and could interrupt casting before noticing the duplicate).
+    if (Unit* currentTarget = sServerFacade->GetFollowTarget(bot))
+        if (currentTarget->GetGUID() == target->GetGUID())
+            return false;
+
     bot->HandleEmoteCommand(0);
 
     if (bot->IsSitState())
@@ -3226,13 +3398,6 @@ bool MovementAction::Follow(Unit* target, float distance, float angle)
 
     // AI_VALUE(LastMovement&, "last movement").Set(target);
     ClearIdleState();
-
-    if (bot->GetMotionMaster()->GetCurrentMovementGeneratorType() == FOLLOW_MOTION_TYPE)
-    {
-        Unit* currentTarget = sServerFacade->GetChaseTarget(bot);
-        if (currentTarget && currentTarget->GetGUID() == target->GetGUID())
-            return false;
-    }
 
     if (bot->GetMotionMaster()->GetCurrentMovementGeneratorType() != FOLLOW_MOTION_TYPE)
         bot->GetMotionMaster()->Clear();
@@ -3379,6 +3544,14 @@ bool MovementAction::Move(float angle, float distance)
         return false;
 
     return MoveTo(bot->GetMapId(), x, y, z);
+}
+
+bool MovementAction::MoveInside(uint32 mapId, float x, float y, float z, float distance,
+    MovementPriority priority)
+{
+    if (bot->GetDistance2d(x, y) <= distance)
+        return false;
+    return MoveNear(mapId, x, y, z, distance, priority);
 }
 
 // just calculates average position of group and runs away from that position
@@ -3758,7 +3931,8 @@ Position MovementAction::BestPositionForRangedToFlee(Position pos, float radius)
     return Position();
 }
 
-bool MovementAction::FleePosition(Position pos, float radius, uint32 minInterval)
+bool MovementAction::FleePosition(Position pos, float radius,
+    uint32 minInterval, MovementPriority priority)
 {
     std::list<FleeInfo>& infoList = AI_VALUE(std::list<FleeInfo>&, "recently flee info");
 
@@ -3777,7 +3951,7 @@ bool MovementAction::FleePosition(Position pos, float radius, uint32 minInterval
     if (bestPos != Position())
     {
         if (MoveTo(bot->GetMapId(), bestPos.GetPositionX(), bestPos.GetPositionY(), bestPos.GetPositionZ(), false,
-            false, true, false, MovementPriority::MOVEMENT_COMBAT))
+            false, true, false, priority))
         {
             uint32 curTS = getMSTime();
             while (!infoList.empty())
@@ -3872,6 +4046,7 @@ bool MoveFromGroupAction::Execute(Event event)
 
 bool MoveToManaTideAction::isUseful()
 {
+    if (AhnQirajStrategy::IsActive(bot)) return false;
     // Ordos requires the raid to remain on its fire-safe Magma Crush ring.
     // Restoration shamans place Mana Tide at a scheduled pool-evacuation
     // point instead; no beneficiary may abandon formation to chase it.
@@ -3909,7 +4084,9 @@ bool AvoidAoeAction::FindNearestHazard(Position& position, float& radius) const
     if (!bot || !bot->IsInWorld() || !bot->IsAlive() || !bot->IsInCombat())
         return false;
 
-    constexpr float searchRadius = 16.0f;
+    float const maximumRadius = std::max(2.0f,
+        sPlayerbotAIConfig->maxAoeAvoidRadius);
+    float const searchRadius = maximumRadius + 3.0f;
     std::list<WorldObject*> nearbyObjects;
     Trinity::AllWorldObjectsInRange check(bot, searchRadius);
     Trinity::WorldObjectListSearcher<Trinity::AllWorldObjectsInRange> searcher(
@@ -3917,7 +4094,7 @@ bool AvoidAoeAction::FindNearestHazard(Position& position, float& radius) const
     bot->VisitNearbyObject(searchRadius, searcher);
 
     bool found = false;
-    float nearestDistance = FLT_MAX;
+    float greatestPenetration = -FLT_MAX;
     for (WorldObject* object : nearbyObjects)
     {
         if (!object || !object->IsInWorld())
@@ -3928,27 +4105,65 @@ bool AvoidAoeAction::FindNearestHazard(Position& position, float& radius) const
         float hazardRadius = 0.0f;
 
         if (!GetPersistentSpellHazard(object, caster, spellId, hazardRadius))
+        {
+            // Cataclysm and later encounters also implement pools as passive,
+            // unattackable creature emitters carrying a periodic area aura.
+            // They are not DynamicObjects/AreaTriggers and the old code could
+            // never see them (for example Blight of Ozumat).
+            Creature* emitter = object->ToCreature();
+            if (!emitter ||
+                !emitter->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE) ||
+                !emitter->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE))
+                continue;
+
+            for (auto const& auraPair : emitter->GetAppliedAuras())
+            {
+                AuraApplication const* application = auraPair.second;
+                Aura const* aura = application ? application->GetBase() : nullptr;
+                SpellInfo const* auraInfo = aura ? aura->GetSpellInfo() : nullptr;
+                if (!IsAvoidableGroundSpell(auraInfo))
+                    continue;
+
+                float const auraRadius = GetSpellAreaRadius(auraInfo, emitter);
+                if (auraRadius > hazardRadius)
+                {
+                    caster = emitter;
+                    spellId = auraInfo->Id;
+                    hazardRadius = auraRadius;
+                }
+            }
+
+            if (!spellId)
+                continue;
+        }
+
+        SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
+        if (!IsAvoidableGroundSpell(spellInfo))
             continue;
 
-        // Do not guess about ownerless triggers or run out of friendly ground
-        // effects.  A hazard must have a hostile caster and a non-positive
-        // spell in this 5.4.8 spell store.
-        SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
-        if (!caster || !spellInfo || spellInfo->IsPositive() ||
-            !bot->IsValidAttackTarget(caster))
-            continue;
+        // Never flee a friendly player's healing/utility zone.  Hostile
+        // encounter emitters are often non-attackable, dead, or temporarily
+        // neutral, so IsValidAttackTarget is intentionally not required.
+        if (caster)
+            if (Player* owner = caster->GetCharmerOrOwnerPlayerOrPlayerItself())
+                if (owner->IsFriendlyTo(bot))
+                    continue;
 
         // Some AreaTrigger records do not expose their visual radius.  Use a
         // conservative minimum while clamping malformed data so one bad DBC
         // row cannot make a bot flee across an encounter room.
-        hazardRadius = std::max(2.0f, std::min(hazardRadius, 12.0f));
+        hazardRadius = std::max(2.0f, hazardRadius);
+        if (hazardRadius > maximumRadius)
+            continue;
+
         float distance = bot->GetExactDist2d(object);
-        if (distance > hazardRadius + 0.75f || distance >= nearestDistance)
+        float const penetration = hazardRadius + 0.75f - distance;
+        if (penetration < 0.0f || penetration <= greatestPenetration)
             continue;
 
         position.Relocate(object);
         radius = hazardRadius + 2.0f;
-        nearestDistance = distance;
+        greatestPenetration = penetration;
         found = true;
     }
 
@@ -3969,7 +4184,8 @@ bool AvoidAoeAction::Execute(Event /*event*/)
     if (!FindNearestHazard(position, radius))
         return false;
 
-    return FleePosition(position, radius, 500);
+    return FleePosition(position, radius, 250,
+        MovementPriority::MOVEMENT_HAZARD);
 }
 
 Player* BossMechanicsAction::GetOrdosDesignatedTank(Creature* ordos) const
@@ -4576,6 +4792,128 @@ BossMechanicsAction::Reaction BossMechanicsAction::GetReaction() const
     }
 
     return Reaction::None;
+}
+
+bool AhnQirajEncounterAction::isUseful()
+{
+    return AhnQirajStrategy::IsActive(bot);
+}
+
+bool AhnQirajEncounterAction::Execute(Event /*event*/)
+{
+    if (!AhnQirajStrategy::IsActive(bot)) return false;
+    AhnQirajStrategy::Plan plan = AhnQirajStrategy::BuildPlan(bot);
+    // Blizzard has a persistent floor object. Adjust the encounter slot
+    // itself so ordinary positioning cannot walk back into the same storm.
+    struct Hazard { WorldObject* object; float radius; };
+    std::vector<Hazard> hazards;
+    std::list<WorldObject*> objects;
+    Trinity::AllWorldObjectsInRange check(bot, 60.0f);
+    Trinity::WorldObjectListSearcher<Trinity::AllWorldObjectsInRange> searcher(bot, objects, check);
+    bot->VisitNearbyObject(60.0f, searcher);
+    for (WorldObject* object : objects)
+    {
+        Unit* caster = nullptr;
+        uint32 spell = 0;
+        float radius = 0.0f;
+        if (GetPersistentSpellHazard(object, caster, spell, radius) && spell == 26607)
+            hazards.push_back({object, std::max(8.0f, radius) + 3.0f});
+    }
+    auto safe = [&](float x, float y)
+    {
+        for (Hazard const& hazard : hazards)
+            if (hazard.object->GetExactDist2d(x, y) < hazard.radius) return false;
+        return true;
+    };
+    if (!hazards.empty() && (!safe(plan.destination.GetPositionX(), plan.destination.GetPositionY()) ||
+        !safe(bot->GetPositionX(), bot->GetPositionY())))
+    {
+        float best = FLT_MAX;
+        Position destination = plan.destination;
+        for (float radius : {12.0f, 20.0f, 28.0f})
+            for (unsigned i = 0; i < 16; ++i)
+            {
+                float angle = float(i) * float(M_PI) / 8.0f;
+                float x = plan.destination.GetPositionX() + radius * std::cos(angle);
+                float y = plan.destination.GetPositionY() + radius * std::sin(angle);
+                float distance = bot->GetExactDist2d(x, y);
+                if (!safe(x, y) || distance >= best) continue;
+                Creature* veklor = bot->FindNearestCreature(15276, 100.0f, true);
+                if (veklor && veklor->GetExactDist2d(x, y) < 10.0f) continue;
+                if (veklor && plan.target && plan.target->GetEntry() == 15275 &&
+                    plan.target->GetVictim() == bot && veklor->GetExactDist2d(x, y) < 70.0f)
+                    continue;
+                // A dodge may leave its starting storm, but not cross its
+                // centre or run through a second storm to reach the endpoint.
+                bool routeSafe = true;
+                for (Hazard const& hazard : hazards)
+                    for (unsigned step = 1; step <= 8; ++step)
+                    {
+                        float t = float(step) / 8.0f;
+                        float d = hazard.object->GetExactDist2d(
+                            bot->GetPositionX() + t * (x - bot->GetPositionX()),
+                            bot->GetPositionY() + t * (y - bot->GetPositionY()));
+                        if (d < std::min(hazard.radius, bot->GetExactDist2d(hazard.object)) - 0.1f)
+                            routeSafe = false;
+                    }
+                if (!routeSafe) continue;
+                destination.Relocate(x, y, plan.destination.GetPositionZ());
+                best = distance;
+            }
+        if (best != FLT_MAX)
+        {
+            plan.destination = destination;
+            plan.move = best > 2.0f;
+            plan.emergency = true;
+        }
+    }
+    Unit* current = context->GetValue<Unit*>("current target")->Get();
+    if (current != plan.target)
+    {
+        // Stop casts and pets too: a target update alone leaves the old
+        // emperor under attack after the teleport or an outside target
+        // selected after the bot has been swallowed.
+        Spell* cast = bot->GetCurrentSpell(CURRENT_GENERIC_SPELL);
+        if (!cast) cast = bot->GetCurrentSpell(CURRENT_CHANNELED_SPELL);
+        if (cast && cast->m_targets.GetUnitTarget() &&
+            bot->IsValidAttackTarget(cast->m_targets.GetUnitTarget()))
+            botAI->InterruptSpell();
+        bot->AttackStop();
+        if (Pet* pet = bot->GetPet()) pet->AttackStop();
+        context->GetValue<Unit*>("current target")->Set(plan.target);
+        bot->SetTarget(plan.target ? plan.target->GetGUID() : ObjectGuid::Empty);
+        botAI->ChangeEngine(BOT_STATE_COMBAT);
+    }
+    if (plan.move)
+    {
+        // Ordinary repositioning lets a heal finish; lethal mechanics do not.
+        if (bot->IsNonMeleeSpellCasted(true))
+        {
+            if (!plan.emergency) return false;
+            bot->CastStop();
+            botAI->InterruptSpell();
+        }
+        // A lethal dodge must replace an earlier forced formation move now,
+        // rather than wait for its (up to five-second) movement delay.
+        LastMovement& lastMove = AI_VALUE(LastMovement&, "last movement");
+        if (plan.emergency && lastMove.lastMoveShort.GetExactDist2d(&plan.destination) > 2.0f)
+            lastMove.clear();
+
+        bool moved = MoveTo(bot->GetMapId(), plan.destination.GetPositionX(),
+            plan.destination.GetPositionY(), plan.destination.GetPositionZ(),
+            false, false, false, true, MovementPriority::MOVEMENT_FORCED);
+        // A failed route must not enable a generic chase into the mechanic.
+        return moved || plan.emergency;
+    }
+    // Release a completed forced move so normal healing/casting can resume.
+    LastMovement& movement = AI_VALUE(LastMovement&, "last movement");
+    if (movement.priority == MovementPriority::MOVEMENT_FORCED && bot->isMoving())
+    {
+        bot->GetMotionMaster()->Clear(false);
+        bot->StopMoving();
+        movement.clear();
+    }
+    return false;
 }
 
 bool BossMechanicsAction::isUseful()
@@ -6317,6 +6655,7 @@ bool FleeAction::isUseful()
 
 bool CombatFormationMoveAction::isUseful()
 {
+    if (AhnQirajStrategy::IsActive(bot)) return false;
     if (getMSTime() - moveInterval < lastMoveTimer)
     {
         // MoveTo keeps following its previously assigned destination between
@@ -7140,6 +7479,7 @@ Player* CombatFormationMoveAction::NearestGroupMember(float dis)
 
 bool TankFaceAction::isUseful()
 {
+    if (AhnQirajStrategy::IsActive(bot)) return false;
     if (getMSTime() - moveInterval < lastMoveTimer ||
         !botAI->IsGroupPveActivity() || !bot->IsInCombat() ||
         !PlayerBotSpec::IsTank(bot, true) || !bot->GetGroup() ||
@@ -7443,6 +7783,16 @@ bool BattlegroundObjectiveAction::Execute(Event /*event*/)
             TryBattlegroundMount())
             return true;
     }
+
+    // Finish ongoing node objective travel instead of restarting the spline
+    // whenever the AI's short movement wait expires. Combat still takes over.
+    if ((type == BATTLEGROUND_AV || type == BATTLEGROUND_AB ||
+        type == BATTLEGROUND_BFG) && !bot->IsInCombat() &&
+        bot->getAttackers().empty() &&
+        bot->GetMotionMaster()->GetCurrentMovementGeneratorType() == POINT_MOTION_TYPE &&
+        bot->movespline->Initialized() && !bot->movespline->Finalized() &&
+        AI_VALUE(LastMovement&, "last movement").priority == MovementPriority::MOVEMENT_FORCED)
+        return true;
 
     if (ctf)
     {
@@ -7925,4 +8275,68 @@ bool BattlegroundObjectiveAction::Execute(Event /*event*/)
     float targetZ = (ownZ + enemyZ) * 0.5f;
     return MoveTo(bg->GetMapId(), targetX, targetY, targetZ, false, true,
         false, false, MovementPriority::MOVEMENT_FORCED);
+}
+
+bool MoveAwayFromCreatureAction::Execute(Event /*event*/)
+{
+    std::list<Creature*> hazards;
+    bot->GetCreatureListWithEntryInGrid(hazards, creatureId, range + 30.0f);
+
+    Unit* nearest = nullptr;
+    float nearestDistance = std::numeric_limits<float>::max();
+    for (Creature* hazard : hazards)
+    {
+        if (!hazard || (alive && !hazard->IsAlive()))
+            continue;
+
+        float const distance = bot->GetDistance2d(hazard);
+        if (distance < nearestDistance)
+        {
+            nearest = hazard;
+            nearestDistance = distance;
+        }
+    }
+
+    if (!nearest || nearestDistance >= range)
+        return false;
+
+    return MoveAway(nearest, range + 5.0f);
+}
+
+bool MoveAwayFromCreatureAction::isPossible()
+{
+    return bot->CanFreeMove();
+}
+
+bool MoveAwayFromPlayerWithDebuffAction::Execute(Event /*event*/)
+{
+    Group* group = bot->GetGroup();
+    if (!group)
+        return false;
+
+    Player* nearest = nullptr;
+    float nearestDistance = std::numeric_limits<float>::max();
+    for (GroupReference* reference = group->GetFirstMember(); reference; reference = reference->next())
+    {
+        Player* player = reference->GetSource();
+        if (!player || player == bot || !player->IsAlive() || !player->HasAura(spellId))
+            continue;
+
+        float const distance = bot->GetDistance2d(player);
+        if (distance < nearestDistance)
+        {
+            nearest = player;
+            nearestDistance = distance;
+        }
+    }
+
+    if (!nearest || nearestDistance >= range)
+        return false;
+
+    return MoveAway(nearest, range + 5.0f);
+}
+
+bool MoveAwayFromPlayerWithDebuffAction::isPossible()
+{
+    return bot->CanFreeMove();
 }

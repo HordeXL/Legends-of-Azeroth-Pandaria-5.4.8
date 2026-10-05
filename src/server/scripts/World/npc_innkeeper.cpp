@@ -57,10 +57,10 @@ public:
             player->PrepareQuestMenu(creature->GetGUID());
 
         if (creature->IsVendor())
-            AddGossipItemFor(player, NPC_GOSSIP_MENU, 2, GOSSIP_SENDER_MAIN, GOSSIP_ACTION_TRADE);
+            AddGossipItemFor(player, NPC_GOSSIP_MENU, 1, GOSSIP_SENDER_MAIN, GOSSIP_ACTION_TRADE);
 
         if (creature->IsInnkeeper())
-            AddGossipItemFor(player, NPC_GOSSIP_MENU, 1, GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INN);
+            AddGossipItemFor(player, NPC_GOSSIP_MENU, 0, GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INN);
 
         player->TalkedToCreature(creature->GetEntry(), creature->GetGUID());
         player->SEND_GOSSIP_MENU(player->GetGossipTextId(creature), creature->GetGUID());
@@ -123,4 +123,3 @@ void AddSC_npc_innkeeper()
 {
     new npc_innkeeper();
 }
-

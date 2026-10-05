@@ -1592,6 +1592,25 @@ bool RunAfflictionBotRotation(PlayerbotAI* botAI, Unit* target, AfflictionRotati
     runtime.LastUpdate = now;
     runtime.HauntPendingTimer = runtime.HauntPendingTimer > elapsed ? runtime.HauntPendingTimer - elapsed : 0;
     UpdateRecentDamage(player, runtime, elapsed);
+
+    // Affliction normally opens with several setup globals and its first DoT
+    // tick arrives later still. Use the instant direct-damage filler once to
+    // establish the bot's own combat/threat immediately, then continue with
+    // the normal DoT, Haunt and channel policy.
+    bool const hasOwnDot = target->HasAura(AfflictionAssistant::Agony, player->GetGUID()) ||
+        target->HasAura(AfflictionAssistant::CorruptionAura, player->GetGUID()) ||
+        target->HasAura(AfflictionAssistant::UnstableAffliction, player->GetGUID());
+    bool const hasOwnThreat = target->CanHaveThreatList() &&
+        target->GetThreatManager().getThreat(player) > 0.0f;
+    if (!hasOwnDot && !hasOwnThreat)
+    {
+        bool started = false;
+        PrepareCheckedSpell(player, AfflictionAssistant::FelFlame, target, true,
+            &runtime, botAI, &started);
+        if (started)
+            return true;
+    }
+
     CombatRecommendation const recommendation = SelectAfflictionRecommendation(player, target, runtime, botAI);
     if (!recommendation) return false;
     if (!strcmp(recommendation.Reason, "CHANNELING")) return true;

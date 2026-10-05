@@ -25,13 +25,26 @@ enum eQuests
 {
     QUEST_THE_TORCHES                      = 30787,
     QUEST_ORBISS_FADES                     = 30792,
+    QUEST_THE_MOTIVES_OF_THE_MANTID        = 30921,
     QUEST_FALLEN_SENTINELS                 = 30953,
     QUEST_THE_SEARCH_OF_RESTLESS_LENG      = 31688,
     QUEST_RANGER_RESCUE                    = 30774,
+    QUEST_WHAT_LIES_BENEATH                = 30827,
+    QUEST_HATRED_BECOMES_US                = 30783,
+    QUEST_ARCONISS                         = 30789,
+    QUEST_MISTS_OPPORTUNITY                = 30793,
+    QUEST_BACK_ON_THEIR_FEET               = 30892,
 };
 
 enum eCreatures
 {
+    NPC_TAI_HO_MOTIVES          = 61390,
+    NPC_KRITHIK_BONESLICER      = 61376,
+    NPC_KRITHIK_SCREAMER        = 61377,
+    NPC_MANTID_FIRST_CLUE       = 61400,
+    NPC_MANTID_SECOND_CLUE      = 61401,
+    NPC_MANTID_THIRD_CLUE       = 61402,
+    NPC_MANTID_FOURTH_CLUE      = 61403,
     NPC_WOUNDED_NIUZAO_SENTINEL = 61570,
     NPC_SENTINEL_HEALED_CREDIT  = 61569,
     NPC_SRATHIK_WAR_WAGON       = 61510,
@@ -41,14 +54,201 @@ enum eCreatures
     NPC_SUNA_SILENTSTRIKE       = 60901,
     NPC_MIST_SHAMANS_TORCH      = 60698,
     NPC_SUNA_SILENTSTRIKE_2     = 61055,
+    NPC_YALIA_SAGEWHISPER       = 60864,
+    NPC_TOTEM_OF_KINDNESS       = 60933,
+    NPC_TOTEM_OF_TRANQUILITY    = 60990,
+    NPC_TOTEM_OF_SERENITY       = 60991,
+    NPC_RITUAL_YALIA            = 61015,
+    NPC_RITUAL_SEETHING_HATRED  = 61024,
+    NPC_SPEAK_TO_YALIA_CREDIT   = 65256,
+    NPC_CRAZED_SHADO_PAN_RANGER = 61050,
+    NPC_HATRED_BECOMES_US_SHA   = 61054,
+    NPC_TOTEM_OF_HARMONY        = 61062,
+    NPC_ARCONISS                = 60764,
+    NPC_JAHESH_OF_OSUL          = 60802,
+    NPC_ORBISS_MISTS_EVENT      = 60622,
+    NPC_GOLGOSS_MISTS_EVENT     = 60881,
+    NPC_ARCONISS_MISTS_EVENT    = 60882,
+    NPC_INJURED_GAO_RAN_BLACKGUARD = 61692,
 };
 
 enum eMisc
 {
+    AREA_KRIVESS                           = 6205,
+    SPELL_SUMMON_TAI_HO                    = 119061,
     OBJECTIVE_SIKTHIK_CAGES_SEARCHED       = 268906,
     QUEST_OBJECTIVE_LONGYIN_RANGER_RESCUED = 263418,
     QUEST_OBJECTIVE_FREE_LIN_SILENTSTRIKE  = 263419,
     GO_DRYWOOD_CAGE                        = 211511,
+    OBJECTIVE_SPEAK_TO_YALIA               = 265825,
+    OBJECTIVE_TOTEM_OF_KINDNESS            = 265826,
+    OBJECTIVE_TOTEM_OF_TRANQUILITY         = 265827,
+    OBJECTIVE_TOTEM_OF_SERENITY            = 265828,
+    OBJECTIVE_RITUAL_COMPLETED              = 268776,
+    OBJECTIVE_CRAZED_RANGERS_PURIFIED       = 263553,
+};
+
+// Tai Ho - 61390; companion for The Motives of the Mantid - 30921
+struct npc_tai_ho_motives : public ScriptedAI
+{
+    npc_tai_ho_motives(Creature* creature) : ScriptedAI(creature) { }
+
+    void IsSummonedBy(Unit* summoner) override
+    {
+        if (Player* player = summoner->ToPlayer())
+        {
+            _ownerGuid = player->GetGUID();
+            me->SetReactState(REACT_PASSIVE);
+            me->GetMotionMaster()->MoveFollow(player, PET_FOLLOW_DIST, PET_FOLLOW_ANGLE);
+            Talk(0, player);
+        }
+    }
+
+    void SetGUID(ObjectGuid guid, int32 /*id*/) override
+    {
+        _corpseGuid = guid;
+    }
+
+    void DoAction(int32 /*action*/) override
+    {
+        Player* player = ObjectAccessor::GetPlayer(*me, _ownerGuid);
+        if (!player || player->GetQuestStatus(QUEST_THE_MOTIVES_OF_THE_MANTID) != QUEST_STATUS_INCOMPLETE)
+            return;
+
+        if (Creature* corpse = ObjectAccessor::GetCreature(*me, _corpseGuid))
+            me->SetFacingToObject(corpse);
+        me->HandleEmoteCommand(EMOTE_ONESHOT_KNEEL);
+
+        // Retail did not find a clue on every corpse. Preserve that behavior,
+        // but cap the dry streak so a finite camp population always suffices.
+        if (++_killsSinceClue < 3 && !roll_chance_i(40))
+        {
+            Talk(10, player);
+            return;
+        }
+
+        _killsSinceClue = 0;
+        uint32 clueEntry = 0;
+        uint8 firstTextGroup = 0;
+        if (!player->GetQuestObjectiveCounter(267743))
+        {
+            clueEntry = NPC_MANTID_FIRST_CLUE;
+            firstTextGroup = 1;
+        }
+        else if (!player->GetQuestObjectiveCounter(267744))
+        {
+            clueEntry = NPC_MANTID_SECOND_CLUE;
+            firstTextGroup = 3;
+        }
+        else if (!player->GetQuestObjectiveCounter(267745))
+        {
+            clueEntry = NPC_MANTID_THIRD_CLUE;
+            firstTextGroup = 5;
+        }
+        else if (!player->GetQuestObjectiveCounter(267746))
+        {
+            clueEntry = NPC_MANTID_FOURTH_CLUE;
+            firstTextGroup = 7;
+        }
+
+        if (!clueEntry)
+            return;
+
+        player->KilledMonsterCredit(clueEntry);
+        Talk(firstTextGroup, player);
+
+        ObjectGuid ownerGuid = _ownerGuid;
+        me->m_Events.Schedule(1200, [this, ownerGuid, firstTextGroup]()
+        {
+            if (Player* owner = ObjectAccessor::GetPlayer(*me, ownerGuid))
+                Talk(firstTextGroup + 1, owner);
+        });
+
+        if (clueEntry == NPC_MANTID_FOURTH_CLUE)
+            me->m_Events.Schedule(2400, [this, ownerGuid]()
+            {
+                if (Player* owner = ObjectAccessor::GetPlayer(*me, ownerGuid))
+                    Talk(9, owner);
+            });
+    }
+
+    void UpdateAI(uint32 diff) override
+    {
+        if (_ownerCheckTimer > diff)
+        {
+            _ownerCheckTimer -= diff;
+            return;
+        }
+
+        _ownerCheckTimer = 1000;
+        Player* player = ObjectAccessor::GetPlayer(*me, _ownerGuid);
+        if (!player || player->GetQuestStatus(QUEST_THE_MOTIVES_OF_THE_MANTID) != QUEST_STATUS_INCOMPLETE || player->GetAreaId() != AREA_KRIVESS)
+            me->DespawnOrUnsummon();
+    }
+
+private:
+    ObjectGuid _ownerGuid;
+    ObjectGuid _corpseGuid;
+    uint32 _ownerCheckTimer = 1000;
+    uint8 _killsSinceClue = 0;
+};
+
+class player_motives_of_the_mantid : public PlayerScript
+{
+public:
+    player_motives_of_the_mantid() : PlayerScript("player_motives_of_the_mantid") { }
+
+    void OnQuestAdded(Player* player, Quest const* quest) override
+    {
+        if (quest->GetQuestId() == QUEST_THE_MOTIVES_OF_THE_MANTID)
+            EnsureCompanion(player);
+    }
+
+    void OnUpdateZone(Player* player, uint32 /*newZone*/, uint32 newArea) override
+    {
+        if (newArea == AREA_KRIVESS)
+            EnsureCompanion(player);
+    }
+
+    void OnCreatureKill(Player* killer, Creature* killed) override
+    {
+        if (killer->GetQuestStatus(QUEST_THE_MOTIVES_OF_THE_MANTID) != QUEST_STATUS_INCOMPLETE ||
+            killer->GetAreaId() != AREA_KRIVESS ||
+            (killed->GetEntry() != NPC_KRITHIK_BONESLICER && killed->GetEntry() != NPC_KRITHIK_SCREAMER))
+            return;
+
+        Creature* taiHo = GetCompanion(killer);
+        if (!taiHo)
+        {
+            EnsureCompanion(killer);
+            taiHo = GetCompanion(killer);
+        }
+
+        if (taiHo)
+        {
+            taiHo->AI()->SetGUID(killed->GetGUID());
+            taiHo->AI()->DoAction(0);
+        }
+    }
+
+private:
+    static Creature* GetCompanion(Player* player)
+    {
+        std::list<Creature*> companions;
+        GetCreatureListWithEntryInGrid(companions, player, NPC_TAI_HO_MOTIVES, 120.0f);
+        for (Creature* companion : companions)
+            if (TempSummon* summon = companion->ToTempSummon())
+                if (summon->IsAlive() && summon->GetSummonerGUID() == player->GetGUID())
+                    return summon;
+        return nullptr;
+    }
+
+    static void EnsureCompanion(Player* player)
+    {
+        if (player->IsAlive() && player->GetAreaId() == AREA_KRIVESS &&
+            player->GetQuestStatus(QUEST_THE_MOTIVES_OF_THE_MANTID) == QUEST_STATUS_INCOMPLETE && !GetCompanion(player))
+            player->CastSpell(player, SPELL_SUMMON_TAI_HO, true);
+    }
 };
 
 enum eLithIkSpells
@@ -827,6 +1027,32 @@ class npc_eshelon : public CreatureScript
         }
 };
 
+// Peat Mound - 211515; quest Arconiss (30789)
+class go_arconiss_peat_mound : public GameObjectScript
+{
+public:
+    go_arconiss_peat_mound() : GameObjectScript("go_arconiss_peat_mound") { }
+
+    bool OnGossipHello(Player* player, GameObject* /*go*/) override
+    {
+        if (player->GetQuestStatus(QUEST_ARCONISS) != QUEST_STATUS_INCOMPLETE ||
+            player->GetQuestObjectiveCounter(262034))
+            return true;
+
+        Position spawnPosition = { 1793.68f, 2978.13f, 291.937f, 4.53491f };
+        if (Creature* arconiss = player->SummonCreature(NPC_ARCONISS, spawnPosition,
+            TEMPSUMMON_TIMED_DESPAWN, 60000, 0, player->GetGUID()))
+        {
+            arconiss->SetReactState(REACT_PASSIVE);
+            arconiss->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_IMMUNE_TO_NPC);
+            arconiss->HandleEmoteCommand(EMOTE_ONESHOT_ROAR);
+            player->KilledMonsterCredit(NPC_ARCONISS);
+        }
+
+        return true;
+    }
+};
+
 class go_sikthik_cage : public GameObjectScript
 {
     public:
@@ -862,7 +1088,66 @@ class go_sikthik_cage : public GameObjectScript
         }
 };
 
-// Back on Their Feet quest
+enum BackOnTheirFeetActions
+{
+    ACTION_TREAT_INJURED_BLACKGUARD = 1,
+};
+
+// Injured Gao-Ran Blackguard - 61692; Back on Their Feet - 30892
+struct npc_injured_gao_ran_blackguard : public ScriptedAI
+{
+    npc_injured_gao_ran_blackguard(Creature* creature) : ScriptedAI(creature) { }
+
+    void Reset() override
+    {
+        _treated = false;
+        _bandageCaster.Clear();
+        me->SetReactState(REACT_PASSIVE);
+        me->setRegeneratingHealth(false);
+        me->SetHealth(me->CountPctFromMaxHealth(10));
+        me->SetStandState(UNIT_STAND_STATE_DEAD);
+    }
+
+    void SetGUID(ObjectGuid guid, int32 /*id*/) override
+    {
+        _bandageCaster = guid;
+    }
+
+    void DoAction(int32 action) override
+    {
+        if (action != ACTION_TREAT_INJURED_BLACKGUARD)
+            return;
+
+        Treat(ObjectAccessor::GetPlayer(*me, _bandageCaster));
+    }
+
+    void HealReceived(Unit* healer, uint32& heal) override
+    {
+        if (_treated || !healer || !me->HealthAbovePctHealed(50, heal))
+            return;
+
+        Treat(healer->GetCharmerOrOwnerPlayerOrPlayerItself());
+    }
+
+private:
+    void Treat(Player* player)
+    {
+        if (_treated || !player ||
+            player->GetQuestStatus(QUEST_BACK_ON_THEIR_FEET) != QUEST_STATUS_INCOMPLETE)
+            return;
+
+        _treated = true;
+        player->KilledMonsterCredit(NPC_INJURED_GAO_RAN_BLACKGUARD);
+        me->SetStandState(UNIT_STAND_STATE_STAND);
+        me->HandleEmoteCommand(EMOTE_ONESHOT_SALUTE);
+        me->DespawnOrUnsummon(4000);
+    }
+
+    bool _treated = false;
+    ObjectGuid _bandageCaster;
+};
+
+// Citron-Infused Bandages - 120573; Back on Their Feet - 30892
 class spell_item_cintron_infused_bandage : public SpellScriptLoader
 {
     public:
@@ -879,12 +1164,11 @@ class spell_item_cintron_infused_bandage : public SpellScriptLoader
 
                 if (GetTargetApplication()->GetRemoveMode() == AURA_REMOVE_BY_EXPIRE)
                     if (auto target = GetTarget()->ToCreature())
-                        if (target->GetEntry() == 61692)
+                        if (target->GetEntry() == NPC_INJURED_GAO_RAN_BLACKGUARD)
                             if (auto player = GetCaster()->ToPlayer())
                             {
-                                target->HandleEmoteCommand(EMOTE_STATE_STAND);
-                                target->DespawnOrUnsummon(4000);
-                                player->KilledMonsterCredit(61692);
+                                target->AI()->SetGUID(player->GetGUID());
+                                target->AI()->DoAction(ACTION_TREAT_INJURED_BLACKGUARD);
                             }
             }
 
@@ -949,15 +1233,730 @@ public:
     }
 };
 
+// Quest: What Lies Beneath (30827)
+enum WhatLiesBeneath
+{
+    SPELL_SHA_EMERGE                        = 127653,
+
+    EVENT_RITUAL_PURE_HATE                  = 1,
+    EVENT_RITUAL_CONSUMING_HATE             = 2,
+};
+
+Position const WhatLiesBeneathShaPosition = { 1740.10f, 2346.28f, 377.524f, 5.36966f };
+
+class npc_yalia_what_lies_beneath : public CreatureScript
+{
+public:
+    npc_yalia_what_lies_beneath() : CreatureScript("npc_yalia_what_lies_beneath") { }
+
+    bool OnGossipHello(Player* player, Creature* creature) override
+    {
+        player->PrepareQuestMenu(creature->GetGUID());
+
+        if (player->GetQuestStatus(QUEST_WHAT_LIES_BENEATH) == QUEST_STATUS_INCOMPLETE &&
+            !player->GetQuestObjectiveCounter(OBJECTIVE_SPEAK_TO_YALIA))
+            player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "I am ready. Let us begin the exorcism.",
+                GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
+
+        player->SEND_GOSSIP_MENU(player->GetGossipTextId(creature), creature->GetGUID());
+        return true;
+    }
+
+    bool OnGossipSelect(Player* player, Creature* creature, uint32 sender, uint32 action) override
+    {
+        player->PlayerTalkClass->ClearMenus();
+
+        if (sender == GOSSIP_SENDER_MAIN && action == GOSSIP_ACTION_INFO_DEF + 1 &&
+            player->GetQuestStatus(QUEST_WHAT_LIES_BENEATH) == QUEST_STATUS_INCOMPLETE &&
+            !player->GetQuestObjectiveCounter(OBJECTIVE_SPEAK_TO_YALIA))
+        {
+            player->KilledMonsterCredit(NPC_SPEAK_TO_YALIA_CREDIT);
+            creature->SetFacingToObject(player);
+            creature->HandleEmoteCommand(EMOTE_ONESHOT_BOW);
+        }
+
+        player->CLOSE_GOSSIP_MENU();
+        return true;
+    }
+};
+
+class npc_what_lies_beneath_totem : public CreatureScript
+{
+public:
+    npc_what_lies_beneath_totem() : CreatureScript("npc_what_lies_beneath_totem") { }
+
+    bool OnGossipHello(Player* player, Creature* creature) override
+    {
+        if (player->GetQuestStatus(QUEST_WHAT_LIES_BENEATH) != QUEST_STATUS_INCOMPLETE ||
+            !player->GetQuestObjectiveCounter(OBJECTIVE_SPEAK_TO_YALIA))
+            return true;
+
+        bool canActivate = false;
+        char const* option = "Activate the totem.";
+
+        switch (creature->GetEntry())
+        {
+            case NPC_TOTEM_OF_KINDNESS:
+                canActivate = !player->GetQuestObjectiveCounter(OBJECTIVE_TOTEM_OF_KINDNESS);
+                break;
+            case NPC_TOTEM_OF_TRANQUILITY:
+                canActivate = player->GetQuestObjectiveCounter(OBJECTIVE_TOTEM_OF_KINDNESS) &&
+                    !player->GetQuestObjectiveCounter(OBJECTIVE_TOTEM_OF_TRANQUILITY);
+                break;
+            case NPC_TOTEM_OF_SERENITY:
+                canActivate = player->GetQuestObjectiveCounter(OBJECTIVE_TOTEM_OF_KINDNESS) &&
+                    player->GetQuestObjectiveCounter(OBJECTIVE_TOTEM_OF_TRANQUILITY) &&
+                    !player->GetQuestObjectiveCounter(OBJECTIVE_RITUAL_COMPLETED);
+                if (player->GetQuestObjectiveCounter(OBJECTIVE_TOTEM_OF_SERENITY))
+                    option = "Continue the exorcism.";
+                break;
+            default:
+                break;
+        }
+
+        if (canActivate)
+            player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, option, GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
+
+        player->SEND_GOSSIP_MENU(player->GetGossipTextId(creature), creature->GetGUID());
+        return true;
+    }
+
+    bool OnGossipSelect(Player* player, Creature* creature, uint32 sender, uint32 action) override
+    {
+        player->PlayerTalkClass->ClearMenus();
+
+        if (sender != GOSSIP_SENDER_MAIN || action != GOSSIP_ACTION_INFO_DEF + 1 ||
+            player->GetQuestStatus(QUEST_WHAT_LIES_BENEATH) != QUEST_STATUS_INCOMPLETE ||
+            !player->GetQuestObjectiveCounter(OBJECTIVE_SPEAK_TO_YALIA))
+            return true;
+
+        switch (creature->GetEntry())
+        {
+            case NPC_TOTEM_OF_KINDNESS:
+                if (!player->GetQuestObjectiveCounter(OBJECTIVE_TOTEM_OF_KINDNESS))
+                    player->KilledMonsterCredit(NPC_TOTEM_OF_KINDNESS);
+                break;
+            case NPC_TOTEM_OF_TRANQUILITY:
+                if (player->GetQuestObjectiveCounter(OBJECTIVE_TOTEM_OF_KINDNESS) &&
+                    !player->GetQuestObjectiveCounter(OBJECTIVE_TOTEM_OF_TRANQUILITY))
+                    player->KilledMonsterCredit(NPC_TOTEM_OF_TRANQUILITY);
+                break;
+            case NPC_TOTEM_OF_SERENITY:
+                if (player->GetQuestObjectiveCounter(OBJECTIVE_TOTEM_OF_KINDNESS) &&
+                    player->GetQuestObjectiveCounter(OBJECTIVE_TOTEM_OF_TRANQUILITY) &&
+                    !player->GetQuestObjectiveCounter(OBJECTIVE_RITUAL_COMPLETED))
+                {
+                    if (!player->GetQuestObjectiveCounter(OBJECTIVE_TOTEM_OF_SERENITY))
+                        player->KilledMonsterCredit(NPC_TOTEM_OF_SERENITY);
+
+                    // A player-owned summon keeps simultaneous rituals isolated.
+                    bool hasOwnSha = false;
+                    std::list<Creature*> shaCreatures;
+                    GetCreatureListWithEntryInGrid(shaCreatures, player, NPC_RITUAL_SEETHING_HATRED, 80.0f);
+                    for (Creature* sha : shaCreatures)
+                        if (TempSummon* summon = sha->ToTempSummon())
+                            if (summon->IsAlive() && summon->GetSummonerGUID() == player->GetGUID())
+                            {
+                                hasOwnSha = true;
+                                break;
+                            }
+
+                    if (!hasOwnSha)
+                        player->SummonCreature(NPC_RITUAL_SEETHING_HATRED, WhatLiesBeneathShaPosition,
+                            TEMPSUMMON_TIMED_OR_DEAD_DESPAWN, 120000, 0, player->GetGUID());
+                }
+                break;
+            default:
+                break;
+        }
+
+        creature->HandleEmoteCommand(EMOTE_ONESHOT_SPELL_CAST);
+        player->CLOSE_GOSSIP_MENU();
+        return true;
+    }
+
+    struct npc_what_lies_beneath_totemAI : public ScriptedAI
+    {
+        npc_what_lies_beneath_totemAI(Creature* creature) : ScriptedAI(creature) { }
+    };
+
+    CreatureAI* GetAI(Creature* creature) const override
+    {
+        // Suppress the obsolete SmartAI gossip-credit action bound in the DB.
+        return new npc_what_lies_beneath_totemAI(creature);
+    }
+};
+
+struct npc_what_lies_beneath_sha : public ScriptedAI
+{
+    npc_what_lies_beneath_sha(Creature* creature) : ScriptedAI(creature) { }
+
+    void IsSummonedBy(Unit* summoner) override
+    {
+        Player* player = summoner->ToPlayer();
+        if (!player || player->GetQuestStatus(QUEST_WHAT_LIES_BENEATH) != QUEST_STATUS_INCOMPLETE)
+        {
+            me->DespawnOrUnsummon();
+            return;
+        }
+
+        _ownerGuid = player->GetGUID();
+        me->SetFaction(16);
+        me->SetReactState(REACT_AGGRESSIVE);
+        me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_PC | UNIT_FLAG_NON_ATTACKABLE);
+        DoCast(me, SPELL_SHA_EMERGE, true);
+        AttackStart(player);
+    }
+
+    void JustEngagedWith(Unit* /*who*/) override
+    {
+        _events.ScheduleEvent(EVENT_RITUAL_PURE_HATE, urand(3500, 7000));
+        _events.ScheduleEvent(EVENT_RITUAL_CONSUMING_HATE, 10000);
+    }
+
+    void JustDied(Unit* /*killer*/) override
+    {
+        if (Player* owner = ObjectAccessor::GetPlayer(*me, _ownerGuid))
+            if (owner->GetQuestStatus(QUEST_WHAT_LIES_BENEATH) == QUEST_STATUS_INCOMPLETE &&
+                !owner->GetQuestObjectiveCounter(OBJECTIVE_RITUAL_COMPLETED))
+                owner->KilledMonsterCredit(NPC_RITUAL_YALIA);
+    }
+
+    void UpdateAI(uint32 diff) override
+    {
+        if (!UpdateVictim())
+            return;
+
+        _events.Update(diff);
+        while (uint32 eventId = _events.ExecuteEvent())
+        {
+            switch (eventId)
+            {
+                case EVENT_RITUAL_PURE_HATE:
+                    DoCastVictim(SPELL_PURE_HATE);
+                    _events.ScheduleEvent(EVENT_RITUAL_PURE_HATE, urand(8500, 15000));
+                    break;
+                case EVENT_RITUAL_CONSUMING_HATE:
+                    DoCastVictim(SPELL_CONSUMING_HATE);
+                    _events.ScheduleEvent(EVENT_RITUAL_CONSUMING_HATE, urand(12000, 19000));
+                    break;
+                default:
+                    break;
+            }
+        }
+
+        DoMeleeAttackIfReady();
+    }
+
+private:
+    EventMap _events;
+    ObjectGuid _ownerGuid;
+};
+
+// Quest: Mists' Opportunity (30793)
+enum MistsOpportunity
+{
+    SPELL_JAHESH_BASTION_OF_POWER           = 117809,
+    SPELL_JAHESH_CHAIN_LIGHTNING             = 79913,
+    SPELL_JAHESH_BEAM_SHIELD                 = 117820,
+    SPELL_MISTLURKER_COSMETIC_DEATH          = 117940,
+
+    EVENT_MISTS_CHAIN_LIGHTNING              = 1,
+    EVENT_MISTS_ENOUGH_TORCHES               = 2,
+    EVENT_MISTS_ELEMENTS_SHIELD              = 3,
+    EVENT_MISTS_KILL_GOLGOSS                 = 4,
+    EVENT_MISTS_KILL_ARCONISS                = 5,
+    EVENT_MISTS_FIND_ORBISS                  = 6,
+    EVENT_MISTS_SEE_ORBISS                   = 7,
+    EVENT_MISTS_STRIKE_ORBISS                = 8,
+    EVENT_MISTS_ORBISS_WILL_1                = 9,
+    EVENT_MISTS_ORBISS_WILL_2                = 10,
+    EVENT_MISTS_ORBISS_WILL_3                = 11,
+    EVENT_MISTS_BREAK_SHIELD                 = 12,
+};
+
+Position const MistsOpportunityGolgossPosition = { 1773.47f, 2688.56f, 304.30f, 5.65f };
+Position const MistsOpportunityArconissPosition = { 1770.70f, 2690.94f, 304.38f, 5.65f };
+
+struct npc_jahesh_mists_opportunity : public ScriptedAI
+{
+    npc_jahesh_mists_opportunity(Creature* creature) : ScriptedAI(creature), _summons(me) { }
+
+    void Reset() override
+    {
+        _events.Reset();
+        _summons.DespawnAll();
+        _playerGuid.Clear();
+        _orbissGuid.Clear();
+        _golgossGuid.Clear();
+        _arconissGuid.Clear();
+        _bastionPhase = false;
+        _bastionBroken = false;
+        me->RemoveAurasDueToSpell(SPELL_JAHESH_BASTION_OF_POWER);
+        me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE);
+        me->SetReactState(REACT_AGGRESSIVE);
+    }
+
+    void JustEngagedWith(Unit* who) override
+    {
+        Player* player = who->GetCharmerOrOwnerPlayerOrPlayerItself();
+        if (player && player->GetQuestStatus(QUEST_MISTS_OPPORTUNITY) == QUEST_STATUS_INCOMPLETE)
+        {
+            _playerGuid = player->GetGUID();
+            Talk(0, player);
+            SummonMistlurkers();
+        }
+
+        _events.ScheduleEvent(EVENT_MISTS_CHAIN_LIGHTNING, urand(9000, 13000));
+    }
+
+    void JustSummoned(Creature* summon) override
+    {
+        _summons.Summon(summon);
+        summon->SetReactState(REACT_AGGRESSIVE);
+        summon->AI()->AttackStart(me);
+
+        if (summon->GetEntry() == NPC_GOLGOSS_MISTS_EVENT)
+            _golgossGuid = summon->GetGUID();
+        else if (summon->GetEntry() == NPC_ARCONISS_MISTS_EVENT)
+            _arconissGuid = summon->GetGUID();
+    }
+
+    void DamageTaken(Unit* /*attacker*/, uint32& damage) override
+    {
+        if (_bastionPhase)
+        {
+            damage = 0;
+            return;
+        }
+
+        if (!_bastionBroken && !_playerGuid.IsEmpty() && me->HealthBelowPctDamaged(40, damage))
+        {
+            damage = 0;
+            StartBastionPhase();
+        }
+    }
+
+    void UpdateAI(uint32 diff) override
+    {
+        _events.Update(diff);
+        while (uint32 eventId = _events.ExecuteEvent())
+        {
+            switch (eventId)
+            {
+                case EVENT_MISTS_CHAIN_LIGHTNING:
+                    if (!_bastionPhase && me->GetVictim())
+                        DoCastVictim(SPELL_JAHESH_CHAIN_LIGHTNING);
+                    _events.ScheduleEvent(EVENT_MISTS_CHAIN_LIGHTNING, urand(19000, 22000));
+                    break;
+                case EVENT_MISTS_ENOUGH_TORCHES:
+                    Talk(2);
+                    break;
+                case EVENT_MISTS_ELEMENTS_SHIELD:
+                    Talk(3);
+                    break;
+                case EVENT_MISTS_KILL_GOLGOSS:
+                    Talk(4);
+                    KillMistlurker(_golgossGuid, 0);
+                    break;
+                case EVENT_MISTS_KILL_ARCONISS:
+                    Talk(5);
+                    KillMistlurker(_arconissGuid, 0);
+                    break;
+                case EVENT_MISTS_FIND_ORBISS:
+                    Talk(6);
+                    break;
+                case EVENT_MISTS_SEE_ORBISS:
+                    Talk(7);
+                    break;
+                case EVENT_MISTS_STRIKE_ORBISS:
+                    Talk(8);
+                    if (Creature* orbiss = ObjectAccessor::GetCreature(*me, _orbissGuid))
+                        DoCast(orbiss, SPELL_JAHESH_CHAIN_LIGHTNING, true);
+                    break;
+                case EVENT_MISTS_ORBISS_WILL_1:
+                    if (Creature* orbiss = ObjectAccessor::GetCreature(*me, _orbissGuid))
+                        orbiss->AI()->Talk(0);
+                    break;
+                case EVENT_MISTS_ORBISS_WILL_2:
+                    if (Creature* orbiss = ObjectAccessor::GetCreature(*me, _orbissGuid))
+                        orbiss->AI()->Talk(1);
+                    break;
+                case EVENT_MISTS_ORBISS_WILL_3:
+                    if (Creature* orbiss = ObjectAccessor::GetCreature(*me, _orbissGuid))
+                    {
+                        orbiss->AI()->Talk(2);
+                        orbiss->CastSpell(me, SPELL_JAHESH_BEAM_SHIELD, true);
+                    }
+                    break;
+                case EVENT_MISTS_BREAK_SHIELD:
+                    BreakBastion();
+                    break;
+                default:
+                    break;
+            }
+        }
+
+        if (_bastionPhase || !UpdateVictim())
+            return;
+
+        DoMeleeAttackIfReady();
+    }
+
+private:
+    void SummonMistlurkers()
+    {
+        if (Creature* orbiss = GetClosestCreatureWithEntry(me, NPC_ORBISS_MISTS_EVENT, 60.0f, true))
+        {
+            _orbissGuid = orbiss->GetGUID();
+            orbiss->SetReactState(REACT_DEFENSIVE);
+            orbiss->AI()->AttackStart(me);
+        }
+
+        me->SummonCreature(NPC_GOLGOSS_MISTS_EVENT, MistsOpportunityGolgossPosition,
+            TEMPSUMMON_CORPSE_TIMED_DESPAWN, 30000);
+        me->SummonCreature(NPC_ARCONISS_MISTS_EVENT, MistsOpportunityArconissPosition,
+            TEMPSUMMON_CORPSE_TIMED_DESPAWN, 30000);
+    }
+
+    void StartBastionPhase()
+    {
+        _bastionPhase = true;
+        me->AttackStop();
+        me->SetReactState(REACT_PASSIVE);
+        DoCast(me, SPELL_JAHESH_BASTION_OF_POWER, true);
+        Talk(1);
+
+        _events.ScheduleEvent(EVENT_MISTS_ENOUGH_TORCHES, 1500);
+        _events.ScheduleEvent(EVENT_MISTS_ELEMENTS_SHIELD, 3000);
+        _events.ScheduleEvent(EVENT_MISTS_KILL_GOLGOSS, 5000);
+        _events.ScheduleEvent(EVENT_MISTS_KILL_ARCONISS, 7500);
+        _events.ScheduleEvent(EVENT_MISTS_FIND_ORBISS, 9500);
+        _events.ScheduleEvent(EVENT_MISTS_SEE_ORBISS, 11500);
+        _events.ScheduleEvent(EVENT_MISTS_STRIKE_ORBISS, 13500);
+        _events.ScheduleEvent(EVENT_MISTS_ORBISS_WILL_1, 15000);
+        _events.ScheduleEvent(EVENT_MISTS_ORBISS_WILL_2, 16500);
+        _events.ScheduleEvent(EVENT_MISTS_ORBISS_WILL_3, 18000);
+        _events.ScheduleEvent(EVENT_MISTS_BREAK_SHIELD, 20000);
+    }
+
+    void KillMistlurker(ObjectGuid guid, uint8 textGroup)
+    {
+        if (Creature* mistlurker = ObjectAccessor::GetCreature(*me, guid))
+        {
+            mistlurker->AI()->Talk(textGroup);
+            DoCast(mistlurker, SPELL_JAHESH_CHAIN_LIGHTNING, true);
+            mistlurker->CastSpell(mistlurker, SPELL_MISTLURKER_COSMETIC_DEATH, true);
+            me->Kill(mistlurker);
+        }
+    }
+
+    void BreakBastion()
+    {
+        me->RemoveAurasDueToSpell(SPELL_JAHESH_BASTION_OF_POWER);
+        Talk(9);
+        _bastionPhase = false;
+        _bastionBroken = true;
+        me->SetReactState(REACT_AGGRESSIVE);
+
+        if (Player* player = ObjectAccessor::GetPlayer(*me, _playerGuid))
+            AttackStart(player);
+    }
+
+    EventMap _events;
+    SummonList _summons;
+    ObjectGuid _playerGuid;
+    ObjectGuid _orbissGuid;
+    ObjectGuid _golgossGuid;
+    ObjectGuid _arconissGuid;
+    bool _bastionPhase = false;
+    bool _bastionBroken = false;
+};
+
+// Quest: Hatred Becomes Us (30783)
+enum HatredBecomesUs
+{
+    SPELL_CONSUMED_BY_HATRED                = 118406,
+    SPELL_HARMONY                           = 118332,
+
+    ACTION_EXORCISE_RANGER                  = 1,
+    ACTION_RANGER_PURIFIED                  = 2,
+    ACTION_EXORCISM_FAILED                  = 3,
+
+    DATA_EXORCISM_ACTIVE                    = 1,
+
+    EVENT_TOTEM_EXORCISE                    = 1,
+    EVENT_RANGER_SERRATED_SLASH             = 1,
+    EVENT_RANGER_SNAP_KICK                  = 2,
+    EVENT_HATRED_PURE_HATE                  = 1,
+    EVENT_HATRED_CONSUMING_HATE             = 2,
+    EVENT_HATRED_KNOCKBACK                  = 3,
+};
+
+// Crazed Shado-Pan Ranger - 61050
+struct npc_crazed_shado_pan_ranger : public ScriptedAI
+{
+    npc_crazed_shado_pan_ranger(Creature* creature) : ScriptedAI(creature) { }
+
+    void Reset() override
+    {
+        _events.Reset();
+        _ownerGuid.Clear();
+        _hatredGuid.Clear();
+        _exorcismActive = false;
+        me->SetFaction(7); // Neutral while possessed.
+        me->SetReactState(REACT_DEFENSIVE);
+        DoCast(me, SPELL_CONSUMED_BY_HATRED, true);
+    }
+
+    void SetGUID(ObjectGuid guid, int32 /*id*/) override
+    {
+        _ownerGuid = guid;
+    }
+
+    uint32 GetData(uint32 type) const override
+    {
+        return type == DATA_EXORCISM_ACTIVE && _exorcismActive;
+    }
+
+    void DoAction(int32 action) override
+    {
+        if (action == ACTION_EXORCISE_RANGER)
+        {
+            if (_exorcismActive)
+                return;
+
+            Player* player = ObjectAccessor::GetPlayer(*me, _ownerGuid);
+            if (!player || player->GetQuestStatus(QUEST_HATRED_BECOMES_US) != QUEST_STATUS_INCOMPLETE)
+                return;
+
+            _exorcismActive = true;
+            me->RemoveAurasDueToSpell(SPELL_CONSUMED_BY_HATRED);
+            me->CombatStop(true);
+            me->SetFaction(35);
+            me->SetReactState(REACT_DEFENSIVE);
+
+            Position position = me->GetRandomNearPosition(3.0f);
+            if (Creature* hatred = player->SummonCreature(NPC_HATRED_BECOMES_US_SHA, position,
+                TEMPSUMMON_TIMED_OR_DEAD_DESPAWN, 120000, 0, player->GetGUID()))
+            {
+                _hatredGuid = hatred->GetGUID();
+                hatred->AI()->SetGUID(me->GetGUID());
+                me->Attack(hatred, true);
+            }
+            else
+                DoAction(ACTION_EXORCISM_FAILED);
+        }
+        else if (action == ACTION_RANGER_PURIFIED)
+        {
+            _exorcismActive = false;
+            _events.Reset();
+            me->CombatStop(true);
+            me->SetFaction(35);
+            me->SetReactState(REACT_PASSIVE);
+            me->HandleEmoteCommand(EMOTE_ONESHOT_BOW);
+            me->DespawnOrUnsummon(5000);
+        }
+        else if (action == ACTION_EXORCISM_FAILED)
+        {
+            _events.Reset();
+            me->CombatStop(true);
+            Reset();
+        }
+    }
+
+    void JustEngagedWith(Unit* /*who*/) override
+    {
+        _events.ScheduleEvent(EVENT_RANGER_SERRATED_SLASH, urand(6000, 9000));
+        _events.ScheduleEvent(EVENT_RANGER_SNAP_KICK, urand(9000, 13000));
+    }
+
+    void UpdateAI(uint32 diff) override
+    {
+        if (!UpdateVictim())
+            return;
+
+        _events.Update(diff);
+        while (uint32 eventId = _events.ExecuteEvent())
+        {
+            switch (eventId)
+            {
+                case EVENT_RANGER_SERRATED_SLASH:
+                    DoCastVictim(87395);
+                    _events.ScheduleEvent(EVENT_RANGER_SERRATED_SLASH, urand(16000, 19000));
+                    break;
+                case EVENT_RANGER_SNAP_KICK:
+                    DoCastVictim(46182);
+                    _events.ScheduleEvent(EVENT_RANGER_SNAP_KICK, urand(16000, 19000));
+                    break;
+                default:
+                    break;
+            }
+        }
+
+        DoMeleeAttackIfReady();
+    }
+
+private:
+    EventMap _events;
+    ObjectGuid _ownerGuid;
+    ObjectGuid _hatredGuid;
+    bool _exorcismActive = false;
+};
+
+// Player-placed Totem of Harmony - 61062
+struct npc_totem_of_harmony_30783 : public ScriptedAI
+{
+    npc_totem_of_harmony_30783(Creature* creature) : ScriptedAI(creature) { }
+
+    void IsSummonedBy(Unit* summoner) override
+    {
+        Player* player = summoner->ToPlayer();
+        if (!player || player->GetQuestStatus(QUEST_HATRED_BECOMES_US) != QUEST_STATUS_INCOMPLETE)
+            return;
+
+        _ownerGuid = player->GetGUID();
+        me->SetReactState(REACT_PASSIVE);
+        me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_IMMUNE_TO_PC | UNIT_FLAG_IMMUNE_TO_NPC);
+        me->CombatStop(true);
+        DoCast(me, SPELL_HARMONY, true);
+        _events.ScheduleEvent(EVENT_TOTEM_EXORCISE, 4000);
+    }
+
+    bool CanAIAttack(Unit const* /*target*/) const override
+    {
+        return false;
+    }
+
+    void UpdateAI(uint32 diff) override
+    {
+        _events.Update(diff);
+        if (_events.ExecuteEvent() != EVENT_TOTEM_EXORCISE)
+            return;
+
+        Player* player = ObjectAccessor::GetPlayer(*me, _ownerGuid);
+        if (!player || player->GetQuestStatus(QUEST_HATRED_BECOMES_US) != QUEST_STATUS_INCOMPLETE)
+            return;
+
+        std::list<Creature*> rangers;
+        GetCreatureListWithEntryInGrid(rangers, me, NPC_CRAZED_SHADO_PAN_RANGER, 12.0f);
+        rangers.sort(Trinity::ObjectDistanceOrderPred(me));
+        for (Creature* ranger : rangers)
+        {
+            if (!ranger->IsAlive() || ranger->AI()->GetData(DATA_EXORCISM_ACTIVE))
+                continue;
+
+            ranger->AI()->SetGUID(player->GetGUID());
+            ranger->AI()->DoAction(ACTION_EXORCISE_RANGER);
+            return;
+        }
+    }
+
+private:
+    EventMap _events;
+    ObjectGuid _ownerGuid;
+};
+
+// Ranger-bound Seething Hatred - 61054
+struct npc_hatred_becomes_us_sha : public ScriptedAI
+{
+    npc_hatred_becomes_us_sha(Creature* creature) : ScriptedAI(creature) { }
+
+    void IsSummonedBy(Unit* summoner) override
+    {
+        if (Player* player = summoner->ToPlayer())
+        {
+            _ownerGuid = player->GetGUID();
+            _creditBefore = player->GetQuestObjectiveCounter(OBJECTIVE_CRAZED_RANGERS_PURIFIED);
+            me->SetLootRecipient(player);
+            me->SetReactState(REACT_AGGRESSIVE);
+            me->AddThreat(player, 1.0f);
+            AttackStart(player);
+        }
+    }
+
+    void SetGUID(ObjectGuid guid, int32 /*id*/) override
+    {
+        _rangerGuid = guid;
+    }
+
+    void JustEngagedWith(Unit* /*who*/) override
+    {
+        _events.ScheduleEvent(EVENT_HATRED_PURE_HATE, urand(3500, 7000));
+        _events.ScheduleEvent(EVENT_HATRED_CONSUMING_HATE, 10000);
+    }
+
+    void JustDied(Unit* /*killer*/) override
+    {
+        // Normal kill reward happens before JustDied. Supply the same credit
+        // only when the allied ranger landed too much of the damage for the
+        // core's normal tap/damage threshold to reward the owner.
+        if (Player* owner = ObjectAccessor::GetPlayer(*me, _ownerGuid))
+            if (owner->GetQuestStatus(QUEST_HATRED_BECOMES_US) == QUEST_STATUS_INCOMPLETE &&
+                owner->GetQuestObjectiveCounter(OBJECTIVE_CRAZED_RANGERS_PURIFIED) == _creditBefore)
+                owner->KilledMonsterCredit(NPC_HATRED_BECOMES_US_SHA);
+
+        if (Creature* ranger = ObjectAccessor::GetCreature(*me, _rangerGuid))
+            ranger->AI()->DoAction(ACTION_RANGER_PURIFIED);
+    }
+
+    void EnterEvadeMode() override
+    {
+        if (Creature* ranger = ObjectAccessor::GetCreature(*me, _rangerGuid))
+            ranger->AI()->DoAction(ACTION_EXORCISM_FAILED);
+        me->DespawnOrUnsummon();
+    }
+
+    void UpdateAI(uint32 diff) override
+    {
+        if (!UpdateVictim())
+            return;
+
+        _events.Update(diff);
+        while (uint32 eventId = _events.ExecuteEvent())
+        {
+            switch (eventId)
+            {
+                case EVENT_HATRED_PURE_HATE:
+                    DoCastVictim(SPELL_PURE_HATE);
+                    _events.ScheduleEvent(EVENT_HATRED_PURE_HATE, urand(8500, 15000));
+                    _events.ScheduleEvent(EVENT_HATRED_KNOCKBACK, 2500);
+                    break;
+                case EVENT_HATRED_CONSUMING_HATE:
+                    DoCastVictim(SPELL_CONSUMING_HATE);
+                    _events.ScheduleEvent(EVENT_HATRED_CONSUMING_HATE, urand(12000, 19000));
+                    break;
+                case EVENT_HATRED_KNOCKBACK:
+                    DoCastVictim(SPELL_KNOCKBACK);
+                    break;
+                default:
+                    break;
+            }
+        }
+
+        DoMeleeAttackIfReady();
+    }
+
+private:
+    EventMap _events;
+    ObjectGuid _ownerGuid;
+    ObjectGuid _rangerGuid;
+    uint32 _creditBefore = 0;
+};
+
 // Quest: Ranger Rescue (30774)
 enum RangerRescue
 {
     SPELL_SUMMON_LONGYING_RANGER            = 117670,
+    SPELL_STEALTH                           = 1784,
 
-    EVENT_SUNA_KNEEL_TALK                   = 1,
-    EVENT_SUNA_TALK                         = 2,
+    EVENT_SUNA_ARRIVE                       = 1,
+    EVENT_SUNA_KNEEL_TALK                   = 2,
     EVENT_SUNA_TALK_2                       = 3,
-    EVENT_SUNA_STAND                        = 4
+    EVENT_SUNA_TALK_3                       = 4,
+    EVENT_SUNA_TALK_4                       = 5,
+    EVENT_SUNA_TALK_5                       = 6,
+    EVENT_SUNA_LEAVE                        = 7
 };
 
 class go_drywood_cage : public GameObjectScript
@@ -974,7 +1973,9 @@ class go_drywood_cage : public GameObjectScript
                 {
                     go->SetGoState(GO_STATE_ACTIVE);
 
-                    player->QuestObjectiveSatisfy(QUEST_OBJECTIVE_LONGYIN_RANGER_RESCUED, 1);
+                    // QuestObjectiveSatisfy expects the objective's objectId (60730),
+                    // not its database objective id (263418).
+                    player->KilledMonsterCredit(NPC_LONGYING_RANGER);
                     player->CastSpell(player, SPELL_SUMMON_LONGYING_RANGER, true);
 
                     if (auto rangerHelper = GetClosestCreatureWithEntry(player, NPC_LONGYING_RANGER_HELPER, 10.f))
@@ -1010,6 +2011,75 @@ class npc_longying_ranger : public CreatureScript
         }
 };
 
+// Player-owned Longying Ranger - 60763
+struct npc_longying_ranger_helper : public ScriptedAI
+{
+    npc_longying_ranger_helper(Creature* creature) : ScriptedAI(creature) { }
+
+    void IsSummonedBy(Unit* summoner) override
+    {
+        Player* player = summoner->ToPlayer();
+        if (!player)
+            return;
+
+        _ownerGuid = player->GetGUID();
+        me->SetReactState(REACT_DEFENSIVE);
+
+        // These rescued Shado-Pan are intentionally powerful quest allies.
+        // Creature level normalization reduced their melee to roughly one fifth
+        // of the intended value, so restore that strength only on player summons.
+        me->SetModifierValue(UNIT_MOD_DAMAGE_MAINHAND, TOTAL_PCT, 5.0f);
+        me->UpdateDamagePhysical(BASE_ATTACK);
+        me->GetMotionMaster()->MoveFollow(player, PET_FOLLOW_DIST, PET_FOLLOW_ANGLE);
+    }
+
+    bool CanAIAttack(Unit const* target) const override
+    {
+        Player* owner = ObjectAccessor::GetPlayer(*me, _ownerGuid);
+        if (!owner || !target || !target->IsWithinDistInMap(owner, 35.0f))
+            return false;
+
+        return target == owner->GetVictim() || target->GetVictim() == owner || target->GetVictim() == me;
+    }
+
+    void UpdateAI(uint32 /*diff*/) override
+    {
+        Player* owner = ObjectAccessor::GetPlayer(*me, _ownerGuid);
+        if (!owner)
+            return;
+
+        if (!UpdateVictim())
+        {
+            Unit* target = owner->GetVictim();
+            if (!target)
+                for (Unit* attacker : owner->getAttackers())
+                    if (CanAIAttack(attacker))
+                    {
+                        target = attacker;
+                        break;
+                    }
+
+            if (target && CanAIAttack(target))
+                AttackStart(target);
+            else if (me->GetMotionMaster()->GetCurrentMovementGeneratorType() != FOLLOW_MOTION_TYPE)
+                me->GetMotionMaster()->MoveFollow(owner, PET_FOLLOW_DIST, PET_FOLLOW_ANGLE);
+            return;
+        }
+
+        if (!CanAIAttack(me->GetVictim()))
+        {
+            EnterEvadeMode();
+            me->GetMotionMaster()->MoveFollow(owner, PET_FOLLOW_DIST, PET_FOLLOW_ANGLE);
+            return;
+        }
+
+        DoMeleeAttackIfReady();
+    }
+
+private:
+    ObjectGuid _ownerGuid;
+};
+
 class npc_lin_silentstrike : public CreatureScript
 {
     public:
@@ -1028,93 +2098,101 @@ class npc_lin_silentstrike : public CreatureScript
         bool OnGossipSelect(Player* player, Creature* creature, uint32 /*sender*/, uint32 action) override
         {
             player->PlayerTalkClass->ClearMenus();
-            if (action == GOSSIP_ACTION_INFO_DEF + 1)
+            if (action == GOSSIP_ACTION_INFO_DEF + 1 &&
+                player->GetQuestStatus(QUEST_RANGER_RESCUE) == QUEST_STATUS_INCOMPLETE &&
+                !player->GetQuestObjectiveCounter(QUEST_OBJECTIVE_FREE_LIN_SILENTSTRIKE))
             {
-                player->QuestObjectiveSatisfy(QUEST_OBJECTIVE_FREE_LIN_SILENTSTRIKE, 1);
-                creature->AI()->SetGUID(player->GetGUID(), 0);
-                player->CLOSE_GOSSIP_MENU();
+                // The objective's objectId is 60899; 263419 is only its database id.
+                player->KilledMonsterCredit(creature->GetEntry());
+
+                Position spawnPosition = { 2659.59f, 3268.618f, 425.33f, 5.56f };
+                player->SummonCreature(NPC_SUNA_SILENTSTRIKE, spawnPosition,
+                    TEMPSUMMON_TIMED_DESPAWN, 34000, 0, player->GetGUID());
+
+                // Reveal what Lin is clutching while Suna runs toward him.
+                player->SEND_GOSSIP_MENU(19747, creature->GetGUID());
             }
 
-            return false;
+            return true;
         }
 
+        // Keep Lin's obsolete SmartAI gossip hook from also casting spell 117974;
+        // the source spell has no target-position row and would duplicate the scene.
         struct npc_lin_silentstrikeAI : public ScriptedAI
         {
             npc_lin_silentstrikeAI(Creature* creature) : ScriptedAI(creature) { }
-
-            ObjectGuid sunaGUID;
-            EventMap events;
-
-            void Reset() override
-            {
-                sunaGUID = ObjectGuid::Empty;
-
-                events.Reset();
-                events.ScheduleEvent(EVENT_SUNA_KNEEL_TALK, 5000);
-                events.ScheduleEvent(EVENT_SUNA_TALK, 13000);
-                events.ScheduleEvent(EVENT_SUNA_TALK_2, 21000);
-                events.ScheduleEvent(EVENT_SUNA_STAND, 29000);
-            }
-
-            void SetGUID(ObjectGuid guid, int32 /*type*/) override
-            {
-                if (auto suna = me->SummonCreature(NPC_SUNA_SILENTSTRIKE, 2659.59f, 3268.618f, 425.33f, 5.56f, TEMPSUMMON_TIMED_DESPAWN, 34000))
-                {
-                    sunaGUID = suna->GetGUID();
-
-                    suna->AI()->Talk(0);
-                    suna->GetMotionMaster()->MovePoint(1, 2674.21f, 3257.52f, 426.31f);
-                }
-            }
-
-            void UpdateAI(uint32 diff) override
-            {
-                events.Update(diff);
-
-                while (uint32 eventId = events.ExecuteEvent())
-                {
-                    Creature* suna = me->GetCreature(*me, sunaGUID);
-                    if (!suna)
-                    {
-                        Reset();
-                        return;
-                    }
-
-                    switch (eventId)
-                    {
-                        case EVENT_SUNA_KNEEL_TALK:
-                        {
-                            suna->SetStandState(UNIT_STAND_STATE_KNEEL);
-                            suna->AI()->Talk(1);
-                            break;
-                        }
-                        case EVENT_SUNA_TALK:
-                        {
-                            suna->AI()->Talk(2);
-                            break;
-                        }
-                        case EVENT_SUNA_TALK_2:
-                        {
-                            suna->AI()->Talk(3);
-                            break;
-                        }
-                        case EVENT_SUNA_STAND:
-                        {
-                            suna->SetStandState(UNIT_STAND_STATE_STAND);
-                            Reset();
-                            break;
-                        }
-                        default:
-                            break;
-                    }
-                }
-            }
         };
 
         CreatureAI* GetAI(Creature* creature) const override
         {
             return new npc_lin_silentstrikeAI(creature);
         }
+};
+
+// Suna Silentstrike - 60901; private grief scene summoned for Ranger Rescue
+struct npc_suna_ranger_rescue_scene : public ScriptedAI
+{
+    npc_suna_ranger_rescue_scene(Creature* creature) : ScriptedAI(creature) { }
+
+    void IsSummonedBy(Unit* summoner) override
+    {
+        if (Player* player = summoner->ToPlayer())
+            _ownerGuid = player->GetGUID();
+
+        me->SetReactState(REACT_PASSIVE);
+        me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_IMMUNE_TO_NPC);
+        me->GetMotionMaster()->MovePoint(1, 2674.21f, 3257.52f, 426.31f);
+
+        events.ScheduleEvent(EVENT_SUNA_ARRIVE, 3000);
+        events.ScheduleEvent(EVENT_SUNA_KNEEL_TALK, 6000);
+        events.ScheduleEvent(EVENT_SUNA_TALK_2, 10000);
+        events.ScheduleEvent(EVENT_SUNA_TALK_3, 14000);
+        events.ScheduleEvent(EVENT_SUNA_TALK_4, 18000);
+        events.ScheduleEvent(EVENT_SUNA_TALK_5, 22000);
+        events.ScheduleEvent(EVENT_SUNA_LEAVE, 26000);
+    }
+
+    void UpdateAI(uint32 diff) override
+    {
+        events.Update(diff);
+        while (uint32 eventId = events.ExecuteEvent())
+        {
+            Player* owner = ObjectAccessor::GetPlayer(*me, _ownerGuid);
+            switch (eventId)
+            {
+                case EVENT_SUNA_ARRIVE:
+                    Talk(0, owner);
+                    break;
+                case EVENT_SUNA_KNEEL_TALK:
+                    me->SetStandState(UNIT_STAND_STATE_KNEEL);
+                    Talk(1, owner);
+                    break;
+                case EVENT_SUNA_TALK_2:
+                    Talk(2, owner);
+                    break;
+                case EVENT_SUNA_TALK_3:
+                    Talk(3, owner);
+                    break;
+                case EVENT_SUNA_TALK_4:
+                    Talk(4, owner);
+                    break;
+                case EVENT_SUNA_TALK_5:
+                    Talk(5, owner);
+                    break;
+                case EVENT_SUNA_LEAVE:
+                    me->SetStandState(UNIT_STAND_STATE_STAND);
+                    DoCast(me, SPELL_STEALTH, true);
+                    me->DespawnOrUnsummon(2000);
+                    break;
+                default:
+                    break;
+            }
+        }
+    }
+
+private:
+    EventMap events;
+    ObjectGuid _ownerGuid;
 };
 
 // Osul Mist-Shaman 60697
@@ -1848,16 +2926,29 @@ void AddSC_townlong_steppes()
     new creature_script<npc_seething_hatred>("npc_seething_hatred");
     new creature_script<npc_gnathus>("npc_gnathus");
     // Quests
+    new go_arconiss_peat_mound();
     new go_sikthik_cage();
+    new creature_script<npc_injured_gao_ran_blackguard>("npc_injured_gao_ran_blackguard");
+    new npc_yalia_what_lies_beneath();
+    new npc_what_lies_beneath_totem();
+    new creature_script<npc_what_lies_beneath_sha>("npc_what_lies_beneath_sha");
+    new creature_script<npc_jahesh_mists_opportunity>("npc_jahesh_mists_opportunity");
+    new creature_script<npc_crazed_shado_pan_ranger>("npc_crazed_shado_pan_ranger");
+    new creature_script<npc_totem_of_harmony_30783>("npc_totem_of_harmony_30783");
+    new creature_script<npc_hatred_becomes_us_sha>("npc_hatred_becomes_us_sha");
     new spell_item_cintron_infused_bandage();
     new spell_item_shado_pan_torch();
     new go_drywood_cage();
     new npc_longying_ranger();
+    new creature_script<npc_longying_ranger_helper>("npc_longying_ranger_helper");
     new npc_lin_silentstrike();
+    new creature_script<npc_suna_ranger_rescue_scene>("npc_suna_ranger_rescue_scene");
     new npc_osul_mist_shaman();
     new spell_script<spell_gather_steam>("spell_gather_steam");
     new npc_suna_silentstrike();
     new npc_wounded_niuzao_sentinel();
+    new creature_script<npc_tai_ho_motives>("npc_tai_ho_motives");
+    new player_motives_of_the_mantid();
     new creature_script<npc_townlong_gunpowder_cask>("npc_townlong_gunpowder_cask");
     new spell_script<spell_q30959>("spell_q30959");
     new aura_script<spell_protective_shell>("spell_protective_shell");

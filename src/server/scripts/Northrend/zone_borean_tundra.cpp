@@ -42,6 +42,11 @@ EndContentData */
 #include "ScriptedFollowerAI.h"
 #include "Player.h"
 #include "SpellInfo.h"
+#include "SpellScript.h"
+#include "Spell.h"
+#include "Vehicle.h"
+#include "DBCStores.h"
+#include "ObjectMgr.h"
 #include "WorldSession.h"
 
 /*######
@@ -398,9 +403,50 @@ enum Jenny
     NPC_FEZZIX_GEARTWIST        = 25849,
     NPC_JENNY                   = 25969,
 
+    SPELL_JENNYS_WHISTLE        = 46338,
     SPELL_GIVE_JENNY_CREDIT     = 46358,
     SPELL_CRATES_CARRIED        = 46340,
     SPELL_DROP_CRATE            = 46342
+};
+
+// The client spell is a minion summon.  Using the generic minion path can
+// silently replace/fail the summon depending on the player's occupied summon
+// slots, so create the quest follower explicitly instead.
+class spell_jennys_whistle : public SpellScript
+{
+    PrepareSpellScript(spell_jennys_whistle);
+
+    void HandleSummon(SpellEffIndex effIndex)
+    {
+        PreventDefaultEffect(effIndex);
+
+        Player* player = GetCaster()->ToPlayer();
+        if (!player || player->GetQuestStatus(QUEST_LOADER_UP) != QUEST_STATUS_INCOMPLETE)
+            return;
+
+        TempSummon* previousJenny = nullptr;
+        for (TempSummon* summon : player->GetSummons())
+            if (summon->GetEntry() == NPC_JENNY)
+            {
+                previousJenny = summon;
+                break;
+            }
+
+        // Despawning mutates the summon container, so never do it while the
+        // container itself is being iterated.
+        if (previousJenny)
+            previousJenny->DespawnOrUnsummon();
+
+        Position position = player->GetNearPosition(2.0f, 0.0f);
+        if (TempSummon* jenny = player->SummonCreature(NPC_JENNY, position,
+            TEMPSUMMON_TIMED_OR_DEAD_DESPAWN, 10 * MINUTE * IN_MILLISECONDS))
+            jenny->SetOwnerGUID(player->GetGUID());
+    }
+
+    void Register() override
+    {
+        OnEffectHit += SpellEffectFn(spell_jennys_whistle::HandleSummon, EFFECT_0, SPELL_EFFECT_SUMMON);
+    }
 };
 
 class npc_jenny : public CreatureScript
@@ -408,50 +454,94 @@ class npc_jenny : public CreatureScript
 public:
     npc_jenny() : CreatureScript("npc_jenny") { }
 
-    struct npc_jennyAI : public ScriptedAI
+    struct npc_jennyAI : public FollowerAI
     {
-        npc_jennyAI(Creature* creature) : ScriptedAI(creature) { }
-
-        bool setCrateNumber;
+        npc_jennyAI(Creature* creature) : FollowerAI(creature), _cargoInitialized(false), _deliveryComplete(false) { }
 
         void Reset() override
         {
-            if (!setCrateNumber)
-                setCrateNumber = true;
-
             me->SetReactState(REACT_PASSIVE);
+        }
 
-            switch (me->GetOwner()->ToPlayer()->GetTeamId())
+        void IsSummonedBy(Unit* summoner) override
+        {
+            Player* player = summoner->ToPlayer();
+            if (!player || player->GetQuestStatus(QUEST_LOADER_UP) != QUEST_STATUS_INCOMPLETE)
             {
-                case TEAM_ALLIANCE:
-                    me->SetFaction(FACTION_ESCORT_A_NEUTRAL_ACTIVE);
-                    break;
-                default:
-                case TEAM_HORDE:
-                    me->SetFaction(FACTION_ESCORT_H_NEUTRAL_ACTIVE);
-                    break;
+                me->DespawnOrUnsummon();
+                return;
             }
+
+            me->SetFaction(player->GetTeamId() == TEAM_ALLIANCE
+                ? FACTION_ESCORT_A_NEUTRAL_ACTIVE : FACTION_ESCORT_H_NEUTRAL_ACTIVE);
+            StartFollow(player);
         }
 
         void DamageTaken(Unit* /*pDone_by*/, uint32& /*uiDamage*/) override
         {
-            DoCast(me, SPELL_DROP_CRATE, true);
+            if (me->HasAura(SPELL_CRATES_CARRIED))
+                DoCast(me, SPELL_DROP_CRATE, true);
         }
 
-        void UpdateAI(uint32 /*diff*/) override
+        void MoveInLineOfSight(Unit* who) override
         {
-            if (setCrateNumber)
+            FollowerAI::MoveInLineOfSight(who);
+
+            if (who->GetEntry() != NPC_FEZZIX_GEARTWIST ||
+                !me->HasAura(SPELL_CRATES_CARRIED) || !me->IsWithinDistInMap(who, 20.0f))
+                return;
+
+            CompleteDelivery();
+        }
+
+        void CompleteDelivery()
+        {
+            if (_deliveryComplete)
+                return;
+
+            if (Player* player = GetLeaderForFollower())
+            {
+                if (player->GetQuestStatus(QUEST_LOADER_UP) == QUEST_STATUS_INCOMPLETE)
+                {
+                    _deliveryComplete = true;
+                    player->KilledMonsterCredit(NPC_JENNY, me->GetGUID());
+                    player->CastSpell(player, SPELL_GIVE_JENNY_CREDIT, true);
+                    if (player->GetQuestStatus(QUEST_LOADER_UP) == QUEST_STATUS_INCOMPLETE)
+                        player->CompleteQuest(QUEST_LOADER_UP);
+                }
+
+                if (_deliveryComplete)
+                {
+                    SetFollowComplete();
+                    me->DespawnOrUnsummon(1000);
+                }
+            }
+        }
+
+        void UpdateFollowerAI(uint32 diff) override
+        {
+            // Aura casts during TempSummon construction are unreliable in this
+            // core.  Apply the cargo on the first normal AI update instead.
+            if (!_cargoInitialized)
             {
                 me->AddAura(SPELL_CRATES_CARRIED, me);
-                setCrateNumber = false;
+                _cargoInitialized = me->HasAura(SPELL_CRATES_CARRIED);
             }
 
-            if (!setCrateNumber && !me->HasAura(SPELL_CRATES_CARRIED))
-                me->DisappearAndDie();
+            // MoveInLineOfSight can be missed when the follower stops behind
+            // the player.  Poll the actual delivery radius as a reliable
+            // fallback while Jenny still carries at least one crate.
+            if (!_deliveryComplete && me->HasAura(SPELL_CRATES_CARRIED))
+                if (me->FindNearestCreature(NPC_FEZZIX_GEARTWIST, 20.0f, true))
+                    CompleteDelivery();
 
-            if (!UpdateVictim())
-                return;
+            if (!_deliveryComplete)
+                FollowerAI::UpdateFollowerAI(diff);
         }
+
+    private:
+        bool _cargoInitialized;
+        bool _deliveryComplete;
     };
 
     CreatureAI* GetAI(Creature* creature) const override
@@ -1578,6 +1668,8 @@ public:
 
 enum BerylSorcerer
 {
+    QUEST_ABDUCTION                     = 11590,
+
     NPC_CAPTURED_BERLY_SORCERER         = 25474,
     NPC_LIBRARIAN_DONATHAN              = 25262,
 
@@ -1609,18 +1701,37 @@ public:
                 AttackStart(who);
         }
 
+        void DamageTaken(Unit* attacker, uint32& damage) override
+        {
+            if (bEnslaved || !attacker)
+                return;
+
+            Player* player = attacker->GetCharmerOrOwnerPlayerOrPlayerItself();
+            if (!player || player->GetQuestStatus(QUEST_ABDUCTION) != QUEST_STATUS_INCOMPLETE)
+                return;
+
+            // The Arcane Binder can only be used below 50% health. Keep the quest
+            // target alive at 25% so modern/high-level damage cannot one-shot it.
+            uint32 healthFloor = std::max<uint32>(1, me->CountPctFromMaxHealth(25));
+            if (me->GetHealth() <= healthFloor)
+                damage = 0;
+            else if (damage >= me->GetHealth() - healthFloor)
+                damage = me->GetHealth() - healthFloor;
+        }
+
         void SpellHit(Unit* pCaster, const SpellInfo* pSpell) override
         {
-            if (pSpell->Id == SPELL_ARCANE_CHAINS && pCaster->GetTypeId() == TYPEID_PLAYER && !HealthAbovePct(50) && !bEnslaved)
+            Player* player = pCaster ? pCaster->ToPlayer() : nullptr;
+            if (pSpell->Id == SPELL_ARCANE_CHAINS && player && player->GetQuestStatus(QUEST_ABDUCTION) == QUEST_STATUS_INCOMPLETE && !HealthAbovePct(50) && !bEnslaved)
             {
                 EnterEvadeMode(); //We make sure that the npc is not attacking the player!
                 me->SetReactState(REACT_PASSIVE);
-                StartFollow(pCaster->ToPlayer(), 0, NULL);
+                StartFollow(player, 0, nullptr);
                 me->UpdateEntry(NPC_CAPTURED_BERLY_SORCERER, TEAM_NEUTRAL);
+                me->SetFullHealth();
                 DoCast(me, SPELL_COSMETIC_ENSLAVE_CHAINS_SELF, true);
 
-                if (Player* player = pCaster->ToPlayer())
-                    player->KilledMonsterCredit(NPC_CAPTURED_BERLY_SORCERER, ObjectGuid::Empty);
+                player->KilledMonsterCredit(NPC_CAPTURED_BERLY_SORCERER, ObjectGuid::Empty);
 
                 bEnslaved = true;
             }
@@ -2523,16 +2634,264 @@ struct npc_hidden_cultist : public ScriptedAI
     }
 };
 
+// The Plains of Nasam: native vehicle rescue effect needs a quest handler.
+class spell_nasam_rescue_soldier : public SpellScript
+{
+    PrepareSpellScript(spell_nasam_rescue_soldier);
+    Player* Pilot()
+    {
+        Unit* tank = GetCaster();
+        if (!tank || tank->GetEntry() != 25334 || !tank->GetVehicleKit())
+            return nullptr;
+        Unit* passenger = tank->GetVehicleKit()->GetPassenger(0);
+        return passenger ? passenger->ToPlayer() : nullptr;
+    }
+    bool Soldier(Unit* target) const
+    {
+        return target && target->ToCreature() && target->IsAlive() &&
+            !target->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE) &&
+            (target->GetEntry() == 27106 || target->GetEntry() == 27107 ||
+             target->GetEntry() == 27108 || target->GetEntry() == 27110);
+    }
+    SpellCastResult CheckTarget()
+    {
+        Player* player = Pilot();
+        Unit* target = GetExplTargetUnit();
+        if (!player || player->GetQuestStatus(11652) != QUEST_STATUS_INCOMPLETE ||
+            !Soldier(target) || !GetCaster()->IsWithinDistInMap(target, 15.0f))
+            return SPELL_FAILED_BAD_TARGETS;
+        return SPELL_CAST_OK;
+    }
+    void Rescue(SpellEffIndex effect)
+    {
+        PreventHitDefaultEffect(effect);
+        Player* player = Pilot();
+        Creature* soldier = GetHitCreature();
+        if (!player || !Soldier(soldier) || !GetCaster()->IsWithinDistInMap(soldier, 15.0f))
+            return;
+        // Reserve the living soldier immediately to prevent duplicate rescues.
+        soldier->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE);
+        soldier->SetHealth(soldier->GetMaxHealth());
+        soldier->SetStandState(UNIT_STAND_STATE_STAND);
+        soldier->Say("Thank you! I'm safe now!", LANG_UNIVERSAL, player);
+        player->KilledMonsterCredit(27109);
+        // Static spawn cleanup uses death internally. Hide before cleanup so
+        // no death animation or corpse reaches the client, then restore normal
+        // visibility for the next scheduled respawn.
+        soldier->SetVisible(false);
+        soldier->DespawnOrUnsummon();
+        soldier->SetVisible(true);
+    }
+    void Register() override
+    {
+        OnCheckCast += SpellCheckCastFn(spell_nasam_rescue_soldier::CheckTarget);
+        OnEffectHitTarget += SpellEffectFn(spell_nasam_rescue_soldier::Rescue, EFFECT_0, SPELL_EFFECT_SCRIPT_EFFECT);
+    }
+};
+
+class spell_nasam_demoralizer_aim : public SpellScript
+{
+    PrepareSpellScript(spell_nasam_demoralizer_aim);
+    SpellCastResult Aim()
+    {
+        Unit* tank = GetCaster();
+        if (!tank || tank->GetEntry() != 25334 || !tank->GetVehicleKit())
+            return SPELL_CAST_OK;
+        Unit* passenger = tank->GetVehicleKit()->GetPassenger(0);
+        Player* player = passenger ? passenger->ToPlayer() : nullptr;
+        Unit* target = player ? player->GetSelectedUnit() : nullptr;
+        if (!target)
+            return SPELL_CAST_OK; // Preserve ground aiming without a selected unit.
+        if (!target->IsAlive() || !tank->IsValidAttackTarget(target) ||
+            !tank->IsWithinDistInMap(target, 100.0f) || !tank->IsWithinLOSInMap(target))
+            return SPELL_FAILED_BAD_TARGETS;
+        WorldLocation destination(tank->GetMapId(), target->GetPositionX(),
+            target->GetPositionY(), target->GetPositionZ());
+        SetExplTargetDest(destination);
+        // Do not let the previous camera trajectory replace the selected destination.
+        GetSpell()->m_targets.SetSpeed(0.0f);
+        return SPELL_CAST_OK;
+    }
+    void Register() override
+    {
+        OnCheckCast += SpellCheckCastFn(spell_nasam_demoralizer_aim::Aim);
+    }
+};
+
+// Vehicle drivers may not send the client event for area trigger 4963.
+class player_nasam_leader_identification : public PlayerScript
+{
+public:
+    player_nasam_leader_identification() : PlayerScript("player_nasam_leader_identification") { }
+    void OnLogin(Player* player) override
+    {
+        ObjectGuid guid = player->GetGUID();
+        player->m_Events.Schedule(500, [guid]()
+        {
+            Player* current = ObjectAccessor::FindPlayer(guid);
+            if (!current || !current->GetQuestObjectiveCounter(262375) ||
+                (current->GetQuestStatus(11652) != QUEST_STATUS_INCOMPLETE &&
+                 current->GetQuestStatus(11652) != QUEST_STATUS_COMPLETE))
+                return;
+            if (Quest const* quest = sObjectMgr->GetQuestTemplate(11652))
+                for (auto const& objective : quest->Objectives)
+                    if (objective.ID == 262375)
+                    {
+                        current->CreditQuestAreaTriggerObjective(11652, 262375);
+                        current->SendQuestUpdateAddCreditSimple(quest, &objective);
+                        if (current->GetQuestStatus(11652) == QUEST_STATUS_COMPLETE)
+                            current->SendQuestComplete(11652);
+                        break;
+                    }
+        });
+    }
+    void OnUpdate(Player* player, uint32) override
+    {
+        QuestStatus status = player->GetQuestStatus(11652);
+        if (!player->IsAlive() || player->GetMapId() != 571 ||
+            (status != QUEST_STATUS_INCOMPLETE && status != QUEST_STATUS_COMPLETE))
+            return;
+        if (player->GetQuestObjectiveCounter(262375))
+        {
+            // Repair the completion bit for existing, already credited players.
+            player->CreditQuestAreaTriggerObjective(11652, 262375);
+            return;
+        }
+        Unit* tank = player->GetVehicleBase();
+        if (status != QUEST_STATUS_INCOMPLETE || !tank || tank->GetEntry() != 25334 ||
+            !tank->GetVehicleKit() || tank->GetVehicleKit()->GetPassenger(0) != player ||
+            !player->IsInAreaTrigger(sAreaTriggerStore.LookupEntry(4963)))
+            return;
+        player->CreditQuestAreaTriggerObjective(11652, 262375);
+    }
+};
+
+enum BlendingIn
+{
+    QUEST_BLENDING_IN             = 11633,
+    ITEM_IMBUED_SCOURGE_SHROUD    = 34782,
+    NPC_SPIRE_OF_DECAY_CREDIT     = 25471,
+    NPC_SPIRE_OF_BLOOD_CREDIT     = 25472,
+    NPC_SPIRE_OF_PAIN_CREDIT      = 25473,
+    OBJECTIVE_SPIRE_OF_DECAY      = 259318,
+    OBJECTIVE_SPIRE_OF_BLOOD      = 259319,
+    OBJECTIVE_SPIRE_OF_PAIN       = 259320
+};
+
+// The legacy invisible Temple creatures do not reliably receive line-of-sight
+// callbacks on the 5.4.8 core.  Credit the player directly at the original
+// three trigger positions while the quest cloak is equipped.
+class player_blending_in : public PlayerScript
+{
+public:
+    player_blending_in() : PlayerScript("player_blending_in") { }
+
+    void OnUpdate(Player* player, uint32 /*diff*/) override
+    {
+        if (!player->IsAlive() || player->GetMapId() != 571 ||
+            player->GetQuestStatus(QUEST_BLENDING_IN) != QUEST_STATUS_INCOMPLETE)
+            return;
+
+        Item* cloak = player->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_BACK);
+        if (!cloak || cloak->GetEntry() != ITEM_IMBUED_SCOURGE_SHROUD)
+            return;
+
+        if (!player->GetQuestObjectiveCounter(OBJECTIVE_SPIRE_OF_DECAY) &&
+            player->GetExactDist(4111.14f, 3734.87f, 91.8481f) <= 22.0f)
+            player->KilledMonsterCredit(NPC_SPIRE_OF_DECAY_CREDIT);
+
+        if (!player->GetQuestObjectiveCounter(OBJECTIVE_SPIRE_OF_BLOOD) &&
+            player->GetExactDist(4094.38f, 3493.95f, 131.75f) <= 22.0f)
+            player->KilledMonsterCredit(NPC_SPIRE_OF_BLOOD_CREDIT);
+
+        if (!player->GetQuestObjectiveCounter(OBJECTIVE_SPIRE_OF_PAIN) &&
+            player->GetExactDist(3791.67f, 3425.03f, 83.8943f) <= 22.0f)
+            player->KilledMonsterCredit(NPC_SPIRE_OF_PAIN_CREDIT);
+    }
+};
+
+enum RescuingEvanor
+{
+    QUEST_RESCUING_EVANOR = 11681,
+    NPC_ARCHMAGE_EVANOR_PRISONER = 25784,
+    SPELL_EVANOR_TELEPORT = 46018
+};
+
+// Evanor's Prison is the final interaction of Rescuing Evanor. The template
+// identifies the quest but has no objective of its own, so the rescue event
+// must complete the exploration/event requirement explicitly.
+class go_evanors_prison : public GameObjectScript
+{
+public:
+    go_evanors_prison() : GameObjectScript("go_evanors_prison") { }
+
+    bool OnGossipHello(Player* player, GameObject* /*go*/) override
+    {
+        if (player->GetQuestStatus(QUEST_RESCUING_EVANOR) != QUEST_STATUS_INCOMPLETE)
+            return false;
+
+        if (Creature* evanor = player->FindNearestCreature(NPC_ARCHMAGE_EVANOR_PRISONER, 20.0f, true))
+            evanor->AI()->Talk(0, player);
+
+        player->AreaExploredOrEventHappens(QUEST_RESCUING_EVANOR);
+        if (player->GetQuestStatus(QUEST_RESCUING_EVANOR) == QUEST_STATUS_INCOMPLETE)
+            player->CompleteQuest(QUEST_RESCUING_EVANOR);
+
+        ObjectGuid playerGuid = player->GetGUID();
+        player->m_Events.Schedule(1800, [playerGuid]()
+        {
+            Player* current = ObjectAccessor::FindPlayer(playerGuid);
+            if (!current || current->GetQuestStatus(QUEST_RESCUING_EVANOR) != QUEST_STATUS_COMPLETE)
+                return;
+
+            if (Creature* evanor = current->FindNearestCreature(NPC_ARCHMAGE_EVANOR_PRISONER, 20.0f, true))
+                evanor->AI()->Talk(1, current);
+
+            current->CastSpell(current, SPELL_EVANOR_TELEPORT, true);
+        });
+
+        // Allow the normal goober handling to play the prison opening state.
+        return false;
+    }
+};
+
+// Recover players who reached the tower through the rescue teleport while the
+// old prison event failed to set its hidden exploration completion bit.
+class npc_archmage_evanor_turnin : public CreatureScript
+{
+public:
+    npc_archmage_evanor_turnin() : CreatureScript("npc_archmage_evanor_turnin") { }
+
+    bool OnGossipHello(Player* player, Creature* /*creature*/) override
+    {
+        if (player->GetQuestStatus(QUEST_RESCUING_EVANOR) == QUEST_STATUS_INCOMPLETE)
+        {
+            player->AreaExploredOrEventHappens(QUEST_RESCUING_EVANOR);
+            if (player->GetQuestStatus(QUEST_RESCUING_EVANOR) == QUEST_STATUS_INCOMPLETE)
+                player->CompleteQuest(QUEST_RESCUING_EVANOR);
+        }
+
+        // Continue through the core's normal quest-giver menu handling.
+        return false;
+    }
+};
+
 void AddSC_borean_tundra()
 {
+    new npc_archmage_evanor_turnin();
+    new go_evanors_prison();
+    new player_blending_in();
+    new player_nasam_leader_identification();
+    new spell_script<spell_nasam_rescue_soldier>("spell_nasam_rescue_soldier");
+    new spell_script<spell_nasam_demoralizer_aim>("spell_nasam_demoralizer_aim");
     new npc_sinkhole_kill_credit();
     new npc_khunok_the_behemoth();
     new npc_keristrasza();
     new npc_corastrasza();
     new npc_iruk();
     new npc_nerubar_victim();
+    new spell_script<spell_jennys_whistle>("spell_jennys_whistle");
     new npc_jenny();
-    new npc_fezzix_geartwist();
     new npc_nesingwary_trapper();
     new npc_lurgglbr();
     new npc_nexus_drake_hatchling();

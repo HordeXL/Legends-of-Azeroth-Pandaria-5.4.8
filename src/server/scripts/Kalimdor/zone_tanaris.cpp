@@ -44,9 +44,14 @@ enum TanarisData
     SPELL_TEMP_INVISIBILITY                 = 3680,
 
     NPC_STEAMWHEEDLE_BALLOON                = 40505,
+    NPC_STEAMWHEEDLE_SURVIVOR               = 38571,
+    NPC_STEAMWHEEDLE_SURVIVOR_CREDIT        = 38576,
 
     EVENT_RIDE_INVOKER                      = 1,
     EVENT_START_WAYPOINT                    = 2,
+
+    POINT_BALLOON_TAKEOFF                   = 1,
+    POINT_BALLOON_PATROL                    = 2,
 
     ACTION_RIDE_INVOKER                     = 1,
     ACTION_ENABLE_ABILITIES                 = 2,
@@ -54,6 +59,30 @@ enum TanarisData
 
     QUEST_ENTRY_ROCKET_RESCUE_A             = 25050,
     QUEST_ENTRY_ROCKET_RESCUE_H             = 24910
+};
+
+Position const SteamwheedleBalloonTakeoffPath[] =
+{
+    { -7090.10f, -3909.76f, 75.0f },
+    { -7050.32f, -4211.33f, 75.0f },
+    { -6875.14f, -4618.66f, 75.0f }
+};
+
+Position const SteamwheedleBalloonPatrolPath[] =
+{
+    { -6796.45f, -4735.78f, 75.0f },
+    { -6767.71f, -4796.64f, 75.0f },
+    { -6767.39f, -4889.12f, 75.0f },
+    { -6869.06f, -4908.59f, 75.0f },
+    { -6980.09f, -4898.15f, 75.0f },
+    { -7089.12f, -4832.38f, 75.0f },
+    { -7098.96f, -4682.06f, 75.0f },
+    { -7086.16f, -4553.28f, 75.0f },
+    { -7141.32f, -4441.87f, 75.0f },
+    { -7068.47f, -4360.89f, 75.0f },
+    { -6998.87f, -4385.42f, 75.0f },
+    { -6929.76f, -4617.46f, 75.0f },
+    { -6875.14f, -4618.66f, 75.0f }
 };
 
 /*######
@@ -586,13 +615,22 @@ public:
 
     bool OnGossipHello(Player* player, Creature* creature) override
     {
-        if (player->GetQuestStatus(QUEST_ENTRY_ROCKET_RESCUE_H) == QUEST_STATUS_INCOMPLETE || player->GetQuestStatus(QUEST_ENTRY_ROCKET_RESCUE_A))
+        if (player->GetQuestStatus(QUEST_ENTRY_ROCKET_RESCUE_H) == QUEST_STATUS_INCOMPLETE ||
+            player->GetQuestStatus(QUEST_ENTRY_ROCKET_RESCUE_A) == QUEST_STATUS_INCOMPLETE)
         {
             if (!player->GetVehicleBase() && !creature->HasAura(SPELL_TEMP_INVISIBILITY))
             {
-                player->SummonCreature(NPC_STEAMWHEEDLE_BALLOON, creature->GetPositionX(), creature->GetPositionY(), creature->GetPositionZ(), creature->GetOrientation(), TEMPSUMMON_MANUAL_DESPAWN, 600000);
-                creature->AddAura(SPELL_TEMP_INVISIBILITY, creature);
-                return true;
+                if (Creature* balloon = player->SummonCreature(NPC_STEAMWHEEDLE_BALLOON,
+                    creature->GetPositionX(), creature->GetPositionY(), creature->GetPositionZ(),
+                    creature->GetOrientation(), TEMPSUMMON_MANUAL_DESPAWN, 600000))
+                {
+                    // Vehicle 752 provides the controllable casting seat on
+                    // the balloon itself.  A nested throwing-station vehicle
+                    // causes the parent spline to remain stationary in this
+                    // core even though its action bar is visible.
+                    player->EnterVehicle(balloon, 0);
+                    creature->AddAura(SPELL_TEMP_INVISIBILITY, creature);
+                }
             }
         }
         return true;
@@ -604,35 +642,33 @@ class npc_steamwheedle_balloon_escort : public CreatureScript
 public:
     npc_steamwheedle_balloon_escort() : CreatureScript("npc_steamwheedle_balloon_escort") { }
 
-    struct npc_steamwheedle_balloon_escortAI : public npc_escortAI
+    struct npc_steamwheedle_balloon_escortAI : public ScriptedAI
     {
-        npc_steamwheedle_balloon_escortAI(Creature* creature) : npc_escortAI(creature)
-        {
-            playerQuester = nullptr;
-        }
+        npc_steamwheedle_balloon_escortAI(Creature* creature) : ScriptedAI(creature) { }
 
         EventMap events;
 
         void OnCharmed(bool apply) override { }
 
-        void WaypointReached(uint32 point) override
+        void MovementInform(uint32 type, uint32 point) override
         {
+            if (type != EFFECT_MOTION_TYPE)
+                return;
+
             switch (point)
             {
-                case 3:
+                case POINT_BALLOON_TAKEOFF:
                 {
-                    if (playerQuester && playerQuester != NULL)
-                    {
+                    if (Player* playerQuester = ObjectAccessor::GetPlayer(*me, playerGuid))
                         if (Creature* vehicle = playerQuester->GetVehicleCreatureBase())
                             vehicle->AI()->DoAction(ACTION_ENABLE_ABILITIES);
-                    }
+
+                    StartPatrol();
                     break;
                 }
-                case 16:
-                {
-                    SetNextWaypoint(3, false);
+                case POINT_BALLOON_PATROL:
+                    StartPatrol();
                     break;
-                }
                 default:
                     break;
             }
@@ -640,9 +676,27 @@ public:
 
         void IsSummonedBy(Unit* owner) override
         {
-            playerQuester = owner;
+            playerGuid = owner->GetGUID();
             me->SetReactState(REACT_PASSIVE);
-            events.ScheduleEvent(EVENT_START_WAYPOINT, 100ms);
+            me->SetDisableGravity(true);
+
+            // Boarding is asynchronous.  Poll as a fallback in case the
+            // passenger callback is delivered before the AI update begins.
+            events.ScheduleEvent(EVENT_START_WAYPOINT, 250ms);
+        }
+
+        void PassengerBoarded(Unit* passenger, int8 /*seatId*/, bool apply) override
+        {
+            if (!apply || passenger->GetTypeId() != TYPEID_PLAYER || passenger->GetGUID() != playerGuid)
+                return;
+
+            // Arm the rescue spells as soon as the player is seated.  Waiting
+            // for the takeoff spline to finish leaves the buttons visible but
+            // keeps their missile-targeting reticle disabled for the entire
+            // outbound flight.
+            DoAction(ACTION_ENABLE_ABILITIES);
+            passenger->ToPlayer()->VehicleSpellInitialize();
+            events.RescheduleEvent(EVENT_START_WAYPOINT, 500ms);
         }
 
         void DoAction(int32 action) override
@@ -650,11 +704,18 @@ public:
             switch (action)
             {
                 case ACTION_START_WP:
-                {
-                    Start(false, true, ObjectGuid::Empty, NULL, false, true, true);
-                    SetDespawnAtEnd(false);
+                    if (started)
+                        break;
+
+                    DoAction(ACTION_ENABLE_ABILITIES);
+                    started = true;
+                    me->GetMotionMaster()->MoveSmoothPath(
+                        POINT_BALLOON_TAKEOFF, SteamwheedleBalloonTakeoffPath,
+                        std::size(SteamwheedleBalloonTakeoffPath), false, true);
                     break;
-                }
+                case ACTION_ENABLE_ABILITIES:
+                    me->AddAura(SPELL_ENABLE_ABILITIES, me);
+                    break;
                 default:
                     break;
             }
@@ -663,26 +724,26 @@ public:
         void UpdateAI(uint32 diff) override
         {
             events.Update(diff);
-            npc_escortAI::UpdateAI(diff);
-
-            while (uint32 eventId = events.ExecuteEvent())
+            if (events.ExecuteEvent() == EVENT_START_WAYPOINT)
             {
-                switch (eventId)
-                {
-                    case EVENT_START_WAYPOINT:
-                    {
-                        events.CancelEvent(EVENT_START_WAYPOINT);
-                        DoAction(ACTION_START_WP);
-                        break;
-                    }
-                    default:
-                        break;
-                }
+                Player* player = ObjectAccessor::GetPlayer(*me, playerGuid);
+                if (player && player->GetVehicleBase() == me)
+                    DoAction(ACTION_START_WP);
+                else if (!started)
+                    events.ScheduleEvent(EVENT_START_WAYPOINT, 250ms);
             }
         }
 
-    protected:
-        Unit* playerQuester;
+    private:
+        void StartPatrol()
+        {
+            me->GetMotionMaster()->MoveSmoothPath(
+                POINT_BALLOON_PATROL, SteamwheedleBalloonPatrolPath,
+                std::size(SteamwheedleBalloonPatrolPath), false, true);
+        }
+
+        ObjectGuid playerGuid;
+        bool started = false;
     };
 
     CreatureAI* GetAI(Creature* creature) const override
@@ -714,8 +775,25 @@ struct npc_balloon_throwing_station : public ScriptedAI
                 if (Unit* myOwner = me->ToTempSummon()->GetSummoner())
                 {
                     if (Unit* ownerOwner = myOwner->ToTempSummon()->GetSummoner())
-                        ownerOwner->EnterVehicle(me, 0);
+                    {
+                        if (ownerOwner->GetVehicleBase() != me)
+                            ownerOwner->EnterVehicle(me, 0);
+
+                        // Do not let the outer balloon depart until the
+                        // player's nested throwing-station seat is confirmed.
+                        if (ownerOwner->GetVehicleBase() == me)
+                        {
+                            if (Creature* balloon = myOwner->ToCreature())
+                                balloon->AI()->DoAction(ACTION_START_WP);
+                            break;
+                        }
+                    }
                 }
+
+                // Vehicle accessories and their passengers are created over
+                // separate map updates. Retry instead of losing the only
+                // boarding event when that ordering takes longer than usual.
+                events.ScheduleEvent(EVENT_RIDE_INVOKER, 500ms);
                 break;
             }
             case ACTION_ENABLE_ABILITIES:
@@ -757,14 +835,23 @@ class spell_emergency_rocket_pack : public SpellScript
     {
         if (Unit* caster = GetCaster())
         {
-            if (Unit* passenger = caster->GetVehicleKit()->GetPassenger(0))
+            if (Vehicle* vehicle = caster->GetVehicleKit())
             {
-                if (Vehicle* vehicle = caster->GetVehicleKit())
-                    vehicle->GetBase()->ToCreature()->DespawnOrUnsummon(2000);
+                if (Unit* passenger = vehicle->GetPassenger(0))
+                {
+                    if (Creature* vehicleCreature = vehicle->GetBase()->ToCreature())
+                        vehicleCreature->DespawnOrUnsummon(2000);
 
-                passenger->ExitVehicle();
-                passenger->CastSpell(caster, SPELL_EMERGENCY_ROCKET_PACK, true);
-                passenger->GetMotionMaster()->MoveJump(-7114.65f, -3888.82f, 75.0f, 45.0f, 25.0f, 10);
+                    passenger->ExitVehicle();
+                    passenger->RemoveAurasDueToSpell(SPELL_EMERGENCY_ROCKET_PACK);
+                    passenger->CastSpell(caster, SPELL_EMERGENCY_ROCKET_PACK, true);
+                    if (Aura* rocketPack = passenger->GetAura(SPELL_EMERGENCY_ROCKET_PACK))
+                    {
+                        rocketPack->SetMaxDuration(10 * IN_MILLISECONDS);
+                        rocketPack->SetDuration(10 * IN_MILLISECONDS);
+                    }
+                    passenger->GetMotionMaster()->MoveJump(-7114.65f, -3888.82f, 75.0f, 45.0f, 25.0f, 10);
+                }
             }
         }
     }
@@ -772,6 +859,59 @@ class spell_emergency_rocket_pack : public SpellScript
     void Register() override
     {
         AfterCast += SpellCastFn(spell_emergency_rocket_pack::HandleReturnToGadgetzan);
+    }
+};
+
+class player_rocket_rescue_aura_cleanup : public PlayerScript
+{
+public:
+    player_rocket_rescue_aura_cleanup() : PlayerScript("player_rocket_rescue_aura_cleanup") { }
+
+    void OnLogin(Player* player) override
+    {
+        // The rocket-pack visual is permanent in the client data. Older
+        // versions of the quest left it saved on the character indefinitely.
+        player->RemoveAurasDueToSpell(SPELL_EMERGENCY_ROCKET_PACK);
+    }
+};
+
+class spell_rocket_rescue_deliver_life_rocket : public SpellScript
+{
+    PrepareSpellScript(spell_rocket_rescue_deliver_life_rocket);
+
+    void HandleImpact(SpellEffIndex /*effIndex*/)
+    {
+        Unit* caster = GetCaster();
+        WorldLocation const* destination = GetHitDest();
+        if (!caster || !destination)
+            return;
+
+        Player* player = caster->GetCharmerOrOwnerPlayerOrPlayerItself();
+        if (!player && caster->GetVehicleKit())
+            if (Unit* passenger = caster->GetVehicleKit()->GetPassenger(0))
+                player = passenger->ToPlayer();
+
+        if (!player ||
+            (player->GetQuestStatus(QUEST_ENTRY_ROCKET_RESCUE_H) != QUEST_STATUS_INCOMPLETE &&
+             player->GetQuestStatus(QUEST_ENTRY_ROCKET_RESCUE_A) != QUEST_STATUS_INCOMPLETE))
+            return;
+
+        std::list<Creature*> survivors;
+        caster->GetCreatureListWithEntryInGrid(survivors, NPC_STEAMWHEEDLE_SURVIVOR, 100.0f);
+        for (Creature* survivor : survivors)
+        {
+            if (survivor->IsAlive() && survivor->GetExactDist2d(destination) <= 15.0f)
+            {
+                player->KilledMonsterCredit(NPC_STEAMWHEEDLE_SURVIVOR_CREDIT);
+                break;
+            }
+        }
+    }
+
+    void Register() override
+    {
+        OnEffectHit += SpellEffectFn(spell_rocket_rescue_deliver_life_rocket::HandleImpact,
+            EFFECT_0, SPELL_EFFECT_TRIGGER_MISSILE);
     }
 };
 
@@ -783,5 +923,7 @@ void AddSC_tanaris()
     new npc_steamwheedle_balloon();
     new npc_steamwheedle_balloon_escort();
     new creature_script<npc_balloon_throwing_station>("npc_balloon_throwing_station");
+    new player_rocket_rescue_aura_cleanup();
+    new spell_script<spell_rocket_rescue_deliver_life_rocket>("spell_rocket_rescue_deliver_life_rocket");
     new spell_script<spell_emergency_rocket_pack>("spell_emergency_rocket_pack");
 }

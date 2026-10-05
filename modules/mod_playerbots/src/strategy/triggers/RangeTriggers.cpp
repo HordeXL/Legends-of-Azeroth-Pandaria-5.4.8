@@ -97,3 +97,36 @@ bool FarFromMasterTrigger::IsActive()
 {
     return sServerFacade->IsDistanceGreaterThan(AI_VALUE2(float, "distance", "master target"), distance);
 }
+
+bool TooCloseToCreatureTrigger::TooCloseToCreature(uint32 creatureId, float range, bool alive)
+{
+    return bot->FindNearestCreature(creatureId, range, alive) != nullptr;
+}
+
+bool TooCloseToPlayerWithDebuffTrigger::TooCloseToPlayerWithDebuff(uint32 spellId, float range)
+{
+    Group* group = bot->GetGroup();
+    if (!group)
+        return false;
+
+    for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+        if (Player* member = ref->GetSource())
+            if (member != bot && member->IsAlive() && member->HasAura(spellId) &&
+                bot->GetExactDist2d(member) < range)
+                return true;
+    return false;
+}
+
+bool TooFarFromPlayerWithAuraTrigger::TooFarFromPlayerWithAura(uint32 spellId, float range, bool selfInclude)
+{
+    Group* group = bot->GetGroup();
+    if (!group)
+        return false;
+
+    for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+        if (Player* member = ref->GetSource())
+            if ((selfInclude || member != bot) && member->IsAlive() && member->HasAura(spellId) &&
+                bot->GetExactDist2d(member) > range)
+                return true;
+    return false;
+}

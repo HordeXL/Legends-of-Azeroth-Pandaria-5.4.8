@@ -20,6 +20,12 @@
 #include "ScriptedGossip.h"
 #include "ScriptedEscortAI.h"
 #include "CreatureTextMgr.h"
+#include "Vehicle.h"
+#include "Player.h"
+#include "ObjectAccessor.h"
+#include "MoveSpline.h"
+
+void AddSC_scouting_reports();
 
 const Position MySerpentPath[2]
 {
@@ -989,23 +995,21 @@ class npc_pandriarch_windfur : public CreatureScript
 
             void DamageTaken(Unit* attacker, uint32& damage) override
             {
-                if (Player* player = attacker->ToPlayer())
+                if (Player* player = attacker->GetCharmerOrOwnerPlayerOrPlayerItself())
                 {
-                    if (me->HealthBelowPctDamaged(10, damage))
+                    if (me->HealthBelowPctDamaged(10, damage) || damage >= me->GetHealth())
                     {
                         damage = 0;
                         me->CombatStop();
                         me->GetMotionMaster()->MovePoint(0, 1996.76001f, -2216.780029f, 247.725006f);
                         me->SetFaction(35);
+                        me->SetReactState(REACT_PASSIVE);
                         me->SetFullHealth();
                         me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_PC);
                         me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_NPC);
                         me->SetFlag(UNIT_FIELD_NPC_FLAGS, UNIT_NPC_FLAG_GOSSIP);
                         player->KilledMonsterCredit(56206);
                     }
-
-                    if (damage > me->GetHealth())
-                        damage = 0;
                 }
             }
 
@@ -1140,14 +1144,15 @@ class npc_pandriarch_bramblestaff : public CreatureScript
 
             void DamageTaken(Unit* attacker, uint32& damage) override
             {
-                if (Player* player = attacker->ToPlayer())
+                if (Player* player = attacker->GetCharmerOrOwnerPlayerOrPlayerItself())
                 {
-                    if (me->HealthBelowPctDamaged(10, damage) || damage > me->GetHealth())
+                    if (me->HealthBelowPctDamaged(10, damage) || damage >= me->GetHealth())
                     {
                         damage = 0;
                         me->CombatStop();
                         me->GetMotionMaster()->MovePoint(0, 1862.300049f, -2325.060059f, 257.062012f);
                         me->SetFaction(35);
+                        me->SetReactState(REACT_PASSIVE);
                         me->SetFullHealth();
                         me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_PC);
                         me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_NPC);
@@ -1289,14 +1294,15 @@ class npc_pandriarch_goldendraft : public CreatureScript
 
             void DamageTaken(Unit* attacker, uint32& damage) override
             {
-                if (Player* player = attacker->ToPlayer())
+                if (Player* player = attacker->GetCharmerOrOwnerPlayerOrPlayerItself())
                 {
-                    if (me->HealthBelowPctDamaged(10, damage) || damage > me->GetHealth())
+                    if (me->HealthBelowPctDamaged(10, damage) || damage >= me->GetHealth())
                     {
                         damage = 0;
                         me->CombatStop();
                         me->GetMotionMaster()->MovePoint(0, 1942.630005f, -2290.530029f, 240.429001f);
                         me->SetFaction(35);
+                        me->SetReactState(REACT_PASSIVE);
                         me->SetFullHealth();
                         me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_PC);
                         me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_NPC);
@@ -2775,6 +2781,7 @@ class npc_nectarbreeze_farmer : public CreatureScript
                 if (player->GetQuestStatus(29579) == QUEST_STATUS_INCOMPLETE)
                 {
                     player->CastSpell(player, 102469, true);
+                    player->KilledMonsterCredit(54872);
                     creature->AI()->Talk(0);
                     creature->RemoveFlag(UNIT_FIELD_NPC_FLAGS, UNIT_NPC_FLAG_GOSSIP);
                     creature->DespawnOrUnsummon(2000);
@@ -4618,7 +4625,7 @@ struct npc_jade_forest_alliance_barricade : public customCreatureAI
             for (auto&& itr : barricades)
             {
                 barricadeGUIDS.push_back(itr->GetGUID());
-                itr->SetPhaseMask(2, true);
+                itr->SetPhaseMask(0, true);
             }
 
             scheduler
@@ -4626,7 +4633,7 @@ struct npc_jade_forest_alliance_barricade : public customCreatureAI
             {
                 for (auto&& itr : barricadeGUIDS)
                     if (GameObject* go = ObjectAccessor::GetGameObject(*me, itr))
-                        go->SetPhaseMask(1, true);
+                        go->SetPhaseMask(go->GetGOData() ? go->GetGOData()->phaseMask : PHASEMASK_NORMAL, true);
 
                 isRestoring = false;
             });
@@ -4843,8 +4850,528 @@ class spell_reverse_cast_ride_seat_1 : public SpellScript
     }
 };
 
+
+// Sully "The Pickle" McLeary - SI:7 Report: Fire From the Sky (29725)
+enum q29725
+{
+    QUEST_FIRE_FROM_THE_SKY = 29725,
+    NPC_SULLY_SE_CREDIT     = 55349,
+    NPC_SULLY_SW_CREDIT     = 55350,
+    NPC_SULLY_N_CREDIT      = 55351,
+    NPC_SULLY_RETURN_CREDIT = 55352
+};
+
+
+
+
+
+
+
+
+
+namespace RightTrack
+{
+    uint32 const Quest = 29731;
+    uint32 const Kiryn = 55680;
+    uint32 const Soldier = 55770;
+    uint32 const Tiger = 55550;
+    uint32 const PrivatePhase = 65536;
+    uint32 const OriginalPhaseData = 1;
+    Position const Start = { 761.766f, -1633.19f, 58.359f, 4.9f };
+    Position const Return = { 1443.3f, -548.747f, 352.87f, 0.0f };
+    Position const SoldierPosition = { 859.583f, -1941.82f, 64.6361f, 5.60492f };
+    Position const TigerPositions[] =
+    {
+        { 761.766f, -1633.19f, 58.359f, 0.414101f },
+        { 812.758f, -1676.58f, 55.8086f, 5.35897f },
+        { 797.644f, -1773.41f, 56.8139f, 2.70746f },
+        { 684.927f, -1695.43f, 40.9345f, 4.78406f }
+    };
+
+    void Board(ObjectGuid guid, uint32 originalPhaseMask, uint32 attempt = 0)
+    {
+        Player* player = ObjectAccessor::FindPlayer(guid);
+        if (!player || !player->IsAlive() || player->GetQuestStatus(Quest) != QUEST_STATUS_INCOMPLETE || player->GetVehicle())
+        {
+            if (player && player->GetPhaseMask() == PrivatePhase)
+                player->SetPhaseMask(originalPhaseMask, true);
+            return;
+        }
+        // Wait for the teleport acknowledgement before creating the transport
+        // and sending its boarding spline to the client.
+        if (player->IsBeingTeleported())
+        {
+            if (attempt < 20)
+                player->m_Events.Schedule(500, [guid, originalPhaseMask, attempt]()
+                    { Board(guid, originalPhaseMask, attempt + 1); });
+            else if (player->GetPhaseMask() == PrivatePhase)
+                player->SetPhaseMask(originalPhaseMask, true);
+            return;
+        }
+        if (player->GetMapId() != 870 || player->GetDistance(Start) > 15.0f)
+        {
+            if (player->GetPhaseMask() == PrivatePhase)
+                player->SetPhaseMask(originalPhaseMask, true);
+            return;
+        }
+        if (TempSummon* kiryn = player->SummonCreature(Kiryn, player->GetPosition(),
+            TEMPSUMMON_TIMED_DESPAWN, 15 * MINUTE * IN_MILLISECONDS, 238, player->GetGUID()))
+        {
+            kiryn->AI()->SetData(OriginalPhaseData, originalPhaseMask);
+            if (!kiryn->GetVehicleKit())
+            {
+                kiryn->DespawnOrUnsummon();
+                player->SetPhaseMask(originalPhaseMask, true);
+                return;
+            }
+            player->UpdateVisibilityOf(kiryn);
+            if (!player->HaveAtClient(kiryn))
+            {
+                kiryn->DespawnOrUnsummon();
+                player->SetPhaseMask(originalPhaseMask, true);
+                return;
+            }
+            player->EnterVehicle(kiryn, 1);
+            if (player->GetVehicleBase() != kiryn)
+            {
+                kiryn->DespawnOrUnsummon();
+                player->SetPhaseMask(originalPhaseMask, true);
+            }
+        }
+        else
+            player->SetPhaseMask(originalPhaseMask, true);
+    }
+
+    void Begin(Player* player)
+    {
+        if (!player->IsAlive() || player->GetVehicle() || player->IsInCombat() || player->IsBeingTeleported() ||
+            player->GetQuestStatus(Quest) != QUEST_STATUS_INCOMPLETE)
+            return;
+        player->Dismount();
+        uint32 originalPhaseMask = player->GetPhaseMask() == PrivatePhase
+            ? PHASEMASK_NORMAL : player->GetPhaseMask();
+        // Let TeleportTo rebuild visibility after changing the phase. An
+        // additional asynchronous visibility update races grid loading.
+        player->SetPhaseMask(PrivatePhase, false);
+        if (player->TeleportTo(870, Start.GetPositionX(), Start.GetPositionY(), Start.GetPositionZ(), Start.GetOrientation()))
+        {
+            ObjectGuid guid = player->GetGUID();
+            player->m_Events.Schedule(500, [guid, originalPhaseMask]() { Board(guid, originalPhaseMask); });
+        }
+        else
+            player->SetPhaseMask(originalPhaseMask, true);
+    }
+}
+
+class npc_jade_forest_right_track_report : public CreatureScript
+{
+public:
+    npc_jade_forest_right_track_report() : CreatureScript("npc_jade_forest_right_track_report") { }
+
+    struct ReportGiverAI : public ScriptedAI
+    {
+        ReportGiverAI(Creature* creature) : ScriptedAI(creature) { }
+        void OnQuestAccept(Player* player, Quest const* quest) override
+        {
+            if (quest->GetQuestId() == RightTrack::Quest)
+                RightTrack::Begin(player);
+        }
+    };
+    CreatureAI* GetAI(Creature* creature) const override { return new ReportGiverAI(creature); }
+
+    bool OnQuestAccept(Player* player, Creature*, Quest const* quest) override
+    {
+        if (quest->GetQuestId() == RightTrack::Quest)
+            RightTrack::Begin(player);
+        return true;
+    }
+
+    bool OnGossipHello(Player* player, Creature* creature) override
+    {
+        if (creature->IsQuestGiver())
+            player->PrepareQuestMenu(creature->GetGUID());
+        if (player->GetQuestStatus(RightTrack::Quest) == QUEST_STATUS_INCOMPLETE)
+            player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "What happened next, Kiryn?", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
+        player->SEND_GOSSIP_MENU(DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
+        return true;
+    }
+
+    bool OnGossipSelect(Player* player, Creature* creature, uint32 sender, uint32 action) override
+    {
+        player->CLOSE_GOSSIP_MENU();
+        if (sender == GOSSIP_SENDER_MAIN && action == GOSSIP_ACTION_INFO_DEF + 1 &&
+            player->IsWithinDistInMap(creature, INTERACTION_DISTANCE))
+            RightTrack::Begin(player);
+        return true;
+    }
+};
+
+struct npc_jade_forest_right_track_kiryn : public ScriptedAI
+{
+    npc_jade_forest_right_track_kiryn(Creature* creature) : ScriptedAI(creature), summons(creature) { }
+    SummonList summons;
+    ObjectGuid soldierGuid;
+    bool boarded = false;
+    uint32 checkTimer = 500;
+    uint32 originalPhaseMask = PHASEMASK_NORMAL;
+
+    void OnCharmed(bool) override { }
+
+    void Reset() override
+    {
+        boarded = false;
+        checkTimer = 500;
+        originalPhaseMask = PHASEMASK_NORMAL;
+        soldierGuid.Clear();
+        me->SetReactState(REACT_PASSIVE);
+        // Kiryn shares terrain with the Lurking Tigers used as report targets.
+        // They must not auto-attack and kill the player-controlled vehicle.
+        me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_NPC);
+    }
+
+    void SetData(uint32 type, uint32 data) override
+    {
+        if (type == RightTrack::OriginalPhaseData)
+            originalPhaseMask = data;
+    }
+
+    void JustSummoned(Creature* summon) override { summons.Summon(summon); }
+    void SummonedCreatureDespawn(Creature* summon) override { summons.Despawn(summon); }
+    void JustDied(Unit*) override { summons.DespawnAll(); }
+
+    Creature* Spawn(uint32 entry, Position const& position, Player* player)
+    {
+        Creature* summon = me->SummonCreature(entry, position, TEMPSUMMON_TIMED_DESPAWN,
+            15 * MINUTE * IN_MILLISECONDS, 0, player->GetGUID());
+        if (summon && entry == RightTrack::Tiger)
+            summon->SetReactState(REACT_PASSIVE);
+        return summon;
+    }
+
+    void PassengerBoarded(Unit* passenger, int8, bool apply) override
+    {
+        Player* player = passenger->ToPlayer();
+        if (!player)
+            return;
+        boarded = apply;
+        if (apply)
+        {
+            for (Position const& position : RightTrack::TigerPositions)
+                if (!Spawn(RightTrack::Tiger, position, player))
+                {
+                    player->ExitVehicle();
+                    return;
+                }
+            if (Creature* soldier = Spawn(RightTrack::Soldier, RightTrack::SoldierPosition, player))
+                soldierGuid = soldier->GetGUID();
+            else
+                player->ExitVehicle();
+            return;
+        }
+        summons.DespawnAll();
+        ObjectGuid guid = player->GetGUID();
+        uint32 phaseMask = originalPhaseMask;
+        player->m_Events.Schedule(100, [guid, phaseMask]()
+        {
+            if (Player* pilot = ObjectAccessor::FindPlayer(guid))
+                if (pilot->IsAlive() && !pilot->IsBeingTeleported() && pilot->GetMapId() == 870 && !pilot->GetVehicle())
+                {
+                    if (pilot->GetPhaseMask() == RightTrack::PrivatePhase)
+                        pilot->SetPhaseMask(phaseMask, false);
+                    pilot->NearTeleportTo(RightTrack::Return.GetPositionX(), RightTrack::Return.GetPositionY(),
+                        RightTrack::Return.GetPositionZ(), RightTrack::Return.GetOrientation());
+                }
+        });
+        me->DespawnOrUnsummon(500);
+    }
+
+    void UpdateAI(uint32 diff) override
+    {
+        if (!boarded)
+            return;
+        if (checkTimer > diff)
+        {
+            checkTimer -= diff;
+            return;
+        }
+        checkTimer = 500;
+        Unit* passenger = me->GetVehicleKit() ? me->GetVehicleKit()->GetPassenger(1) : nullptr;
+        Player* player = passenger ? passenger->ToPlayer() : nullptr;
+        if (!player)
+        {
+            summons.DespawnAll();
+            me->DespawnOrUnsummon();
+            return;
+        }
+        if (player->GetQuestStatus(RightTrack::Quest) != QUEST_STATUS_INCOMPLETE || !player->IsAlive())
+        {
+            player->ExitVehicle();
+            return;
+        }
+        Creature* soldier = me->GetMap()->GetCreature(soldierGuid);
+        if (!soldier)
+        {
+            player->ExitVehicle();
+            return;
+        }
+        if (me->IsWithinDistInMap(soldier, 15.0f))
+        {
+            player->KilledMonsterCredit(RightTrack::Soldier);
+            player->ExitVehicle();
+        }
+    }
+};
+
+class spell_jade_forest_right_track_smoke : public SpellScript
+{
+    PrepareSpellScript(spell_jade_forest_right_track_smoke);
+
+    SpellCastResult CheckTarget()
+    {
+        Unit* caster = GetCaster();
+        Unit* target = GetExplTargetUnit();
+        if (!caster || caster->GetEntry() != RightTrack::Kiryn || !caster->GetVehicleKit() ||
+            !target || target->GetEntry() != 55550 || !target->IsAlive())
+            return SPELL_FAILED_BAD_TARGETS;
+        Unit* passenger = caster->GetVehicleKit()->GetPassenger(1);
+        Player* player = passenger ? passenger->ToPlayer() : nullptr;
+        TempSummon* summon = target->ToCreature() ? target->ToCreature()->ToTempSummon() : nullptr;
+        return player && summon && player->GetQuestStatus(RightTrack::Quest) == QUEST_STATUS_INCOMPLETE &&
+            summon->GetPrivateObjectOwner() == player->GetGUID() && summon->GetSummonerGUID() == caster->GetGUID()
+            ? SPELL_CAST_OK : SPELL_FAILED_BAD_TARGETS;
+    }
+
+    void Register() override
+    {
+        OnCheckCast += SpellCheckCastFn(spell_jade_forest_right_track_smoke::CheckTarget);
+    }
+};
+
+namespace AcidRain
+{
+    uint32 const Quest = 29827;
+    Position const Landing = { 2510.05f, -485.792f, 341.653f, 0.0f };
+    Position const Route[] =
+    {
+        { 2470.0f, -490.0f, 380.0f, 0.0f },
+        { 2380.0f, -490.0f, 380.0f, 0.0f },
+        { 2315.0f, -510.0f, 385.0f, 0.0f },
+        { 2290.0f, -600.0f, 395.0f, 0.0f },
+        { 2350.0f, -650.0f, 395.0f, 0.0f },
+        { 2410.0f, -610.0f, 385.0f, 0.0f },
+        { 2400.0f, -550.0f, 380.0f, 0.0f }
+    };
+
+    Player* Pilot(Unit* caster)
+    {
+        if (!caster || caster->GetEntry() != 55676 || !caster->GetVehicleKit())
+            return nullptr;
+        Unit* passenger = caster->GetVehicleKit()->GetPassenger(0);
+        Player* player = passenger ? passenger->ToPlayer() : nullptr;
+        return player && player->GetQuestStatus(Quest) == QUEST_STATUS_INCOMPLETE ? player : nullptr;
+    }
+
+    bool IsTarget(Creature* target)
+    {
+        return target && target->IsAlive() &&
+            (target->GetEntry() == 55701 || target->GetEntry() == 55707 ||
+             target->GetEntry() == 58943 || target->GetEntry() == 58945);
+    }
+}
+
+class npc_jade_forest_acid_rain_boarding : public CreatureScript
+{
+public:
+    npc_jade_forest_acid_rain_boarding() : CreatureScript("npc_jade_forest_acid_rain_boarding") { }
+
+    bool OnGossipHello(Player* player, Creature* creature) override
+    {
+        if (player->GetQuestStatus(AcidRain::Quest) != QUEST_STATUS_INCOMPLETE ||
+            player->GetVehicle() || player->IsInCombat())
+            return false;
+        player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "Start the Acid Rain air raid.", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
+        player->SEND_GOSSIP_MENU(DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
+        return true;
+    }
+
+    bool OnGossipSelect(Player* player, Creature* creature, uint32 sender, uint32 action) override
+    {
+        player->CLOSE_GOSSIP_MENU();
+        if (sender != GOSSIP_SENDER_MAIN || action != GOSSIP_ACTION_INFO_DEF + 1 ||
+            player->GetQuestStatus(AcidRain::Quest) != QUEST_STATUS_INCOMPLETE ||
+            player->GetVehicle() || player->IsInCombat() || !player->IsAlive() ||
+            !player->IsWithinDistInMap(creature, INTERACTION_DISTANCE))
+            return false;
+
+        if (TempSummon* flight = player->SummonCreature(55676, AcidRain::Landing, TEMPSUMMON_TIMED_DESPAWN, 10 * MINUTE * IN_MILLISECONDS))
+        {
+            if (!flight->GetVehicleKit())
+            {
+                flight->DespawnOrUnsummon();
+                return false;
+            }
+            flight->SetPhaseMask(player->GetPhaseMask(), false);
+            flight->SetExplicitSeerGuid(player->GetGUID());
+            // The transport must exist at the client before the enter spline
+            // uses its GUID and local seat coordinates. Summoning only queues
+            // visibility updates; boarding immediately can send these first.
+            player->UpdateVisibilityOf(flight);
+            if (!player->HaveAtClient(flight))
+            {
+                flight->DespawnOrUnsummon();
+                return false;
+            }
+            player->Dismount();
+            player->EnterVehicle(flight, 0);
+        }
+        return true;
+    }
+};
+
+struct npc_jade_forest_acid_rain_flight : public ScriptedAI
+{
+    npc_jade_forest_acid_rain_flight(Creature* creature) : ScriptedAI(creature) { }
+    bool started = false;
+    uint32 point = 0;
+    uint32 boardingDelay = 0;
+    bool takeoff = true;
+
+    // A control seat charms its base. Keep the scripted patrol AI instead
+    // of replacing it with PossessedAI and losing PassengerBoarded/UpdateAI.
+    void OnCharmed(bool /*apply*/) override { }
+
+    void Reset() override
+    {
+        started = false;
+        point = 0;
+        boardingDelay = 0;
+        takeoff = true;
+        me->SetReactState(REACT_PASSIVE);
+        me->SetCanFly(true);
+        me->SetDisableGravity(true);
+        me->SetSpeed(MOVE_FLIGHT, 0.7f);
+    }
+
+    void PassengerBoarded(Unit* passenger, int8 /*seat*/, bool apply) override
+    {
+        Player* player = passenger->ToPlayer();
+        if (!player)
+            return;
+        if (apply)
+        {
+            player->SetClientControl(me, false);
+            boardingDelay = 500;
+            started = true;
+            return;
+        }
+        ObjectGuid guid = player->GetGUID();
+        player->m_Events.Schedule(100, [guid]()
+        {
+            if (Player* pilot = ObjectAccessor::FindPlayer(guid))
+                if (pilot->IsAlive() && !pilot->IsBeingTeleported() && pilot->GetMapId() == 870 && !pilot->GetVehicle())
+                    pilot->NearTeleportTo(AcidRain::Landing.GetPositionX(), AcidRain::Landing.GetPositionY(), AcidRain::Landing.GetPositionZ(), AcidRain::Landing.GetOrientation());
+        });
+        started = false;
+        me->DespawnOrUnsummon(500);
+    }
+
+    void UpdateAI(uint32 diff) override
+    {
+        if (!started)
+            return;
+        Unit* passenger = me->GetVehicleKit() ? me->GetVehicleKit()->GetPassenger(0) : nullptr;
+        Player* player = passenger ? passenger->ToPlayer() : nullptr;
+        if (!player)
+        {
+            me->DespawnOrUnsummon();
+            return;
+        }
+        if (player->GetQuestStatus(AcidRain::Quest) != QUEST_STATUS_INCOMPLETE || !player->IsAlive())
+        {
+            player->ExitVehicle();
+            return;
+        }
+        if (me->GetMapId() != 870 || me->GetPositionX() < 2200.0f ||
+            me->GetPositionX() > 2600.0f || me->GetPositionY() < -750.0f ||
+            me->GetPositionY() > -400.0f || me->GetPositionZ() < 320.0f ||
+            me->GetPositionZ() > 450.0f)
+        {
+            player->ExitVehicle();
+            return;
+        }
+        if (boardingDelay > diff)
+        {
+            boardingDelay -= diff;
+            return;
+        }
+        boardingDelay = 0;
+        if (!me->movespline->Finalized())
+            return;
+        Position destination = AcidRain::Route[point];
+        if (takeoff)
+        {
+            destination = AcidRain::Landing;
+            destination.m_positionZ = 380.0f;
+            takeoff = false;
+        }
+        else
+            point = (point + 1) % (sizeof(AcidRain::Route) / sizeof(Position));
+        Movement::MoveSplineInit flight(me);
+        flight.MoveTo(destination.GetPositionX(), destination.GetPositionY(), destination.GetPositionZ(), false);
+        flight.SetFly();
+        flight.SetVelocity(5.0f);
+        flight.Launch();
+    }
+};
+
+class spell_jade_forest_acid_rain_star : public SpellScript
+{
+    PrepareSpellScript(spell_jade_forest_acid_rain_star);
+    void Hit(SpellEffIndex index)
+    {
+        PreventHitDefaultEffect(index);
+        Player* pilot = AcidRain::Pilot(GetCaster());
+        Creature* target = GetHitCreature();
+        if (pilot && AcidRain::IsTarget(target) && GetCaster()->IsWithinDistInMap(target, 100.0f))
+            pilot->DealDamage(target, target->GetHealth(), nullptr, DIRECT_DAMAGE, SPELL_SCHOOL_MASK_NATURE, GetSpellInfo(), false);
+    }
+    void Register() override
+    {
+        OnEffectHitTarget += SpellEffectFn(spell_jade_forest_acid_rain_star::Hit, EFFECT_0, SPELL_EFFECT_DUMMY);
+    }
+};
+
+class spell_jade_forest_acid_rain_blossom : public SpellScript
+{
+    PrepareSpellScript(spell_jade_forest_acid_rain_blossom);
+    void Hit(SpellEffIndex index)
+    {
+        PreventHitDefaultEffect(index);
+        Player* pilot = AcidRain::Pilot(GetCaster());
+        if (!pilot)
+            return;
+        std::list<Creature*> targets;
+        for (uint32 entry : { 55701u, 55707u, 58943u, 58945u })
+            GetCreatureListWithEntryInGrid(targets, GetCaster(), entry, 65.0f);
+        for (Creature* target : targets)
+            if (AcidRain::IsTarget(target) && GetCaster()->GetExactDist2d(target) <= 18.0f)
+                pilot->DealDamage(target, target->GetHealth(), nullptr, DIRECT_DAMAGE, SPELL_SCHOOL_MASK_NATURE, GetSpellInfo(), false);
+    }
+    void Register() override
+    {
+        OnEffectHitTarget += SpellEffectFn(spell_jade_forest_acid_rain_blossom::Hit, EFFECT_0, SPELL_EFFECT_FORCE_CAST);
+    }
+};
+
 void AddSC_jade_forest()
 {
+    new npc_jade_forest_acid_rain_boarding();
+    new creature_script<npc_jade_forest_acid_rain_flight>("npc_jade_forest_acid_rain_flight");
+    new spell_script<spell_jade_forest_acid_rain_star>("spell_jade_forest_acid_rain_star");
+    new spell_script<spell_jade_forest_acid_rain_blossom>("spell_jade_forest_acid_rain_blossom");
+
+
+
     // Rare mobs
     new npc_kor_nas_nightsavage();
     new npc_mister_ferocious();
@@ -4855,6 +5382,10 @@ void AddSC_jade_forest()
     new npc_grookin_outrunner();
     new npc_bamboo_python();
     new npc_lurking_tiger();
+    AddSC_scouting_reports();
+    new npc_jade_forest_right_track_report();
+    new creature_script<npc_jade_forest_right_track_kiryn>("npc_jade_forest_right_track_kiryn");
+    new spell_script<spell_jade_forest_right_track_smoke>("spell_jade_forest_right_track_smoke");
     new npc_rakira();
     new npc_ro_shen();
     new npc_sha_reminant();
@@ -4889,6 +5420,7 @@ void AddSC_jade_forest()
     new creature_script<npc_shadowfae_trickster>("npc_shadowfae_trickster");
     new creature_script<npc_thunderfist_gorilla>("npc_thunderfist_gorilla");
     // Quest scripts
+
     new npc_nectarbreeze_farmer();
     new creature_script<npc_windward_hatchling>("npc_windward_hatchling");
     new creature_script<npc_windward_nest_trigger>("npc_windward_nest_trigger");

@@ -16,6 +16,8 @@
 */
 
 #include "ScriptMgr.h"
+#include "ScriptedCreature.h"
+#include "ScriptedGossip.h"
 #include "InstanceScript.h"
 #include "temple_of_ahnqiraj.h"
 
@@ -223,7 +225,45 @@ class instance_temple_of_ahnqiraj : public InstanceMapScript
 
 };
 
+
+
+class npc_andorgos : public CreatureScript
+{
+public:
+    npc_andorgos() : CreatureScript("npc_andorgos") { }
+
+    struct npc_andorgosAI : public ScriptedAI
+    {
+        npc_andorgosAI(Creature* creature) : ScriptedAI(creature) { }
+
+        bool OnGossipSelect(Player* player, uint32 menuId, uint32 optionId) override
+        {
+            // Database gossip passes OptionType to CreatureScript, not ActionMenuID.
+            // The AI callback receives the actual menu and option identifiers.
+            if (menuId != 6644 || optionId > 1)
+                return false;
+
+            player->PlayerTalkClass->ClearMenus();
+            player->CLOSE_GOSSIP_MENU();
+
+            if (optionId == 0)
+                player->TeleportTo(531, -8971.81f, 1321.47f, -104.249f, 1.0f);
+            else
+                player->TeleportTo(531, -8632.84f, 2055.87f, 108.86f, 1.0f);
+
+            return true;
+        }
+    };
+
+    CreatureAI* GetAI(Creature* creature) const override
+    {
+        return new npc_andorgosAI(creature);
+    }
+};
+
 void AddSC_instance_temple_of_ahnqiraj()
 {
     new instance_temple_of_ahnqiraj();
+
+    new npc_andorgos();
 }

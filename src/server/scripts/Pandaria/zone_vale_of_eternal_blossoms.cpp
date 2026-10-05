@@ -21,6 +21,9 @@
 #include "ScriptedGossip.h"
 #include "ScriptedEscortAI.h"
 #include "Group.h"
+#include <algorithm>
+#include <cmath>
+#include <iterator>
 
 enum eSpells
 {
@@ -1527,8 +1530,211 @@ class scene_why_do_we_fight : public SceneScript
         }
 };
 
+namespace SurvivalRing
+{
+uint32 const FlameQuest = 30240;
+uint32 const BladesQuest = 30242;
+uint32 const FlameBar = 112836;
+uint32 const BladesBar = 127386;
+
+bool Inside(Player* player)
+{
+    if (!player || !player->IsAlive() || player->GetMapId() != 870 ||
+        player->IsMounted() || player->IsFlying() || player->GetVehicle())
+        return false;
+    // The outer posts bound the same ring for both daily challenges.
+    return player->GetExactDist2d(801.422f, 2004.85f) < 26.0f &&
+        player->GetPositionZ() > 314.0f && player->GetPositionZ() < 320.5f;
+}
+
+bool Eligible(Player* player, uint32 quest)
+{
+    return Inside(player) && player->GetQuestStatus(quest) == QUEST_STATUS_INCOMPLETE;
+}
+}
+
+// The existing ring controller starts each player's own challenge independently.
+struct npc_survival_ring_controller : public ScriptedAI
+{
+    npc_survival_ring_controller(Creature* creature) : ScriptedAI(creature) { }
+    uint32 checkTimer = 0;
+
+    void UpdateAI(uint32 diff) override
+    {
+        if (checkTimer > diff) { checkTimer -= diff; return; }
+        checkTimer = 500;
+        std::list<Player*> players;
+        GetPlayerListInGrid(players, me, 40.0f);
+        for (Player* player : players)
+        {
+            if (player->HasAura(SurvivalRing::FlameBar) || player->HasAura(SurvivalRing::BladesBar))
+                continue;
+            uint32 bar = SurvivalRing::Eligible(player, SurvivalRing::FlameQuest) ? SurvivalRing::FlameBar :
+                SurvivalRing::Eligible(player, SurvivalRing::BladesQuest) ? SurvivalRing::BladesBar : 0;
+            if (bar)
+                if (Aura* aura = player->AddAura(bar, player))
+                {
+                    // This core only dispatches OnAuraUpdate for a finite duration.
+                    aura->SetMaxDuration(60000);
+                    aura->SetDuration(60000);
+                    player->SetMaxPower(POWER_ALTERNATE_POWER, 60);
+                    player->SetPower(POWER_ALTERNATE_POWER, 0);
+                }
+        }
+    }
+};
+
+class spell_survival_ring_progress : public AuraScript
+{
+    PrepareAuraScript(spell_survival_ring_progress);
+    uint32 elapsed = 0;
+
+    void OnApply(AuraEffect const*, AuraEffectHandleModes)
+    {
+        // Also reset attempts restored from the earlier indefinite aura.
+        elapsed = 0;
+        SetMaxDuration(60000);
+        SetDuration(60000);
+        if (Unit* owner = GetUnitOwner())
+            owner->SetPower(POWER_ALTERNATE_POWER, 0);
+    }
+
+    void OnUpdate(uint32 diff)
+    {
+        // OnAuraUpdate has no AuraApplication; GetTarget() is not valid here.
+        Unit* owner = GetUnitOwner();
+        Player* player = owner ? owner->ToPlayer() : nullptr;
+        bool const flame = GetId() == SurvivalRing::FlameBar;
+        uint32 const quest = flame ? SurvivalRing::FlameQuest : SurvivalRing::BladesQuest;
+        if (!SurvivalRing::Eligible(player, quest))
+        {
+            Remove();
+            return;
+        }
+        elapsed += std::min(diff, 60000u - elapsed);
+        player->SetPower(POWER_ALTERNATE_POWER, elapsed / 1000);
+        if (elapsed == 60000)
+        {
+            // Credit only this participant, never the group or nearby spectators.
+            player->KilledMonsterCredit(flame ? 58967 : 64895);
+            Remove();
+        }
+    }
+
+    void HazardTick(AuraEffect const*)
+    {
+        PreventDefaultAction();
+        // OnAuraUpdate has no AuraApplication; GetTarget() is not valid here.
+        Unit* owner = GetUnitOwner();
+        Player* player = owner ? owner->ToPlayer() : nullptr;
+        bool const flame = GetId() == SurvivalRing::FlameBar;
+        if (!SurvivalRing::Eligible(player, flame ? SurvivalRing::FlameQuest : SurvivalRing::BladesQuest))
+            return;
+
+        if (flame)
+        {
+            std::list<Creature*> trainers;
+            GetCreatureListWithEntryInGrid(trainers, player, 58744, 60.0f);
+            if (!trainers.empty())
+            {
+                auto trainer = trainers.begin();
+                std::advance(trainer, urand(0, uint32(trainers.size() - 1)));
+                // Native missile/impact spells retain their telegraph and travel time.
+                (*trainer)->CastSpell(player, 112875, true);
+            }
+        }
+        else
+        {
+            std::list<GameObject*> posts;
+            GetGameObjectListWithEntryInGrid(posts, player, 214422, 4.0f);
+            for (GameObject* post : posts)
+                if (player->GetExactDist2d(post) <= 3.5f)
+                {
+                    player->CastSpell(player, 127393, true); // Twirling Blades: 8% max health
+                    break;
+                }
+        }
+    }
+
+    void Register() override
+    {
+        AfterEffectApply += AuraEffectApplyFn(spell_survival_ring_progress::OnApply,
+            EFFECT_0, SPELL_AURA_ENABLE_ALT_POWER, AURA_EFFECT_HANDLE_REAL);
+        OnAuraUpdate += AuraUpdateFn(spell_survival_ring_progress::OnUpdate);
+        OnEffectPeriodic += AuraEffectPeriodicFn(spell_survival_ring_progress::HazardTick,
+            EFFECT_1, SPELL_AURA_ANY);
+    }
+};
+
+// Blades trainers roam within the ring and knock participants away on contact.
+struct npc_survival_ring_trainer : public ScriptedAI
+{
+    npc_survival_ring_trainer(Creature* creature) : ScriptedAI(creature) { }
+    uint32 moveTimer = 0;
+    uint32 contactTimer = 0;
+
+    void UpdateAI(uint32 diff) override
+    {
+        if (contactTimer > diff) { contactTimer -= diff; return; }
+        contactTimer = 500;
+        std::list<Player*> players;
+        GetPlayerListInGrid(players, me, 60.0f);
+        bool active = false;
+        for (Player* player : players)
+            if (player->HasAura(SurvivalRing::BladesBar) &&
+                SurvivalRing::Eligible(player, SurvivalRing::BladesQuest))
+            {
+                active = true;
+                if (me->GetExactDist2d(player) < 3.0f)
+                    player->KnockbackFrom(me->GetPositionX(), me->GetPositionY(), 12.0f, 5.0f);
+            }
+        if (!active)
+        {
+            if (me->GetExactDist2d(me->GetHomePosition()) > 1.0f && !me->isMoving())
+                me->GetMotionMaster()->MoveTargetedHome();
+            moveTimer = 0;
+            return;
+        }
+        if (moveTimer > 500) { moveTimer -= 500; return; }
+        moveTimer = urand(3000, 5000);
+        float angle = frand(0.0f, float(2.0f * M_PI));
+        float radius = frand(5.0f, 22.0f);
+        float x = 801.422f + std::cos(angle) * radius;
+        float y = 2004.85f + std::sin(angle) * radius;
+        float z = me->GetMapHeight(x, y, me->GetPositionZ());
+        if (z > 314.0f && z < 320.5f)
+            me->GetMotionMaster()->MovePoint(0, x, y, z);
+    }
+};
+
+// Fireworks must affect active flame participants, not spectators or NPCs.
+class spell_survival_ring_firework : public SpellScript
+{
+    PrepareSpellScript(spell_survival_ring_firework);
+    void FilterTargets(std::list<WorldObject*>& targets)
+    {
+        targets.remove_if([](WorldObject* object)
+        {
+            Player* player = object->ToPlayer();
+            return !player || !player->HasAura(SurvivalRing::FlameBar) ||
+                !SurvivalRing::Eligible(player, SurvivalRing::FlameQuest);
+        });
+    }
+    void Register() override
+    {
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_survival_ring_firework::FilterTargets,
+            EFFECT_0, TARGET_UNIT_DEST_AREA_ALLY);
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_survival_ring_firework::FilterTargets,
+            EFFECT_1, TARGET_UNIT_DEST_AREA_ALLY);
+    }
+};
+
 void AddSC_vale_of_eternal_blossoms()
 {
+    new creature_script<npc_survival_ring_controller>("npc_survival_ring_controller");
+    new creature_script<npc_survival_ring_trainer>("npc_survival_ring_trainer");
+    new aura_script<spell_survival_ring_progress>("spell_survival_ring_progress");
+    new spell_script<spell_survival_ring_firework>("spell_survival_ring_firework");
     new creature_script<npc_alani>("npc_alani");
     new creature_script<npc_shao_tien_dominator>("npc_shao_tien_dominator");
     new creature_script<npc_gochao_the_iron_fist>("npc_gochao_the_iron_fist");

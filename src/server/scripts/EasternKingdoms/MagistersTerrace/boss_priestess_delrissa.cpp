@@ -179,7 +179,7 @@ public:
         void InitializeLackeys()
         {
             //can be called if Creature are dead, so avoid
-            if (!me->IsAlive())
+            if (!me->IsAlive() || (instance && instance->GetData(DATA_DELRISSA_EVENT) == DONE))
                 return;
 
             uint8 j = 0;
@@ -243,9 +243,8 @@ public:
             if (!instance)
                 return;
 
-            if (instance->GetData(DATA_DELRISSA_DEATH_COUNT) == MAX_ACTIVE_LACKEY)
-                instance->SetData(DATA_DELRISSA_EVENT, DONE);
-            else
+            instance->SetData(DATA_DELRISSA_DIED, 1);
+            if (instance->GetData(DATA_DELRISSA_DEATH_COUNT) < MAX_ACTIVE_LACKEY)
             {
                 if (me->HasFlag(OBJECT_FIELD_DYNAMIC_FLAGS, UNIT_DYNFLAG_LOOTABLE))
                     me->RemoveFlag(OBJECT_FIELD_DYNAMIC_FLAGS, UNIT_DYNFLAG_LOOTABLE);
@@ -382,7 +381,7 @@ struct boss_priestess_lackey_commonAI : public ScriptedAI
         // in case she is not alive and Reset was for some reason called, respawn her (most likely party wipe after killing her)
         if (Creature* pDelrissa = Unit::GetCreature(*me, instance ? instance->GetGuidData(DATA_DELRISSA) : ObjectGuid::Empty))
         {
-            if (!pDelrissa->IsAlive())
+            if (!pDelrissa->IsAlive() && instance->GetData(DATA_DELRISSA_EVENT) != DONE)
                 pDelrissa->Respawn();
         }
     }
@@ -394,6 +393,7 @@ struct boss_priestess_lackey_commonAI : public ScriptedAI
 
         if (instance)
         {
+            instance->SetData(DATA_DELRISSA_EVENT, IN_PROGRESS);
             for (uint8 i = 0; i < MAX_ACTIVE_LACKEY; ++i)
             {
                 if (Unit* pAdd = Unit::GetUnit(*me, m_auiLackeyGUIDs[i]))
@@ -425,11 +425,8 @@ struct boss_priestess_lackey_commonAI : public ScriptedAI
         Creature* pDelrissa = Unit::GetCreature(*me, instance->GetGuidData(DATA_DELRISSA));
         uint32 uiLackeyDeathCount = instance->GetData(DATA_DELRISSA_DEATH_COUNT);
 
-        if (!pDelrissa)
-            return;
-
-        //should delrissa really yell if dead?
-        pDelrissa->AI()->Talk(LackeyDeath[uiLackeyDeathCount].id);
+        if (pDelrissa && pDelrissa->IsAlive() && uiLackeyDeathCount < MAX_ACTIVE_LACKEY)
+            pDelrissa->AI()->Talk(LackeyDeath[uiLackeyDeathCount].id);
 
         instance->SetData(DATA_DELRISSA_DEATH_COUNT, SPECIAL);
 
@@ -439,7 +436,7 @@ struct boss_priestess_lackey_commonAI : public ScriptedAI
         if (uiLackeyDeathCount == MAX_ACTIVE_LACKEY)
         {
             //time to make her lootable and complete event if she died before lackeys
-            if (!pDelrissa->IsAlive())
+            if (pDelrissa && !pDelrissa->IsAlive())
             {
                 if (!pDelrissa->HasFlag(OBJECT_FIELD_DYNAMIC_FLAGS, UNIT_DYNFLAG_LOOTABLE))
                     pDelrissa->SetFlag(OBJECT_FIELD_DYNAMIC_FLAGS, UNIT_DYNFLAG_LOOTABLE);

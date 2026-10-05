@@ -3076,6 +3076,19 @@ void SpellMgr::LoadSpellInfoCorrections()
 
             switch (spellInfo->Id)
             {
+                case 46338: // Jenny's Whistle - Load'er Up!
+                    // The client data already restricts this spell to the
+                    // Scalding Pools (AreaGroup 113).  The additional spell
+                    // focus check only covers three tiny 15-yard circles and
+                    // rejects valid crash scenery inside the quest POI.
+                    spellInfo->RequiresSpellFocus = 0;
+                    break;
+                case 46841: // Escape to the Isle of Quel'Danas (Magisters' Terrace)
+                    // Explicit self targeting also bypasses destination LOS checks
+                    // for this cross-map teleport. Keep the database destination.
+                    spellInfo->Effects[EFFECT_0].TargetA = TARGET_UNIT_CASTER;
+                    spellInfo->Effects[EFFECT_0].TargetB = TARGET_DEST_DB;
+                    break;
                 case 42730: // Woe Strike
                     spellInfo->Effects[EFFECT_1].TriggerSpell = 42739;
                     break;

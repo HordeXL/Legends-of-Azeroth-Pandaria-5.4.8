@@ -1,3 +1,4 @@
+#include "AhnQirajStrategy.h"
 /*
  * Copyright (C) 2016+ AzerothCore <www.azerothcore.org>, released under GNU GPL v2 license, you may redistribute it
  * and/or modify it under version 2 of the License, or (at your option), any later version.
@@ -54,7 +55,8 @@ bool AttackMyTargetAction::Execute(Event event)
 
 bool AttackAction::Attack(Unit* target, bool with_pet /*true*/)
 {
-    if (botAI->IsGroupPveActivity() && !PlayerBotSpec::IsTank(bot, true))
+    if (botAI->IsGroupPveActivity() && !PlayerBotSpec::IsTank(bot, true) &&
+        !AhnQirajStrategy::IsActive(bot))
         if (Unit* opening = GroupPveCombat::OpeningTarget(bot))
         {
             // World-boss damage rotations are held for the same opening
@@ -64,9 +66,10 @@ bool AttackAction::Attack(Unit* target, bool with_pet /*true*/)
                 return false;
             target = opening;
         }
-    // Request-driven LFG bots assist the real player; they never initiate a
-    // dungeon pull merely because their autonomous target scan saw an NPC.
-    if (!botAI->CanLfgAutoQueueEngage(target))
+    // Request-driven LFG bots assist the real player; they initiate a pull
+    // only for an enemy already engaged by the party or explicitly marked in
+    // the skull-then-cross kill order.
+    if (!bot->InBattleground() && !botAI->CanLfgAutoQueueEngage(target))
         return false;
 
     if (bot->GetMotionMaster()->GetCurrentMovementGeneratorType() == FLIGHT_MOTION_TYPE ||
@@ -113,6 +116,14 @@ bool AttackAction::Attack(Unit* target, bool with_pet /*true*/)
 
     if (!bot->IsWithinLOSInMap(target))
     {
+        // An engaged tank target can be hidden behind terrain. Move first;
+        // do not assign a current target that InvalidTargetValue would drop
+        // for the same blocked LOS. MoveTo retains the tank-pull/path guards.
+        if (botAI->IsGroupPveActivity() && GroupPveCombat::IsEngaged(bot, target) &&
+            !target->HasBreakableByDamageCrowdControlAura())
+            return MoveTo(target, sPlayerbotAIConfig->contactDistance,
+                MovementPriority::MOVEMENT_COMBAT);
+
         msg << " is not in my sight";
         if (verbose)
             botAI->TellError(msg.str());

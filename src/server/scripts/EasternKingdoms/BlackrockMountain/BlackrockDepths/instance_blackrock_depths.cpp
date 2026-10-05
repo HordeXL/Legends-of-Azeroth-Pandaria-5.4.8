@@ -20,7 +20,8 @@
 #include "InstanceScript.h"
 #include "blackrock_depths.h"
 
-#define TIMER_TOMBOFTHESEVEN    15000
+#define TIMER_TOMBOFTHESEVEN    3000
+#define MAX_TOMB_BOSSES         7
 #define MAX_ENCOUNTER           6
 
 enum Creatures
@@ -120,10 +121,11 @@ public:
 
         uint32 BarAleCount;
         uint32 GhostKillCount;
-        ObjectGuid TombBossGUIDs[7];
+        ObjectGuid TombBossGUIDs[MAX_TOMB_BOSSES];
         ObjectGuid TombEventStarterGUID;
         uint32 TombTimer;
         uint32 TombEventCounter;
+        bool TombAdvancePending;
         uint32 teamInInstance;
 
         void Initialize() override
@@ -137,8 +139,9 @@ public:
             TombEventStarterGUID.Clear();
             TombTimer = TIMER_TOMBOFTHESEVEN;
             TombEventCounter = 0;
+            TombAdvancePending = false;
 
-            for (uint8 i = 0; i < 7; ++i)
+            for (uint8 i = 0; i < MAX_TOMB_BOSSES; ++i)
                 TombBossGUIDs[i].Clear();
         }
 
@@ -208,7 +211,7 @@ public:
                 case GO_TOMB_ENTER: GoTombEnterGUID = go->GetGUID(); break;
                 case GO_TOMB_EXIT:
                     GoTombExitGUID = go->GetGUID();
-                    if (GhostKillCount >= 7)
+                    if (GhostKillCount >= MAX_TOMB_BOSSES)
                         HandleGameObject(ObjectGuid::Empty, true, go);
                     else
                         HandleGameObject(ObjectGuid::Empty, false, go);
@@ -222,6 +225,29 @@ public:
                 case GO_CHEST_SEVEN: GoChestGUID = go->GetGUID(); break;
                 case GO_SPECTRAL_CHALICE: GoSpectralChaliceGUID = go->GetGUID(); break;
             }
+        }
+
+        void OnUnitDeath(Unit* unit) override
+        {
+            if (!unit || !TombEventStarterGUID || TombEventCounter >= MAX_TOMB_BOSSES)
+                return;
+
+            static uint32 const tombBossEntries[MAX_TOMB_BOSSES] =
+            {
+                NPC_DOOMREL, NPC_DOPEREL, NPC_HATEREL, NPC_VILEREL,
+                NPC_SEETHREL, NPC_GLOOMREL, NPC_ANGERREL
+            };
+
+            // Drive the sequence directly from the instance death callback.
+            // Only Doom'rel has a dedicated CreatureAI in this core, so
+            // relying on individual JustDied hooks or a corpse lookup leaves
+            // the event permanently stuck after one of the other guardians.
+            if (unit->GetEntry() != tombBossEntries[TombEventCounter])
+                return;
+
+            GhostKillCount = TombEventCounter + 1;
+            TombAdvancePending = true;
+            TombTimer = TIMER_TOMBOFTHESEVEN;
         }
 
         void SetGuidData(uint32 type, ObjectGuid data) override
@@ -272,7 +298,7 @@ public:
                     break;
             }
 
-            if (data == DONE || GhostKillCount >= 7)
+            if (data == DONE || GhostKillCount >= MAX_TOMB_BOSSES)
             {
                 OUT_SAVE_INST_DATA;
 
@@ -376,17 +402,17 @@ public:
             for (uint8 i = 0; i < MAX_ENCOUNTER; ++i)
                 if (encounter[i] == IN_PROGRESS)
                     encounter[i] = NOT_STARTED;
-            if (GhostKillCount > 0 && GhostKillCount < 7)
+            if (GhostKillCount > 0 && GhostKillCount < MAX_TOMB_BOSSES)
                 GhostKillCount = 0;//reset tomb of seven event
-            if (GhostKillCount >= 7)
-                GhostKillCount = 7;
+            if (GhostKillCount >= MAX_TOMB_BOSSES)
+                GhostKillCount = MAX_TOMB_BOSSES;
 
             OUT_LOAD_INST_DATA_COMPLETE;
         }
 
         void TombOfSevenEvent()
         {
-            if (GhostKillCount < 7 && TombBossGUIDs[TombEventCounter])
+            if (TombEventCounter < MAX_TOMB_BOSSES && TombBossGUIDs[TombEventCounter])
             {
                 if (Creature* boss = instance->GetCreature(TombBossGUIDs[TombEventCounter]))
                 {
@@ -402,7 +428,7 @@ public:
         {
             HandleGameObject(GoTombExitGUID, false);//event reseted, close exit door
             HandleGameObject(GoTombEnterGUID, true);//event reseted, open entrance door
-            for (uint8 i = 0; i < 7; ++i)
+            for (uint8 i = 0; i < MAX_TOMB_BOSSES; ++i)
             {
                 if (Creature* boss = instance->GetCreature(TombBossGUIDs[i]))
                 {
@@ -423,6 +449,7 @@ public:
             TombEventStarterGUID.Clear();
             TombEventCounter = 0;
             TombTimer = TIMER_TOMBOFTHESEVEN;
+            TombAdvancePending = false;
             SetData(TYPE_TOMB_OF_SEVEN, NOT_STARTED);
         }
 
@@ -430,6 +457,10 @@ public:
         {
             HandleGameObject(GoTombExitGUID, false);//event started, close exit door
             HandleGameObject(GoTombEnterGUID, false);//event started, close entrance door
+            GhostKillCount = 0;
+            TombEventCounter = 0;
+            TombAdvancePending = false;
+            TombTimer = TIMER_TOMBOFTHESEVEN;
             SetData(TYPE_TOMB_OF_SEVEN, IN_PROGRESS);
         }
 
@@ -443,28 +474,26 @@ public:
         }
         void Update(uint32 diff) override
         {
-            if (TombEventStarterGUID && GhostKillCount < 7)
+            if (!TombEventStarterGUID || !TombAdvancePending || TombEventCounter >= MAX_TOMB_BOSSES)
+                return;
+
+            if (TombTimer > diff)
             {
-                if (TombTimer <= diff)
-                {
-                    TombTimer = TIMER_TOMBOFTHESEVEN;
-                    ++TombEventCounter;
-                    TombOfSevenEvent();
-                    // Check Killed bosses
-                    for (uint8 i = 0; i < 7; ++i)
-                    {
-                        if (Creature* boss = instance->GetCreature(TombBossGUIDs[i]))
-                        {
-                            if (!boss->IsAlive())
-                            {
-                                GhostKillCount = i+1;
-                             }
-                        }
-                    }
-                } else TombTimer -= diff;
+                TombTimer -= diff;
+                return;
             }
-            if (GhostKillCount >= 7 && TombEventStarterGUID)
+
+            TombTimer = TIMER_TOMBOFTHESEVEN;
+            TombAdvancePending = false;
+
+            if (GhostKillCount >= MAX_TOMB_BOSSES)
+            {
                 TombOfSevenEnd();
+                return;
+            }
+
+            ++TombEventCounter;
+            TombOfSevenEvent();
         }
     };
 };

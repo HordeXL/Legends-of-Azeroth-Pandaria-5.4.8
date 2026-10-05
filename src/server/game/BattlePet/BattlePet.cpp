@@ -31,9 +31,36 @@ BattlePet::~BattlePet()
 
 void BattlePet::Initialise(bool newBattlePet)
 {
-    // existence is checked before this, no problem should arise
-    m_npc = sBattlePetSpeciesStore.LookupEntry(m_species)->NpcId;
-    m_displayId = sObjectMgr->GetCreatureTemplate(m_npc)->GetModelByIdx(0)->CreatureDisplayID;
+    auto speciesEntry = sBattlePetSpeciesStore.LookupEntry(m_species);
+    if (!speciesEntry)
+    {
+        TC_LOG_ERROR("server.loading", "BattlePet::Initialise: missing species %u", m_species);
+        m_npc = 0;
+        m_displayId = 0;
+        return;
+    }
+
+    m_npc = speciesEntry->NpcId;
+
+    if (CreatureTemplate const* creatureTemplate = sObjectMgr->GetCreatureTemplate(m_npc))
+    {
+        if (CreatureModel const* model = creatureTemplate->GetModelByIdx(0))
+            m_displayId = model->CreatureDisplayID;
+        else
+        {
+            TC_LOG_ERROR("server.loading",
+                "BattlePet::Initialise: species %u NPC %u has no creature model",
+                m_species, m_npc);
+            m_displayId = 0;
+        }
+    }
+    else
+    {
+        TC_LOG_ERROR("server.loading",
+            "BattlePet::Initialise: species %u references missing NPC %u",
+            m_species, m_npc);
+        m_displayId = 0;
+    }
 
     // setup initial battle pet states
     InitialiseStates(newBattlePet);
