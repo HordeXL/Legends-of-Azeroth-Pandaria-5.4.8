@@ -429,12 +429,14 @@ class npc_reinforced_archery_target : public CreatureScript
 
             void OnSpellClick(Unit* clicker, bool& /*result*/) override
             {
-                if (clicker->HasAura(SPELL_HEROIC_DEFENSE) || hasRider)
+                // HandleSpellClick casts Heroic Defense from the database row
+                // before this callback. Only consume a successfully picked-up
+                // target; a rejected cast must leave it available for retry.
+                if (hasRider || !clicker->HasAura(SPELL_HEROIC_DEFENSE, me->GetGUID()))
                     return;
 
                 hasRider = true;
                 Talk(TALK_INTRO);
-                DoCast(clicker, SPELL_HEROIC_DEFENSE);
                 me->RemoveFlag(UNIT_FIELD_NPC_FLAGS, UNIT_NPC_FLAG_SPELLCLICK);
             }
 

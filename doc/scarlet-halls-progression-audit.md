@@ -239,3 +239,35 @@ check; this is an implementation using a verified cosmetic model, not evidence
 of the original encounter's exact spell ID.
 The isolated smoke run in `Build/hound-blood-pool-smoke` initialized in
 24 seconds, kept DBErrors.log empty and shut down normally.
+
+## Reinforced Archery Target pickup (2026-10-05)
+
+The user could select the glowing targets but could not pick them up. Entry
+59163 had no `npc_spellclick_spells` row. Although the AI enabled SPELLCLICK,
+`Player::CanSeeSpellClickOn` hid it from the client when the lookup was empty,
+just as with the previously fixed food buckets.
+
+Migration `2026_10_05_00_world_scarlet_halls_archery_spellclick.sql` adds Heroic
+Defense (113436). The target casts it on the clicking player. Cast flags 6
+preserve the target as the aura caster: the empty owner GUID of these static
+NPCs falls back to the actual caster in `Spell::Spell`. Flags 2 would instead
+attribute the aura to the player, preventing `HandleAuraControlVehicle` from
+boarding the target because caster and vehicle owner would be the same unit.
+Preserving the NPC caster also keeps the existing aura-removal despawn working.
+
+The installed DBC defines 113399 as SET_VEHICLE_ID 2037 and 113436 effect 0 as
+CONTROL_VEHICLE, seat amount 1. The target already supplies 113399 through its
+500 ms periodic override aura. Click conditions require this carrying aura and
+exclude players who already carry a shield. The AI now acknowledges the
+database cast only if this target's own Heroic Defense aura exists on the
+clicker. It no longer casts twice or consumes a target after a failed cast.
+
+The production visibility/AI regression reproduces the missing-row failure,
+checks condition-based visibility, failed and foreign-caster pickup attempts,
+single successful pickup, duplicate callbacks and reset. Existing dungeon and
+dog-food regressions also pass, as does the x64 build. The migration was applied
+twice to verify idempotence. Pre-change DB rows are saved in
+`Build/archery-target-db-before-20261005.tsv`; installed binary backup is
+`Build/server-before-logout-response-20261005-155316`.
+Actual carrying visuals and arrow interception still require an in-game test.
+The isolated smoke run in `Build/archery-target-smoke` initialized in 23 seconds, kept DBErrors.log empty and shut down cleanly (exit 0).
