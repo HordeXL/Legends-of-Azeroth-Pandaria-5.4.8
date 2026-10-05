@@ -114,13 +114,17 @@ class npc_starving_hound : public CreatureScript
 
             EventMap events;
             ObjectGuid foodTargetGUID;
+            Position feedingReturnPosition;
+            enum { POINT_FEEDING_RETURN = 1 };
             bool fed = false;
+            bool returningAfterFeeding = false;
 
             void Reset() override
             {
                 events.Reset();
                 foodTargetGUID = ObjectGuid::Empty;
                 fed = false;
+                returningAfterFeeding = false;
                 me->RestoreFaction();
                 me->SetReactState(REACT_AGGRESSIVE);
                 me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PACIFIED);
@@ -138,6 +142,8 @@ class npc_starving_hound : public CreatureScript
                     return;
 
                 // Dog Food is a dummy effect, not an aura to poll on the watchman.
+                // Preserve each dog's own patrol position before the leap/chase.
+                feedingReturnPosition = me->GetPosition();
                 foodTargetGUID = guid;
                 events.Reset();
                 me->CombatStop(true);
@@ -150,8 +156,16 @@ class npc_starving_hound : public CreatureScript
                 me->CastSpell(watchman, SPELL_DOG_LEAP, true);
             }
 
-            void MovementInform(uint32 type, uint32 /*id*/) override
+            void MovementInform(uint32 type, uint32 id) override
             {
+                if (type == POINT_MOTION_TYPE && id == POINT_FEEDING_RETURN && returningAfterFeeding)
+                {
+                    returningAfterFeeding = false;
+                    me->SetFacingTo(feedingReturnPosition.GetOrientation());
+                    me->SetStandState(UNIT_STAND_STATE_SLEEP);
+                    return;
+                }
+
                 if (type == EFFECT_MOTION_TYPE && foodTargetGUID)
                     if (Creature* watchman = ObjectAccessor::GetCreature(*me, foodTargetGUID))
                         if (watchman->IsAlive())
@@ -162,6 +176,7 @@ class npc_starving_hound : public CreatureScript
             {
                 foodTargetGUID = ObjectGuid::Empty;
                 fed = true;
+                returningAfterFeeding = true;
                 events.Reset();
                 me->CombatStop(true);
                 me->DeleteThreatList();
@@ -171,7 +186,10 @@ class npc_starving_hound : public CreatureScript
                 me->SetReactState(REACT_PASSIVE);
                 me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PACIFIED);
                 me->HandleEmoteStateCommand(EMOTE_STATE_NONE);
-                me->SetStandState(UNIT_STAND_STATE_SLEEP);
+                me->SetStandState(UNIT_STAND_STATE_STAND);
+                // Use a point move rather than evade/home: evading resets the
+                // AI and would make a fed hound hostile and resume its patrol.
+                me->GetMotionMaster()->MovePoint(POINT_FEEDING_RETURN, feedingReturnPosition);
             }
 
             void JustEngagedWith(Unit* /*who*/) override

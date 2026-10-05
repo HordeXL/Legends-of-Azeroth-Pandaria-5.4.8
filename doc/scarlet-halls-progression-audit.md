@@ -158,3 +158,30 @@ in `Build/druid-form-smoke` enabled only the `condition` debug logger. It
 initialized in 23 seconds, logged more than 30,000 terrain-swap source-29
 descriptions (including the original entry 1066) without crashing, and kept
 DBErrors.log empty. Normal configuration retains `Logger.root=5`.
+
+## Fed hound return movement (2026-10-05)
+
+At the user's request, each Starving Hound now remembers its own position and
+orientation when Dog Food selects the watchman. After the watchman dies or
+disappears, the hound clears combat and threat, becomes friendly/passive and
+pacified, then takes a path back to that saved patrol position. It sleeps only
+on the matching point-arrival callback and restores its original facing.
+It does not resume continuous patrol. Late leap callbacks and arrival callbacks
+after an AI reset cannot put the wrong state to sleep.
+
+The return uses point movement, not evade/home movement, to avoid resetting
+the fed state and restoring hostility. Regression coverage executes the actual
+AI and verifies the destination, standing during travel, arrival-only sleep,
+duplicate feeding, missing targets and reset/callback ordering. All existing
+Scarlet Halls progression and installed-faction checks also pass.
+
+The [Wowhead dungeon guide](https://www.wowhead.com/mop-classic/guide/dungeon/scarlet-halls-heroic-boss-strategy-loot)
+supports attacking the watchman and then sleeping, but does not establish an
+original return route. Returning to the pre-attack position is the requested
+behavior, not a claim of a verified retail waypoint sequence.
+
+The x64 scripts/server build was installed with backup
+`Build/server-before-logout-response-20261005-152019`. In-game pathfinding still
+requires a retest with a fresh group of unfed hounds.
+The isolated smoke run in `Build/hound-return-smoke` initialized in 23 seconds,
+kept DBErrors.log empty and shut down cleanly.
