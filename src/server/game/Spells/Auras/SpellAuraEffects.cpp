@@ -563,12 +563,41 @@ void AuraEffect::SetFloatAmount(float amount)
     m_canBeRecalculated = false;
 }
 
-static float GetMixologyBonus(uint32 id, uint32 effect)
+static float CalculateMixologyAmount(uint32 id, uint32 effect, float amount)
 {
     if (effect >= EFFECT_3)
+        return amount;
+
+    // These profession bonuses are fixed stat additions, not a common percent
+    // of the flask/elixir. In particular, Mantid's 2250 armor gains 480, not 720.
+    if (effect == EFFECT_0)
     {
-        TC_LOG_ERROR("shitlog", "GetMixologyBonus %u", id);
-        return 1.0f;
+        switch (id)
+        {
+            case 79469: // Flask of Steelskin (450 stamina)
+                return amount + 120.0f;
+            case 79470: // Flask of the Draconic Mind
+            case 79471: // Flask of the Winds
+            case 79472: // Flask of Titanic Strength
+            case 94160: // Flask of Flowing Water
+                return amount + 80.0f;
+            case 105681: // Mantid Elixir
+            case 105693: // Flask of Falling Leaves
+            case 105694: // Flask of the Earth
+                return amount + 480.0f;
+            case 105682: // Mad Hozen Elixir
+            case 105683: // Elixir of Weaponry
+            case 105684: // Elixir of the Rapids
+            case 105685: // Elixir of Peace
+            case 105686: // Elixir of Perfection
+            case 105687: // Elixir of Mirrors
+            case 105688: // Monk's Elixir
+                return amount + 240.0f;
+            case 105689: // Flask of Spring Blossoms
+            case 105691: // Flask of the Warm Sun
+            case 105696: // Flask of Winter's Bite
+                return amount + 320.0f;
+        }
     }
 
     // Mixology Effect Bonus
@@ -626,25 +655,12 @@ static float GetMixologyBonus(uint32 id, uint32 effect)
         { 60346,    { 1.445f, 1.0f,   1.0f  } }, // Elixir of Lightning Speed     (3.2.0: http://www.wowhead.com/item=44331#comments:id=811589)
         { 60347,    { 1.445f, 1.0f,   1.0f  } }, // Elixir of Mighty Thoughts
         { 62380,    { 1.8f,   1.0f,   1.0f  } }, // Lesser Flask of Resistance    (3.2.0: http://www.wowhead.com/item=44939#comments:id=798875)
-        { 105693,   { 1.480f, 1.0f,   1.0f  } }, // Flask of Falling Leaves
-        { 105689,   { 1.320f, 1.0f,   1.0f  } }, // Flask of Spring Blossoms
-        { 105694,   { 1.320f, 1.0f,   1.0f  } }, // Flask of the Earth
-        { 105691,   { 1.320f, 1.0f,   1.0f  } }, // Flask of the Warm Sun
-        { 105696,   { 1.320f, 1.0f,   1.0f  } }, // Flask of Winter's Bite
-        { 105681,   { 1.320f, 1.0f,   1.0f  } }, // Mantid Elixir
-        { 105682,   { 1.320f, 1.0f,   1.0f  } }, // Mad Hozen Elixir
-        { 105683,   { 1.320f, 1.0f,   1.0f  } }, // Elixir of Weaponry
-        { 105684,   { 1.320f, 1.0f,   1.0f  } }, // Elixir of the Rapids
-        { 105685,   { 1.320f, 1.0f,   1.0f  } }, // Elixir of Peace
-        { 105686,   { 1.320f, 1.0f,   1.0f  } }, // Elixir of Perfection
-        { 105687,   { 1.320f, 1.0f,   1.0f  } }, // Elixir of Mirrors
-        { 105688,   { 1.320f, 1.0f,   1.0f  } }, // Monk's Elixir
     };
 
     auto itr = mixologyBonusMultipliers.find(id);
     if (itr == mixologyBonusMultipliers.end())
-        return 1.0f;
-    return itr->second[effect];
+        return amount;
+    return amount * itr->second[effect];
 }
 
 static bool CheckArmorSpecialization(Player* player, SpellEquippedItemsEntry const* equipedItemsEntry)
@@ -849,7 +865,7 @@ float AuraEffect::CalculateAmount(Unit* caster, bool recalculate)
             sSpellMgr->IsSpellMemberOfSpellGroup(GetId(), SPELL_GROUP_ELIXIR_GUARDIAN)))
         {
             if (caster->ToPlayer()->HasSkill(SKILL_ALCHEMY) && caster->HasSpell(GetSpellInfo()->Effects[0].TriggerSpell))
-                amount *= GetMixologyBonus(GetId(), GetEffIndex());
+                amount = CalculateMixologyAmount(GetId(), GetEffIndex(), amount);
         }
     }
 
@@ -6923,7 +6939,10 @@ void AuraEffect::HandleProcTriggerSpellWithValueAuraProc(AuraApplication* aurApp
     {
         int32 basepoints0 = GetAmount();
         TC_LOG_DEBUG("spells", "AuraEffect::HandleProcTriggerSpellWithValueAuraProc: Triggering spell %u with value %d from aura %u proc", triggeredSpellInfo->Id, basepoints0, GetId());
-        triggerCaster->CastCustomSpell(triggerTarget, triggerSpellId, &basepoints0, NULL, NULL, true, NULL, this);
+        // Pandaria Swordguard has separate melee and ranged attack-power
+        // effects. Both use the 4000-point value of the embroidery proc aura.
+        int32* basepoints1 = triggerSpellId == 125489 ? &basepoints0 : nullptr;
+        triggerCaster->CastCustomSpell(triggerTarget, triggerSpellId, &basepoints0, basepoints1, NULL, true, NULL, this);
     }
     else
         TC_LOG_DEBUG("spells", "AuraEffect::HandleProcTriggerSpellWithValueAuraProc: Could not trigger spell %u from aura %u proc, because the spell does not have an entry in Spell.dbc.", triggerSpellId, GetId());

@@ -6405,7 +6405,6 @@ void Player::SetSkill(uint16 id, uint16 step, uint16 newVal, uint16 maxVal)
                 SetUInt16Value(PLAYER_FIELD_SKILL + SKILL_RANK_OFFSET + field, offset, newVal);
                 SetUInt16Value(PLAYER_FIELD_SKILL + SKILL_MAX_RANK_OFFSET + field, offset, maxVal);
 
-                UpdateSkillEnchantments(id, currVal, newVal);
                 UpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_REACH_SKILL_LEVEL, id);
                 UpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_LEARN_SKILL_LEVEL, id);
 
@@ -6436,6 +6435,10 @@ void Player::SetSkill(uint16 id, uint16 step, uint16 newVal, uint16 maxVal)
 
                 // Learn all spells for skill
                 LearnSkillRewardedSpells(id, newVal);
+
+                // Requirements query mSkillStatus and the skill bonuses, so the
+                // skill must be registered before restoring existing enchants.
+                UpdateSkillEnchantments(id, currVal, newVal);
 
                 if (refreshQuestObjects)
                     UpdateForQuestWorldObjects();
@@ -9231,6 +9234,11 @@ void Player::CastItemUseSpell(Item* item, SpellCastTargets const& targets, uint8
         SpellItemEnchantmentEntry const* pEnchant = sSpellItemEnchantmentStore.LookupEntry(enchant_id);
         if (!pEnchant)
             continue;
+
+        if (pEnchant->RequiredLevel > GetLevel() ||
+            (pEnchant->RequiredSkill && GetSkillValue(pEnchant->RequiredSkill) < pEnchant->RequiredSkillValue))
+            continue;
+
         for (uint8 s = 0; s < MAX_ITEM_ENCHANTMENT_EFFECTS; ++s)
         {
             if (pEnchant->Type[s] != ITEM_ENCHANTMENT_TYPE_USE_SPELL)
@@ -15411,32 +15419,47 @@ void Player::UpdateSkillEnchantments(uint16 skill_id, uint16 curr_value, uint16 
 
                 SpellItemEnchantmentEntry const* Enchant = sSpellItemEnchantmentStore.LookupEntry(ench_id);
                 if (!Enchant)
-                    return;
+                    continue;
 
-                if (Enchant->RequiredSkill == skill_id)
+                // The enchant, the gem item and a profession-added socket can
+                // each impose a requirement. Compare their combined state so a
+                // gem is never applied twice or removed while already inactive.
+                auto meetsRequirement = [this, skill_id](uint32 skill, uint32 rank, uint16 value)
                 {
-                    // Checks if the enchantment needs to be applied or removed
-                    if (curr_value < Enchant->RequiredSkillValue && new_value >= Enchant->RequiredSkillValue)
-                        ApplyEnchantment(m_items[i], EnchantmentSlot(slot), true);
-                    else if (new_value < Enchant->RequiredSkillValue && curr_value >= Enchant->RequiredSkillValue)
-                        ApplyEnchantment(m_items[i], EnchantmentSlot(slot), false);
+                    if (!skill || !rank)
+                        return true;
+                    if (skill != skill_id)
+                        return GetSkillValue(skill) >= rank;
+                    if (!value)
+                        return false;
+                    int32 effective = int32(value) + GetSkillPermBonusValue(skill) + GetSkillTempBonusValue(skill);
+                    return effective >= int32(rank);
+                };
+
+                bool wasActive = meetsRequirement(Enchant->RequiredSkill, Enchant->RequiredSkillValue, curr_value);
+                bool isActive = meetsRequirement(Enchant->RequiredSkill, Enchant->RequiredSkillValue, new_value);
+                if (ItemTemplate const* gem = sObjectMgr->GetItemTemplate(Enchant->GemID))
+                {
+                    wasActive &= meetsRequirement(gem->RequiredSkill, gem->RequiredSkillRank, curr_value);
+                    isActive &= meetsRequirement(gem->RequiredSkill, gem->RequiredSkillRank, new_value);
                 }
 
-                // If we're dealing with a gem inside a prismatic socket we need to check the prismatic socket requirements
-                // rather than the gem requirements itself. If the socket has no color it is a prismatic socket.
+                // A gem in a profession-added socket must also meet the socket's
+                // requirements. Such sockets have no color in the item template.
                 if ((slot == SOCK_ENCHANTMENT_SLOT || slot == SOCK_ENCHANTMENT_SLOT_2 || slot == SOCK_ENCHANTMENT_SLOT_3)
                     && !m_items[i]->GetTemplate()->Socket[slot-SOCK_ENCHANTMENT_SLOT].Color)
                 {
                     SpellItemEnchantmentEntry const* pPrismaticEnchant = sSpellItemEnchantmentStore.LookupEntry(m_items[i]->GetEnchantmentId(PRISMATIC_ENCHANTMENT_SLOT));
 
-                    if (pPrismaticEnchant && pPrismaticEnchant->RequiredSkill == skill_id)
-                    {
-                        if (curr_value < pPrismaticEnchant->RequiredSkillValue && new_value >= pPrismaticEnchant->RequiredSkillValue)
-                            ApplyEnchantment(m_items[i], EnchantmentSlot(slot), true);
-                        else if (new_value < pPrismaticEnchant->RequiredSkillValue && curr_value >= pPrismaticEnchant->RequiredSkillValue)
-                            ApplyEnchantment(m_items[i], EnchantmentSlot(slot), false);
-                    }
+                    if (!pPrismaticEnchant)
+                        continue;
+
+                    wasActive &= meetsRequirement(pPrismaticEnchant->RequiredSkill, pPrismaticEnchant->RequiredSkillValue, curr_value);
+                    isActive &= meetsRequirement(pPrismaticEnchant->RequiredSkill, pPrismaticEnchant->RequiredSkillValue, new_value);
                 }
+
+                if (wasActive != isActive)
+                    ApplyEnchantment(m_items[i], EnchantmentSlot(slot), isActive);
             }
         }
     }

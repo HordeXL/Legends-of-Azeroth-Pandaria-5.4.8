@@ -1,4 +1,4 @@
-param([string]$DataDirectory = '', [string]$OutputDirectory = '')
+param([string]$DataDirectory = '', [string]$OutputDirectory = '', [string]$RootSpellsFile = '')
 $ErrorActionPreference = 'Stop'
 $root = (Resolve-Path "$PSScriptRoot/../..").Path
 if (!$DataDirectory) { $DataDirectory = Join-Path $root 'Build/bin/RelWithDebInfo/dbc' }
@@ -43,6 +43,11 @@ foreach ($classFile in $classFiles.Keys) {
 foreach ($id in @(104756,104759,123171,123728,123730,123731,116855,116920,122738,131755)) { Add-ClassSpell $id 9 }
 foreach ($id in @(77487,127850,124495)) { Add-ClassSpell $id 5 }
 foreach ($id in @(115934,127755,127756)) { Add-ClassSpell $id 2 }
+if ($RootSpellsFile) {
+    $classes = @{ 0='Profession' }
+    $membership = @{}
+    foreach ($id in Get-Content -LiteralPath $RootSpellsFile) { if ($id.Trim()) { Add-ClassSpell ([uint32]$id) 0 } }
+}
 $effects = @{}
 foreach ($effect in $tables.SpellEffect.Rows.Values) {
     if (!$effects.ContainsKey($effect[27])) { $effects[$effect[27]] = [Collections.Generic.List[object]]::new() }
@@ -151,14 +156,14 @@ $models = foreach ($id in $modelEffects) {
 $inventory | Export-Csv "$OutputDirectory/spells.csv" -NoTypeInformation -Encoding UTF8
 $issues.ToArray() | ConvertTo-Json -Depth 5 | Set-Content "$OutputDirectory/reference-issues.json"
 $summary = [ordered]@{
-    classes=11; spells=$inventory.Count; visuals=$visuals.Count; kits=$kits.Count; attachments=$attachments; missiles=$missiles;
+    classes=$classes.Count; spells=$inventory.Count; visuals=$visuals.Count; kits=$kits.Count; attachments=$attachments; missiles=$missiles;
     unresolved_spell_ids=@($issues | Where-Object {$_.kind -eq 'missing_spell'}).Count;
     broken_visual_references=@($issues | Where-Object {$_.kind -ne 'missing_spell'}).Count;
     per_class=@(foreach ($class in $classes.Values | Sort-Object) {
         $rows = @($inventory | Where-Object { $class -in ($_.classes -split ',') })
         [pscustomobject]@{class=$class;spells=$rows.Count;with_visual=@($rows | Where-Object {$_.visual0 -or $_.visual1}).Count}
     });
-    scope='Spell families, class skills/talents, direct script casts and data-triggered children, including legacy/NPC variants. Reference integrity only: passive/helper spells may intentionally have no visual. Does not prove client model assets, gameplay activation or visual appearance.'
+    scope=$(if ($RootSpellsFile) { 'Provided spell roots and data-triggered children. Reference integrity only; does not prove gameplay activation or rendered appearance.' } else { 'Spell families, class skills/talents, direct script casts and data-triggered children, including legacy/NPC variants. Reference integrity only: passive/helper spells may intentionally have no visual. Does not prove client model assets, gameplay activation or visual appearance.' })
 }
 $summary | ConvertTo-Json -Depth 5 | Set-Content "$OutputDirectory/summary.json"
 $summary | ConvertTo-Json -Depth 5
