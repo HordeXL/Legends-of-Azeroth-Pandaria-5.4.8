@@ -349,6 +349,10 @@ class Group
         void ChangeMembersGroup(ObjectGuid guid, uint8 group);
         void ChangeMembersGroup(Player* player, uint8 group);
         void SetTargetIcon(uint8 symbol, ObjectGuid whoGuid, ObjectGuid targetGuid, uint8 partyIndex);
+        void SetTargetIcon(uint8 symbol, ObjectGuid whoGuid, ObjectGuid targetGuid)
+        {
+            SetTargetIcon(symbol, whoGuid, targetGuid, 0);
+        }
         void SetGroupMemberFlag(ObjectGuid guid, bool apply, GroupMemberFlags flag);
         void RemoveUniqueGroupMemberFlag(GroupMemberFlags flag);
 

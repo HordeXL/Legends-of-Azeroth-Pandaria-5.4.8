@@ -17,6 +17,39 @@
 
 #include "ScriptPCH.h"
 
+#define GOSSIP_DEFEND_NAHOM "I am ready to defend Nahom."
+#define GOSSIP_SALHET_TACTICIAN "Fine. Let's see what you and your lions can do."
+
+class npc_elemental_bonds_cyclonas : public CreatureScript
+{
+    public:
+        npc_elemental_bonds_cyclonas() : CreatureScript("npc_elemental_bonds_cyclonas") { }
+
+        bool OnGossipHello(Player* player, Creature* creature) override
+        {
+            player->PlayerTalkClass->ClearMenus();
+            if (creature->IsQuestGiver())
+                player->PrepareQuestMenu(creature->GetGUID());
+
+            if (player->GetQuestStatus(29327) == QUEST_STATUS_INCOMPLETE)
+                player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "I am ready, elemental. Take me to Thrall.", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
+
+            player->SEND_GOSSIP_MENU(player->GetGossipTextId(creature), creature->GetGUID());
+            return true;
+        }
+
+        bool OnGossipSelect(Player* player, Creature* /*creature*/, uint32 sender, uint32 action) override
+        {
+            player->PlayerTalkClass->ClearMenus();
+            if (sender == GOSSIP_SENDER_MAIN && action == GOSSIP_ACTION_INFO_DEF + 1 &&
+                player->GetQuestStatus(29327) == QUEST_STATUS_INCOMPLETE)
+                player->TeleportTo(1, -11223.0f, 318.5f, 630.35f, 3.44f);
+
+            player->CLOSE_GOSSIP_MENU();
+            return true;
+        }
+};
+
 enum Spells
 {
     // Akma'hat
@@ -29,6 +62,7 @@ enum Spells
     SPELL_SANDS_OF_TIME             = 93578,
     SPELL_TELEPORT_TO_RAMKAHEN      = 94564,
     SPELL_TAHET_KILL_CREDIT         = 86747,
+    SPELL_DEFENSE_OF_NAHOM_CREDIT   = 91824,
 };
 
 enum Events
@@ -58,6 +92,7 @@ enum CreatureIds
     NPC_GOREBITE             = 46278,
     NPC_THARTEP              = 46280,
     NPC_KHAMEN               = 46281,
+    NPC_BLOODSNARL_CREDIT    = 48211,
 };
 
 enum Quests
@@ -69,6 +104,13 @@ enum Quests
     QUEST_COLOSSAL_GUARDIANS        = 27623,
     QUEST_NEFERSET_PRISON           = 27707,
     QUEST_THE_PIT_OF_SCALES         = 27738,
+    QUEST_SALHET_THE_TACTICIAN      = 28277,
+    QUEST_THE_DEFENSE_OF_NAHOM      = 28501,
+};
+
+enum Phases
+{
+    PHASE_THE_PIT_OF_SCALES = QUEST_THE_PIT_OF_SCALES,
 };
 
 enum Credits
@@ -99,6 +141,7 @@ enum Types
 {
     TYPE_NEFERSET_PRISON_PLAYER,
     TYPE_PIT_MASTER_PLAYER,
+    TYPE_PIT_MASTER_ORIGINAL_PHASE,
 };
 
 const std::map<uint32, uint32> CreditMatchType =
@@ -555,6 +598,72 @@ class npc_neferset_enforcer_quest : public CreatureScript
         }
 };
 
+// Ramkahen Sergeant 49228
+// The original battle controller is absent. Keep the quest chain functional by
+// using the encounter's own quest-credit spell when the player reports ready.
+class npc_ramkahen_sergeant : public CreatureScript
+{
+    public:
+        npc_ramkahen_sergeant() : CreatureScript("npc_ramkahen_sergeant") { }
+
+        bool OnGossipHello(Player* player, Creature* creature) override
+        {
+            if (player->GetQuestStatus(QUEST_THE_DEFENSE_OF_NAHOM) == QUEST_STATUS_INCOMPLETE)
+                player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, GOSSIP_DEFEND_NAHOM, GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
+
+            player->SEND_GOSSIP_MENU(player->GetGossipTextId(creature), creature->GetGUID());
+            return true;
+        }
+
+        bool OnGossipSelect(Player* player, Creature* /*creature*/, uint32 sender, uint32 action) override
+        {
+            player->PlayerTalkClass->ClearMenus();
+            player->CLOSE_GOSSIP_MENU();
+
+            if (sender == GOSSIP_SENDER_MAIN && action == GOSSIP_ACTION_INFO_DEF + 1 &&
+                player->GetQuestStatus(QUEST_THE_DEFENSE_OF_NAHOM) == QUEST_STATUS_INCOMPLETE)
+                player->CastSpell(player, SPELL_DEFENSE_OF_NAHOM_CREDIT, true);
+
+            return true;
+        }
+};
+
+// Salhet 48237 - Salhet the Tactician (28277)
+// The lion battle controller is absent. Award the existing objective credit
+// through the retail gossip choice without placing the player in a dead camera.
+class npc_salhet_tactician : public CreatureScript
+{
+    public:
+        npc_salhet_tactician() : CreatureScript("npc_salhet_tactician") { }
+
+        bool OnGossipHello(Player* player, Creature* creature) override
+        {
+            if (creature->IsQuestGiver())
+                player->PrepareQuestMenu(creature->GetGUID());
+
+            if (player->GetQuestStatus(QUEST_SALHET_THE_TACTICIAN) == QUEST_STATUS_INCOMPLETE)
+                player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, GOSSIP_SALHET_TACTICIAN, GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
+
+            player->SEND_GOSSIP_MENU(player->GetGossipTextId(creature), creature->GetGUID());
+            return true;
+        }
+
+        bool OnGossipSelect(Player* player, Creature* /*creature*/, uint32 sender, uint32 action) override
+        {
+            player->PlayerTalkClass->ClearMenus();
+            player->CLOSE_GOSSIP_MENU();
+
+            if (sender == GOSSIP_SENDER_MAIN && action == GOSSIP_ACTION_INFO_DEF + 1 &&
+                player->GetQuestStatus(QUEST_SALHET_THE_TACTICIAN) == QUEST_STATUS_INCOMPLETE)
+            {
+                for (uint8 i = 0; i < 30; ++i)
+                    player->KilledMonsterCredit(NPC_BLOODSNARL_CREDIT);
+            }
+
+            return true;
+        }
+};
+
 // Tahet 46496
 class npc_tahet : public CreatureScript
 {
@@ -569,19 +678,23 @@ class npc_tahet : public CreatureScript
             if (player->GetQuestStatus(QUEST_THE_PIT_OF_SCALES) != QUEST_STATUS_INCOMPLETE)
                 return false;
 
-            player->SetPhaseMask(QUEST_THE_PIT_OF_SCALES, true);
+            uint32 originalPhaseMask = player->GetPhaseMask();
+            player->SetPhaseMask(originalPhaseMask | PHASE_THE_PIT_OF_SCALES, true);
 
             if (TempSummon* Tahet = player->SummonCreature(NPC_TAHET, *creature, TEMPSUMMON_MANUAL_DESPAWN))
             {
-                Tahet->SetPhaseMask(QUEST_THE_PIT_OF_SCALES, true);
+                Tahet->SetPhaseMask(PHASE_THE_PIT_OF_SCALES, true);
 
                 uint32 delay = 0;
-                creature->m_Events.Schedule(delay += 1000, 1, [creature, player, Tahet]()
+                creature->m_Events.Schedule(delay += 1000, 1, [creature, player, Tahet, originalPhaseMask]()
                 {
                     Tahet->Kill(Tahet);
 
                     if (TempSummon* PitMaster = player->SummonCreature(NPC_CAIMAS_PIT_MASTER, PitMasterPath[0], TEMPSUMMON_MANUAL_DESPAWN))
-                        PitMaster->SetPhaseMask(QUEST_THE_PIT_OF_SCALES, true);
+                    {
+                        PitMaster->SetPhaseMask(PHASE_THE_PIT_OF_SCALES, true);
+                        PitMaster->AI()->SetData(TYPE_PIT_MASTER_ORIGINAL_PHASE, originalPhaseMask);
+                    }
                 });
                 
             }
@@ -602,12 +715,13 @@ class npc_caimat_pit_master : public CreatureScript
             npc_caimat_pit_masterAI(Creature* creature) : ScriptedAI(creature) { }
 
             ObjectGuid playerGUID;
-            uint32 delay, krokoCount;
+            uint32 delay, krokoCount, originalPhaseMask;
 
             void IsSummonedBy(Unit* summoner) override
             {
                 playerGUID = summoner->GetGUID();
                 krokoCount = 0;
+                originalPhaseMask = 1;
                 me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PACIFIED | UNIT_FLAG_NON_ATTACKABLE);
 
                 Movement::MoveSplineInit init(me);
@@ -629,7 +743,7 @@ class npc_caimat_pit_master : public CreatureScript
                     Talk(TALK_SPECIAL_1);
 
                     if (Creature* gorebite = me->SummonCreature(NPC_GOREBITE, KrokoSpawnPoints[0], TEMPSUMMON_MANUAL_DESPAWN))
-                        gorebite->SetPhaseMask(QUEST_THE_PIT_OF_SCALES, true);
+                        gorebite->SetPhaseMask(PHASE_THE_PIT_OF_SCALES, true);
                 });
             }
 
@@ -639,6 +753,12 @@ class npc_caimat_pit_master : public CreatureScript
                     return playerGUID;
 
                 return 0;
+            }
+
+            void SetData(uint32 type, uint32 data) override
+            {
+                if (type == TYPE_PIT_MASTER_ORIGINAL_PHASE)
+                    originalPhaseMask = data;
             }
 
             void DoAction(int32 actionId) override
@@ -654,7 +774,7 @@ class npc_caimat_pit_master : public CreatureScript
                         {
                             for (uint8 i = 1; i < 3; i++)
                                 if (Creature* kroko = me->SummonCreature(i == 1 ? NPC_THARTEP : NPC_KHAMEN, KrokoSpawnPoints[i], TEMPSUMMON_MANUAL_DESPAWN))
-                                    kroko->SetPhaseMask(QUEST_THE_PIT_OF_SCALES, true);
+                                    kroko->SetPhaseMask(PHASE_THE_PIT_OF_SCALES, true);
                         });
                         break;
                     case ACTION_KROKOLISKS_DIED:
@@ -682,6 +802,9 @@ class npc_caimat_pit_master : public CreatureScript
             void JustDied(Unit* /*killer*/) override
             {
                 DoCast(me, SPELL_TAHET_KILL_CREDIT);
+
+                if (Player* player = ObjectAccessor::GetPlayer(*me, playerGUID))
+                    player->SetPhaseMask(originalPhaseMask, true);
             }
 
             void UpdateAI(uint32 diff) override
@@ -991,8 +1114,36 @@ class spell_uldum_mallet_eff : public SpellScript
     }
 };
 
+// Orbs of the Stars (62054), Do the Honors (27669).
+// Spell 89314 applies a dummy aura; the absent cinematic controller never
+// delivers its summoner-targeted credit spell. Award only the activating
+// player at the actual mechanism, without depending on that missing actor.
+class spell_uldum_orbs_of_the_stars : public SpellScript
+{
+    PrepareSpellScript(spell_uldum_orbs_of_the_stars);
+
+    void HandleActivation(SpellEffIndex /*effIndex*/)
+    {
+        Player* player = GetCaster()->ToPlayer();
+        if (!player || GetHitUnit() != player || player->GetMapId() != 1 ||
+            player->GetQuestStatus(27669) != QUEST_STATUS_INCOMPLETE)
+            return;
+
+        // This focus exists at each pedestal inside the underground chamber.
+        // Three-dimensional distance prevents activating it from the surface.
+        if (player->FindNearestGameObject(301083, 20.0f))
+            player->KilledMonsterCredit(46283);
+    }
+
+    void Register() override
+    {
+        OnEffectHitTarget += SpellEffectFn(spell_uldum_orbs_of_the_stars::HandleActivation, EFFECT_0, SPELL_EFFECT_APPLY_AURA);
+    }
+};
+
 void AddSC_uldum()
 {
+    new npc_elemental_bonds_cyclonas();
     new boss_akmahat();
     new npc_akmahat_fury_of_the_sands();
     new npc_addarah();
@@ -1001,6 +1152,8 @@ void AddSC_uldum()
     new npc_sun_moon_colossus();
     new npc_quest_ramkahen_prisoner();
     new npc_neferset_enforcer_quest();
+    new npc_ramkahen_sergeant();
+    new npc_salhet_tactician();
     new npc_tahet();
     new npc_caimat_pit_master();
     new npc_krokolisks_quest();
@@ -1013,4 +1166,5 @@ void AddSC_uldum()
     new spell_script<spell_thunder_clap_quest>("spell_thunder_clap_quest");
     new spell_script<spell_stealing_quest>("spell_stealing_quest");
     new spell_script<spell_uldum_mallet_eff>("spell_uldum_mallet_eff");
+    new spell_script<spell_uldum_orbs_of_the_stars>("spell_uldum_orbs_of_the_stars");
 }

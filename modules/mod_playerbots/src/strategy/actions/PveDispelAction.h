@@ -1,7 +1,7 @@
 #ifndef _PLAYERBOT_PVE_DISPEL_ACTION_H
 #define _PLAYERBOT_PVE_DISPEL_ACTION_H
 #include "Playerbots.h"
-#include "PlayerBotSpec.h"
+#include "PlayerbotSpec.h"
 #include "GenericSpellActions.h"
 
 struct PveDispelSpell { uint32 id; char const* name; uint32 types; };

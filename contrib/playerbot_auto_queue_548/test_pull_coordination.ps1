@@ -1,7 +1,7 @@
 $ErrorActionPreference = 'Stop'
 $root = (Resolve-Path "$PSScriptRoot/../..").Path
 $source = Get-Content "$root/modules/mod_playerbots/src/AI/PlayerbotSpec.cpp" -Raw
-$bodies = foreach ($name in @('IsEngaged','IsCollected','AoeReady','DamageAllowed','NeedsRescue','TauntSpell','RescueTank')) {
+$bodies = foreach ($name in @('IsEngaged','IsCollected','TankOwnsTarget','AoeReady','DamageAllowed','NeedsRescue','TauntSpell','RescueTank')) {
     $signature = switch ($name) { 'TauntSpell' { 'unsigned' } 'RescueTank' { 'Player*' } default { 'bool' } }
     $start = $source.IndexOf("$signature GroupPveCombat::$name(")
     if ($start -lt 0) { throw "Missing production function $name" }

@@ -38,7 +38,7 @@ public:
     bool IsInPvpProhibitedZone(uint32 id);
     bool IsInPvpProhibitedArea(uint32 id);
 
-    bool enabled, perfMonEnabled;
+    bool enabled, perfMonEnabled, applyInstanceStrategies, EnableICCBuffs;
     uint32 globalCoolDown, reactDelay, maxWaitForMove, disableMoveSplinePath, maxMovementSearchTime, expireActionTime,
         dispelAuraDuration, passiveDelay, repeatDelay, errorDelay, rpgDelay, sitDelay, returnDelay, lootDelay;
     bool dynamicReactDelay;
@@ -70,6 +70,13 @@ public:
     uint32 randomBotAccountCount;
     bool randomBotRandomPassword;
     std::vector<uint32> randomBotAccounts;
+
+    // Offline PvE Playerbot pool. Separate from RandomBots.
+    bool playerbotPoolEnabled;
+    std::string playerbotPoolAccountPrefix;
+    uint32 playerbotPoolAccountCount;
+    float playerbotPoolTeleportDistance;
+    std::vector<uint32> playerbotPoolAccounts;
 
     bool autoQueueEnabled, autoQueueDryRun, autoQueueLfg, autoQueueLfgAutomatic;
     bool autoQueueBattleground, autoQueueArena;
@@ -106,6 +113,7 @@ public:
 
     // METHODS
     bool IsInRandomAccountList(uint32 id);
+    bool IsInPlayerbotPoolAccountList(uint32 id);
 
     std::string const GetTimestampStr();
     bool hasLog(std::string const fileName)

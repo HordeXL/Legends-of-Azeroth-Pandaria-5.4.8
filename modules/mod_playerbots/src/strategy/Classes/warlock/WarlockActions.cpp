@@ -143,11 +143,8 @@ bool CastIncinerateAction::Execute(Event event)
 		return false;
 
 	if (botAI->HasAura("fire and brimstone", bot))
-		botAI->CastSpell(114654, GetTarget());
-	else
-		botAI->CastSpell(spell, GetTarget());
-
-	return true;
+		return botAI->CastSpell(114654, GetTarget());
+	return botAI->CastSpell(spell, GetTarget());
 }
 bool CastImmolateAction::Execute(Event event)
 {
@@ -155,11 +152,8 @@ bool CastImmolateAction::Execute(Event event)
 		return false;
 
 	if (botAI->HasAura("fire and brimstone", bot))
-		botAI->CastSpell(108686, GetTarget());
-	else
-		botAI->CastSpell(spell, GetTarget());
-
-	return true;
+		return botAI->CastSpell(108686, GetTarget());
+	return botAI->CastSpell(spell, GetTarget());
 }
 bool CastConflagrateAction::Execute(Event event)
 {
@@ -167,9 +161,6 @@ bool CastConflagrateAction::Execute(Event event)
 		return false;
 
 	if (botAI->HasAura("fire and brimstone", bot))
-		botAI->CastSpell(108685, GetTarget());
-	else
-		botAI->CastSpell(spell, GetTarget());
-
-	return true;
+		return botAI->CastSpell(108685, GetTarget());
+	return botAI->CastSpell(spell, GetTarget());
 }

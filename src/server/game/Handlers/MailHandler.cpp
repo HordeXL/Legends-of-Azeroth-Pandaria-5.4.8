@@ -116,13 +116,17 @@ void WorldSession::HandleSendMail(WorldPacket& recvData)
             }
 
     if (receiverName.empty())
+    {
+        GetPlayer()->SendMailResult(0, MAIL_SEND, MAIL_ERR_RECIPIENT_NOT_FOUND);
         return;
+    }
 
     Player* player = _player;
 
     if (player->GetLevel() < sWorld->getIntConfig(CONFIG_MAIL_LEVEL_REQ))
     {
         SendNotification(GetTrinityString(LANG_MAIL_SENDER_REQ), sWorld->getIntConfig(CONFIG_MAIL_LEVEL_REQ));
+        player->SendMailResult(0, MAIL_SEND, MAIL_ERR_SILENT);
         return;
     }
 
@@ -259,11 +263,15 @@ void WorldSession::HandleSendMail(WorldPacket& recvData)
     if (receiverLevel < sWorld->getIntConfig(CONFIG_MAIL_LEVEL_REQ))
     {
         SendNotification(GetTrinityString(LANG_MAIL_RECEIVER_REQ), sWorld->getIntConfig(CONFIG_MAIL_LEVEL_REQ));
+        player->SendMailResult(0, MAIL_SEND, MAIL_ERR_SILENT);
         return;
     }
 
     if (!ChatHandler::ValidatePipeSequence(subject) || !ChatHandler::ValidatePipeSequence(body))
+    {
+        player->SendMailResult(0, MAIL_SEND, MAIL_ERR_INTERNAL_ERROR);
         return;
+    }
 
     Item* items[MAX_MAIL_ITEMS];
 

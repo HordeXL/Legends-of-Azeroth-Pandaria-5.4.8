@@ -17,7 +17,10 @@
 
 #include "PlayerbotAIConfig.h"
 
+#include <algorithm>
+#include <cctype>
 #include <iostream>
+#include <sstream>
 
 #include "Config.h"
 #include "Helper.h"
@@ -76,6 +79,8 @@ bool PlayerbotAIConfig::Initialize()
     }
 
     perfMonEnabled = sConfigMgr->GetBoolDefault("AiPlayerbot.PerfMonEnabled", false);
+    applyInstanceStrategies = sConfigMgr->GetBoolDefault("AiPlayerbot.ApplyInstanceStrategies", true);
+    EnableICCBuffs = false; // Imported strategies must use normal encounter mechanics.
     globalCoolDown = sConfigMgr->GetIntDefault("AiPlayerbot.GlobalCooldown", 1500);
     maxWaitForMove = sConfigMgr->GetIntDefault("AiPlayerbot.MaxWaitForMove", 5000);
     disableMoveSplinePath = sConfigMgr->GetIntDefault("AiPlayerbot.DisableMoveSplinePath", 0);
@@ -138,6 +143,13 @@ bool PlayerbotAIConfig::Initialize()
     randomBotAutologin = sConfigMgr->GetBoolDefault("AiPlayerbot.RandomBotAutologin", true);
     randomBotAccountPrefix = sConfigMgr->GetStringDefault("AiPlayerbot.RandomBotAccountPrefix", "rndbot");
     randomBotAccountCount = sConfigMgr->GetIntDefault("AiPlayerbot.RandomBotAccountCount", 200);
+
+    // Existing deployments keep their current bot accounts unless explicitly enabled.
+    playerbotPoolEnabled = sConfigMgr->GetBoolDefault("AiPlayerbot.PlayerbotPool.Enabled", false);
+    playerbotPoolAccountPrefix = sConfigMgr->GetStringDefault("AiPlayerbot.PlayerbotPool.AccountPrefix", "poolbot");
+    playerbotPoolAccountCount = sConfigMgr->GetIntDefault("AiPlayerbot.PlayerbotPool.AccountCount", 200);
+    playerbotPoolTeleportDistance = sConfigMgr->GetFloatDefault("AiPlayerbot.PlayerbotPool.TeleportDistance", 100.0f);
+
     maxAddedBotsPerClass = sConfigMgr->GetIntDefault("AiPlayerbot.MaxAddedBotsPerClass", 50);
     maxAddedBots = sConfigMgr->GetIntDefault("AiPlayerbot.MaxAddedBots", 200);
     minRandomBots = sConfigMgr->GetIntDefault("AiPlayerbot.MinRandomBots", 50);
@@ -238,6 +250,8 @@ bool PlayerbotAIConfig::Initialize()
 
 
     RandomPlayerbotFactory::CreateRandomBots();
+    RandomPlayerbotFactory::CreatePlayerbotPool();
+
     if (World::IsStopped())
     {
         return true;
@@ -380,4 +394,9 @@ void PlayerbotAIConfig::log(std::string const fileName, char const* str, ...)
 bool PlayerbotAIConfig::IsInRandomAccountList(uint32 id)
 {
     return std::find(randomBotAccounts.begin(), randomBotAccounts.end(), id) != randomBotAccounts.end();
+}
+
+bool PlayerbotAIConfig::IsInPlayerbotPoolAccountList(uint32 id)
+{
+    return std::find(playerbotPoolAccounts.begin(), playerbotPoolAccounts.end(), id) != playerbotPoolAccounts.end();
 }

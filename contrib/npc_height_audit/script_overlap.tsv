@@ -1,0 +1,107 @@
+entry	name	AIName	ScriptName	VehicleId	events	spawns
+2530	Yenniku	SmartAI	npc_yenniku	0	14	1
+3193	Misha Tor'kren	SmartAI	npc_watershed_patrol	0	1	1
+3698	Bolyun	SmartAI	npc_pet_trainer	0	3	1
+3887	Baron Silverlaine	SmartAI	boss_baron_silverlaine	0	1	1
+4700	Aged Kodo	SmartAI	npc_aged_dying_ancient_kodo	0	16	26
+4702	Ancient Kodo	SmartAI	npc_aged_dying_ancient_kodo	0	16	4
+7784	Homing Robot OOX-17/TN	SmartAI	npc_OOX17	0	28	1
+7955	Milli Featherwhistle	SmartAI	npc_mount_vendor	0	4	1
+9025	Lord Roccor	SmartAI	npc_lord_roccor	0	2	1
+12818	Ruul Snowhoof	SmartAI	npc_ruul_snowhoof	0	4	1
+15170	Rutgar Glyphshaper	SmartAI	npcs_rutgar_and_frankal	0	2	1
+15171	Frankal Stonebridge	SmartAI	npcs_rutgar_and_frankal	0	2	1
+16993	Wounded Blood Elf Pilgrim	SmartAI	npc_wounded_blood_elf	0	30	1
+17682	Princess Stillpine	SmartAI	npc_princess_stillpine	0	2	1
+17900	Ashyen	SmartAI	npcs_ashyen_and_keleth	0	12	1
+17901	Keleth	SmartAI	npcs_ashyen_and_keleth	0	12	1
+18210	Mag'har Captive	SmartAI	npc_maghar_captive	0	36	1
+18369	Corki	SmartAI	npc_corki	0	6	1
+18445	Corki	SmartAI	npc_corki	0	6	1
+19995	Bladespire Brute	SmartAI	npc_ogre_brute	0	3	35
+20812	Corki	SmartAI	npc_corki	0	6	1
+21847	Fel Guard Hound	SmartAI	npc_fel_guard_hound	0	7	2
+24224	Corrupted Lightning Totem	SmartAI	npc_halazzi_lightning_totem	0	1	0
+24484	Brewfest Reveler	SmartAI	npc_brewfest_reveler	0	7	89
+25059	Ayren Cloudbreaker	SmartAI	npc_taxi	0	3	1
+26206	Keristrasza	SmartAI	npc_keristrasza	0	4	0
+28217	Injured Rainspeaker Oracle	SmartAI	npc_injured_rainspeaker_oracle	0	16	5
+29611	King Varian Wrynn	SmartAI	npc_king_varian_wrynn	0	3	1
+29931	Drakkari Rhino	SmartAI	npc_drakkari_rhino	209	4	0
+33532	Wolvar Orphan	SmartAI	npc_summoned_orphan	0	1	0
+33533	Oracle Orphan	SmartAI	npc_summoned_orphan	0	1	0
+34503	Razormane Pillager	SmartAI	npc_razormane_pillager	0	13	53
+34514	Hogtied Razormane	SmartAI	npc_razormane_pillager	0	11	0
+36272	Apothecary Frye	SmartAI	npc_apothecary_frye	0	1	1
+36296	Apothecary Hummel	SmartAI	npc_apothecary_hummel	0	3	1
+36565	Apothecary Baxter	SmartAI	npc_apothecary_baxter	0	1	1
+36724	Servant of the Throne	SmartAI	npc_servant_of_the_throne_icc	0	2	11
+36805	Deathspeaker Servant	SmartAI	npc_deathspeaker_servant_10man_icc	0	3	2
+36807	Deathspeaker Disciple	SmartAI	npc_deathspeaker_disciple_10man_icc	0	3	4
+36808	Deathspeaker Zealot	SmartAI	npc_deathspeaker_zealot_icc	0	1	3
+36811	Deathspeaker Attendant	SmartAI	npc_deathspeaker_attendant_10man_icc	0	2	4
+36829	Deathspeaker High Priest	SmartAI	npc_deathspeaker_high_priest_icc	0	2	2
+37012	Ancient Skeletal Soldier	SmartAI	npc_ancient_skeletal_soldier_icc	0	2	8
+37120	Highlord Darion Mograine	SmartAI	npc_icc_unsealed_chest_questgiver	622	2	1
+38225	Vol'jin	SmartAI	npc_voljin_ancient_enemy	0	18	1
+38306	Zar'jira	SmartAI	npc_zarjira	0	35	1
+38542	Fire of the Seas	SmartAI	npc_fire_of_the_seas	0	6	3
+39324	Zen'Taji	SmartAI	npc_watershed_patrol	0	1	1
+39326	Raggaran	SmartAI	npc_watershed_patrol	0	2	1
+39663	Drowning Soldier	SmartAI	npc_drowning_soldier_and_warrior	0	3	46
+40450	Dustbone Horror	SmartAI	npc_ptah_dustbone_horror	0	5	0
+40458	Jeweled Scarab	SmartAI	npc_earthrager_base	0	5	0
+41112	Marion Wormwing	SmartAI	npc_marion_wormswing	0	16	1
+41672	Drowning Warrior	SmartAI	npc_drowning_soldier_and_warrior	0	3	21
+46276	Caimas the Pit Master	SmartAI	npc_caimat_pit_master	1190	13	0
+46278	Gorebite	SmartAI	npc_krokolisks_quest	0	3	0
+46280	Thartep	SmartAI	npc_krokolisks_quest	0	3	0
+46281	Khamen	SmartAI	npc_krokolisks_quest	0	3	0
+46425	Ramkahen Prisoner	SmartAI	npc_quest_ramkahen_prisoner	0	13	1
+46432	Neferset Enforcer	SmartAI	npc_neferset_enforcer_quest	0	4	0
+46441	Neferset Overlord	SmartAI	npc_neferset_enforcer_quest	0	5	0
+46496	Tahet	SmartAI	npc_tahet	0	6	1
+50359	Urgolax	SmartAI	npc_morgrinn_crackfang	0	3	1
+54734	Master Li Fei	SmartAI	boss_li_fei_fight	0	1	1
+54763	Nectarbreeze Farmer	SmartAI	npc_nectarbreeze_farmer	0	1	9
+55019	Tushui Monk	SmartAI	npc_tushui_monk	0	7	0
+55586	Master Shang Xi	SmartAI	npc_master_shang_xi_after_zhao	0	1	2
+55665	Frightened Winds	SmartAI	npc_frightened_wind	0	1	2
+55672	Master Shang Xi	SmartAI	npc_master_shang_xi_thousand_staff	0	1	2
+55786	Zhao-Ren	SmartAI	boss_zhao_ren	0	19	2
+55940	Jojo Ironbrow	SmartAI	npc_jojo_ironbrow	0	1	2
+56009	Vordraka, the Deep Sea Nightmare	SmartAI	boss_vordraka	0	10	1
+56013	Spirit of Master Shang Xi	SmartAI	npc_shang_xi_choose_faction	0	8	4
+56722	Ik'thik Warrior	SmartAI	npc_ik_thik_warrior	0	2	15
+58508	Big Bao	SmartAI	npc_big_bao	0	7	1
+59074	Uncle Gao	SmartAI	npc_uncle_gao	0	1	1
+59190	Psyfiend	SmartAI	npc_pri_psy_fiend	0	1	0
+59547	Jiang	SmartAI	npc_jiang_xiang	0	3	1
+59580	Ordo Overseer	SmartAI	npc_ordo_overseer	0	1	9
+59598	Lesser Sha	SmartAI	npc_lesser_sha	0	1	10
+60042	Korga Strongmane	SmartAI	npc_korga	0	7	1
+60730	Longying Ranger	SmartAI	npc_longying_ranger	0	1	6
+60899	Lin Silentstrike	SmartAI	npc_lin_silentstrike	0	2	1
+61245	Capacitor Totem	SmartAI	npc_capacitor_totem	0	1	1
+63521	Disturbed Saurok	SmartAI	npc_disturbed_saurok	0	1	5
+64165	Bataari Outrunner	SmartAI	npc_bataari_outrunner	0	1	0
+64506	Aysa Cloudsinger	SmartAI	npc_aysa_in_wind_temple	0	5	5
+64732	Rok'nah Grunt	SmartAI	npc_theramore_roknah_grunt	0	1	51
+64735	Rok'nah Headhunter	SmartAI	npc_theramore_roknah_headhunter	0	1	4
+64742	Spirit of Hatred	SmartAI	celestial_experience_sha	0	10	0
+65391	Elder Spindlegrin	SmartAI	npc_elder_spindlegrin	0	4	0
+65494	Rok'nah Skirmisher	SmartAI	npc_theramore_invader_base	0	1	15
+65610	Airship Crewman	SmartAI	npc_theramore_airship_crewman	0	1	3
+65785	Sergeant Grud	SmartAI	npc_theramore_sergeant_grud	0	1	1
+66260	Master Hight	SmartAI	npc_master_hight	0	2	1
+66844	Initiate Chuang	SmartAI	npc_initiate_chuang_summoned	0	31	0
+69531	Anki	SmartAI	npc_shaolmara_anki	1071	1	0
+69538	Arcanital Mara'kah	SmartAI	npc_arcanital_marakah	0	3	1
+69619	Archmage Aethas Sunreaver	SmartAI	npc_shanbu_assault_base	0	3	1
+72095	Fishgorged Crane	SmartAI	npc_timeless_cranes	0	1	8
+72771	Damp Shambler	SmartAI	npc_damp_shamblers	0	2	4
+72841	Death Adder	SmartAI	npc_timeless_adders	0	1	11
+72898	High Priest of Ordos	SmartAI	npc_ordos_minions	0	3	8
+73343	Celestial Guard	SmartAI	npc_timeless_faction_sentries	0	3	20
+73361	Tushui Sentry	SmartAI	npc_timeless_faction_sentries	0	3	6
+73362	Huojin Sentry	SmartAI	npc_timeless_faction_sentries	0	2	9

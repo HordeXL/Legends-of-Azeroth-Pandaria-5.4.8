@@ -114,7 +114,7 @@ public:
 
             if (who->GetTypeId() == TYPEID_PLAYER && me->IsWithinDistInMap(who, 10.0f))
             {
-                if (instance->GetData(TYPE_MEDIVH) == IN_PROGRESS || instance->GetData(TYPE_MEDIVH) == DONE)
+                if (!who->IsAlive() || instance->GetData(TYPE_MEDIVH) != NOT_STARTED)
                     return;
 
                 Talk(SAY_INTRO);
@@ -163,12 +163,11 @@ public:
                 SpellCorrupt_Timer = 3000;
         }
 
-        void JustDied(Unit* killer) override
+        void JustDied(Unit* /*killer*/) override
         {
-            if (killer->GetEntry() == me->GetEntry())
-                return;
-
             Talk(SAY_DEATH);
+            if (instance && instance->GetData(TYPE_MEDIVH) == IN_PROGRESS)
+                instance->SetData(TYPE_MEDIVH, FAIL);
         }
 
         void UpdateAI(uint32 diff) override
@@ -346,6 +345,12 @@ public:
             if (!instance)
                 return;
 
+            if (instance->GetData(TYPE_MEDIVH) != IN_PROGRESS)
+            {
+                me->DespawnOrUnsummon();
+                return;
+            }
+
             if (TimeRiftWave_Timer <= diff)
             {
                 DoSelectSummon();
@@ -371,17 +376,26 @@ enum Saat
     ITEM_CHRONO_BEACON      = 24289
 };
 
-#define GOSSIP_ITEM_OBTAIN      "[PH] Obtain Chrono-Beacon"
+#define GOSSIP_ITEM_OBTAIN      "I need a Chrono-Beacon."
 
 class npc_saat : public CreatureScript
 {
 public:
     npc_saat() : CreatureScript("npc_saat") { }
 
-    bool OnGossipSelect(Player* player, Creature* creature, uint32 /*sender*/, uint32 action) override
+    static bool CanReceiveBeacon(Player* player)
+    {
+        return player->IsAlive() && !player->HasItemCount(ITEM_CHRONO_BEACON, 1, true) &&
+            (player->GetQuestStatus(QUEST_OPENING_PORTAL) == QUEST_STATUS_INCOMPLETE ||
+             player->GetQuestStatus(QUEST_OPENING_PORTAL) == QUEST_STATUS_COMPLETE ||
+             player->GetQuestRewardStatus(QUEST_OPENING_PORTAL));
+    }
+
+    bool OnGossipSelect(Player* player, Creature* creature, uint32 sender, uint32 action) override
     {
         player->PlayerTalkClass->ClearMenus();
-        if (action == GOSSIP_ACTION_INFO_DEF+1)
+        if (sender == GOSSIP_SENDER_MAIN && action == GOSSIP_ACTION_INFO_DEF+1 &&
+            CanReceiveBeacon(player) && creature->IsWithinDistInMap(player, INTERACTION_DISTANCE))
         {
             player->CLOSE_GOSSIP_MENU();
             creature->CastSpell(player, SPELL_CHRONO_BEACON, false);
@@ -391,16 +405,17 @@ public:
 
     bool OnGossipHello(Player* player, Creature* creature) override
     {
+        player->PlayerTalkClass->ClearMenus();
         if (creature->IsQuestGiver())
             player->PrepareQuestMenu(creature->GetGUID());
 
-        if (player->GetQuestStatus(QUEST_OPENING_PORTAL) == QUEST_STATUS_INCOMPLETE && !player->HasItemCount(ITEM_CHRONO_BEACON))
+        if (CanReceiveBeacon(player) && !player->GetQuestRewardStatus(QUEST_OPENING_PORTAL))
         {
             player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, GOSSIP_ITEM_OBTAIN, GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF+1);
             player->SEND_GOSSIP_MENU(10000, creature->GetGUID());
             return true;
         }
-        else if (player->GetQuestRewardStatus(QUEST_OPENING_PORTAL) && !player->HasItemCount(ITEM_CHRONO_BEACON))
+        else if (CanReceiveBeacon(player))
         {
             player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, GOSSIP_ITEM_OBTAIN, GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF+1);
             player->SEND_GOSSIP_MENU(10001, creature->GetGUID());

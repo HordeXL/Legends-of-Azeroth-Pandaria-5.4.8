@@ -24,6 +24,7 @@ public:
 
     Player* CreateRandomBot(WorldSession* session, Classes cls, std::unordered_map<Gender, std::vector<std::string>>& names);
     static void CreateRandomBots();
+    static void CreatePlayerbotPool();
 
 private:
     std::string const CreateRandomBotName(Gender g);

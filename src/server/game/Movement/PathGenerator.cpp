@@ -106,7 +106,8 @@ bool PathGenerator::CalculatePath(float destX, float destY, float destZ, bool fo
 
     BuildPolyPath(start, dest);
 
-    if (_sourceUnit->VisualizePathfinding)
+    // GameObjects also use pathfinding (for example, quest summon positions).
+    if (_sourceUnit && _sourceUnit->VisualizePathfinding)
     {
         VisualizePath(2500);
         VisualizeNavmesh(2500);

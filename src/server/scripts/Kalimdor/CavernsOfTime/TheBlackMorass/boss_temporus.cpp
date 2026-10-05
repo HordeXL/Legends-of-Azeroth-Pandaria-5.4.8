@@ -58,7 +58,7 @@ public:
     {
         boss_temporusAI(Creature* creature) : BossAI(creature, TYPE_TEMPORUS) { }
 
-        void Reset() override { }
+        void Reset() override { events.Reset(); }
 
         void JustEngagedWith(Unit* /*who*/) override
         {
@@ -121,11 +121,11 @@ public:
                             events.ScheduleEvent(EVENT_HASTE, urand(20000, 25000));
                             break;
                         case EVENT_MORTAL_WOUND:
-                            DoCast(me, SPELL_MORTAL_WOUND);
+                            DoCastVictim(SPELL_MORTAL_WOUND);
                             events.ScheduleEvent(EVENT_MORTAL_WOUND, urand(10000, 20000));
                             break;
                         case EVENT_WING_BUFFET:
-                             DoCast(me, SPELL_WING_BUFFET);
+                             DoCast(me, IsHeroic() ? H_SPELL_WING_BUFFET : SPELL_WING_BUFFET);
                             events.ScheduleEvent(EVENT_WING_BUFFET, urand(20000, 30000));
                             break;
                         case EVENT_SPELL_REFLECTION: // Only in Heroic

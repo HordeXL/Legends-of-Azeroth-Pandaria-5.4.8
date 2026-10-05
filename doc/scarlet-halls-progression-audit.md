@@ -112,3 +112,162 @@ its predecessor is in `Build/server-before-scarlet-halls-20261003-120108`.
 The installed build's separate startup check reached `World initialized` in
 23 seconds with zero `DBErrors.log` bytes and shut down normally. Logs are in
 `Build/scarlet-halls-dog-food-smoke`.
+
+## LFG druid stuck at entrance (2026-10-05)
+
+The observed party assigned Finarie (499) Guardian/tank and Baldro (411)
+Balance/damage. Baldro's saved aura included Bear Form (5487); the staging log
+confirmed his switch to specialization 102. He repeatedly attempted Moonkin
+Form without following the requester. A short debug trace captured repeated
+`Baldro cast: moonkin form` without the corresponding spell preparation.
+
+The shipped spell 24858 has attributes 0x50010, including
+`SPELL_ATTR0_NOT_SHAPESHIFT`. The combat strategy supplies a caster-form
+prerequisite, but direct LFG preparation and the non-combat action do not.
+Moonkin's action now removes the prior shapeshift aura before casting, without
+depending on the old specialization's learned spell list or a mana threshold.
+Playerbot casting also preserves `prepare()`'s strict failure result: a later
+`CheckCast(false)` previously skipped the form check and falsely reported
+success, allowing the same high-priority failed action to starve following.
+
+`contrib/playerbot_auto_queue_548/test_druid_form.ps1` executes the production
+action and cast-result block with narrow doubles. It covers Bear/Cat/caster
+transitions, insufficient mana, preserving an existing Moonkin form, and strict
+cast failure propagation. The previous inherited action fails the negative
+control. A rate-limited LFG form diagnostic records unresolved mismatches
+without enabling global debug logging. Live group retesting remains pending.
+
+During diagnosis, `server set loglevel l root 2` exposed a separate server
+crash at 15:05:32: `Condition::ToString` streamed a null source name for terrain
+swap source type 29. The source-name table stopped at 26; sparse condition
+names were also unguarded. The table now includes source types 27–30, and both
+lookups guard missing names and invalid indexes. This was a worldserver crash,
+distinct from the previously resolved client exit crash. Evidence is preserved
+in `Build/condition-log-crash-20261005`.
+
+`contrib/condition_logging_548/test.ps1` runs the actual production tables,
+enums and formatter across every source/condition index, including sparse
+custom conditions and invalid indexes. The original source fails on a missing
+name. The fixed game target and staged x64 server build passed; the first
+installed build initialized in 23 seconds, produced an empty DBErrors log,
+and shut down cleanly.
+
+The final build, including the druid changes, was installed with backup
+`Build/server-before-logout-response-20261005-151547`. Its isolated smoke run
+in `Build/druid-form-smoke` enabled only the `condition` debug logger. It
+initialized in 23 seconds, logged more than 30,000 terrain-swap source-29
+descriptions (including the original entry 1066) without crashing, and kept
+DBErrors.log empty. Normal configuration retains `Logger.root=5`.
+
+## Fed hound return movement (2026-10-05)
+
+At the user's request, each Starving Hound now remembers its own position and
+orientation when Dog Food selects the watchman. After the watchman dies or
+disappears, the hound clears combat and threat, becomes friendly/passive and
+pacified, then takes a path back to that saved patrol position. It sleeps only
+on the matching point-arrival callback and restores its original facing.
+It does not resume continuous patrol. Late leap callbacks and arrival callbacks
+after an AI reset cannot put the wrong state to sleep.
+
+The return uses point movement, not evade/home movement, to avoid resetting
+the fed state and restoring hostility. Regression coverage executes the actual
+AI and verifies the destination, standing during travel, arrival-only sleep,
+duplicate feeding, missing targets and reset/callback ordering. All existing
+Scarlet Halls progression and installed-faction checks also pass.
+
+The [Wowhead dungeon guide](https://www.wowhead.com/mop-classic/guide/dungeon/scarlet-halls-heroic-boss-strategy-loot)
+supports attacking the watchman and then sleeping, but does not establish an
+original return route. Returning to the pre-attack position is the requested
+behavior, not a claim of a verified retail waypoint sequence.
+
+The x64 scripts/server build was installed with backup
+`Build/server-before-logout-response-20261005-152019`. In-game pathfinding still
+requires a retest with a fresh group of unfed hounds.
+The isolated smoke run in `Build/hound-return-smoke` initialized in 23 seconds,
+kept DBErrors.log empty and shut down cleanly.
+
+## Sleeping pose and Zzz visual (2026-10-05)
+
+The user's Wowhead screenshot shows prone hounds with green Zzz effects.
+Stand state alone did not request a cosmetic spell visual. On return-point
+arrival the AI now keeps `UNIT_STAND_STATE_SLEEP`, casts Sleeping Dog (113114)
+for the dog animation and Cosmetic - Sleep Zzz (55474) for the head effect.
+Reset removes both auras before restoring the standing/hostile state.
+
+The installed 5.4.8 data distinguishes these effects: spell 113114 uses visual
+23098, persistent kit 23126 and animation kit 1974, with no head effect; spell
+55474 uses visual 12147, persistent kit 11223 and head effect 4742, whose model
+is `Spells\Sleep_State_Head.mdx`. Both spells are self-targeted dummy auras with
+unlimited duration. Field interpretation follows the 5.0.1–5.4.8 layout in
+[WoWDBDefs SpellVisualKit](https://github.com/wowdev/WoWDBDefs/blob/master/definitions/SpellVisualKit.dbd).
+
+The production-AI regression verifies that neither cosmetic is applied during
+return movement, both appear on arrival, duplicate arrival notifications do
+not repeat the animation cast, and reset removes both. The screenshot does not
+establish original patrol coordinates, so the previously requested per-hound
+return position is retained. Actual rendering still needs client verification.
+
+The x64 build was installed with backup
+`Build/server-before-logout-response-20261005-152621`.
+Its isolated smoke run in `Build/hound-sleep-visual-smoke` initialized in
+23 seconds, produced an empty DBErrors.log and shut down normally.
+
+## Eaten watchman's blood pool (2026-10-05)
+
+When a feeding hound kills its selected Vigilant Watchman, `KilledUnit` creates
+one stationary invisible world trigger at the watchman's death coordinates and
+applies cosmetic Blood Pool (146012). Only the killing hound does this; other
+pack members merely finish feeding and return. Normal kills, living targets,
+unrelated victims and missing targets do not create pools. The killing hound
+then clears its food target, preventing duplicate callbacks from creating more.
+
+The installed data resolves spell 146012 to visual 33170, persistent visual kit
+35889, model attachment 22965 and effect 17156:
+`spells\sloppy_blood_pool_nofade.mdx`. Its only effect is a self-targeted dummy
+aura, with no damage, stun or feign-death behavior. It cannot target a dead unit,
+so the visual lives on a friendly passive trigger instead of the corpse. The
+trigger expires after the watchman's configured corpse delay (minimum one
+second), and therefore cannot leave a permanent cosmetic actor behind.
+
+Production-AI regression checks cover the single pool, death position, lifetime,
+alive/unrelated target exclusions, duplicate callbacks and missing targets,
+alongside the existing return/sleep and dungeon progression checks. The scripts
+and x64 server build pass. Installed backup:
+`Build/server-before-logout-response-20261005-153156`. Client rendering and the
+exact size/appearance compared with the screenshot still require an in-game
+check; this is an implementation using a verified cosmetic model, not evidence
+of the original encounter's exact spell ID.
+The isolated smoke run in `Build/hound-blood-pool-smoke` initialized in
+24 seconds, kept DBErrors.log empty and shut down normally.
+
+## Reinforced Archery Target pickup (2026-10-05)
+
+The user could select the glowing targets but could not pick them up. Entry
+59163 had no `npc_spellclick_spells` row. Although the AI enabled SPELLCLICK,
+`Player::CanSeeSpellClickOn` hid it from the client when the lookup was empty,
+just as with the previously fixed food buckets.
+
+Migration `2026_10_05_00_world_scarlet_halls_archery_spellclick.sql` adds Heroic
+Defense (113436). The target casts it on the clicking player. Cast flags 6
+preserve the target as the aura caster: the empty owner GUID of these static
+NPCs falls back to the actual caster in `Spell::Spell`. Flags 2 would instead
+attribute the aura to the player, preventing `HandleAuraControlVehicle` from
+boarding the target because caster and vehicle owner would be the same unit.
+Preserving the NPC caster also keeps the existing aura-removal despawn working.
+
+The installed DBC defines 113399 as SET_VEHICLE_ID 2037 and 113436 effect 0 as
+CONTROL_VEHICLE, seat amount 1. The target already supplies 113399 through its
+500 ms periodic override aura. Click conditions require this carrying aura and
+exclude players who already carry a shield. The AI now acknowledges the
+database cast only if this target's own Heroic Defense aura exists on the
+clicker. It no longer casts twice or consumes a target after a failed cast.
+
+The production visibility/AI regression reproduces the missing-row failure,
+checks condition-based visibility, failed and foreign-caster pickup attempts,
+single successful pickup, duplicate callbacks and reset. Existing dungeon and
+dog-food regressions also pass, as does the x64 build. The migration was applied
+twice to verify idempotence. Pre-change DB rows are saved in
+`Build/archery-target-db-before-20261005.tsv`; installed binary backup is
+`Build/server-before-logout-response-20261005-155316`.
+Actual carrying visuals and arrow interception still require an in-game test.
+The isolated smoke run in `Build/archery-target-smoke` initialized in 23 seconds, kept DBErrors.log empty and shut down cleanly (exit 0).

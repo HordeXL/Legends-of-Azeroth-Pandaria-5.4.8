@@ -1251,3 +1251,31 @@ The active `playerbots.conf` entries may then be removed manually or left disabl
 - Shutdown/restart: verify no bot remains stuck in LFG or battleground queue state.
 - Keep `AiPlayerbot.AutoQueue.Arena = 0` during functional LFG/BG testing; enable it
   only for the read-only `0004` preview while `DryRun = 1`.
+
+### Automatic PvE equipment upgrades and durability
+
+PvE equipment preparation now scans all genuine item templates for every combat
+slot, preferring epic quality and then the highest item level allowed for the
+bot's level, class and specialization. The existing level budgets, PvP/custom/test
+item exclusions and native equip/unique-item restrictions still apply. If a slot
+has no usable epic, it uses the best available lower quality item. An epic usable
+at level 67 may require level 60; requiring level 70 still excludes it at 67.
+The selection deliberately prioritizes purple quality, not a simulated DPS score.
+
+This runs on bot login, automatic level-up maintenance and managed PvE group
+preparation. It equips upgrades on the character and reuses carried upgrades.
+Replaced gear stays in the bags; full bags leave the old item equipped. Existing
+PvP preparation is unchanged. No client item templates or dungeon enemies change.
+
+Equipment is repaired during preparation. Server-controlled bot sessions also
+retain full durability through combat/death durability-loss events, restoring
+item stats when repairing a previously broken piece. Human player durability
+continues to use the normal rules.
+
+Run `python3 contrib/playerbot_auto_queue_548/run_epic_equipment_test.py` to compile
+and test the production selection and durability functions with inventory
+fixtures. This covers a level-67 bot's green ilvl-52 replacement, epic priority,
+level/spec/unique-equipment validation, rare fallback, bag reuse, repeat calls,
+full bags, failed creation, bot durability and human durability. Also run
+`python3 contrib/playerbot_auto_queue_548/run_level_equipment_test.py` for the
+existing level limits and over-level equipment cleanup.

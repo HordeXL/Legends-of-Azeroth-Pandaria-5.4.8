@@ -58,8 +58,12 @@ char const* const ConditionMgr::StaticSourceTypeData[CONDITION_SOURCE_TYPE_MAX] 
     "SmartScript",
     "Npc Vendor",
     "Spell Proc",
+    "Phase Definition",
+    "Phase",
+    "Graveyard",
+    "AreaTrigger",
     "Terrain Swap",
-    "Phase"
+    "Client Triggered AreaTrigger"
 };
 
 ConditionMgr::ConditionTypeInfo const ConditionMgr::StaticConditionTypeData[CONDITION_MAX] =
@@ -864,7 +868,8 @@ std::string Condition::ToString(bool ext /*= false*/) const
     std::ostringstream ss;
     ss << "[Condition ";
     ss << "SourceType: " << SourceType;
-    if (SourceType < CONDITION_SOURCE_TYPE_MAX)
+    if (uint32(SourceType) < CONDITION_SOURCE_TYPE_MAX &&
+        ConditionMgr::StaticSourceTypeData[SourceType])
         ss << " (" << ConditionMgr::StaticSourceTypeData[SourceType] << ")";
     else
         ss << " (Unknown)";
@@ -877,7 +882,8 @@ std::string Condition::ToString(bool ext /*= false*/) const
     if (ext)
     {
         ss << ", ConditionType: " << ConditionType;
-        if (ConditionType < CONDITION_MAX)
+        if (uint32(ConditionType) < CONDITION_MAX &&
+            ConditionMgr::StaticConditionTypeData[ConditionType].Name)
             ss << " (" << ConditionMgr::StaticConditionTypeData[ConditionType].Name << ")";
         else
             ss << " (Unknown)";

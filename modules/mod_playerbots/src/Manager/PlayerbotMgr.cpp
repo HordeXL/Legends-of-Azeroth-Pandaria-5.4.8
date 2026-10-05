@@ -143,7 +143,8 @@ void PlayerbotHolder::HandlePlayerBotLoginCallback(PlayerbotLoginQueryHolder con
     {
         allowed = true;
     }
-    else if (sPlayerbotAIConfig->IsInRandomAccountList(botAccountId))
+    else if (sPlayerbotAIConfig->IsInRandomAccountList(botAccountId) ||
+             sPlayerbotAIConfig->IsInPlayerbotPoolAccountList(botAccountId))
     {
         allowed = true;
     }

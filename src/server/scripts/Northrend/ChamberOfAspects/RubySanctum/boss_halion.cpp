@@ -645,6 +645,10 @@ class npc_halion_controller : public CreatureScript
                 switch (action)
                 {
                     case ACTION_INTRO_HALION:
+                        if (Creature* halion = ObjectAccessor::GetCreature(*me, _instance->GetGuidData(DATA_HALION)))
+                            if (halion->IsAlive())
+                                break;
+
                         _events.Reset();
                         _events.SetPhase(PHASE_INTRO);
                         _events.ScheduleEvent(EVENT_START_INTRO, 2000);
@@ -717,8 +721,9 @@ class npc_halion_controller : public CreatureScript
                             break;
                         case EVENT_INTRO_PROGRESS_3:
                             DoCast(me, SPELL_FIERY_EXPLOSION);
-                            if (Creature* halion = me->GetMap()->SummonCreature(NPC_HALION, HalionSpawnPos))
-                                halion->AI()->Talk(SAY_INTRO);
+                            if (!ObjectAccessor::GetCreature(*me, _instance->GetGuidData(DATA_HALION)))
+                                if (Creature* halion = me->GetMap()->SummonCreature(NPC_HALION, HalionSpawnPos))
+                                    halion->AI()->Talk(SAY_INTRO);
                             break;
                         case EVENT_TWILIGHT_MENDING:
                             if (ObjectAccessor::GetCreature(*me, _instance->GetGuidData(DATA_HALION))) // Just check if physical Halion is spawned
@@ -1682,6 +1687,15 @@ class spell_halion_twilight_phasing : public SpellScriptLoader
             {
                 Unit* caster = GetCaster();
                 caster->CastSpell(caster->GetPositionX(), caster->GetPositionY(), caster->GetPositionZ(), SPELL_SUMMON_TWILIGHT_PORTAL, true);
+
+                // OnHit may be dispatched more than once and old databases can
+                // also contain a static Twilight Halion.  Never create a second
+                // live boss for the same encounter.
+                if (InstanceScript* instance = caster->GetInstanceScript())
+                    if (Creature* twilightHalion = ObjectAccessor::GetCreature(*caster, instance->GetGuidData(DATA_TWILIGHT_HALION)))
+                        if (twilightHalion->IsAlive())
+                            return;
+
                 caster->GetMap()->SummonCreature(NPC_TWILIGHT_HALION, HalionSpawnPos);
             }
 

@@ -83,6 +83,7 @@ class npc_millhouse_manastorm : public CreatureScript
 
             uint32 Pyroblast_Timer;
             uint32 Fireball_Timer;
+            uint32 Assist_Timer;
 
             void InitializeAI() override
             {
@@ -99,6 +100,7 @@ class npc_millhouse_manastorm : public CreatureScript
 
                 Pyroblast_Timer = 1000;
                 Fireball_Timer = 2500;
+                Assist_Timer = 0;
 
                 if (instance)
                 {
@@ -108,10 +110,22 @@ class npc_millhouse_manastorm : public CreatureScript
                     if (instance->GetData(TYPE_HARBINGERSKYRISS) == DONE)
                         Talk(SAY_COMPLETE);
                 }
+
+                // The database immunity protects his preparation sequence,
+                // but also prevents this core from attacking other NPCs.
+                if (Init)
+                    me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_NPC);
+                else
+                    me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_NPC);
+                me->SetReactState(REACT_DEFENSIVE);
             }
 
             void AttackStart(Unit* who) override
             {
+                if (!Init || !who || !instance ||
+                    instance->GetData(TYPE_HARBINGERSKYRISS) != IN_PROGRESS ||
+                    !me->CanCreatureAttack(who) || me->GetVictim() == who)
+                    return;
                 if (me->Attack(who, true))
                 {
                     me->GetThreatManager().AddThreat(who, 0.0f);
@@ -119,6 +133,34 @@ class npc_millhouse_manastorm : public CreatureScript
                     who->SetInCombatWith(me);
                     me->GetMotionMaster()->MoveChase(who, 25.0f);
                 }
+            }
+
+            void AssistPlayers()
+            {
+                if (!Init || !instance || me->GetVictim() ||
+                    instance->GetData(TYPE_HARBINGERSKYRISS) != IN_PROGRESS)
+                    return;
+
+                // His pod can be well outside ordinary aggro range. Join only
+                // released event enemies already fighting, never pull a wave
+                // or select Mellichar, players, pets or unrelated trash.
+                static uint32 const entries[] =
+                {
+                    20908, 20909, // Akkiris / Sulfuron
+                    20910, 20911, // Twilight / Blackwing drakonaar
+                    20912, 21466, 21467 // Skyriss and his images
+                };
+                std::list<Creature*> enemies;
+                for (uint32 entry : entries)
+                    me->GetCreatureListWithEntryInGridAppend(enemies, entry, 100.0f);
+                Creature* nearest = nullptr;
+                for (Creature* enemy : enemies)
+                    if (enemy->IsAlive() && enemy->IsInCombat() &&
+                        me->CanCreatureAttack(enemy) && me->IsWithinLOSInMap(enemy) &&
+                        (!nearest || me->GetDistance(enemy) < me->GetDistance(nearest)))
+                        nearest = enemy;
+                if (nearest)
+                    AttackStart(nearest);
             }
 
             void JustEngagedWith(Unit* /*who*/)override { }
@@ -178,6 +220,7 @@ class npc_millhouse_manastorm : public CreatureScript
                                 if (instance)
                                     instance->SetData(TYPE_WARDEN_2, DONE);
                                 Init = true;
+                                me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_NPC);
                                 break;
                             }
                             ++Phase;
@@ -186,6 +229,17 @@ class npc_millhouse_manastorm : public CreatureScript
                     else
                         EventProgress_Timer -= diff;
                 }
+
+                if (!Init)
+                    return;
+
+                if (Assist_Timer <= diff)
+                {
+                    AssistPlayers();
+                    Assist_Timer = 1000;
+                }
+                else
+                    Assist_Timer -= diff;
 
                 if (!UpdateVictim())
                     return;

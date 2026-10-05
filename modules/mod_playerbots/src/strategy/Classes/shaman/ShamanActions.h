@@ -310,6 +310,19 @@ public:
     CastStormstrikeAction(PlayerbotAI* botAI) : CastMeleeSpellAction(botAI, "stormstrike") {}
 };
 
+// Land the shaman's first hit before spending combat globals on totems,
+// weapon setup or other utility. Used by all three specializations in PvE.
+class CastShamanOpeningAction : public Action
+{
+public:
+    CastShamanOpeningAction(PlayerbotAI* botAI) : Action(botAI, "shaman opening") {}
+
+    bool isUseful() override;
+    bool Execute(Event event) override;
+    std::string const GetTargetName() override { return "current target"; }
+    ActionThreatType getThreatType() override { return ActionThreatType::Single; }
+};
+
 class CastLavaLashAction : public CastMeleeSpellAction
 {
 public:

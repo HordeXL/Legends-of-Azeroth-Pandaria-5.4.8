@@ -1182,14 +1182,28 @@ void Creature::SelectLevel(const CreatureTemplate* cinfo)
     uint8 dbminlevel = cinfo->minlevel;
     uint8 dbmaxlevel = cinfo->maxlevel;
     float hpmod = cinfo->ModHealth;
+    float mindmg = cinfo->mindmg;
+    float maxdmg = cinfo->maxdmg;
+    float minrangedmg = cinfo->minrangedmg;
+    float maxrangedmg = cinfo->maxrangedmg;
+    uint32 attackpower = cinfo->attackpower;
+    uint32 rangedattackpower = cinfo->rangedattackpower;
 
+    CreatureDifficultyInfo const* difficultyInfo = nullptr;
     if (GetMap()->GetDifficulty() > REGULAR_DIFFICULTY || GetMap()->IsBattleground())
     {
-        if (auto difficultyInfo = sObjectMgr->SelectDifficultyInfo(GetMap(), GetEntry()))
+        difficultyInfo = sObjectMgr->SelectDifficultyInfo(GetMap(), GetEntry());
+        if (difficultyInfo)
         {
             dbminlevel = difficultyInfo->LevelMin;
             dbmaxlevel = difficultyInfo->LevelMax;
             hpmod = difficultyInfo->HealthMod;
+            mindmg = difficultyInfo->MinDamage;
+            maxdmg = difficultyInfo->MaxDamage;
+            minrangedmg = difficultyInfo->MinRangeDamage;
+            maxrangedmg = difficultyInfo->MaxRangeDamage;
+            attackpower = difficultyInfo->AttackPower;
+            rangedattackpower = difficultyInfo->RangedAttackPower;
         }
     }
 
@@ -1247,9 +1261,29 @@ void Creature::SelectLevel(const CreatureTemplate* cinfo)
     SetModifierValue(UNIT_MOD_HEALTH, BASE_VALUE, (float)health);
     SetModifierValue(UNIT_MOD_MANA, BASE_VALUE, (float)mana);
 
-    float basedamage = stats->BaseDamage[cinfo->expansion];
-    float mindmg = basedamage;
-    float maxdmg = basedamage * 1.5f;
+    CreatureBaseStats const* damageStats = stats;
+    float basedamage = damageStats->BaseDamage[cinfo->expansion];
+
+    // Cataclysm instances use level 86-87 creature templates in the MoP client,
+    // while creature_classlevelstats only contains Cataclysm damage through 85.
+    // Without a difficulty override this made the creature retain the much larger
+    // raw template weapon damage and then multiply it by its dungeon damage mod.
+    if (!basedamage && !difficultyInfo &&
+        cinfo->expansion == EXPANSION_CATACLYSM && level > 85)
+    {
+        damageStats = sObjectMgr->GetCreatureBaseStats(85, cinfo->unit_class);
+        basedamage = damageStats->BaseDamage[EXPANSION_CATACLYSM];
+    }
+
+    if (basedamage && !difficultyInfo)
+    {
+        mindmg = basedamage;
+        maxdmg = basedamage * 1.5f;
+        minrangedmg = mindmg;
+        maxrangedmg = maxdmg;
+        attackpower = damageStats->AttackPower;
+        rangedattackpower = damageStats->RangedAttackPower;
+    }
 
     SetBaseWeaponDamage(BASE_ATTACK, MINDAMAGE, mindmg);
     SetBaseWeaponDamage(BASE_ATTACK, MAXDAMAGE, maxdmg);
@@ -1257,11 +1291,11 @@ void Creature::SelectLevel(const CreatureTemplate* cinfo)
     SetBaseWeaponDamage(OFF_ATTACK, MINDAMAGE, mindmg);
     SetBaseWeaponDamage(OFF_ATTACK, MAXDAMAGE, maxdmg);
 
-    SetBaseWeaponDamage(RANGED_ATTACK, MINDAMAGE, mindmg);
-    SetBaseWeaponDamage(RANGED_ATTACK, MAXDAMAGE, maxdmg);
+    SetBaseWeaponDamage(RANGED_ATTACK, MINDAMAGE, minrangedmg);
+    SetBaseWeaponDamage(RANGED_ATTACK, MAXDAMAGE, maxrangedmg);
 
-    SetModifierValue(UNIT_MOD_ATTACK_POWER, BASE_VALUE, stats->AttackPower);
-    SetModifierValue(UNIT_MOD_ATTACK_POWER_RANGED, BASE_VALUE, stats->RangedAttackPower);
+    SetModifierValue(UNIT_MOD_ATTACK_POWER, BASE_VALUE, attackpower);
+    SetModifierValue(UNIT_MOD_ATTACK_POWER_RANGED, BASE_VALUE, rangedattackpower);
 }
 
 float Creature::_GetHealthMod(int32 Rank)

@@ -17,6 +17,8 @@
 
 #include "Player.h"
 #include "GameClient.h"
+#include "SpellPowerVisuals.h"
+#include "CustomTransmogrification.h"
 #include "AccountMgr.h"
 #include "AchievementMgr.h"
 #include "Battlefield.h"
@@ -6406,7 +6408,6 @@ void Player::SetSkill(uint16 id, uint16 step, uint16 newVal, uint16 maxVal)
                 SetUInt16Value(PLAYER_FIELD_SKILL + SKILL_RANK_OFFSET + field, offset, newVal);
                 SetUInt16Value(PLAYER_FIELD_SKILL + SKILL_MAX_RANK_OFFSET + field, offset, maxVal);
 
-                UpdateSkillEnchantments(id, currVal, newVal);
                 UpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_REACH_SKILL_LEVEL, id);
                 UpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_LEARN_SKILL_LEVEL, id);
 
@@ -6437,6 +6438,10 @@ void Player::SetSkill(uint16 id, uint16 step, uint16 newVal, uint16 maxVal)
 
                 // Learn all spells for skill
                 LearnSkillRewardedSpells(id, newVal);
+
+                // Requirements query mSkillStatus and the skill bonuses, so the
+                // skill must be registered before restoring existing enchants.
+                UpdateSkillEnchantments(id, currVal, newVal);
 
                 if (refreshQuestObjects)
                     UpdateForQuestWorldObjects();
@@ -7093,6 +7098,9 @@ float Player::CalculateReputationGain(ReputationSource source, uint32 creatureOr
 
     if (source != REPUTATION_SOURCE_SPELL && GetsRecruitAFriendBonus(false))
         percent *= 1.0f + sWorld->getRate(RATE_REPUTATION_RECRUIT_A_FRIEND_BONUS);
+
+    if (rep > 0 && GetReputationMgr().HasBonusReputation(faction))
+        percent *= 2.0f;
 
     return CalculatePct(val, percent);
 }
@@ -8817,16 +8825,15 @@ void Player::_ApplyWeaponDependentAuraMods(Item* item, WeaponAttackType attackTy
     if (AuraEffect* driver = GetAuraEffect(108562, EFFECT_0))
         driver->RecalculateAmount();
 
-    // Glyph of Bladed Judgment
-    if (AuraEffect* driver = GetAuraEffect(203782, EFFECT_0))
-        driver->RecalculateAmount();
-
     // We CAN'T do it right now, it causes bugs.
     m_Events.Schedule(1, [=]
     {
         for (auto&& type : AuraEffect::WeaponDependingEffects())
             for (auto&& it : GetAuraEffectsByType(type))
                 it->RecalculateAmount();
+        // Equipment is committed by this tick; do not inspect the outgoing
+        // main-hand item while its bonuses are still being removed.
+        SpellPowerVisuals::UpdatePaladin(this);
     });
 }
 
@@ -9230,6 +9237,11 @@ void Player::CastItemUseSpell(Item* item, SpellCastTargets const& targets, uint8
         SpellItemEnchantmentEntry const* pEnchant = sSpellItemEnchantmentStore.LookupEntry(enchant_id);
         if (!pEnchant)
             continue;
+
+        if (pEnchant->RequiredLevel > GetLevel() ||
+            (pEnchant->RequiredSkill && GetSkillValue(pEnchant->RequiredSkill) < pEnchant->RequiredSkillValue))
+            continue;
+
         for (uint8 s = 0; s < MAX_ITEM_ENCHANTMENT_EFFECTS; ++s)
         {
             if (pEnchant->Type[s] != ITEM_ENCHANTMENT_TYPE_USE_SPELL)
@@ -13042,6 +13054,7 @@ Item* Player::_StoreItem(uint16 pos, Item* pItem, uint32 count, bool clone, bool
         AddEnchantmentDurations(pItem);
         AddItemDurations(pItem);
 
+        if (IsInWorld()) sTransmogrification->LearnAppearance(this, pItem->GetEntry());
         return pItem;
     }
     else
@@ -13078,6 +13091,7 @@ Item* Player::_StoreItem(uint16 pos, Item* pItem, uint32 count, bool clone, bool
 
         pItem2->SetState(ITEM_CHANGED, this);
 
+        if (IsInWorld()) sTransmogrification->LearnAppearance(this, pItem2->GetEntry());
         return pItem2;
     }
 }
@@ -13320,6 +13334,7 @@ void Player::VisualizeItem(uint8 slot, Item* pItem)
         SetVisibleItemSlot(slot, pItem);
 
     pItem->SetState(ITEM_CHANGED, this);
+    if (IsInWorld()) sTransmogrification->LearnAppearance(this, pItem->GetEntry());
 }
 
 Item* Player::BankItem(ItemPosCountVec const& dest, Item* pItem, bool update)
@@ -15407,32 +15422,47 @@ void Player::UpdateSkillEnchantments(uint16 skill_id, uint16 curr_value, uint16 
 
                 SpellItemEnchantmentEntry const* Enchant = sSpellItemEnchantmentStore.LookupEntry(ench_id);
                 if (!Enchant)
-                    return;
+                    continue;
 
-                if (Enchant->RequiredSkill == skill_id)
+                // The enchant, the gem item and a profession-added socket can
+                // each impose a requirement. Compare their combined state so a
+                // gem is never applied twice or removed while already inactive.
+                auto meetsRequirement = [this, skill_id](uint32 skill, uint32 rank, uint16 value)
                 {
-                    // Checks if the enchantment needs to be applied or removed
-                    if (curr_value < Enchant->RequiredSkillValue && new_value >= Enchant->RequiredSkillValue)
-                        ApplyEnchantment(m_items[i], EnchantmentSlot(slot), true);
-                    else if (new_value < Enchant->RequiredSkillValue && curr_value >= Enchant->RequiredSkillValue)
-                        ApplyEnchantment(m_items[i], EnchantmentSlot(slot), false);
+                    if (!skill || !rank)
+                        return true;
+                    if (skill != skill_id)
+                        return GetSkillValue(skill) >= rank;
+                    if (!value)
+                        return false;
+                    int32 effective = int32(value) + GetSkillPermBonusValue(skill) + GetSkillTempBonusValue(skill);
+                    return effective >= int32(rank);
+                };
+
+                bool wasActive = meetsRequirement(Enchant->RequiredSkill, Enchant->RequiredSkillValue, curr_value);
+                bool isActive = meetsRequirement(Enchant->RequiredSkill, Enchant->RequiredSkillValue, new_value);
+                if (ItemTemplate const* gem = sObjectMgr->GetItemTemplate(Enchant->GemID))
+                {
+                    wasActive &= meetsRequirement(gem->RequiredSkill, gem->RequiredSkillRank, curr_value);
+                    isActive &= meetsRequirement(gem->RequiredSkill, gem->RequiredSkillRank, new_value);
                 }
 
-                // If we're dealing with a gem inside a prismatic socket we need to check the prismatic socket requirements
-                // rather than the gem requirements itself. If the socket has no color it is a prismatic socket.
+                // A gem in a profession-added socket must also meet the socket's
+                // requirements. Such sockets have no color in the item template.
                 if ((slot == SOCK_ENCHANTMENT_SLOT || slot == SOCK_ENCHANTMENT_SLOT_2 || slot == SOCK_ENCHANTMENT_SLOT_3)
                     && !m_items[i]->GetTemplate()->Socket[slot-SOCK_ENCHANTMENT_SLOT].Color)
                 {
                     SpellItemEnchantmentEntry const* pPrismaticEnchant = sSpellItemEnchantmentStore.LookupEntry(m_items[i]->GetEnchantmentId(PRISMATIC_ENCHANTMENT_SLOT));
 
-                    if (pPrismaticEnchant && pPrismaticEnchant->RequiredSkill == skill_id)
-                    {
-                        if (curr_value < pPrismaticEnchant->RequiredSkillValue && new_value >= pPrismaticEnchant->RequiredSkillValue)
-                            ApplyEnchantment(m_items[i], EnchantmentSlot(slot), true);
-                        else if (new_value < pPrismaticEnchant->RequiredSkillValue && curr_value >= pPrismaticEnchant->RequiredSkillValue)
-                            ApplyEnchantment(m_items[i], EnchantmentSlot(slot), false);
-                    }
+                    if (!pPrismaticEnchant)
+                        continue;
+
+                    wasActive &= meetsRequirement(pPrismaticEnchant->RequiredSkill, pPrismaticEnchant->RequiredSkillValue, curr_value);
+                    isActive &= meetsRequirement(pPrismaticEnchant->RequiredSkill, pPrismaticEnchant->RequiredSkillValue, new_value);
                 }
+
+                if (wasActive != isActive)
+                    ApplyEnchantment(m_items[i], EnchantmentSlot(slot), isActive);
             }
         }
     }
@@ -17749,6 +17779,38 @@ void Player::SwapQuestSlot(uint16 slot1, uint16 slot2)
     }
 }
 
+void Player::CreditQuestAreaTriggerObjective(uint32 questId, uint32 objectiveId)
+{
+    Quest const* quest = sObjectMgr->GetQuestTemplate(questId);
+    uint16 slot = FindQuestSlot(questId);
+    QuestStatus status = GetQuestStatus(questId);
+    if (!quest || slot >= MAX_QUEST_LOG_SIZE ||
+        (status != QUEST_STATUS_INCOMPLETE && status != QUEST_STATUS_COMPLETE))
+        return;
+    for (auto const& objective : quest->Objectives)
+        if (objective.ID == objectiveId && objective.Type == QUEST_OBJECTIVE_AREATRIGGER)
+        {
+            if (GetQuestObjectiveCounter(objectiveId) &&
+                (GetQuestSlotState(slot) & (256u << objective.StorageIndex)))
+                return;
+            if (!GetQuestObjectiveCounter(objectiveId))
+            {
+                if (status != QUEST_STATUS_INCOMPLETE)
+                    return;
+                m_questObjectiveStatus[objectiveId] = 1;
+                MarkQuestObjectiveToSave(questId, objectiveId);
+            }
+            // Area trigger progress uses a completion bit, not a kill counter.
+            if (!(GetQuestSlotState(slot) & (256u << objective.StorageIndex)))
+                SendQuestUpdateAddCreditSimple(quest, &objective);
+            if (quest->HasFlag(QUEST_FLAGS_COMPLETION_AREA_TRIGGER))
+                AreaExploredOrEventHappens(questId);
+            if (status == QUEST_STATUS_INCOMPLETE && CanCompleteQuest(questId))
+                CompleteQuest(questId);
+            return;
+        }
+}
+
 void Player::AreaExploredOrEventHappens(uint32 questId)
 {
     if (questId)
@@ -17831,7 +17893,9 @@ void Player::ItemAddedQuestCheck(uint32 entry, uint32 count)
                 if (CanCompleteQuest(questid))
                     CompleteQuest(questid);
 
-                return;
+                // Other active quests can require the same item (for example
+                // AQ40 scarabs and idols). Update each quest's counter.
+                break;
             }
         }
     }
@@ -18075,7 +18139,7 @@ void Player::ReputationChangedQuestCheck(FactionEntry const* factionEntry)
     for (uint8 i = 0; i < MAX_QUEST_LOG_SIZE; ++i)
     {
         uint32 questId = GetQuestSlotQuestId(i);
-        if (questId)
+        if (!questId)
             continue;
 
         Quest const* qInfo = sObjectMgr->GetQuestTemplate(questId);
@@ -18086,7 +18150,10 @@ void Player::ReputationChangedQuestCheck(FactionEntry const* factionEntry)
 
         for (auto const& questObjective : qInfo->Objectives)
         {
-            // I'm not sure what this is needed
+            // A change to another faction must not invalidate a completed quest.
+            if (questObjective.ObjectID != factionEntry->ID)
+                continue;
+
             if (questObjective.Type == QUEST_OBJECTIVE_MIN_REPUTATION)
             {
                 if (questStatus.Status == QUEST_STATUS_INCOMPLETE)
@@ -21109,9 +21176,11 @@ void Player::SaveToDB(bool create /*=false*/)
         stmt->setString(index++, ss.str());
 
         ss.str("");
-        // cache equipment...
+        // Cache committed equipment only; temporary transmog previews must
+        // never leak into the character-selection display on autosave.
         for (uint32 i = 0; i < EQUIPMENT_SLOT_END * 2; ++i)
-            ss << GetUInt32Value(PLAYER_FIELD_VISIBLE_ITEMS + i) << ' ';
+            ss << (i % 2 ? GetUInt32Value(PLAYER_FIELD_VISIBLE_ITEMS + i) :
+                sTransmogrification->GetVisibleEntryForSave(this, i / 2)) << ' ';
 
         // ...and bags for enum opcode
         for (uint32 i = INVENTORY_SLOT_BAG_START; i < INVENTORY_SLOT_BAG_END; ++i)
@@ -21239,9 +21308,11 @@ void Player::SaveToDB(bool create /*=false*/)
         stmt->setString(index++, ss.str());
 
         ss.str("");
-        // cache equipment...
+        // Cache committed equipment only; temporary transmog previews must
+        // never leak into the character-selection display on autosave.
         for (uint32 i = 0; i < EQUIPMENT_SLOT_END * 2; ++i)
-            ss << GetUInt32Value(PLAYER_FIELD_VISIBLE_ITEMS + i) << ' ';
+            ss << (i % 2 ? GetUInt32Value(PLAYER_FIELD_VISIBLE_ITEMS + i) :
+                sTransmogrification->GetVisibleEntryForSave(this, i / 2)) << ' ';
 
         // ...and bags for enum opcode
         for (uint32 i = INVENTORY_SLOT_BAG_START; i < INVENTORY_SLOT_BAG_END; ++i)
@@ -25402,6 +25473,13 @@ void Player::SendInitialPacketsAfterAddToMap()
     if (HasAuraType(SPELL_AURA_MOD_ROOT))
         SetRooted(true, true);
 
+    // The client already knows the player object here. Restore cosmetic
+    // state after login/map transfer before sending the complete aura snapshot.
+    SpellPowerVisuals::UpdateWarlock(this);
+    SpellPowerVisuals::UpdatePaladin(this);
+    if (GetClass() == CLASS_PRIEST && IsAlive() && GetMaxPower(POWER_SHADOW_ORBS) > 0)
+        SetPower(POWER_SHADOW_ORBS, GetPower(POWER_SHADOW_ORBS));
+
     SendAurasForTarget(this);
     SendEnchantmentDurations();                             // must be after add to map
     SendItemDurations();                                    // must be after add to map
@@ -25955,7 +26033,7 @@ void Player::SendAurasForTarget(Unit* target)
 
         // send stack amount for aura which could be stacked (never 0 - causes incorrect display) or charges
         // stack amount has priority over charges (checked on retail with spell 50262)
-        data << uint8(aura->GetSpellInfo()->StackAmount ? aura->GetStackAmount() : aura->GetCharges());
+        data << uint8(aura->GetSpellInfo()->StackAmount > 1 ? aura->GetStackAmount() : aura->GetCharges());
         data << uint32(auraApp->GetEffectMask());
 
         if (flags & AFLAG_ANY_EFFECT_AMOUNT_SENT)
@@ -26359,7 +26437,10 @@ bool Player::HasQuestForGO(int32 goId) const
 
 void Player::UpdateForQuestWorldObjects()
 {
-    if (m_clientGUIDs.empty())
+    // Leaving an LFG group can teleport us before the group refreshes quest
+    // objects. The old visibility cache survives until AddPlayerToMap, but
+    // the client has already received SMSG_NEW_WORLD and retired those objects.
+    if (!IsInWorld() || m_clientGUIDs.empty())
         return;
 
     UpdateData udata(GetMapId());
@@ -27436,12 +27517,42 @@ void Player::SetGlyph(uint8 slot, uint32 glyph)
         ApplyGlyph(slot, glyph);
 }
 
+void SpellPowerVisuals::UpdatePaladin(Player* player)
+{
+    if (!player || player->GetClass() != CLASS_PALADIN || !player->IsInWorld())
+        return;
+
+    uint32 visual = 0;
+    // Glyph 989 teaches 115934. The old script required custom spell 203782,
+    // which is absent from the stock client and never created its driver aura.
+    if (player->IsAlive() && player->HasSpell(115934))
+        if (Item* weapon = player->GetWeaponForAttack(BASE_ATTACK))
+            switch (weapon->GetTemplate()->SubClass)
+            {
+                case ITEM_SUBCLASS_WEAPON_SWORD:
+                case ITEM_SUBCLASS_WEAPON_SWORD2: visual = 127755; break;
+                case ITEM_SUBCLASS_WEAPON_AXE:
+                case ITEM_SUBCLASS_WEAPON_AXE2: visual = 127756; break;
+                default: break;
+            }
+
+    for (uint32 spell : {127755u, 127756u})
+        if (spell == visual)
+        {
+            if (!player->HasAura(spell))
+                player->CastSpell(player, spell, true);
+        }
+        else if (player->HasAura(spell))
+            player->RemoveAurasDueToSpell(spell);
+}
+
 void Player::ApplyGlyph(uint8 slot, uint32 glyph)
 {
     if (GlyphPropertiesEntry const* gp = sGlyphPropertiesStore.LookupEntry(glyph))
     {
         LearnSpell(gp->SpellId, true);
         SetUInt32Value(PLAYER_FIELD_GLYPHS + slot, glyph);
+        SpellPowerVisuals::UpdatePaladin(this);
     }
 }
 
@@ -27451,6 +27562,7 @@ void Player::UnapplyGlyph(uint8 slot)
     if (GlyphPropertiesEntry const* gp = sGlyphPropertiesStore.LookupEntry(old))
         RemoveSpell(gp->SpellId);
     SetUInt32Value(PLAYER_FIELD_GLYPHS + slot, 0);
+    SpellPowerVisuals::UpdatePaladin(this);
 }
 
 bool Player::isTotalImmune()
@@ -28971,6 +29083,8 @@ void Player::ActivateSpec(uint8 spec)
 
     // Needs for some trinkets which depends on spec
     ReapplyItemsBonuses();
+
+    SpellPowerVisuals::UpdateWarlock(this);
 
 }
 

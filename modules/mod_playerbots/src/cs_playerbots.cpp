@@ -18,6 +18,7 @@
 #include "BattlegroundQueue.h"
 #include "BotFactory.h"
 #include "DatabaseEnv.h"
+#include "DBCStores.h"
 #include "DisableMgr.h"
 #include "GameObject.h"
 #include "Group.h"
@@ -44,6 +45,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdlib>
 #include <limits>
 #include <list>
 #include <map>
@@ -283,6 +285,7 @@ struct WorldBossStagedCandidate
     uint32 Guid = 0;
     std::string Name;
     uint8 Class = 0;
+    uint8 Level = 0;
     WorldBossPreviewRole Role = WorldBossPreviewRole::None;
     Specializations Specialization = SPEC_NONE;
     uint32 PvpItems = 0;
@@ -401,6 +404,88 @@ bool SelectWorldBossDiverseRole(
         select(tied[urand(0, uint32(tied.size() - 1))]);
     }
     selectedClasses = usedClasses;
+    return true;
+}
+
+bool SelectUniqueRaidComposition(
+    std::array<std::vector<WorldBossStagedCandidate>, 3> const& candidates,
+    std::array<uint32, 3> const& wanted, uint8 requesterClass,
+    WorldBossPreviewRole requesterRole, uint8& coveredBuffs,
+    std::array<std::vector<uint32>, 3>& selected,
+    std::array<uint16, 3>& selectedClasses)
+{
+    struct RoleSlot
+    {
+        size_t RoleIndex;
+        uint32 CandidateIndex = 0;
+    };
+
+    std::array<size_t, 3> roleOrder = {{ 0, 1, 2 }};
+    std::sort(roleOrder.begin(), roleOrder.end(), [&](size_t left, size_t right)
+    {
+        uint64 leftPressure = uint64(candidates[left].size()) *
+            std::max<uint32>(wanted[right], 1);
+        uint64 rightPressure = uint64(candidates[right].size()) *
+            std::max<uint32>(wanted[left], 1);
+        return leftPressure < rightPressure;
+    });
+
+    std::vector<RoleSlot> slots;
+    for (size_t roleIndex : roleOrder)
+        for (uint32 count = 0; count < wanted[roleIndex]; ++count)
+            slots.push_back({ roleIndex, 0 });
+
+    std::unordered_map<uint32, uint32> botOwners;
+    std::function<bool(uint32, std::set<uint32>&)> assignSlot;
+    assignSlot = [&](uint32 slotIndex, std::set<uint32>& visited) -> bool
+    {
+        RoleSlot& slot = slots[slotIndex];
+        auto const& roleCandidates = candidates[slot.RoleIndex];
+        for (uint32 candidateIndex = 0;
+             candidateIndex < roleCandidates.size(); ++candidateIndex)
+        {
+            uint32 guid = roleCandidates[candidateIndex].Guid;
+            if (!visited.insert(guid).second)
+                continue;
+
+            auto owner = botOwners.find(guid);
+            if (owner == botOwners.end() || assignSlot(owner->second, visited))
+            {
+                botOwners[guid] = slotIndex;
+                slot.CandidateIndex = candidateIndex;
+                return true;
+            }
+        }
+        return false;
+    };
+
+    for (uint32 slotIndex = 0; slotIndex < slots.size(); ++slotIndex)
+    {
+        std::set<uint32> visited;
+        if (!assignSlot(slotIndex, visited))
+            return false;
+    }
+
+    selected = {};
+    selectedClasses = {{ 0, 0, 0 }};
+    for (size_t roleIndex = 0; roleIndex < selectedClasses.size(); ++roleIndex)
+    {
+        WorldBossPreviewRole role = roleIndex == 0 ?
+            WorldBossPreviewRole::Tank : (roleIndex == 1 ?
+                WorldBossPreviewRole::Healer : WorldBossPreviewRole::Damage);
+        if (requesterRole == role)
+            selectedClasses[roleIndex] |= GetWorldBossClassBit(requesterClass);
+    }
+
+    for (RoleSlot const& slot : slots)
+    {
+        WorldBossStagedCandidate const& candidate =
+            candidates[slot.RoleIndex][slot.CandidateIndex];
+        selected[slot.RoleIndex].push_back(slot.CandidateIndex);
+        selectedClasses[slot.RoleIndex] |=
+            GetWorldBossClassBit(candidate.Class);
+        coveredBuffs |= GetWorldBossRaidBuffMask(candidate.Specialization);
+    }
     return true;
 }
 
@@ -2341,6 +2426,12 @@ std::vector<char const*> GetSoloArenaPreparationBuffActions(Player* bot)
         // The two shouts are exclusive only for the same caster. Raid-aware
         // coordination below lets duplicate warriors split them safely.
         case CLASS_WARRIOR:
+            if (bot->HasAura(469, bot->GetGUID()))
+                return { "commanding shout",
+                    specialization == SPEC_WARRIOR_PROTECTION ? "defensive stance" : "battle stance" };
+            if (bot->HasAura(6673, bot->GetGUID()))
+                return { "battle shout",
+                    specialization == SPEC_WARRIOR_PROTECTION ? "defensive stance" : "battle stance" };
             return specialization == SPEC_WARRIOR_PROTECTION ?
                 std::vector<char const*> { "battle shout", "commanding shout", "defensive stance" } :
                 std::vector<char const*> { "battle shout", "commanding shout", "battle stance" };
@@ -2870,6 +2961,1189 @@ void UpdateSoloArenaAutomaticExit(uint32 diff)
     SoloArenaAutomaticExitTimer = 0;
 }
 
+
+void PrepareLegacyRaidBotForSummon(Player* bot)
+{
+    if (!bot)
+        return;
+
+    if (bot->IsCharmed())
+        bot->RemoveCharmAuras();
+
+    bot->CombatStop();
+    bot->getHostileRefManager().deleteReferences();
+
+    if (!bot->IsAlive())
+    {
+        bot->ResurrectPlayer(1.0f, false);
+        bot->SpawnCorpseBones();
+    }
+
+    bot->DurabilityRepairAll(false, 1.0f, false);
+    bot->SetFullHealth();
+    bot->ResetAllPowers();
+}
+
+enum class LegacyRaidStagedState : uint8
+{
+    Idle,
+    WaitForBots,
+    WaitForTeleport,
+    Grouped,
+    Cleanup
+};
+
+LegacyRaidStagedState LegacyRaidStageState = LegacyRaidStagedState::Idle;
+uint32 LegacyRaidStageRequester = 0;
+uint32 LegacyRaidStageDungeon = 0;
+uint32 LegacyRaidStageGroup = 0;
+uint32 LegacyRaidStageRaidSize = 0;
+uint32 LegacyRaidStageElapsed = 0;
+uint32 LegacyRaidStageUpdateTimer = 0;
+uint32 LegacyRaidStageMap = 0;
+float LegacyRaidStageX = 0.0f;
+float LegacyRaidStageY = 0.0f;
+float LegacyRaidStageZ = 0.0f;
+float LegacyRaidStageO = 0.0f;
+std::map<uint32, WorldBossStagedCandidate> LegacyRaidStagedBots;
+std::string LegacyRaidStageCleanupReason;
+
+void BeginLegacyRaidStageCleanup(char const* reason)
+{
+    LegacyRaidStageCleanupReason = reason ? reason : "requested cleanup";
+    TC_LOG_INFO("server", "Legacy raid %u cleanup for requester %u: %s",
+        LegacyRaidStageDungeon, LegacyRaidStageRequester,
+        LegacyRaidStageCleanupReason.c_str());
+    if (Player* requester = ObjectAccessor::FindConnectedPlayer(
+            ObjectGuid::Create<HighGuid::Player>(LegacyRaidStageRequester)))
+        ChatHandler(requester->GetSession()).PSendSysMessage(
+            "Legacy raid stopped: %s.", LegacyRaidStageCleanupReason.c_str());
+    LegacyRaidStageState = LegacyRaidStagedState::Cleanup;
+    LegacyRaidStageElapsed = 0;
+    LegacyRaidStageUpdateTimer = 0;
+
+    for (auto& staged : LegacyRaidStagedBots)
+    {
+        ObjectGuid guid = ObjectGuid::Create<HighGuid::Player>(staged.first);
+        if (Player* bot = sRandomPlayerbotMgr->GetPlayerBot(guid))
+        {
+            bot->BeginPlayerbotCleanup();
+            staged.second.CleanupReadyAt = 2000;
+        }
+    }
+}
+
+bool StartLegacyRaidStage(Player* requester,
+    lfg::LFGDungeonData const* dungeon, std::string& error)
+{
+    if (!requester || !dungeon)
+    {
+        error = "requester or raid is missing";
+        return false;
+    }
+
+    if (LegacyRaidStageState != LegacyRaidStagedState::Idle)
+    {
+        error = "another legacy raid staging session is already active";
+        return false;
+    }
+
+    if (WorldBossStageState != WorldBossStagedState::Idle ||
+        IsSoloArenaAutomationBusy())
+    {
+        error = "another playerbot coordinator currently owns playerbots";
+        return false;
+    }
+
+    if (requester->GetGroup() || requester->InBattleground() ||
+        requester->InBattlegroundQueue() || requester->IsUsingLfg() ||
+        requester->IsInCombat() || requester->IsBeingTeleported())
+    {
+        error = "requester must be out of combat, ungrouped, and outside queues";
+        return false;
+    }
+
+    if (sPlayerbotAIConfig->playerbotPoolAccounts.empty())
+    {
+        error = "no playerbot pool accounts are configured";
+        return false;
+    }
+
+    MapDifficulty const* mapDiff =
+        GetMapDifficultyData(dungeon->map, dungeon->difficulty);
+    uint32 raidSize = mapDiff ? mapDiff->maxPlayers : 0;
+
+    if (dungeon->id == 48) // Molten Core is 25-player in this 5.4.8 client.
+        raidSize = 25;
+    else if (dungeon->id == 160) // Ruins of Ahn'Qiraj is 10-player here.
+        raidSize = 10;
+
+    if (raidSize < 10)
+    {
+        error = "raid size could not be determined";
+        return false;
+    }
+
+    uint32 neededTanks = 2;
+    uint32 neededHealers = raidSize >= 40 ? 8 :
+        (raidSize >= 25 ? 6 : 2);
+    uint32 neededDamage = raidSize - neededTanks - neededHealers;
+
+    WorldBossPreviewRole requesterRole =
+        GetWorldBossPreviewRole(requester->GetSpecialization());
+    switch (requesterRole)
+    {
+        case WorldBossPreviewRole::Tank:
+            if (neededTanks) --neededTanks;
+            break;
+        case WorldBossPreviewRole::Healer:
+            if (neededHealers) --neededHealers;
+            break;
+        case WorldBossPreviewRole::Damage:
+            if (neededDamage) --neededDamage;
+            break;
+        case WorldBossPreviewRole::None:
+            error = "requester active specialization has no recognized raid role";
+            return false;
+    }
+
+    uint32 minAccount = sPlayerbotAIConfig->playerbotPoolAccounts.front();
+    uint32 maxAccount = sPlayerbotAIConfig->playerbotPoolAccounts.back();
+
+    QueryResult result = CharacterDatabase.PQuery(
+        "SELECT guid,name,race,class,level,talentTree,activespec,equipmentCache,"
+        "map,position_x,position_y,position_z,orientation "
+        "FROM characters WHERE account >= %u AND account <= %u "
+        "AND level <= %u AND online = 0 "
+        "AND guid NOT IN (SELECT memberGuid FROM group_member) "
+        "AND guid NOT IN (SELECT guid FROM guild_member) "
+        "ORDER BY level DESC,guid",
+        minAccount, maxAccount, requester->GetLevel());
+
+    if (!result)
+    {
+        error = "no unused offline poolbots exist at or below the requester's level";
+        return false;
+    }
+
+    std::array<std::vector<WorldBossStagedCandidate>, 3> candidates;
+    do
+    {
+        Field* fields = result->Fetch();
+        uint32 guidLow = fields[0].GetUInt32();
+        ObjectGuid guid = ObjectGuid::Create<HighGuid::Player>(guidLow);
+
+        if (ObjectAccessor::FindConnectedPlayer(guid) ||
+            sRandomPlayerbotMgr->GetPlayerBot(guid) ||
+            sRandomPlayerbotMgr->IsBotLoading(guid))
+            continue;
+
+        uint32 team = Player::TeamForRace(fields[2].GetUInt8());
+        if (team == PANDAREN_NEUTRAL || team != requester->GetTeam())
+            continue;
+
+        uint32 specs[MAX_TALENT_SPECS] = { 0, 0 };
+        std::istringstream talentTrees(fields[5].GetString());
+        for (uint8 spec = 0; spec < MAX_TALENT_SPECS; ++spec)
+            talentTrees >> specs[spec];
+
+        uint8 activeSpec = fields[6].GetUInt8();
+        if (activeSpec >= MAX_TALENT_SPECS)
+            activeSpec = 0;
+
+        uint8 candidateClass = fields[3].GetUInt8();
+        dbc::TalentTabs classSpecializations =
+            dbc::GetClassSpecializations(candidateClass);
+
+        SoloArenaPreviewCandidate gear;
+        ReadSoloArenaGear(fields[7].GetString(), gear);
+
+        // A legacy raid may need a role that is not the character's currently
+        // saved specialization. Make the character a candidate for every raid
+        // role its class supports and remember the best PvE specialization
+        // for each role. The selected specialization is applied after login.
+        for (size_t roleIndex = 0; roleIndex < candidates.size(); ++roleIndex)
+        {
+            WorldBossPreviewRole wantedRole = roleIndex == 0 ?
+                WorldBossPreviewRole::Tank :
+                (roleIndex == 1 ? WorldBossPreviewRole::Healer :
+                    WorldBossPreviewRole::Damage);
+
+            Specializations bestSpecialization = SPEC_NONE;
+            uint32 bestScore = 0;
+
+            for (uint8 tab = 0;
+                 tab < classSpecializations.size() &&
+                 tab < MAX_TALENT_TABS; ++tab)
+            {
+                Specializations specialization =
+                    Specializations(classSpecializations[tab]);
+
+                if (GetWorldBossPreviewRole(specialization) != wantedRole)
+                    continue;
+
+                uint32 score = uint32(
+                    GetAutomatedBotSpecializationPriority(
+                        specialization, false)) * 4;
+
+                if (Specializations(specs[activeSpec]) == specialization)
+                    score += 2;
+                else
+                {
+                    for (uint8 specSlot = 0;
+                         specSlot < MAX_TALENT_SPECS; ++specSlot)
+                    {
+                        if (Specializations(specs[specSlot]) ==
+                            specialization)
+                        {
+                            ++score;
+                            break;
+                        }
+                    }
+                }
+
+                if (bestSpecialization == SPEC_NONE || score > bestScore)
+                {
+                    bestSpecialization = specialization;
+                    bestScore = score;
+                }
+            }
+
+            if (bestSpecialization == SPEC_NONE)
+                continue;
+
+            WorldBossStagedCandidate candidate;
+            candidate.Guid = guidLow;
+            candidate.Name = fields[1].GetString();
+            candidate.Class = candidateClass;
+            candidate.Level = fields[4].GetUInt8();
+            candidate.Role = wantedRole;
+            candidate.Specialization = bestSpecialization;
+            candidate.PvpItems = gear.PvpItems;
+            candidate.AverageItemLevel = gear.AverageItemLevel;
+            candidate.OriginalMap = fields[8].GetUInt32();
+            candidate.OriginalX = fields[9].GetFloat();
+            candidate.OriginalY = fields[10].GetFloat();
+            candidate.OriginalZ = fields[11].GetFloat();
+            candidate.OriginalO = fields[12].GetFloat();
+            candidates[roleIndex].push_back(candidate);
+        }
+    }
+    while (result->NextRow());
+
+    auto pveOrder = [](WorldBossStagedCandidate const& left,
+        WorldBossStagedCandidate const& right)
+    {
+        // Prefer the closest available level without changing saved levels.
+        // A sparse exact-level pool can borrow from the next lower level.
+        if (left.Level != right.Level)
+            return left.Level > right.Level;
+
+        uint8 leftPriority =
+            GetAutomatedBotSpecializationPriority(left.Specialization, false);
+        uint8 rightPriority =
+            GetAutomatedBotSpecializationPriority(right.Specialization, false);
+
+        if (leftPriority != rightPriority)
+            return leftPriority > rightPriority;
+        if (left.PvpItems != right.PvpItems)
+            return left.PvpItems < right.PvpItems;
+        if (left.AverageItemLevel != right.AverageItemLevel)
+            return left.AverageItemLevel > right.AverageItemLevel;
+        return left.Guid < right.Guid;
+    };
+
+    for (auto& roleCandidates : candidates)
+        std::sort(roleCandidates.begin(), roleCandidates.end(), pveOrder);
+
+    if (candidates[0].size() < neededTanks ||
+        candidates[1].size() < neededHealers ||
+        candidates[2].size() < neededDamage)
+    {
+        std::ostringstream message;
+        message << "candidate pool incomplete: tanks "
+            << candidates[0].size() << "/" << neededTanks
+            << ", healers " << candidates[1].size() << "/" << neededHealers
+            << ", damage " << candidates[2].size() << "/" << neededDamage;
+        error = message.str();
+        return false;
+    }
+
+    std::array<std::vector<uint32>, 3> selectedIndices;
+    std::array<uint16, 3> selectedClasses = {{ 0, 0, 0 }};
+    uint8 coveredBuffs =
+        GetWorldBossRaidBuffMask(requester->GetSpecialization());
+    std::array<uint32, 3> selectedCounts =
+        {{ neededTanks, neededHealers, neededDamage }};
+    std::set<uint32> selectedGuids;
+    bool diverseSelectionSucceeded = true;
+
+    for (size_t roleIndex = 0; roleIndex < candidates.size(); ++roleIndex)
+    {
+        WorldBossPreviewRole role = roleIndex == 0 ?
+            WorldBossPreviewRole::Tank :
+            (roleIndex == 1 ? WorldBossPreviewRole::Healer :
+                WorldBossPreviewRole::Damage);
+
+        // A hybrid class can be a candidate for several roles. Never allow
+        // the same character GUID to occupy more than one raid slot.
+        std::vector<WorldBossStagedCandidate> roleCandidates;
+        std::vector<uint32> originalIndices;
+        for (uint32 index = 0; index < candidates[roleIndex].size(); ++index)
+        {
+            WorldBossStagedCandidate const& candidate =
+                candidates[roleIndex][index];
+            if (selectedGuids.count(candidate.Guid))
+                continue;
+            roleCandidates.push_back(candidate);
+            originalIndices.push_back(index);
+        }
+
+        std::vector<uint32> roleSelection;
+        if (!SelectWorldBossDiverseRole(roleCandidates,
+            selectedCounts[roleIndex], requester->GetClass(),
+            requesterRole == role, coveredBuffs,
+            roleSelection, selectedClasses[roleIndex]))
+        {
+            diverseSelectionSucceeded = false;
+            break;
+        }
+
+        for (uint32 localIndex : roleSelection)
+        {
+            uint32 originalIndex = originalIndices[localIndex];
+            selectedIndices[roleIndex].push_back(originalIndex);
+            selectedGuids.insert(candidates[roleIndex][originalIndex].Guid);
+        }
+    }
+
+    if (!diverseSelectionSucceeded)
+    {
+        coveredBuffs = GetWorldBossRaidBuffMask(
+            requester->GetSpecialization());
+        if (!SelectUniqueRaidComposition(candidates, selectedCounts,
+            requester->GetClass(), requesterRole, coveredBuffs,
+            selectedIndices, selectedClasses))
+        {
+            error = "unique bot pool cannot satisfy the requested tank, healer, and damage counts";
+            return false;
+        }
+    }
+
+    LegacyRaidStagedBots.clear();
+    for (size_t roleIndex = 0; roleIndex < candidates.size(); ++roleIndex)
+        for (uint32 index : selectedIndices[roleIndex])
+        {
+            WorldBossStagedCandidate const& candidate =
+                candidates[roleIndex][index];
+            LegacyRaidStagedBots[candidate.Guid] = candidate;
+        }
+
+    LegacyRaidStageRequester = requester->GetGUID().GetCounter();
+    LegacyRaidStageDungeon = dungeon->id;
+    LegacyRaidStageGroup = 0;
+    LegacyRaidStageRaidSize = raidSize;
+    LegacyRaidStageElapsed = 0;
+    LegacyRaidStageUpdateTimer = 0;
+    LegacyRaidStageMap = dungeon->map;
+    LegacyRaidStageX = dungeon->x;
+    LegacyRaidStageY = dungeon->y;
+    LegacyRaidStageZ = dungeon->z;
+    LegacyRaidStageO = dungeon->o;
+
+    // LFG dungeon 244 points at Ulduar's Planetarium entrance
+    // (1631, -220), well past Flame Leviathan and the opening gauntlet.
+    // The legacy raid command always creates a fresh full raid, so use the
+    // raid's actual entrance target instead of that internal shortcut.
+    if (dungeon->id == 244 && dungeon->map == 603)
+    {
+        LegacyRaidStageX = -879.548f;
+        LegacyRaidStageY = -148.966f;
+        LegacyRaidStageZ = 458.884f;
+        LegacyRaidStageO = 0.0f;
+    }
+
+    LegacyRaidStageCleanupReason.clear();
+    LegacyRaidStageState = LegacyRaidStagedState::WaitForBots;
+
+    for (auto const& staged : LegacyRaidStagedBots)
+        sRandomPlayerbotMgr->AddPlayerBot(
+            ObjectGuid::Create<HighGuid::Player>(staged.first), 0);
+
+    return true;
+}
+
+void UpdateLegacyRaidStagedRaid(uint32 diff)
+{
+    if (LegacyRaidStageState == LegacyRaidStagedState::Idle)
+        return;
+
+    if (LegacyRaidStageUpdateTimer > diff)
+    {
+        LegacyRaidStageUpdateTimer -= diff;
+        return;
+    }
+
+    LegacyRaidStageUpdateTimer = 1000;
+    LegacyRaidStageElapsed += 1000;
+
+    Player* requester = LegacyRaidStageRequester ?
+        ObjectAccessor::FindConnectedPlayer(
+            ObjectGuid::Create<HighGuid::Player>(
+                LegacyRaidStageRequester)) : nullptr;
+
+    if (LegacyRaidStageState == LegacyRaidStagedState::WaitForBots)
+    {
+        if (!requester)
+        {
+            BeginLegacyRaidStageCleanup(
+                "requester disconnected while bots were loading");
+            return;
+        }
+
+        if (LegacyRaidStageElapsed >= 180000)
+        {
+            BeginLegacyRaidStageCleanup("bot login timeout");
+            return;
+        }
+
+        if (requester->GetGroup() || requester->InBattleground() ||
+            requester->InBattlegroundQueue() || requester->IsUsingLfg() ||
+            requester->IsInCombat())
+        {
+            BeginLegacyRaidStageCleanup(
+                "requester became busy before raid formation");
+            return;
+        }
+
+        uint32 ready = 0;
+        uint32 loading = 0;
+        uint32 offline = 0;
+        uint32 teleporting = 0;
+        for (auto const& staged : LegacyRaidStagedBots)
+        {
+            ObjectGuid guid =
+                ObjectGuid::Create<HighGuid::Player>(staged.first);
+
+            if (sRandomPlayerbotMgr->IsBotLoading(guid))
+            {
+                ++loading;
+                continue;
+            }
+
+            Player* bot = sRandomPlayerbotMgr->GetPlayerBot(guid);
+            if (!bot)
+            {
+                ++offline;
+                if (LegacyRaidStageElapsed % 15000 == 0)
+                    sRandomPlayerbotMgr->AddPlayerBot(guid, 0);
+                continue;
+            }
+
+            if (!bot->IsInWorld())
+            {
+                ++offline;
+                continue;
+            }
+
+            if (bot->IsBeingTeleported())
+            {
+                ++teleporting;
+                continue;
+            }
+
+            if (bot->GetGroup() || bot->InBattleground() ||
+                bot->InBattlegroundQueue() || bot->IsUsingLfg())
+            {
+                BeginLegacyRaidStageCleanup(
+                    "a staged bot became externally busy");
+                return;
+            }
+
+            PrepareLegacyRaidBotForSummon(bot);
+
+            // Apply the specialization selected during raid staging. A poolbot
+            // may have been chosen for a role different from its saved active
+            // specialization, for example an Arms warrior filling a tank slot
+            // as Protection.
+            auto stagedCandidate =
+                LegacyRaidStagedBots.find(bot->GetGUID().GetCounter());
+            if (stagedCandidate == LegacyRaidStagedBots.end())
+            {
+                BeginLegacyRaidStageCleanup(
+                    "a staged bot lost its raid candidate data");
+                return;
+            }
+
+            Specializations wantedSpecialization =
+                stagedCandidate->second.Specialization;
+
+            if (wantedSpecialization != SPEC_NONE &&
+                bot->GetSpecialization() != wantedSpecialization)
+            {
+                dbc::TalentTabs classSpecializations =
+                    dbc::GetClassSpecializations(bot->GetClass());
+
+                uint8 specializationTab = MAX_TALENT_TABS;
+                for (uint8 tab = 0;
+                     tab < classSpecializations.size() &&
+                     tab < MAX_TALENT_TABS; ++tab)
+                {
+                    if (Specializations(classSpecializations[tab]) ==
+                        wantedSpecialization)
+                    {
+                        specializationTab = tab;
+                        break;
+                    }
+                }
+
+                if (specializationTab >= MAX_TALENT_TABS)
+                {
+                    BeginLegacyRaidStageCleanup(
+                        "a staged bot has an invalid raid specialization");
+                    return;
+                }
+
+                bot->ResetTalents(true, true, true);
+                WorldPacket specialization(CMSG_SET_PRIMARY_TALENT_TREE);
+                specialization << uint32(specializationTab);
+                bot->GetSession()->HandeSetTalentSpecialization(
+                    specialization);
+                bot->ActivateSpec(0);
+
+                BotFactory specializationFactory(bot, bot->GetLevel());
+                specializationFactory.InitTalentsTree(false);
+
+                TC_LOG_INFO("server",
+                    "Legacy raid changed bot specialization name=%s guid=%u specialization=%u role=%u",
+                    bot->GetName().c_str(),
+                    bot->GetGUID().GetCounter(),
+                    uint32(bot->GetSpecialization()),
+                    uint32(stagedCandidate->second.Role));
+            }
+
+            if (bot->GetSpecialization() != wantedSpecialization ||
+                GetWorldBossPreviewRole(bot->GetSpecialization()) !=
+                    stagedCandidate->second.Role)
+            {
+                BeginLegacyRaidStageCleanup(
+                    "a staged bot could not enter its required raid role");
+                return;
+            }
+
+            BotFactory factory(bot, bot->GetLevel());
+            std::string loadoutError;
+            if (!factory.PrepareManagedLoadout(
+                    BotFactory::ManagedLoadoutMode::Pve, 0, &loadoutError))
+            {
+                std::ostringstream reason;
+                reason << "bot " << bot->GetName() << " ("
+                    << bot->GetGUID().GetCounter() << ", specialization "
+                    << uint32(bot->GetSpecialization())
+                    << ") could not receive its PvE loadout: " << loadoutError;
+                BeginLegacyRaidStageCleanup(reason.str().c_str());
+                return;
+            }
+
+            ++ready;
+        }
+
+        if (ready != LegacyRaidStagedBots.size())
+        {
+            if (LegacyRaidStageElapsed % 5000 == 0)
+                ChatHandler(requester->GetSession()).PSendSysMessage(
+                    "Legacy raid login progress: ready=%u/%u, loading=%u, offline=%u, teleporting=%u.",
+                    ready, uint32(LegacyRaidStagedBots.size()),
+                    loading, offline, teleporting);
+            return;
+        }
+
+        lfg::LFGDungeonData const* dungeon =
+            sLFGMgr->GetLFGDungeon(LegacyRaidStageDungeon);
+        if (!dungeon)
+        {
+            BeginLegacyRaidStageCleanup("raid data disappeared");
+            return;
+        }
+
+        std::vector<Player*> bots;
+        bots.reserve(LegacyRaidStagedBots.size());
+        for (auto const& staged : LegacyRaidStagedBots)
+        {
+            Player* bot = sRandomPlayerbotMgr->GetPlayerBot(
+                ObjectGuid::Create<HighGuid::Player>(staged.first));
+            if (!bot || !bot->IsInWorld() || bot->IsBeingTeleported())
+                return;
+            bots.push_back(bot);
+        }
+
+        // Legacy raid staging is expected to start a fresh run.  In this
+        // core GetBoundInstance() deliberately falls back between the 10 and
+        // 25 player versions of the same raid.  Consequently a permanent
+        // 10-player lockout can be selected while staging a 25-player raid
+        // (and vice versa).  If that old map is full or still has an encounter
+        // in progress, InstanceMap::CanEnter rejects every worldport and the
+        // client is sent to its home bind.
+        //
+        // Clear only the selected raid map from every difficulty slot before
+        // Group::Create copies the leader's binds into the new raid.  Poolbots
+        // need the same treatment because permanent binds survive joining a
+        // new group.
+        auto clearLegacyRaidBinds = [](Player* player, uint32 mapId)
+        {
+            if (!player)
+                return;
+
+            for (uint8 difficulty = 0;
+                 difficulty < MAX_DIFFICULTY; ++difficulty)
+                player->UnbindInstance(mapId,
+                    Difficulty(difficulty), false);
+        };
+
+        clearLegacyRaidBinds(requester, LegacyRaidStageMap);
+        for (Player* bot : bots)
+            clearLegacyRaidBinds(bot, LegacyRaidStageMap);
+
+        if (!requester->IsAlive())
+        {
+            requester->ResurrectPlayer(1.0f, false);
+            requester->SpawnCorpseBones();
+        }
+
+        for (Player* bot : bots)
+            if (!bot->IsAlive())
+            {
+                bot->ResurrectPlayer(1.0f, false);
+                bot->SpawnCorpseBones();
+            }
+
+        Group* group = new Group();
+        if (!group->Create(requester))
+        {
+            delete group;
+            BeginLegacyRaidStageCleanup("raid group creation failed");
+            return;
+        }
+
+        group->ConvertToRaid();
+        group->SetRaidDifficulty(dungeon->difficulty);
+
+        for (Player* bot : bots)
+        {
+            if (!group->AddMember(bot))
+            {
+                group->Disband();
+                BeginLegacyRaidStageCleanup(
+                    "a staged bot could not join the raid");
+                return;
+            }
+        }
+
+        auto roleFlag = [](WorldBossPreviewRole role) -> uint32
+        {
+            switch (role)
+            {
+                case WorldBossPreviewRole::Tank:
+                    return lfg::PLAYER_ROLE_TANK;
+                case WorldBossPreviewRole::Healer:
+                    return lfg::PLAYER_ROLE_HEALER;
+                case WorldBossPreviewRole::Damage:
+                    return lfg::PLAYER_ROLE_DAMAGE;
+                default:
+                    return lfg::PLAYER_ROLE_NONE;
+            }
+        };
+
+        WorldBossPreviewRole requesterRole =
+            GetWorldBossPreviewRole(requester->GetSpecialization());
+        group->SetMemberRole(requester->GetGUID(),
+            roleFlag(requesterRole));
+
+        ObjectGuid mainTank;
+        if (requesterRole == WorldBossPreviewRole::Tank)
+            mainTank = requester->GetGUID();
+
+        for (Player* bot : bots)
+        {
+            auto staged =
+                LegacyRaidStagedBots.find(bot->GetGUID().GetCounter());
+            if (staged == LegacyRaidStagedBots.end())
+                continue;
+
+            group->SetMemberRole(bot->GetGUID(),
+                roleFlag(staged->second.Role));
+            if (mainTank.IsEmpty() &&
+                staged->second.Role == WorldBossPreviewRole::Tank)
+                mainTank = bot->GetGUID();
+
+            if (PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot))
+            {
+                botAI->SetMaster(requester);
+                botAI->ChangeStrategy("+follow,-stay",
+                    BOT_STATE_NON_COMBAT);
+                botAI->ChangeStrategy("+avoid aoe,+formation",
+                    BOT_STATE_COMBAT);
+            }
+        }
+
+        if (!mainTank.IsEmpty())
+            group->SetGroupMemberFlag(mainTank, true,
+                MEMBER_FLAG_MAINTANK);
+
+        LegacyRaidStageGroup = group->GetLowGUID();
+
+        if (!requester->TeleportTo(LegacyRaidStageMap,
+            LegacyRaidStageX, LegacyRaidStageY, LegacyRaidStageZ,
+            LegacyRaidStageO))
+        {
+            BeginLegacyRaidStageCleanup(
+                "requester teleport to raid was refused");
+            return;
+        }
+
+        for (Player* bot : bots)
+        {
+            if (!bot->TeleportTo(LegacyRaidStageMap,
+                LegacyRaidStageX, LegacyRaidStageY, LegacyRaidStageZ,
+                LegacyRaidStageO))
+            {
+                BeginLegacyRaidStageCleanup(
+                    "a staged bot teleport to raid was refused");
+                return;
+            }
+        }
+
+        LegacyRaidStageState =
+            LegacyRaidStagedState::WaitForTeleport;
+        LegacyRaidStageElapsed = 0;
+        return;
+    }
+
+    if (LegacyRaidStageState ==
+        LegacyRaidStagedState::WaitForTeleport)
+    {
+        if (!requester)
+        {
+            BeginLegacyRaidStageCleanup(
+                "requester disconnected during raid teleport");
+            return;
+        }
+
+        if (LegacyRaidStageElapsed >= 60000)
+        {
+            BeginLegacyRaidStageCleanup("raid teleport timeout");
+            return;
+        }
+
+        if (requester->IsBeingTeleported() ||
+            !requester->IsInWorld() ||
+            requester->GetMapId() != LegacyRaidStageMap)
+            return;
+
+        uint32 arrived = 0;
+        for (auto const& staged : LegacyRaidStagedBots)
+        {
+            Player* bot = sRandomPlayerbotMgr->GetPlayerBot(
+                ObjectGuid::Create<HighGuid::Player>(staged.first));
+            if (!bot)
+            {
+                BeginLegacyRaidStageCleanup(
+                    "a staged bot went offline during raid teleport");
+                return;
+            }
+
+            if (bot->IsBeingTeleported() || !bot->IsInWorld())
+                continue;
+
+            if (bot->GetMapId() != LegacyRaidStageMap)
+                continue;
+
+            ++arrived;
+        }
+
+        if (arrived != LegacyRaidStagedBots.size())
+            return;
+
+        LegacyRaidStageState = LegacyRaidStagedState::Grouped;
+        LegacyRaidStageElapsed = 0;
+
+        ChatHandler(requester->GetSession()).PSendSysMessage(
+            "Legacy raid ready: %u-player raid, %u poolbots.",
+            LegacyRaidStageRaidSize,
+            uint32(LegacyRaidStagedBots.size()));
+        return;
+    }
+
+    if (LegacyRaidStageState == LegacyRaidStagedState::Grouped)
+    {
+        if (!requester)
+        {
+            BeginLegacyRaidStageCleanup(
+                "requester disconnected from legacy raid");
+            return;
+        }
+
+        Group* group = LegacyRaidStageGroup ?
+            sGroupMgr->GetGroupByGUID(LegacyRaidStageGroup) : nullptr;
+
+        if (!group || requester->GetGroup() != group)
+        {
+            BeginLegacyRaidStageCleanup(
+                "legacy raid group no longer exists");
+            return;
+        }
+
+        if (!requester->IsBeingTeleported() &&
+            requester->GetMapId() != LegacyRaidStageMap)
+        {
+            BeginLegacyRaidStageCleanup(
+                "requester left the legacy raid instance");
+            return;
+        }
+
+        for (auto const& staged : LegacyRaidStagedBots)
+        {
+            Player* bot = sRandomPlayerbotMgr->GetPlayerBot(
+                ObjectGuid::Create<HighGuid::Player>(staged.first));
+
+            if (!bot || bot->GetGroup() != group)
+            {
+                BeginLegacyRaidStageCleanup(
+                    "a staged legacy raid bot left the raid");
+                return;
+            }
+        }
+        return;
+    }
+
+    if (LegacyRaidStageState != LegacyRaidStagedState::Cleanup)
+        return;
+
+    bool quiesced = true;
+    for (auto& staged : LegacyRaidStagedBots)
+    {
+        ObjectGuid guid =
+            ObjectGuid::Create<HighGuid::Player>(staged.first);
+
+        if (sRandomPlayerbotMgr->IsBotLoading(guid))
+        {
+            quiesced = false;
+            continue;
+        }
+
+        if (Player* bot = sRandomPlayerbotMgr->GetPlayerBot(guid))
+        {
+            if (!bot->IsPlayerbotCleanupPending())
+            {
+                bot->BeginPlayerbotCleanup();
+                staged.second.CleanupReadyAt =
+                    LegacyRaidStageElapsed + 2000;
+            }
+
+            if (LegacyRaidStageElapsed <
+                staged.second.CleanupReadyAt)
+                quiesced = false;
+        }
+    }
+
+    if (!quiesced)
+        return;
+
+    if (LegacyRaidStageGroup)
+    {
+        Group* group =
+            sGroupMgr->GetGroupByGUID(LegacyRaidStageGroup);
+
+        if (group)
+        {
+            bool unknownMember = false;
+            for (Group::MemberSlot const& member :
+                group->GetMemberSlots())
+            {
+                uint32 guidLow = member.guid.GetCounter();
+                if (guidLow != LegacyRaidStageRequester &&
+                    LegacyRaidStagedBots.find(guidLow) ==
+                        LegacyRaidStagedBots.end())
+                {
+                    unknownMember = true;
+                    break;
+                }
+            }
+
+            if (!unknownMember &&
+                group->GetLeaderGUID().GetCounter() ==
+                    LegacyRaidStageRequester)
+            {
+                group->Disband();
+                return;
+            }
+
+            std::vector<ObjectGuid> owned;
+            for (auto const& staged : LegacyRaidStagedBots)
+            {
+                ObjectGuid guid =
+                    ObjectGuid::Create<HighGuid::Player>(
+                        staged.first);
+                if (group->IsMember(guid))
+                    owned.push_back(guid);
+            }
+
+            for (ObjectGuid const& guid : owned)
+            {
+                group = sGroupMgr->GetGroupByGUID(
+                    LegacyRaidStageGroup);
+                if (!group)
+                    break;
+                group->RemoveMember(
+                    guid, GROUP_REMOVEMETHOD_LEAVE);
+            }
+        }
+
+        LegacyRaidStageGroup = 0;
+    }
+
+    for (auto itr = LegacyRaidStagedBots.begin();
+         itr != LegacyRaidStagedBots.end();)
+    {
+        ObjectGuid guid =
+            ObjectGuid::Create<HighGuid::Player>(itr->first);
+
+        if (sRandomPlayerbotMgr->IsBotLoading(guid))
+        {
+            ++itr;
+            continue;
+        }
+
+        Player* bot = sRandomPlayerbotMgr->GetPlayerBot(guid);
+        if (bot && (bot->GetGroup() || bot->InBattleground() ||
+            bot->InBattlegroundQueue() || bot->IsUsingLfg() ||
+            bot->IsBeingTeleported()))
+        {
+            ++itr;
+            continue;
+        }
+
+        if (bot)
+        {
+            WorldBossStagedCandidate& candidate = itr->second;
+
+            if (!candidate.ReturnRequested)
+            {
+                PrepareLegacyRaidBotForSummon(bot);
+                if (!bot->TeleportTo(candidate.OriginalMap,
+                    candidate.OriginalX, candidate.OriginalY,
+                    candidate.OriginalZ, candidate.OriginalO))
+                {
+                    ++itr;
+                    continue;
+                }
+
+                candidate.ReturnRequested = true;
+                ++itr;
+                continue;
+            }
+
+            if (bot->GetMapId() != candidate.OriginalMap ||
+                bot->GetDistance2d(candidate.OriginalX,
+                    candidate.OriginalY) > 5.0f)
+            {
+                ++itr;
+                continue;
+            }
+
+            PrepareSoloArenaBotForLogout(
+                bot, "legacy-raid-stage-cleanup");
+            sRandomPlayerbotMgr->LogoutPlayerBot(guid);
+        }
+
+        itr = LegacyRaidStagedBots.erase(itr);
+    }
+
+    if (!LegacyRaidStagedBots.empty())
+        return;
+
+    LegacyRaidStageState = LegacyRaidStagedState::Idle;
+    LegacyRaidStageRequester = 0;
+    LegacyRaidStageDungeon = 0;
+    LegacyRaidStageGroup = 0;
+    LegacyRaidStageRaidSize = 0;
+    LegacyRaidStageElapsed = 0;
+    LegacyRaidStageUpdateTimer = 0;
+    LegacyRaidStageMap = 0;
+    LegacyRaidStageX = 0.0f;
+    LegacyRaidStageY = 0.0f;
+    LegacyRaidStageZ = 0.0f;
+    LegacyRaidStageO = 0.0f;
+    LegacyRaidStageCleanupReason.clear();
+}
+
+
+bool HandlePlayerbotLfrCommand(ChatHandler* handler, char const* args)
+{
+    Player* player = handler->GetSession()->GetPlayer();
+    if (!player)
+        return false;
+
+    auto expansionName = [](uint8 expansion) -> char const*
+    {
+        switch (expansion)
+        {
+            case EXPANSION_CLASSIC:
+                return "Vanilla";
+            case EXPANSION_THE_BURNING_CRUSADE:
+                return "The Burning Crusade";
+            case EXPANSION_WRATH_OF_THE_LICH_KING:
+                return "Wrath of the Lich King";
+            case EXPANSION_CATACLYSM:
+                return "Cataclysm";
+            case EXPANSION_MISTS_OF_PANDARIA:
+                return "Mists of Pandaria";
+            default:
+                return "Unknown";
+        }
+    };
+
+    auto requiredLevel = [](lfg::LFGDungeonData const* dungeon) -> uint8
+    {
+        if (!dungeon)
+            return 255;
+
+        switch (dungeon->expansion)
+        {
+            case EXPANSION_CLASSIC:
+                return 60;
+            case EXPANSION_THE_BURNING_CRUSADE:
+                return 70;
+            case EXPANSION_WRATH_OF_THE_LICH_KING:
+                return 80;
+            case EXPANSION_CATACLYSM:
+                return 85;
+            case EXPANSION_MISTS_OF_PANDARIA:
+                return 90;
+            default:
+                return dungeon->minlevel;
+        }
+    };
+
+    auto validRaid = [&](lfg::LFGDungeonData const* dungeon) -> bool
+    {
+        if (!dungeon || dungeon->category != lfg::LFG_CATEGORY_LFR)
+            return false;
+
+        MapEntry const* map = sMapStore.LookupEntry(dungeon->map);
+        if (!map || !map->IsRaid())
+            return false;
+
+        if (dungeon->type != lfg::LFG_TYPE_RAID &&
+            dungeon->difficulty != RAID_DIFFICULTY_25MAN_LFR)
+            return false;
+
+        return player->GetLevel() >= requiredLevel(dungeon);
+    };
+
+    std::string arg = args ? args : "";
+    while (!arg.empty() && arg.front() == ' ')
+        arg.erase(arg.begin());
+    while (!arg.empty() && arg.back() == ' ')
+        arg.pop_back();
+
+    if (arg.empty() || arg == "list")
+    {
+        handler->PSendSysMessage("Available raids for level %u:", player->GetLevel());
+
+        std::map<uint8, std::vector<lfg::LFGDungeonData const*>> raidsByExpansion;
+        for (uint32 id = 0; id < sLFGDungeonStore.GetNumRows(); ++id)
+        {
+            lfg::LFGDungeonData const* dungeon = sLFGMgr->GetLFGDungeon(id);
+            if (validRaid(dungeon))
+                raidsByExpansion[dungeon->expansion].push_back(dungeon);
+        }
+
+        for (auto const& expansionRaids : raidsByExpansion)
+        {
+            handler->PSendSysMessage("%s:", expansionName(expansionRaids.first));
+            for (lfg::LFGDungeonData const* dungeon : expansionRaids.second)
+            {
+                uint32 maxPlayers = 0;
+                if (MapDifficulty const* mapDiff =
+                        GetMapDifficultyData(dungeon->map, dungeon->difficulty))
+                    maxPlayers = mapDiff->maxPlayers;
+
+                handler->PSendSysMessage(
+                    "  %u - %s [%u-player, difficulty %u]",
+                    dungeon->id, dungeon->name.c_str(),
+                    maxPlayers, uint32(dungeon->difficulty));
+            }
+        }
+
+        if (raidsByExpansion.empty())
+            handler->SendSysMessage("No raids are available at your level.");
+        else
+            handler->SendSysMessage("Queue with: .lfr <ID>");
+
+        return true;
+    }
+
+    uint32 dungeonId = std::strtoul(arg.c_str(), nullptr, 10);
+    if (!dungeonId)
+    {
+        handler->SendSysMessage("Usage: .lfr, .lfr list, or .lfr <ID>");
+        return true;
+    }
+
+    lfg::LFGDungeonData const* dungeon = sLFGMgr->GetLFGDungeon(dungeonId);
+    if (!validRaid(dungeon))
+    {
+        handler->SendSysMessage("That raid is not available at your level.");
+        return true;
+    }
+
+    if (dungeon->difficulty != RAID_DIFFICULTY_25MAN_LFR)
+    {
+        std::string error;
+        if (!StartLegacyRaidStage(player, dungeon, error))
+            handler->PSendSysMessage(
+                "Legacy raid staging refused: %s.", error.c_str());
+        else
+            handler->PSendSysMessage(
+                "Legacy raid request: %s (%u), staging %u poolbots.",
+                dungeon->name.c_str(), dungeonId,
+                uint32(LegacyRaidStagedBots.size()));
+        return true;
+    }
+
+    lfg::LfgRoles role = lfg::PLAYER_ROLE_DAMAGE;
+    switch (player->GetRoleForGroup())
+    {
+        case ROLES_TANK:
+            role = lfg::PLAYER_ROLE_TANK;
+            break;
+        case ROLES_HEALER:
+            role = lfg::PLAYER_ROLE_HEALER;
+            break;
+        case ROLES_DPS:
+        case ROLES_DEFAULT:
+        default:
+            role = lfg::PLAYER_ROLE_DAMAGE;
+            break;
+    }
+
+    lfg::LfgDungeonSet dungeons;
+    dungeons.insert(dungeonId);
+
+    sLFGMgr->InitializeLockedDungeons(player);
+    sLFGMgr->JoinLfg(player, role, dungeons, "Legacy Raid Finder");
+
+    handler->PSendSysMessage(
+        "Raid Finder request: %s (%u), role %s.",
+        dungeon->name.c_str(), dungeonId,
+        role == lfg::PLAYER_ROLE_TANK ? "tank" :
+        role == lfg::PLAYER_ROLE_HEALER ? "healer" : "damage");
+
+    return true;
+}
+
+
 class playerbots_commandscript : public CommandScript
 {
 public:
@@ -2879,6 +4153,7 @@ public:
     {
         static std::vector<ChatCommand> commandTable =
         {
+            { "lfr",            SEC_PLAYER,                 false,          &HandlePlayerbotLfrCommand},
             { "npcbot",         SEC_ADMINISTRATOR,          true,           &HandlePlayerbotCommand},
             { "pmon",           SEC_GAMEMASTER,             true,           &HandlePerfMonCommand},
             { "playerbotaudit", SEC_ADMINISTRATOR,          true,           &HandlePlayerbotAuditCommand},
@@ -6964,6 +8239,22 @@ bool ApplyAutomatedPvpBotLoadout(Player* bot, uint32 requesterGuid,
         if (!botAI->IsRealPlayer())
         {
             BotFactory factory(bot, bot->GetLevel());
+            // Leveling battlegrounds need level-appropriate equipment. The
+            // Arena item-level floor and Prideful set are for level 90 only.
+            if (bot->GetLevel() < DEFAULT_MAX_LEVEL)
+            {
+                changedSlots = 0;
+                if (!factory.PrepareManagedLoadout(
+                        BotFactory::ManagedLoadoutMode::Pve, 0, &error))
+                    return false;
+                factory.InitManagedTalentsAndGlyphs(
+                    BotFactory::ManagedLoadoutMode::Pvp);
+                factory.InitManagedEnhancements(
+                    BotFactory::ManagedLoadoutMode::Pvp);
+                botAI->GetAiObjectContext()->Reset();
+                botAI->ResetStrategies();
+                return true;
+            }
             if (!factory.PrepareManagedLoadout(
                     BotFactory::ManagedLoadoutMode::Pvp,
                     sPlayerbotAIConfig->autoQueueArenaMinAverageItemLevel,
@@ -7023,8 +8314,31 @@ bool CastAutomatedRoleMode(Player* bot)
 {
     PlayerbotAI* botAI = bot ? GET_PLAYERBOT_AI(bot) : nullptr;
     char const* action = GetAutomaticRoleModeAction(bot);
-    return botAI && !botAI->IsRealPlayer() && action &&
-        botAI->DoSpecificAction(action, Event(), true);
+    if (!botAI || botAI->IsRealPlayer() || !action)
+        return false;
+
+    bool const cast = botAI->DoSpecificAction(action, Event(), true);
+    // Narrow LFG diagnostics: a stale druid form can prevent a filler from
+    // leaving the entrance. This runs only on the existing preparation request
+    // (at most once per 15 seconds), without enabling global debug logging.
+    if (botAI->IsLfgAutoQueueControlled() && bot->GetClass() == CLASS_DRUID)
+    {
+        uint32 const expectedForm = bot->GetSpecialization() == SPEC_DRUID_BALANCE ? FORM_MOONKIN :
+            (bot->GetSpecialization() == SPEC_DRUID_FERAL ? FORM_CAT :
+                (bot->GetSpecialization() == SPEC_DRUID_GUARDIAN ? FORM_BEAR : FORM_NONE));
+        if (bot->GetShapeshiftForm() != expectedForm)
+        {
+            uint32 const spellId = botAI->GetAiObjectContext()->GetValue<uint32>("spell id", action)->Get();
+            TC_LOG_INFO("server",
+                "AutoQueue LFG druid form pending bot=%s guid=%u spec=%u form=%u expected=%u action=%s spell=%u result=%u flying=%u in-flight=%u moving=%u mana=%u/%u reserved=%u",
+                bot->GetName().c_str(), bot->GetGUID().GetCounter(), uint32(bot->GetSpecialization()),
+                uint32(bot->GetShapeshiftForm()), expectedForm, action, spellId, cast ? 1u : 0u,
+                bot->IsFlying() ? 1u : 0u, bot->HasUnitState(UNIT_STATE_IN_FLIGHT) ? 1u : 0u,
+                bot->isMoving() ? 1u : 0u, bot->GetPower(POWER_MANA), bot->GetMaxPower(POWER_MANA),
+                botAI->IsLfgAutoQueueReserved() ? 1u : 0u);
+        }
+    }
+    return cast;
 }
 
 void UpdateAutomatedPvpLoadoutRecovery(uint32 diff)

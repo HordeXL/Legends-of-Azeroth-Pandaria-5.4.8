@@ -17,6 +17,7 @@
 
 #include "ScriptMgr.h"
 #include "ScriptedCreature.h"
+#include "Player.h"
 #include "ahnkahet.h"
 
 enum Yells
@@ -152,8 +153,8 @@ class boss_jedoga_shadowseeker : public CreatureScript
                     if (!bFirstTime)
                         instance->SetData(DATA_JEDOGA_SHADOWSEEKER_EVENT, FAIL);
 
-                    instance->SetData64(DATA_PL_JEDOGA_TARGET, 0);
-                    instance->SetData64(DATA_ADD_JEDOGA_OPFER, 0);
+                    instance->SetGuidData(DATA_PL_JEDOGA_TARGET, ObjectGuid::Empty);
+                    instance->SetGuidData(DATA_ADD_JEDOGA_OPFER, ObjectGuid::Empty);
                     instance->SetData(DATA_JEDOGA_RESET_INITIANDS, 0);
 
                     //lUnitList.clear();
@@ -316,7 +317,7 @@ class boss_jedoga_shadowseeker : public CreatureScript
                 if (opfer)
                 {
                     Talk(TEXT_SACRIFICE_1);
-                    instance->SetData64(DATA_ADD_JEDOGA_OPFER, opfer);
+                    instance->SetGuidData(DATA_ADD_JEDOGA_OPFER, opfer);
                 } else
                     bCanDown = true;
             }
@@ -463,12 +464,12 @@ class npc_jedoga_initiand : public CreatureScript
                             me->GetMap()->SetWorldState(WORLD_STATE_VOLUNTEER_WORK, 0);
                     }
 
-                    instance->SetData64(DATA_ADD_JEDOGA_OPFER, 0);
+                    instance->SetGuidData(DATA_ADD_JEDOGA_OPFER, ObjectGuid::Empty);
 
                     bWalking = false;
                 }
-                if (killer->GetTypeId() == TYPEID_PLAYER)
-                    instance->SetData64(DATA_PL_JEDOGA_TARGET, killer->GetGUID());
+                if (Player* player = killer->GetCharmerOrOwnerPlayerOrPlayerItself())
+                    instance->SetGuidData(DATA_PL_JEDOGA_TARGET, player->GetGUID());
             }
 
             void JustEngagedWith(Unit* who) override

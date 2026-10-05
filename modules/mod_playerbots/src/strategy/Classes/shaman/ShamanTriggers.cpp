@@ -8,7 +8,7 @@
 #include <algorithm>
 
 #include "Playerbots.h"
-#include "PlayerBotSpec.h"
+#include "PlayerbotSpec.h"
 
 bool GroupLowManaForManaTideTrigger::IsActive()
 {

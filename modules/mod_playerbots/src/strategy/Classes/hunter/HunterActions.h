@@ -267,4 +267,20 @@ class CastMisdirectionOnMainTankAction : public BuffOnMainTankAction
 public:
     CastMisdirectionOnMainTankAction(PlayerbotAI* ai) : BuffOnMainTankAction(ai, "misdirection", true) {}
 };
+
+// Kept as a distinct type for raid movement multipliers imported from the
+// 3.3.5 playerbots module.  It can also be registered by a hunter strategy
+// without changing the raid code.
+class CastDisengageAction : public CastSpellAction
+{
+public:
+    CastDisengageAction(PlayerbotAI* ai) : CastSpellAction(ai, "disengage") { }
+};
+
+class CastExplosiveTrapAction : public CastSpellAction
+{
+public:
+    CastExplosiveTrapAction(PlayerbotAI* ai) : CastSpellAction(ai, "explosive trap") { }
+    ActionThreatType getThreatType() override { return ActionThreatType::Aoe; }
+};
 #endif

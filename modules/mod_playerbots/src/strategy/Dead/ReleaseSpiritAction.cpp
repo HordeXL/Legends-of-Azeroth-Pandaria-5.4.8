@@ -14,10 +14,30 @@
 #include "Playerbots.h"
 #include "ServerFacade.h"
 #include "Corpse.h"
+#include "InstanceScript.h"
 #include "WorldPosition.h"
 
 namespace
 {
+bool CanReleaseDungeonSpirit(Player* bot)
+{
+    // Release uses the core's instance-entrance recovery. Never turn a death
+    // into a free resurrection while a boss or surviving party member fights.
+    if (InstanceScript* instance = bot->GetInstanceScript())
+        if (instance->IsEncounterInProgress())
+            return false;
+
+    if (Group* group = bot->GetGroup())
+        for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+        {
+            Player* member = ref->GetSource();
+            if (member && member->IsInWorld() && member->IsAlive() &&
+                member->GetMap() == bot->GetMap() && member->IsInCombat())
+                return false;
+        }
+    return true;
+}
+
 bool IsActivePandariaWorldBossFight(Player* bot)
 {
     if (!bot || !bot->GetGroup() || !bot->IsInWorld())
@@ -121,6 +141,12 @@ bool AutoReleaseSpiritAction::Execute(Event event)
         botAI->SetNextCheckDelay(1000);
         return true;
     }
+
+    if (bot->IsAlive())
+        return false;
+    if (bot->GetMap() && bot->GetMap()->IsDungeon() && !bot->InBattleground() &&
+        !CanReleaseDungeonSpirit(bot))
+        return false;
 
     // Release only once. Re-sending CMSG_REPOP_REQUEST every dead-engine tick while
     // already a ghost can reset movement/state while the bot is waiting at a BG
@@ -230,6 +256,11 @@ bool AutoReleaseSpiritAction::isUseful()
     if (bot->HasPlayerFlag(PLAYER_FLAGS_GHOST))
         return false;
 
+    // Master can already be alive at the entrance by this tick. Waiting for
+    // master to be dead or far away strands the remaining bots after a wipe.
+    if (bot->GetMap() && bot->GetMap()->IsDungeon())
+        return CanReleaseDungeonSpirit(bot);
+
     // Outdoor world-boss deaths differ from dungeon deaths: there is no
     // instance-wide wipe barrier and normal players release, run back and
     // reclaim while the surviving raid keeps the boss engaged. Do not leave a
@@ -250,9 +281,8 @@ bool AutoReleaseSpiritAction::isUseful()
     if (!botAI->HasActivePlayerMaster())
         return true;
 
-    if (botAI->HasActivePlayerMaster() && botAI->GetGroupMaster()->GetMapId() == bot->GetMapId() && bot->GetMap() &&
-        (bot->GetMap()->IsRaid() || bot->GetMap()->IsDungeon()))
-        return false;
+    // Dead dungeon/raid bots should release and run back to their corpse
+    // instead of waiting indefinitely for a combat resurrection.
 
     if (botAI->GetGroupMaster()->isDead())
         return true;

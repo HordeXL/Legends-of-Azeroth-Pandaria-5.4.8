@@ -59,7 +59,7 @@ public:
     {
         boss_chrono_lord_dejaAI(Creature* creature) : BossAI(creature, TYPE_CRONO_LORD_DEJA) { }
 
-        void Reset() override { }
+        void Reset() override { events.Reset(); }
 
         void JustEngagedWith(Unit* /*who*/) override
         {
@@ -116,7 +116,7 @@ public:
                 switch (eventId)
                 {
                     case EVENT_ARCANE_BLAST:
-                        DoCastVictim(SPELL_ARCANE_BLAST);
+                        DoCastVictim(IsHeroic() ? H_SPELL_ARCANE_BLAST : SPELL_ARCANE_BLAST);
                         events.ScheduleEvent(EVENT_ARCANE_BLAST, urand(15000, 25000));
                         break;
                     case EVENT_TIME_LAPSE:
@@ -126,7 +126,7 @@ public:
                         break;
                     case EVENT_ARCANE_DISCHARGE:
                         if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0))
-                            DoCast(target, SPELL_ARCANE_DISCHARGE);
+                            DoCast(target, IsHeroic() ? H_SPELL_ARCANE_DISCHARGE : SPELL_ARCANE_DISCHARGE);
                         events.ScheduleEvent(EVENT_ARCANE_DISCHARGE, urand(20000, 30000));
                         break;
                     case EVENT_ATTRACTION: // Only in Heroic

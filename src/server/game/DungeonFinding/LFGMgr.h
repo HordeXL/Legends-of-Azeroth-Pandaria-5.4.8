@@ -426,6 +426,12 @@ class LFGMgr
         /// accepted. This avoids depending on an AI polling cycle after the
         /// ready check has already been created.
         void SetProposalAutoAccept(ObjectGuid guid, bool enabled);
+        /// Returns whether this player is controlled by the server for LFG.
+        /// The marker survives death, map removal and teleport transitions.
+        bool IsProposalAutoAcceptPlayer(ObjectGuid guid) const
+        {
+            return ProposalAutoAcceptPlayers.count(guid) != 0;
+        }
         /// Updates proposal to join dungeon with player answer
         void UpdateProposal(uint32 proposalId, ObjectGuid guid, bool accept);
         /// Updates the role check with player answer

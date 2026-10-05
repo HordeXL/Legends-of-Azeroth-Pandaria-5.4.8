@@ -44,6 +44,7 @@ class CastMoonkinFormAction : public CastBuffSpellAction
 {
 public:
     CastMoonkinFormAction(PlayerbotAI* botAI) : CastBuffSpellAction(botAI, "moonkin form") {}
+    bool Execute(Event event) override;
 };
 
 class CastAquaticFormAction : public CastBuffSpellAction

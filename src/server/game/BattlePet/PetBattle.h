@@ -123,10 +123,13 @@ public:
     PetBattleTeam(PetBattle* parent, PetBattleTeamIndex teamIndex)
         : m_petBattle(parent), m_teamIndex(teamIndex) { }
 
+    ~PetBattleTeam() = default;
+
     PetBattle* GetParentBattle() const { return m_petBattle; }
     Player* GetOwner() const { return m_owner; }
     uint64 GetOwnerGuid() const { return m_ownerGuid; }
     Creature* GetWildBattlePet() const { return m_wildBattlePet; }
+    bool IsTrainer() const { return m_isTrainer; }
     uint8 GetTeamIndex() const { return m_teamIndex; }
 
     int8 ConvertToGlobalIndex(int8 localPetIndex) const;
@@ -156,6 +159,7 @@ public:
 
     void AddPlayer(Player* player);
     void AddWildBattlePet(Creature* creature);
+    bool AddTrainerBattlePets(Creature* trainer);
 
     void ResetActiveAbility();
 
@@ -180,11 +184,13 @@ private:
     Player* m_owner = nullptr;
     uint64 m_ownerGuid = 0;
     Creature* m_wildBattlePet = nullptr;
+    bool m_isTrainer = false;
     BattlePet* m_activePet = nullptr;
     PetBattleTeamIndex m_teamIndex;
     uint32 m_turn = 0;
     bool m_ready = false;
     PendingRoundMove m_pendingMove;
+    std::vector<std::unique_ptr<BattlePet>> m_ownedBattlePets;
 };
 
 // -------------------------------------------------------------------------------
@@ -375,6 +381,8 @@ typedef std::vector<PetBattleTeam*> PetBattleTeamStore;
 class PetBattle
 {
 public:
+    static bool IsTrainer(uint32 creatureEntry);
+
     PetBattle(uint32 battleId, PetBattleRequest const& request);
 
     ~PetBattle();

@@ -1600,8 +1600,29 @@ bool SpellInfo::NeedsToApplyCombatOnHit() const
 
 bool SpellInfo::IsAccountWide() const
 {
-    return (IsAbilityOfSkillType(SKILL_MOUNTS) && !(AttributesEx10 & SPELL_ATTR10_MOUNT_CHARACTER))
-        || IsAbilityOfSkillType(SKILL_COMPANIONS) || Effects[EFFECT_0].Effect == SPELL_EFFECT_UNLOCK_BATTLE_PETS;
+    if ((IsAbilityOfSkillType(SKILL_MOUNTS) && !(AttributesEx10 & SPELL_ATTR10_MOUNT_CHARACTER)) ||
+        IsAbilityOfSkillType(SKILL_COMPANIONS) || Effects[EFFECT_0].Effect == SPELL_EFFECT_UNLOCK_BATTLE_PETS)
+        return true;
+
+    switch (Id)
+    {
+        case 135704: // Grand Commendation of the Anglers
+        case 135710: // Grand Commendation of Operation: Shieldwall
+        case 135711: // Grand Commendation of the Dominance Offensive
+        case 135712: // Grand Commendation of the Lorewalkers
+        case 135713: // Grand Commendation of the Order of the Cloud Serpent
+        case 135714: // Grand Commendation of the Tillers
+        case 135715: // Grand Commendation of the Shado-Pan
+        case 135716: // Grand Commendation of the August Celestials
+        case 135717: // Grand Commendation of the Golden Lotus
+        case 135719: // Grand Commendation of the Klaxxi
+        case 140226: // Grand Commendation of the Kirin Tor Offensive
+        case 140228: // Grand Commendation of the Sunreaver Onslaught
+        case 140235: // Grand Commendation of the Shado-Pan Assault
+            return true;
+        default:
+            return false;
+    }
 }
 
 SpellCastResult SpellInfo::CheckShapeshift(uint32 form) const

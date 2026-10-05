@@ -17,6 +17,37 @@
 #include "ValueContext.h"
 #include "WorldPacketActionContext.h"
 #include "WorldPacketTriggerContext.h"
+#include "OculusStrategy.h"
+#include "VortexPinnacleStrategy.h"
+#include "raids/RaidStrategyContext.h"
+#include "raids/aq20/RaidAq20ActionContext.h"
+#include "raids/aq20/RaidAq20TriggerContext.h"
+#include "raids/blackwinglair/RaidBwlActionContext.h"
+#include "raids/blackwinglair/RaidBwlTriggerContext.h"
+#include "raids/eyeofeternity/RaidEoEActionContext.h"
+#include "raids/eyeofeternity/RaidEoETriggerContext.h"
+#include "raids/gruulslair/RaidGruulsLairActionContext.h"
+#include "raids/gruulslair/RaidGruulsLairTriggerContext.h"
+#include "raids/icecrown/RaidIccActionContext.h"
+#include "raids/icecrown/RaidIccTriggerContext.h"
+#include "raids/karazhan/RaidKarazhanActionContext.h"
+#include "raids/karazhan/RaidKarazhanTriggerContext.h"
+#include "raids/magtheridon/RaidMagtheridonActionContext.h"
+#include "raids/magtheridon/RaidMagtheridonTriggerContext.h"
+#include "raids/moltencore/RaidMcActionContext.h"
+#include "raids/moltencore/RaidMcTriggerContext.h"
+#include "raids/naxxramas/NaxxActionContext.h"
+#include "raids/naxxramas/NaxxTriggerContext.h"
+#include "raids/rubysanctum/RSActionContext.h"
+#include "raids/rubysanctum/RSTriggerContext.h"
+#include "raids/obsidiansanctum/RaidOsActionContext.h"
+#include "raids/obsidiansanctum/RaidOsTriggerContext.h"
+#include "raids/onyxia/RaidOnyxiaActionContext.h"
+#include "raids/onyxia/RaidOnyxiaTriggerContext.h"
+#include "raids/ulduar/RaidUlduarActionContext.h"
+#include "raids/ulduar/RaidUlduarTriggerContext.h"
+#include "raids/vaultofarchavon/RaidVoAActionContext.h"
+#include "raids/vaultofarchavon/RaidVoATriggerContext.h"
 
 
 AiObjectContext::AiObjectContext(PlayerbotAI* botAI) : PlayerbotAIAware(botAI)
@@ -24,13 +55,48 @@ AiObjectContext::AiObjectContext(PlayerbotAI* botAI) : PlayerbotAIAware(botAI)
     strategyContexts.Add(new StrategyContext());
     strategyContexts.Add(new MovementStrategyContext());
     strategyContexts.Add(new AssistStrategyContext());
+    strategyContexts.Add(new OculusBot::OculusStrategyContext());
+    strategyContexts.Add(new VortexPinnacleBot::VortexPinnacleStrategyContext());
+    strategyContexts.Add(new RaidStrategyContext());
 
     actionContexts.Add(new ActionContext());
     actionContexts.Add(new WorldPacketActionContext());
+    actionContexts.Add(new OculusBot::OculusActionContext());
+    actionContexts.Add(new VortexPinnacleBot::VortexPinnacleActionContext());
+    actionContexts.Add(new RaidAq20ActionContext());
+    actionContexts.Add(new RaidMcActionContext());
+    actionContexts.Add(new RaidBwlActionContext());
+    actionContexts.Add(new RaidKarazhanActionContext());
+    actionContexts.Add(new RaidMagtheridonActionContext());
+    actionContexts.Add(new RaidGruulsLairActionContext());
+    actionContexts.Add(new RaidOsActionContext());
+    actionContexts.Add(new RaidEoEActionContext());
+    actionContexts.Add(new RaidVoAActionContext());
+    actionContexts.Add(new RaidUlduarActionContext());
+    actionContexts.Add(new RaidOnyxiaActionContext());
+    actionContexts.Add(new RaidIccActionContext());
+    actionContexts.Add(new RaidNaxxActionContext());
+    actionContexts.Add(new RaidRsActionContext());
 
     triggerContexts.Add(new TriggerContext());
     triggerContexts.Add(new WorldPacketTriggerContext());
     triggerContexts.Add(new PveRotationTriggerContext());
+    triggerContexts.Add(new OculusBot::OculusTriggerContext());
+    triggerContexts.Add(new VortexPinnacleBot::VortexPinnacleTriggerContext());
+    triggerContexts.Add(new RaidAq20TriggerContext());
+    triggerContexts.Add(new RaidMcTriggerContext());
+    triggerContexts.Add(new RaidBwlTriggerContext());
+    triggerContexts.Add(new RaidKarazhanTriggerContext());
+    triggerContexts.Add(new RaidMagtheridonTriggerContext());
+    triggerContexts.Add(new RaidGruulsLairTriggerContext());
+    triggerContexts.Add(new RaidOsTriggerContext());
+    triggerContexts.Add(new RaidEoETriggerContext());
+    triggerContexts.Add(new RaidVoATriggerContext());
+    triggerContexts.Add(new RaidUlduarTriggerContext());
+    triggerContexts.Add(new RaidOnyxiaTriggerContext());
+    triggerContexts.Add(new RaidIccTriggerContext());
+    triggerContexts.Add(new RaidNaxxTriggerContext());
+    triggerContexts.Add(new RaidRsTriggerContext());
 
     valueContexts.Add(new ValueContext());
     valueContexts.Add(sSharedValueContext);

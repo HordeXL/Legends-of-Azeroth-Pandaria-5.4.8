@@ -13,6 +13,10 @@ public:
     bool Execute(Event event) override;
     bool isUseful() override;
     bool CanDeadFollow(Unit* target);
+
+private:
+    bool UseGroupFollowFormation();
+    WorldLocation GetGroupFollowLocation();
 };
 
 class FleeToMasterAction : public FollowAction

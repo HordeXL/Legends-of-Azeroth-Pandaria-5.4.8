@@ -240,11 +240,20 @@ void AiFactory::AddDefaultCombatStrategies(Player* player, PlayerbotAI* const fa
     {
         engine->addStrategiesNoInit("racials", "chat", "default", "cast time", "duel", "boost", nullptr);
     }
-    if (sPlayerbotAIConfig->autoAvoidAoe && facade->HasRealPlayerMaster())
+    // Ground hazards are a combat-safety mechanic, not a master-only
+    // convenience.  LFG replacements and autonomous bots can enter combat
+    // before their real-player master is assigned, so keep avoidance loaded
+    // for every bot when the server option is enabled.
+    if (sPlayerbotAIConfig->autoAvoidAoe)
     {
         engine->addStrategy("avoid aoe", false);
     }
     engine->addStrategy("formation", false);
+    // Dungeon-specific triggers are map-gated and therefore harmless outside
+    // their instances. Keeping the strategies loaded also makes them survive
+    // teleports and engine resets in this older playerbot branch.
+    engine->addStrategy("wotlk-occ", false);
+    engine->addStrategy("cata-vp", false);
     if (player->InBattleground() && player->GetBattleground() && !player->GetBattleground()->IsArena())
         engine->addStrategy("battleground", false);
 
@@ -588,6 +597,8 @@ void AiFactory::AddDefaultNonCombatStrategies(Player* player, PlayerbotAI* const
         nonCombatEngine->addStrategy("battleground", false);
     }
     nonCombatEngine->addStrategy("say hello");
+    nonCombatEngine->addStrategy("wotlk-occ", false);
+    nonCombatEngine->addStrategy("cata-vp", false);
 }
 
 Engine* AiFactory::createNonCombatEngine(Player* player, PlayerbotAI* const facade, AiObjectContext* aiObjectContext)

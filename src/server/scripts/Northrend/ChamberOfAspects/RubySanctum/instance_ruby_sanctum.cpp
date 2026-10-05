@@ -59,11 +59,17 @@ class instance_ruby_sanctum : public InstanceMapScript
 
             void OnPlayerEnter(Player* /*player*/) override
             {
-                if (!GetData64(DATA_HALION_CONTROLLER) && GetBossState(DATA_HALION) != DONE && GetBossState(DATA_GENERAL_ZARITHRIAN) == DONE)
+                if (GetBossState(DATA_HALION) != DONE && GetBossState(DATA_GENERAL_ZARITHRIAN) == DONE)
                 {
                     instance->LoadGrid(HalionControllerSpawnPos.GetPositionX(), HalionControllerSpawnPos.GetPositionY());
-                    if (Creature* halionController = instance->SummonCreature(NPC_HALION_CONTROLLER, HalionControllerSpawnPos))
-                        halionController->AI()->DoAction(ACTION_INTRO_HALION);
+
+                    // Loading the grid can create a DB-spawned controller.  Check
+                    // the resolved creature after loading instead of the cached
+                    // GUID before it, otherwise both controllers can run the
+                    // intro and summon separate Halions.
+                    if (!instance->GetCreature(HalionControllerGUID))
+                        if (Creature* halionController = instance->SummonCreature(NPC_HALION_CONTROLLER, HalionControllerSpawnPos))
+                            halionController->AI()->DoAction(ACTION_INTRO_HALION);
                 }
             }
 
@@ -164,8 +170,9 @@ class instance_ruby_sanctum : public InstanceMapScript
                 if (creature->GetEntry() == NPC_GENERAL_ZARITHRIAN && GetBossState(DATA_HALION) != DONE)
                 {
                     instance->LoadGrid(HalionControllerSpawnPos.GetPositionX(), HalionControllerSpawnPos.GetPositionY());
-                    if (Creature* halionController = instance->SummonCreature(NPC_HALION_CONTROLLER, HalionControllerSpawnPos))
-                        halionController->AI()->DoAction(ACTION_INTRO_HALION);
+                    if (!instance->GetCreature(HalionControllerGUID))
+                        if (Creature* halionController = instance->SummonCreature(NPC_HALION_CONTROLLER, HalionControllerSpawnPos))
+                            halionController->AI()->DoAction(ACTION_INTRO_HALION);
                 }
             }
 

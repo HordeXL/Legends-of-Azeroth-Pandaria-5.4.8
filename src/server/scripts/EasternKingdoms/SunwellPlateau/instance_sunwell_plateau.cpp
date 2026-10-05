@@ -169,7 +169,7 @@ class instance_sunwell_plateau : public InstanceMapScript
                 {
                     case 188421: ForceFieldGUID         = go->GetGUID(); break;
                     case 188523: KalecgosWall[0]        = go->GetGUID(); break;
-                    case 188524: KalecgosWall[0]        = go->GetGUID(); break;
+                    case 188524: KalecgosWall[1]        = go->GetGUID(); break;
                     case 188075:
                         if (m_auiEncounter[2] == DONE)
                             HandleGameObject(ObjectGuid::Empty, true, go);

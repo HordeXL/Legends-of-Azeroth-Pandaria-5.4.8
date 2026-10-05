@@ -99,6 +99,7 @@ class ReputationMgr
 
         ReputationRank GetRank(FactionEntry const* factionEntry) const;
         ReputationRank GetBaseRank(FactionEntry const* factionEntry) const;
+        bool HasBonusReputation(uint32 factionId) const;
         uint32 GetReputationRankStrIndex(FactionEntry const* factionEntry) const
         {
             return ReputationRankStrIndex(GetRank(factionEntry));

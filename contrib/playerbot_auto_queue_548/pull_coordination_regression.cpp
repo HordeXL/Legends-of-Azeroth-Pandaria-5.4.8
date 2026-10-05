@@ -18,7 +18,7 @@ struct Unit {
  bool IsAlive(){return alive;} bool IsInWorld(){return world;} bool IsInCombat(){return combat;} int GetMap(){return map;}
  Unit* GetVictim(){return victim;} Player* GetCharmerOrOwnerPlayerOrPlayerItself(){return owner;}
  bool CanHaveThreatList(){return threatList;} ThreatManager& GetThreatManager(){return threat;}
- unsigned GetGUID(){return id;} bool HasBreakableByDamageCrowdControlAura(){return cc;}
+ unsigned GetGUID(){return id;} unsigned GetEntry(){return id;} bool HasBreakableByDamageCrowdControlAura(){return cc;}
  bool IsImmunedToSpell(SpellInfo const*,unsigned){return immune;}
 };
 struct Ref { Player* p; Ref* nextRef=nullptr; Player* GetSource(){return p;} Ref* next(){return nextRef;} };
@@ -47,11 +47,12 @@ PvePullState<unsigned> ObserveGroupPull(Player*){return state;}
 Unit* opening=nullptr;
 struct GroupPveCombat {
  static bool IsEngaged(Player*,Unit*); static bool IsCollected(Player*,Unit*);
+ static bool TankOwnsTarget(Player*,Unit*);
  static bool AoeReady(Player*,Unit*); static bool DamageAllowed(Player*,Unit*);
  static bool NeedsRescue(Player*,Unit*); static unsigned TauntSpell(Player*); static Player* RescueTank(Player*,Unit*);
  static Unit* OpeningTarget(Player*){return state.OpeningTarget(now)?opening:nullptr;}
 };
-// Runner extracts these seven bodies from production before compiling.
+// Runner extracts these bodies from production before compiling.
 #include "../../Build/pull_support_bodies.inc"
 unsigned checks=0;
 void check(bool ok,char const* message){++checks;if(!ok){std::cerr<<"FAIL: "<<message<<'\n';std::exit(1);}}
@@ -97,6 +98,11 @@ int main()
  main.alive=false;check(GroupPveCombat::RescueTank(&off,&mob)==&off,"offtank rescues while main is dead");main.alive=true;
  mob.immune=true;check(GroupPveCombat::RescueTank(&off,&mob)==nullptr,"immune mob is not repeatedly taunted");mob.immune=false;
  mob.cc=true;check(!GroupPveCombat::NeedsRescue(&off,&mob),"breakable CC preserved");mob.cc=false;
+ dps.staged=true;mob.id=69161;held.target=&dps;
+ check(!GroupPveCombat::DamageAllowed(&dps,&mob),"Oondasta damage waits for tank threat ownership");
+ held.target=&main;
+ check(GroupPveCombat::DamageAllowed(&dps,&mob),"Oondasta damage resumes after tank owns threat");
+ dps.staged=false;mob.id=101;
  state.Observe(4000,{});now=4000;check(!GroupPveCombat::AoeReady(&dps,&mob),"finished pull does not leave gate open");
  state.Observe(5000,{101});now=5000;opening=&add;check(!GroupPveCombat::AoeReady(&dps,&add),"next pull waits independently");
  std::cout<<checks<<" pull coordination checks passed\n";

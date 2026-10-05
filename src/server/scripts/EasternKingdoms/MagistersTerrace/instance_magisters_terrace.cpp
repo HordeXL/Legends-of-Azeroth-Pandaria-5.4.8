@@ -65,6 +65,7 @@ public:
 
         uint32 Encounter[MAX_ENCOUNTER];
         uint32 DelrissaDeathCount;
+        bool DelrissaDied;
 
         std::vector<ObjectGuid> FelCrystals;
 
@@ -87,6 +88,7 @@ public:
             FelCrystals.clear();
 
             DelrissaDeathCount = 0;
+            DelrissaDied = false;
 
             SelinGUID = ObjectGuid::Empty;
             DelrissaGUID = ObjectGuid::Empty;
@@ -132,6 +134,9 @@ public:
 
         void SetData(uint32 identifier, uint32 data) override
         {
+            if (identifier < MAX_ENCOUNTER && Encounter[identifier] == DONE && data != DONE)
+                return;
+
             switch (identifier)
             {
                 case DATA_SELIN_EVENT:
@@ -155,8 +160,11 @@ public:
                 case DATA_DELRISSA_EVENT:
                     if (data == DONE)
                         HandleGameObject(DelrissaDoorGUID, true);
-                    if (data == IN_PROGRESS)
+                    if ((data == IN_PROGRESS && Encounter[2] != IN_PROGRESS) || data == FAIL || data == NOT_STARTED)
+                    {
                         DelrissaDeathCount = 0;
+                        DelrissaDied = false;
+                    }
                     Encounter[2] = data;
                     break;
                 case DATA_KAELTHAS_EVENT:
@@ -167,10 +175,17 @@ public:
                     Encounter[3] = data;
                     break;
                 case DATA_DELRISSA_DEATH_COUNT:
-                    if (data == SPECIAL)
+                    if (data == SPECIAL && DelrissaDeathCount < 4)
                         ++DelrissaDeathCount;
-                    else
+                    else if (data != SPECIAL)
                         DelrissaDeathCount = 0;
+                    if (DelrissaDied && DelrissaDeathCount == 4)
+                        SetData(DATA_DELRISSA_EVENT, DONE);
+                    break;
+                case DATA_DELRISSA_DIED:
+                    DelrissaDied = true;
+                    if (DelrissaDeathCount == 4)
+                        SetData(DATA_DELRISSA_EVENT, DONE);
                     break;
                 case DATA_KAELTHAS_STATUES:
                     HandleGameObject(KaelStatue[0], data);
@@ -204,18 +219,23 @@ public:
             {
                 case GO_VEXALLUS_DOOR:
                     VexallusDoorGUID = go->GetGUID();
+                    HandleGameObject(VexallusDoorGUID, Encounter[1] == DONE, go);
                     break;
                 case GO_SELIN_DOOR:
                     SelinDoorGUID = go->GetGUID();
+                    HandleGameObject(SelinDoorGUID, Encounter[0] == DONE, go);
                     break;
                 case GO_SELIN_ENCOUNTER_DOOR:
                     SelinEncounterDoorGUID = go->GetGUID();
+                    HandleGameObject(SelinEncounterDoorGUID, Encounter[0] != IN_PROGRESS, go);
                     break;
                 case GO_DELRISSA_DOOR:
                     DelrissaDoorGUID = go->GetGUID();
+                    HandleGameObject(DelrissaDoorGUID, Encounter[2] == DONE, go);
                     break;
                 case GO_KAEL_DOOR:
                     KaelDoorGUID = go->GetGUID();
+                    HandleGameObject(KaelDoorGUID, Encounter[3] != IN_PROGRESS, go);
                     break;
                 case GO_KAEL_STATUE_1:
                     KaelStatue[0] = go->GetGUID();

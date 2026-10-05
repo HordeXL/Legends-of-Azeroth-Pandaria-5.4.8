@@ -33,6 +33,9 @@ $hound = $braun.Substring($braun.IndexOf('struct npc_obediend_houndAI'))
     (Read-Function $hound 'void KillThemAll(')
 ) | Set-Content (Join-Path $output 'hound_outro.inc')
 $trash = Get-Content (Join-Path $sourceDir 'scarlet_halls.cpp') -Raw
+(Read-Function $trash 'struct npc_reinforced_archery_targetAI') + ';' | Set-Content (Join-Path $output 'archery_target.inc')
+$player = Get-Content (Join-Path $root 'src/server/game/Entities/Player/Player.cpp') -Raw
+(Read-Function $player 'bool Player::CanSeeSpellClickOn(') | Set-Content (Join-Path $output 'spellclick_visibility.inc')
 @(
     (Read-Function $trash 'enum Spells') + ';',
     (Read-Function $trash 'enum Events') + ';',
@@ -76,3 +79,7 @@ if (!$houndFaction -or !$watchmanFaction -or !($houndFaction[4] -band 1) -or
     throw 'Feeding faction must be friendly to players and hostile to the watchman'
 }
 Write-Output 'PASS installed DBC: feeding hounds are friendly to players and hostile to the watchman'
+& cl.exe /nologo /EHsc /std:c++17 "/I$output" "$PSScriptRoot/archery_target_regression.cpp" "/Fo$output/archery_target.obj" "/Fe$output/archery_target.exe"
+if ($LASTEXITCODE -ne 0) { throw 'Archery target regression compilation failed' }
+& "$output/archery_target.exe"
+if ($LASTEXITCODE -ne 0) { throw 'Archery target regression failed' }

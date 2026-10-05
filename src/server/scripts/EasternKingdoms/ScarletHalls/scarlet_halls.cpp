@@ -57,6 +57,9 @@ enum Spells
     SPELL_EXPLODING_GROUND    = 114861,
     SPELL_DOG_LEAP            = 122929,
     SPELL_EATEN               = 122916,
+    SPELL_SLEEPING_DOG        = 113114,
+    SPELL_SLEEP_ZZZ           = 55474,
+    SPELL_EATEN_BLOOD_POOL    = 146012, // Cosmetic only: sloppy_blood_pool_nofade.
     SPELL_PLAYER_VEHICLE_AURA = 113399,
 };
 
@@ -114,13 +117,19 @@ class npc_starving_hound : public CreatureScript
 
             EventMap events;
             ObjectGuid foodTargetGUID;
+            Position feedingReturnPosition;
+            enum { POINT_FEEDING_RETURN = 1 };
             bool fed = false;
+            bool returningAfterFeeding = false;
 
             void Reset() override
             {
                 events.Reset();
                 foodTargetGUID = ObjectGuid::Empty;
                 fed = false;
+                returningAfterFeeding = false;
+                me->RemoveAurasDueToSpell(SPELL_SLEEPING_DOG);
+                me->RemoveAurasDueToSpell(SPELL_SLEEP_ZZZ);
                 me->RestoreFaction();
                 me->SetReactState(REACT_AGGRESSIVE);
                 me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PACIFIED);
@@ -138,6 +147,8 @@ class npc_starving_hound : public CreatureScript
                     return;
 
                 // Dog Food is a dummy effect, not an aura to poll on the watchman.
+                // Preserve each dog's own patrol position before the leap/chase.
+                feedingReturnPosition = me->GetPosition();
                 foodTargetGUID = guid;
                 events.Reset();
                 me->CombatStop(true);
@@ -150,8 +161,20 @@ class npc_starving_hound : public CreatureScript
                 me->CastSpell(watchman, SPELL_DOG_LEAP, true);
             }
 
-            void MovementInform(uint32 type, uint32 /*id*/) override
+            void MovementInform(uint32 type, uint32 id) override
             {
+                if (type == POINT_MOTION_TYPE && id == POINT_FEEDING_RETURN && returningAfterFeeding)
+                {
+                    returningAfterFeeding = false;
+                    me->SetFacingTo(feedingReturnPosition.GetOrientation());
+                    me->SetStandState(UNIT_STAND_STATE_SLEEP);
+                    // Sleeping Dog supplies the animation kit; the separate
+                    // cosmetic supplies Sleep_State_Head (the Zzz effect).
+                    me->CastSpell(me, SPELL_SLEEPING_DOG, true);
+                    me->CastSpell(me, SPELL_SLEEP_ZZZ, true);
+                    return;
+                }
+
                 if (type == EFFECT_MOTION_TYPE && foodTargetGUID)
                     if (Creature* watchman = ObjectAccessor::GetCreature(*me, foodTargetGUID))
                         if (watchman->IsAlive())
@@ -162,6 +185,7 @@ class npc_starving_hound : public CreatureScript
             {
                 foodTargetGUID = ObjectGuid::Empty;
                 fed = true;
+                returningAfterFeeding = true;
                 events.Reset();
                 me->CombatStop(true);
                 me->GetThreatManager().ClearAllThreat();
@@ -171,7 +195,10 @@ class npc_starving_hound : public CreatureScript
                 me->SetReactState(REACT_PASSIVE);
                 me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PACIFIED);
                 me->HandleEmoteStateCommand(EMOTE_STATE_NONE);
-                me->SetStandState(UNIT_STAND_STATE_SLEEP);
+                me->SetStandState(UNIT_STAND_STATE_STAND);
+                // Use a point move rather than evade/home: evading resets the
+                // AI and would make a fed hound hostile and resume its patrol.
+                me->GetMotionMaster()->MovePoint(POINT_FEEDING_RETURN, feedingReturnPosition);
             }
 
             void JustEngagedWith(Unit* /*who*/) override
@@ -182,6 +209,27 @@ class npc_starving_hound : public CreatureScript
             void JustDied(Unit* /*killer*/) override
             {
                 me->GetMap()->SetWorldState(WORLDSTATE_HUMANE_SOCIETY, 0);
+            }
+
+            void KilledUnit(Unit* victim) override
+            {
+                Creature* watchman = victim ? victim->ToCreature() : nullptr;
+                if (!foodTargetGUID || !watchman || watchman->IsAlive() ||
+                    watchman->GetGUID() != foodTargetGUID || watchman->GetEntry() != NPC_VIGILANT_WATCHMAN)
+                    return;
+
+                // Only the killing hound creates the pool, not every pack
+                // member observing the corpse. The cosmetic cannot target a
+                // dead unit, so keep it on a stationary invisible trigger.
+                uint32 const lifetime = std::max<uint32>(1, watchman->GetCorpseDelay()) * IN_MILLISECONDS;
+                if (Creature* blood = me->SummonTrigger(watchman->GetPositionX(), watchman->GetPositionY(),
+                    watchman->GetPositionZ(), watchman->GetOrientation(), lifetime))
+                {
+                    blood->SetFaction(35);
+                    blood->SetReactState(REACT_PASSIVE);
+                    blood->CastSpell(blood, SPELL_EATEN_BLOOD_POOL, true);
+                }
+                FinishFeeding();
             }
 
             void UpdateAI(uint32 diff) override
@@ -381,12 +429,14 @@ class npc_reinforced_archery_target : public CreatureScript
 
             void OnSpellClick(Unit* clicker, bool& /*result*/) override
             {
-                if (clicker->HasAura(SPELL_HEROIC_DEFENSE) || hasRider)
+                // HandleSpellClick casts Heroic Defense from the database row
+                // before this callback. Only consume a successfully picked-up
+                // target; a rejected cast must leave it available for retry.
+                if (hasRider || !clicker->HasAura(SPELL_HEROIC_DEFENSE, me->GetGUID()))
                     return;
 
                 hasRider = true;
                 Talk(TALK_INTRO);
-                DoCast(clicker, SPELL_HEROIC_DEFENSE);
                 me->RemoveFlag(UNIT_FIELD_NPC_FLAGS, UNIT_NPC_FLAG_SPELLCLICK);
             }
 

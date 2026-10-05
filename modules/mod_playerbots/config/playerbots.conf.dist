@@ -87,6 +87,12 @@ AiPlayerbot.RandomBotAutologin = 1
 # Please ensure that RandomBotAccountCount is greater than (MaxRandomBots / 10 + AddClassAccountPoolSize)
 AiPlayerbot.RandomBotAccountCount = 200
 
+# Optional separate account pool. Disabled by default to retain existing bot accounts.
+AiPlayerbot.PlayerbotPool.Enabled = 0
+AiPlayerbot.PlayerbotPool.AccountPrefix = "poolbot"
+AiPlayerbot.PlayerbotPool.AccountCount = 200
+AiPlayerbot.PlayerbotPool.TeleportDistance = 100.0
+
 # Random bot count
 AiPlayerbot.MinRandomBots = 50
 AiPlayerbot.MaxRandomBots = 50

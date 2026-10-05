@@ -1,5 +1,6 @@
 // Executes the production Starving Hound AI and Dog Food hit callback.
 #include <cassert>
+#include <algorithm>
 #include <cstdint>
 #include <iostream>
 #include <list>
@@ -7,6 +8,7 @@
 using uint32 = uint32_t;
 using int32 = int32_t;
 using SpellEffIndex = int;
+uint32 const IN_MILLISECONDS = 1000;
 struct ObjectGuid
 {
     uint32 value;
@@ -19,18 +21,26 @@ enum { NPC_STARVING_HOUND = 58876, NPC_VIGILANT_WATCHMAN = 58898,
        WORLDSTATE_HUMANE_SOCIETY = 12645 };
 enum { UNIT_FIELD_FLAGS, UNIT_FLAG_PACIFIED = 1, REACT_PASSIVE, REACT_AGGRESSIVE,
        UNIT_STAND_STATE_STAND, UNIT_STAND_STATE_SLEEP, EMOTE_STATE_NONE,
-       UNIT_STATE_CASTING, EFFECT_MOTION_TYPE };
+       UNIT_STATE_CASTING, EFFECT_MOTION_TYPE, POINT_MOTION_TYPE };
 uint32 urand(uint32 min, uint32) { return min; }
 struct Creature;
 struct WorldObject { virtual ~WorldObject() = default; virtual Creature* ToCreature() { return nullptr; } };
 struct Unit : WorldObject { };
+struct Position
+{
+    float x = 0, y = 0, z = 0, orientation = 0;
+    float GetOrientation() const { return orientation; }
+};
 struct Motion
 {
-    enum Kind { Patrol, Idle, Chase, Jump } kind = Patrol;
+    enum Kind { Patrol, Idle, Chase, Jump, Point } kind = Patrol;
     Unit* target = nullptr;
+    Position destination;
+    uint32 pointId = 0;
     void Clear() { target = nullptr; }
     void MoveIdle() { kind = Idle; }
     void MoveChase(Unit* unit) { kind = Chase; target = unit; }
+    void MovePoint(uint32 id, Position const& position) { kind = Point; pointId = id; destination = position; }
 };
 struct Map { void SetWorldState(uint32, uint32) { } };
 struct AI
@@ -41,17 +51,25 @@ struct AI
     virtual void MovementInform(uint32, uint32) { }
     virtual void JustEngagedWith(Unit*) { }
     virtual void JustDied(Unit*) { }
+    virtual void KilledUnit(Unit*) { }
     virtual void UpdateAI(uint32) { }
 };
 struct Creature : Unit
 {
     uint32 entry, guid, faction = 16, react = REACT_AGGRESSIVE, flags = 0, stand = UNIT_STAND_STATE_STAND;
     uint32 melee = 0, casts = 0;
+    uint32 sleepVisualCasts = 0;
+    bool sleepVisual = false;
+    bool sleepZzz = false;
+    uint32 bloodPoolCasts = 0, summons = 0, summonDuration = 0, corpseDelay = 60;
+    Creature* summonResult = nullptr;
+    Position summonPosition;
     bool alive = true, combat = false, threat = false;
     Unit* victim = nullptr;
     ::AI* ai = nullptr;
     Motion motion;
     Map map;
+    Position position;
     Creature(uint32 e, uint32 g) : entry(e), guid(g) { }
     Creature* ToCreature() override { return this; }
     uint32 GetEntry() const { return entry; }
@@ -61,6 +79,18 @@ struct Creature : Unit
     ::AI* AI() { return ai; }
     Motion* GetMotionMaster() { return &motion; }
     Map* GetMap() { return &map; }
+    Position const& GetPosition() const { return position; }
+    float GetPositionX() const { return position.x; }
+    float GetPositionY() const { return position.y; }
+    float GetPositionZ() const { return position.z; }
+    float GetOrientation() const { return position.orientation; }
+    uint32 GetCorpseDelay() const { return corpseDelay; }
+    Creature* SummonTrigger(float x, float y, float z, float orientation, uint32 duration)
+    {
+        ++summons; summonDuration = duration; summonPosition = {x, y, z, orientation};
+        return summonResult;
+    }
+    void SetFacingTo(float orientation) { position.orientation = orientation; }
     void RestoreFaction() { faction = 16; }
     void SetFaction(uint32 value) { faction = value; }
     void SetReactState(uint32 value) { react = value; }
@@ -71,7 +101,19 @@ struct Creature : Unit
     void CombatStop(bool) { combat = false; victim = nullptr; }
     void DeleteThreatList() { threat = false; }
     bool HasUnitState(uint32) const { return false; }
-    void CastSpell(Unit*, uint32, bool) { ++casts; motion.kind = Motion::Jump; }
+    void CastSpell(Unit*, uint32 spell, bool)
+    {
+        ++casts;
+        if (spell == 113114) { sleepVisual = true; ++sleepVisualCasts; }
+        else if (spell == 55474) sleepZzz = true;
+        else if (spell == 146012) ++bloodPoolCasts;
+        else motion.kind = Motion::Jump;
+    }
+    void RemoveAurasDueToSpell(uint32 spell)
+    {
+        if (spell == 113114) sleepVisual = false;
+        if (spell == 55474) sleepZzz = false;
+    }
     void StopMoving() { }
     void AddAura(uint32, Creature*) { }
 };
@@ -112,6 +154,9 @@ int main()
 {
     Creature watchman(NPC_VIGILANT_WATCHMAN, 1), otherWatchman(NPC_VIGILANT_WATCHMAN, 2);
     Creature dog(NPC_STARVING_HOUND, 3), deadDog(NPC_STARVING_HOUND, 4);
+    Creature bloodPool(12999, 5);
+    dog.summonResult = &bloodPool;
+    watchman.position = {50, 60, 30, 2.0f};
     objects = {{1, &watchman}, {2, &otherWatchman}, {3, &dog}, {4, &deadDog}};
     npc_starving_houndAI ai(&dog), deadAI(&deadDog);
     ai.Reset();
@@ -121,6 +166,7 @@ int main()
     Unit previousVictim;
     ai.AttackStart(&previousVictim);
     dog.motion.kind = Motion::Patrol;
+    dog.position = {10, 20, 30, 1.5f};
     FoodSpell{&watchman}.HandleHitEffect(0);
     assert(watchman.motion.kind == Motion::Idle && (watchman.flags & UNIT_FLAG_PACIFIED));
     assert(dog.victim == &watchman && dog.motion.kind == Motion::Jump);
@@ -134,18 +180,43 @@ int main()
     dog.victim = &previousVictim;
     ai.UpdateAI(100);
     assert(dog.victim == &watchman); // Previous player/pet aggro cannot steal the food target.
+    ai.KilledUnit(&watchman); // Still alive: no pool.
+    ai.KilledUnit(&previousVictim); // Not the food target.
+    assert(dog.summons == 0);
+    dog.position = {50, 60, 30, 0}; // The food target is away from the dog's patrol.
     watchman.alive = false;
+    ai.KilledUnit(&watchman);
+    assert(dog.summons == 1 && bloodPool.bloodPoolCasts == 1 && bloodPool.faction == 35);
+    assert(dog.summonPosition.x == 50 && dog.summonPosition.y == 60 && dog.summonPosition.z == 30);
+    assert(dog.summonDuration == watchman.corpseDelay * IN_MILLISECONDS);
+    ai.KilledUnit(&watchman);
+    assert(dog.summons == 1); // Finishing the feeding prevents duplicate pools.
     ai.UpdateAI(100);
     assert(ai.fed && !dog.combat && !dog.threat && dog.victim == nullptr && dog.faction == 35);
-    assert(dog.motion.kind == Motion::Idle && dog.stand == UNIT_STAND_STATE_SLEEP);
+    assert(dog.motion.kind == Motion::Point && dog.stand == UNIT_STAND_STATE_STAND);
+    assert(!dog.sleepVisual && !dog.sleepZzz); // No sleeping visuals while still walking back.
+    assert(dog.motion.destination.x == 10 && dog.motion.destination.y == 20 && dog.motion.destination.z == 30);
     assert(dog.flags & UNIT_FLAG_PACIFIED);
     ai.SetGUID(otherWatchman.guid, GUID_DOG_FOOD_TARGET);
     ai.UpdateAI(100);
-    assert(dog.victim == nullptr && dog.motion.kind == Motion::Idle);
-    std::cout << "PASS bucket hit -> selected watchman attack -> friendly sleeping hound\n";
+    assert(dog.victim == nullptr && dog.motion.kind == Motion::Point && ai.returningAfterFeeding);
+    ai.MovementInform(EFFECT_MOTION_TYPE, dog.motion.pointId); // Late leap callback must not put it to sleep.
+    ai.MovementInform(POINT_MOTION_TYPE, dog.motion.pointId + 1);
+    assert(dog.stand == UNIT_STAND_STATE_STAND);
+    assert(!dog.sleepVisual && !dog.sleepZzz);
+    dog.position = dog.motion.destination;
+    ai.MovementInform(POINT_MOTION_TYPE, dog.motion.pointId);
+    assert(dog.stand == UNIT_STAND_STATE_SLEEP && !ai.returningAfterFeeding);
+    assert(dog.position.orientation == 1.5f && dog.faction == 35);
+    assert(dog.sleepVisual && dog.sleepZzz && dog.sleepVisualCasts == 1);
+    ai.MovementInform(POINT_MOTION_TYPE, dog.motion.pointId);
+    ai.UpdateAI(100);
+    assert(dog.sleepVisualCasts == 1); // Arrival repeats cannot recast the cosmetic.
+    std::cout << "PASS bucket hit -> selected watchman attack -> friendly return to patrol position -> sleep on arrival\n";
 
     ai.Reset();
     assert(!ai.fed && !ai.foodTargetGUID && dog.faction == 16 && !(dog.flags & UNIT_FLAG_PACIFIED));
+    assert(!dog.sleepVisual && !dog.sleepZzz && dog.stand == UNIT_STAND_STATE_STAND);
     ai.SetGUID(dog.guid, GUID_DOG_FOOD_TARGET);
     ai.SetGUID(watchman.guid, GUID_DOG_FOOD_TARGET); // Dead target.
     ai.SetGUID(999, GUID_DOG_FOOD_TARGET);
@@ -153,7 +224,11 @@ int main()
     ai.SetGUID(otherWatchman.guid, GUID_DOG_FOOD_TARGET);
     objects.erase(otherWatchman.guid);
     ai.UpdateAI(100);
-    assert(ai.fed && !dog.combat && dog.motion.kind == Motion::Idle);
+    assert(dog.summons == 1); // Missing targets do not create a pool at the dog's feet.
+    assert(ai.fed && !dog.combat && dog.motion.kind == Motion::Point);
+    ai.Reset(); // A late arrival from a previous feeding must not sleep a reset hound.
+    ai.MovementInform(POINT_MOTION_TYPE, dog.motion.pointId);
+    assert(!ai.returningAfterFeeding && dog.stand == UNIT_STAND_STATE_STAND && dog.faction == 16);
     EatenPredicate filter;
     assert(filter(nullptr) && filter(&dog) && filter(&previousVictim) && !filter(&watchman));
     FoodSpell{nullptr}.HandleHitEffect(0);

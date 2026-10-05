@@ -36,6 +36,19 @@ Unit* PartyMemberToHeal::Calculate()
     if (!group)
         return bot;
 
+    // Green triangle is an explicit healing assignment. Unlike the regular
+    // triage list, the marked unit may be outside the bot's group. Keep the
+    // usual assist, map and distance checks so the marker cannot make a bot
+    // heal a hostile or chase an unreachable target.
+    if (ObjectGuid const greenGuid = group->GetTargetIcon(3))
+    {
+        Unit* marked = botAI->GetUnit(greenGuid);
+        if (marked && marked->IsInWorld() && marked->IsAlive() &&
+            marked->GetHealth() < marked->GetMaxHealth() &&
+            bot->IsValidAssistTarget(marked) && Check(marked))
+            return marked;
+    }
+
     bool isRaid = bot->GetGroup()->isRaidGroup();
     MinValueCalculator calc(100);
 

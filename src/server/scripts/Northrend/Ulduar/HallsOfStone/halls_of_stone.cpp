@@ -275,7 +275,7 @@ public:
         if (action == GOSSIP_ACTION_INFO_DEF+1 || action == GOSSIP_ACTION_INFO_DEF+2)
         {
             player->CLOSE_GOSSIP_MENU();
-            CAST_AI(npc_brann_hos::npc_brann_hosAI, creature->AI())->StartWP();
+            CAST_AI(npc_brann_hos::npc_brann_hosAI, creature->AI())->StartWP(player->GetGUID());
         }
 
         return true;
@@ -409,12 +409,12 @@ public:
           ++uiStep;
         }
 
-        void StartWP()
+        void StartWP(ObjectGuid playerGuid)
         {
             me->RemoveFlag(UNIT_FIELD_NPC_FLAGS, UNIT_NPC_FLAG_GOSSIP);
             SetEscortPaused(false);
             uiStep = 1;
-            Start();
+            Start(true, false, playerGuid);
         }
 
         void DamageTaken(Unit* /*done_by*/, uint32 & /*damage*/) override
@@ -585,6 +585,8 @@ public:
                         Talk(SAY_EVENT_END_02);
                         if (instance)
                             instance->SetBossState(DATA_BRANN_EVENT, DONE);
+                        if (Player* player = GetPlayerForEscort())
+                            player->GroupEventHappens(QUEST_HALLS_OF_STONE, me);
                         me->CastSpell(me, SPELL_REWARD_ACHIEVEMENT, true);
                         JumpToNextStep(5500);
                         break;
@@ -693,9 +695,6 @@ public:
                             instance->HandleGameObject(instance->GetGuidData(DATA_GO_ABEDNEUM), false);
                             instance->HandleGameObject(instance->GetGuidData(DATA_GO_SKY_FLOOR), false);
                         }
-                        Player* player = GetPlayerForEscort();
-                        if (player)
-                            player->GroupEventHappens(QUEST_HALLS_OF_STONE, me);
                         me->SetFlag(UNIT_FIELD_NPC_FLAGS, UNIT_NPC_FLAG_GOSSIP);
                         JumpToNextStep(180000);
                         break;

@@ -12,6 +12,36 @@
 #include "RtiTargetValue.h"
 #include "ScriptedCreature.h"
 #include "ThreatManager.h"
+#include <algorithm>
+#include <cctype>
+
+Unit* FindTargetValue::Calculate()
+{
+    if (qualifier.empty())
+        return nullptr;
+
+    auto lowerName = [](std::string name)
+    {
+        std::transform(name.begin(), name.end(), name.begin(),
+            [](unsigned char character) { return std::tolower(character); });
+        return name;
+    };
+
+    std::string const wantedName = lowerName(qualifier);
+    auto* targets = botAI->GetAiObjectContext()->GetValue<GuidVector>(
+        "possible targets no los");
+    if (!targets)
+        return nullptr;
+
+    for (ObjectGuid const guid : targets->Get())
+    {
+        Unit* unit = botAI->GetUnit(guid);
+        if (unit && unit->IsAlive() && lowerName(unit->GetName()) == wantedName)
+            return unit;
+    }
+
+    return nullptr;
+}
 
 Unit* FindTargetStrategy::GetResult()
 {
@@ -74,11 +104,11 @@ bool FindTargetStrategy::IsHighPriority(Unit* attacker)
         group = botAI->GetBot()->GetGroup();
     if (group)
     {
-        ObjectGuid guid = group->GetTargetIcon(7);
-        if (guid && attacker->GetGUID() == guid)
-        {
+        ObjectGuid skullGuid = group->GetTargetIcon(7);
+        ObjectGuid crossGuid = group->GetTargetIcon(6);
+        if ((skullGuid && attacker->GetGUID() == skullGuid) ||
+            (crossGuid && attacker->GetGUID() == crossGuid))
             return true;
-        }
     }
     GuidVector prioritizedTargets = botAI->GetAiObjectContext()->GetValue<GuidVector>("prioritized targets")->Get();
     for (ObjectGuid targetGuid : prioritizedTargets)

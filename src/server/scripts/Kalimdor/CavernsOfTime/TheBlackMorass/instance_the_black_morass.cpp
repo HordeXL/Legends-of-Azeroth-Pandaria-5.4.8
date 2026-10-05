@@ -90,6 +90,8 @@ public:
 
         ObjectGuid _medivhGUID;
         uint8  _currentRiftId;
+        uint32 resetTimer = 0;
+        std::vector<ObjectGuid> eventSummons;
 
         void Initialize() override
         {
@@ -99,6 +101,8 @@ public:
 
         void Clear()
         {
+            Events.Reset();
+            resetTimer = 0;
             memset(&m_auiEncounter, 0, sizeof(m_auiEncounter));
 
             mRiftPortalCount    = 0;
@@ -126,25 +130,56 @@ public:
 
         void OnPlayerEnter(Player* player) override
         {
-            if (GetData(TYPE_MEDIVH) == IN_PROGRESS)
-                return;
-
-            player->SendUpdateWorldState(WORLD_STATE_BM, 0);
+            player->SendUpdateWorldState(WORLD_STATE_BM, GetData(TYPE_MEDIVH) == IN_PROGRESS ? 1 : 0);
+            player->SendUpdateWorldState(WORLD_STATE_BM_SHIELD, mShieldPercent);
+            player->SendUpdateWorldState(WORLD_STATE_BM_RIFT, mRiftPortalCount);
         }
 
         void OnCreatureCreate(Creature* creature) override
         {
             if (creature->GetEntry() == NPC_MEDIVH)
                 _medivhGUID = creature->GetGUID();
+            else if (creature->ToTempSummon())
+                switch (creature->GetEntry())
+                {
+                    case NPC_TIME_RIFT: case NPC_RIFT_KEEPER: case NPC_RIFT_LORD:
+                    case NPC_CRONO_LORD_DEJA: case NPC_TEMPORUS: case NPC_AEONUS:
+                    case NPC_INFINITE_ASSASIN: case NPC_INFINITE_WHELP:
+                    case NPC_INFINITE_CRONOMANCER: case NPC_INFINITE_EXECUTIONER:
+                    case NPC_INFINITE_VANQUISHER:
+                        eventSummons.push_back(creature->GetGUID());
+                        break;
+                }
+        }
+
+        void ResetEvent()
+        {
+            Clear();
+            std::vector<ObjectGuid> oldSummons;
+            oldSummons.swap(eventSummons);
+            for (ObjectGuid guid : oldSummons)
+                if (Creature* summon = instance->GetCreature(guid))
+                    summon->DespawnOrUnsummon();
+            if (Creature* medivh = instance->GetCreature(_medivhGUID))
+            {
+                if (!medivh->IsAlive())
+                    medivh->Respawn();
+                medivh->CombatStop(true);
+                medivh->RemoveAllAuras();
+                medivh->SetHealth(medivh->GetMaxHealth());
+                medivh->AI()->Reset();
+            }
+            InitWorldState(false);
         }
 
         //what other conditions to check?
         bool CanProgressEvent()
         {
-            if (instance->GetPlayers().isEmpty())
-                return false;
-
-            return true;
+            for (auto const& reference : instance->GetPlayers())
+                if (Player* player = reference.GetSource())
+                    if (player->IsAlive() && !player->IsGameMaster())
+                        return true;
+            return false;
         }
 
         uint8 GetRiftWaveId()
@@ -169,8 +204,22 @@ public:
             switch (type)
             {
             case TYPE_MEDIVH:
+                if (m_auiEncounter[0] == DONE)
+                    return;
+                if (data == SPECIAL && m_auiEncounter[0] != IN_PROGRESS)
+                    return;
+                if (data == FAIL)
+                {
+                    m_auiEncounter[0] = FAIL;
+                    m_auiEncounter[1] = FAIL;
+                    Events.Reset();
+                    resetTimer = 10000;
+                    return;
+                }
                 if (data == SPECIAL && m_auiEncounter[0] == IN_PROGRESS)
                 {
+                    if (!mShieldPercent)
+                        return;
                     --mShieldPercent;
 
                     DoUpdateWorldState(WORLD_STATE_BM_SHIELD, mShieldPercent);
@@ -181,9 +230,8 @@ public:
                         {
                             if (medivh->IsAlive())
                             {
+                                SetData(TYPE_MEDIVH, FAIL);
                                 medivh->DealDamage(medivh, medivh->GetHealth(), NULL, DIRECT_DAMAGE, SPELL_SCHOOL_MASK_NORMAL, NULL, false);
-                                m_auiEncounter[0] = FAIL;
-                                m_auiEncounter[1] = NOT_STARTED;
                             }
                         }
                     }
@@ -192,6 +240,9 @@ public:
                 {
                     if (data == IN_PROGRESS)
                     {
+                        if (m_auiEncounter[0] == IN_PROGRESS || resetTimer)
+                            return;
+                        Clear();
                         TC_LOG_DEBUG("scripts", "Instance The Black Morass: Starting event.");
                         InitWorldState();
                         m_auiEncounter[1] = IN_PROGRESS;
@@ -200,6 +251,9 @@ public:
 
                     if (data == DONE)
                     {
+                        if (m_auiEncounter[0] != IN_PROGRESS || mRiftPortalCount != 18 || m_auiEncounter[1] != DONE)
+                            return;
+                        Events.Reset();
                         //this may be completed further out in the post-event
                         TC_LOG_DEBUG("scripts", "Instance The Black Morass: Event completed.");
                         Map::PlayerList const& players = instance->GetPlayers();
@@ -221,17 +275,42 @@ public:
                     }
 
                     m_auiEncounter[0] = data;
+                    if (data == DONE)
+                        SaveToDB();
                 }
                 break;
             case TYPE_RIFT:
                 if (data == SPECIAL)
                 {
+                    if (m_auiEncounter[0] != IN_PROGRESS || m_auiEncounter[1] != IN_PROGRESS)
+                        return;
                     if (mRiftPortalCount < 7)
                         ScheduleEventNextPortal(5000);
                 }
                 else
                     m_auiEncounter[1] = data;
                 break;
+            }
+        }
+
+        std::string GetSaveData() override
+        {
+            return GetData(TYPE_MEDIVH) == DONE ? "B M 1" : "B M 0";
+        }
+
+        void Load(char const* data) override
+        {
+            Clear();
+            if (!data)
+                return;
+            std::istringstream input(data);
+            char b, m;
+            uint32 complete;
+            if ((input >> b >> m >> complete) && b == 'B' && m == 'M' && complete == 1)
+            {
+                m_auiEncounter[0] = DONE;
+                m_auiEncounter[1] = DONE;
+                mRiftPortalCount = 18;
             }
         }
 
@@ -308,19 +387,31 @@ public:
                             temp->CastSpell(boss, SPELL_RIFT_CHANNEL, false);
                         }
                     }
+                    else
+                        SetData(TYPE_MEDIVH, FAIL);
                 }
+                else
+                    SetData(TYPE_MEDIVH, FAIL);
             }
         }
 
         void Update(uint32 diff) override
         {
+            if (resetTimer)
+            {
+                if (resetTimer <= diff)
+                    ResetEvent();
+                else
+                    resetTimer -= diff;
+                return;
+            }
             if (m_auiEncounter[1] != IN_PROGRESS)
                 return;
 
             //add delay timer?
             if (!CanProgressEvent())
             {
-                Clear();
+                SetData(TYPE_MEDIVH, FAIL);
                 return;
             }
 
@@ -328,10 +419,13 @@ public:
 
             if (Events.ExecuteEvent() == EVENT_NEXT_PORTAL)
             {
+                if (mRiftPortalCount >= 18)
+                    return;
                 ++mRiftPortalCount;
                 DoUpdateWorldState(WORLD_STATE_BM_RIFT, mRiftPortalCount);
                 DoSpawnPortal();
-                ScheduleEventNextPortal(RiftWaves[GetRiftWaveId()].NextPortalTime);
+                if (m_auiEncounter[1] == IN_PROGRESS)
+                    ScheduleEventNextPortal(RiftWaves[GetRiftWaveId()].NextPortalTime);
             }
         }
 

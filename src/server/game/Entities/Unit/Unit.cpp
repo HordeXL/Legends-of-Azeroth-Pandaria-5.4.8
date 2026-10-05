@@ -55,6 +55,7 @@
 #include "Spell.h"
 #include "SpellInfo.h"
 #include "SpellMgr.h"
+#include "SpellPowerVisuals.h"
 #include "TemporarySummon.h"
 #include "Totem.h"
 #include "Transport.h"
@@ -13426,6 +13427,33 @@ int32 Unit::GetMaxPower(Powers power) const
     return GetInt32Value(UNIT_FIELD_MAX_POWER + powerIndex);
 }
 
+void SpellPowerVisuals::UpdateWarlock(Player* player)
+{
+    if (!player || player->GetClass() != CLASS_WARLOCK || !player->IsInWorld())
+        return;
+
+    WarlockSpec spec = WarlockSpec::None;
+    if (player->IsAlive())
+        switch (player->GetSpecialization())
+        {
+            case SPEC_WARLOCK_AFFLICTION: spec = WarlockSpec::Affliction; break;
+            case SPEC_WARLOCK_DEMONOLOGY: spec = WarlockSpec::Demonology; break;
+            case SPEC_WARLOCK_DESTRUCTION: spec = WarlockSpec::Destruction; break;
+            default: break;
+        }
+
+    auto mask = WarlockMask(spec, player->GetPower(POWER_SOUL_SHARDS),
+        player->GetPower(POWER_BURNING_EMBERS), player->GetPower(POWER_DEMONIC_FURY), player->HasAura(56241));
+    for (std::size_t i = 0; i < WarlockSpells.size(); ++i)
+    {
+        bool wanted = (mask & (1u << i)) != 0;
+        if (wanted && !player->HasAura(WarlockSpells[i]))
+            player->CastSpell(player, WarlockSpells[i], true);
+        else if (!wanted && player->HasAura(WarlockSpells[i]))
+            player->RemoveAurasDueToSpell(WarlockSpells[i]);
+    }
+}
+
 void Unit::SetPower(Powers power, int32 val)
 {
     uint32 powerIndex = GetPowerIndex(power);
@@ -13494,6 +13522,14 @@ void Unit::SetPower(Powers power, int32 val)
         {
             if (power == effect->GetMiscValue())
             {
+                // These two client-only driver IDs have no Spell.dbc record.
+                // Synchronize their existing visual auras below instead of
+                // attempting to cast a nonexistent spell at each threshold.
+                uint32 trigger = effect->GetSpellEffectInfo().TriggerSpell;
+                if (GetTypeId() == TYPEID_PLAYER && GetClass() == CLASS_WARLOCK &&
+                    (trigger == 117197 || trigger == 122736))
+                    continue;
+
                 int32 newValue = val;
                 int32 threshold = effect->GetAmount();
 
@@ -13516,24 +13552,28 @@ void Unit::SetPower(Powers power, int32 val)
     {
         if (val > 0)
         {
+            // Glyph 57985 overrides 77487 with visual 127850 through aura 403.
+            // Keep the base aura so the client can also revert the glyph live.
+            RemoveAurasDueToSpell(127850);
             if (!HasAura(77487))
-            {
-                if (HasAura(57985))     // Glyph of Shadow Ravens
-                    CastSpell(this, 127850, true);
-                else                    // Shadow Orb visual
-                    CastSpell(this, 77487, true);
-            }
+                CastSpell(this, 77487, true);
         }
         else
         {
             RemoveAurasDueToSpell(77487);
             RemoveAurasDueToSpell(127850);
         }
-        if (val == GetMaxPower(power))  // Devouring Plague announcement
-            CastSpell(this, 124495, true);
+        if (val > 0 && val == GetMaxPower(power))  // Devouring Plague announcement
+        {
+            if (!HasAura(124495))
+                CastSpell(this, 124495, true);
+        }
         else
             RemoveAurasDueToSpell(124495);
     }
+
+    if (power == POWER_SOUL_SHARDS || power == POWER_BURNING_EMBERS || power == POWER_DEMONIC_FURY)
+        SpellPowerVisuals::UpdateWarlock(ToPlayer());
 }
 
 void Unit::SetMaxPower(Powers power, int32 val)

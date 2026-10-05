@@ -142,6 +142,7 @@ public:
         creators["riptide"] = &ShamanAiObjectContextInternal::riptide;
         creators["riptide on party"] = &ShamanAiObjectContextInternal::riptide_on_party;
         creators["stormstrike"] = &ShamanAiObjectContextInternal::stormstrike;
+        creators["shaman opening"] = [](PlayerbotAI* ai) -> Action* { return new CastShamanOpeningAction(ai); };
         creators["lava lash"] = &ShamanAiObjectContextInternal::lava_lash;
         creators["fire nova"] = &ShamanAiObjectContextInternal::fire_nova;
         creators["ancestral spirit"] = &ShamanAiObjectContextInternal::ancestral_spirit;

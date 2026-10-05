@@ -126,19 +126,59 @@ class boss_quagmirran : public CreatureScript
 enum eQuestMisc
 {
     QUEST_LOST_IN_ACTIONS = 29563,
+    QUEST_LOST_IN_ACTIONS_LEGACY = 9738,
+    GO_BITE_CAGE = 182094,
+    ACTION_FREE_BITE = 1,
 };
 
 class npc_naturalist_bite : public CreatureScript
 {
     public:
         npc_naturalist_bite() : CreatureScript("npc_naturalist_bite") { }
+
+        struct npc_naturalist_biteAI : public ScriptedAI
+        {
+            npc_naturalist_biteAI(Creature* creature) : ScriptedAI(creature), freed(false) { }
+
+            bool freed;
+
+            void Reset() override
+            {
+                freed = false;
+            }
+
+            void DoAction(int32 action) override
+            {
+                if (action != ACTION_FREE_BITE || freed)
+                    return;
+
+                freed = true;
+                if (GameObject* cage = me->FindNearestGameObject(GO_BITE_CAGE, 10.0f))
+                    cage->SetGoState(GO_STATE_ACTIVE);
+
+                Position exit = me->GetNearPosition(8.0f, 0.0f);
+                me->SetWalk(false);
+                me->GetMotionMaster()->MovePoint(0, exit);
+            }
+        };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return new npc_naturalist_biteAI(creature);
+        }
+
+        static bool HasDiscoveryQuest(Player* player)
+        {
+            return player->GetQuestStatus(QUEST_LOST_IN_ACTIONS) == QUEST_STATUS_INCOMPLETE ||
+                player->GetQuestStatus(QUEST_LOST_IN_ACTIONS_LEGACY) == QUEST_STATUS_INCOMPLETE;
+        }
     
-        bool OnGossipSelect(Player* player, Creature* creature, uint32 /*sender*/, uint32 action) override
+        bool OnGossipSelect(Player* player, Creature* creature, uint32 sender, uint32 action) override
         {
             player->PlayerTalkClass->ClearMenus();
     
-            if (action == GOSSIP_ACTION_INFO_DEF + 1)
-                player->KilledMonsterCredit(creature->GetEntry());
+            if (sender == GOSSIP_SENDER_MAIN && action == GOSSIP_ACTION_INFO_DEF + 1)
+                creature->AI()->DoAction(ACTION_FREE_BITE);
     
             player->CLOSE_GOSSIP_MENU();
     
@@ -150,8 +190,10 @@ class npc_naturalist_bite : public CreatureScript
             if (creature->IsQuestGiver())
                 player->PrepareQuestMenu(creature->GetGUID());
     
-            if (player->GetQuestStatus(QUEST_LOST_IN_ACTIONS) != QUEST_STATUS_INCOMPLETE)
-                return false;
+            // This is a discovery objective, not an escort objective. Credit each
+            // visitor independently, including after another player frees Bite.
+            if (HasDiscoveryQuest(player))
+                player->KilledMonsterCredit(creature->GetEntry());
     
             player->ADD_GOSSIP_ITEM_DB(player->GetDefaultGossipMenuForSource(creature), 0, GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
     

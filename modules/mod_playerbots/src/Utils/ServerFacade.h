@@ -34,6 +34,7 @@ public:
 
     void SetFacingTo(Player* bot, WorldObject* wo, bool force = false);
     Unit* GetChaseTarget(Unit* target);
+    Unit* GetFollowTarget(Unit* target);
 
     void SendPacket(Player *player, WorldPacket* packet);
 };

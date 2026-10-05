@@ -408,6 +408,84 @@ void WorldSession::HandleGroupUninviteGuidOpcode(WorldPacket& recvData)
         return;
     }
 
+    // Playerbots do not participate reliably in LFG boot votes. A human
+    // selecting Vote to Kick for a bot should remove that bot immediately
+    // and run the normal successful LFG-kick cleanup path.
+    if (!IsBot())
+    {
+        if (Group* group = GetPlayer()->GetGroup())
+        {
+            if (group->isLFGGroup() && group->IsMember(guid))
+            {
+                Player* target = ObjectAccessor::FindConnectedPlayer(guid);
+                bool const serverControlledTarget =
+                    sLFGMgr->IsProposalAutoAcceptPlayer(guid) ||
+                    (target && target->GetSession() && target->GetSession()->IsBot());
+                if (serverControlledTarget)
+                {
+                    TC_LOG_INFO("server",
+                        "LFG playerbot immediate kick requester=%s target-guid=%u connected=%u alive=%u",
+                        GetPlayer()->GetName().c_str(), guid.GetCounter(), target ? 1u : 0u,
+                        target && target->IsAlive() ? 1u : 0u);
+
+                    ObjectGuid const groupGuid = group->GetGUID();
+                    Player::RemoveFromGroup(group, guid, GROUP_REMOVEMETHOD_KICK_LFG,
+                        GetPlayer()->GetGUID(), reason.c_str());
+
+                    // Continue the current dungeon queue immediately. The
+                    // request-driven playerbot coordinator reads the open
+                    // bucket's missing tank/healer/damage slot and stages
+                    // a replacement bot for that exact role.
+                    if (GetPlayer()->GetGroup() == group)
+                    {
+                        uint32 const queueId = sLFGMgr->GetActiveQueueId(groupGuid);
+                        uint32 const dungeonId = sLFGMgr->GetDungeon(groupGuid);
+                        if (queueId && dungeonId)
+                        {
+                            auto getMemberRole = [group, queueId](Player* member)
+                            {
+                                uint8 roles = sLFGMgr->GetRoles(member->GetGUID(), queueId);
+                                if (!(roles & (lfg::PLAYER_ROLE_TANK |
+                                    lfg::PLAYER_ROLE_HEALER | lfg::PLAYER_ROLE_DAMAGE)))
+                                {
+                                    switch (member->GetRoleForGroup(member->GetTalentSpecialization()))
+                                    {
+                                        case ROLES_TANK:   roles = lfg::PLAYER_ROLE_TANK;   break;
+                                        case ROLES_HEALER: roles = lfg::PLAYER_ROLE_HEALER; break;
+                                        default:           roles = lfg::PLAYER_ROLE_DAMAGE; break;
+                                    }
+                                }
+                                if (group->IsLeader(member->GetGUID()))
+                                    roles |= lfg::PLAYER_ROLE_LEADER;
+                                return roles;
+                            };
+
+                            lfg::LfgDungeonSet dungeons;
+                            dungeons.insert(dungeonId);
+                            sLFGMgr->JoinLfg(GetPlayer(),
+                                lfg::LfgRoles(getMemberRole(GetPlayer())), dungeons,
+                                "automatic playerbot replacement");
+
+                            // Continuing an existing dungeon normally opens
+                            // a role-check dialog. Preserve every survivor's
+                            // already assigned role so headless bots do not
+                            // leave that role check waiting for client input.
+                            for (GroupReference* itr = group->GetFirstMember(); itr;
+                                itr = itr->next())
+                            {
+                                Player* member = itr->GetSource();
+                                if (member && member != GetPlayer())
+                                    sLFGMgr->UpdateRoleCheck(groupGuid,
+                                        member->GetGUID(), getMemberRole(member));
+                            }
+                        }
+                    }
+                    return;
+                }
+            }
+        }
+    }
+
     uint32 val = 0;
     PartyResult res = GetPlayer()->CanUninviteFromGroup(NULL, guid, val);
     if (res != ERR_PARTY_RESULT_OK)

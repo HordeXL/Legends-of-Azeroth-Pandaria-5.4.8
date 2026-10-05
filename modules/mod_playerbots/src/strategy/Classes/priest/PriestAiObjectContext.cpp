@@ -115,6 +115,7 @@ public:
         creators["holy fire"] = &PriestAiObjectContextInternal::holy_fire;
         creators["smite"] = &PriestAiObjectContextInternal::smite;
         creators["mind blast"] = &PriestAiObjectContextInternal::mind_blast;
+        creators["shadow opening"] = [](PlayerbotAI* ai) -> Action* { return new CastShadowOpeningAction(ai); };
         creators["shadowform"] = &PriestAiObjectContextInternal::shadowform;
         creators["remove shadowform"] = &PriestAiObjectContextInternal::remove_shadowform;
         creators["holy nova"] = &PriestAiObjectContextInternal::holy_nova;

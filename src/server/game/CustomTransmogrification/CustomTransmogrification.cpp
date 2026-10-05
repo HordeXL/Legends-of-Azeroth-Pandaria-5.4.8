@@ -1,4 +1,4 @@
-﻿/*
+/*
 * This file is part of the Pandaria 5.4.8 Project. See THANKS file for Copyright information
 *
 * This program is free software; you can redistribute it and/or modify it
@@ -16,6 +16,8 @@
 */
 
 #include "CustomTransmogrification.h"
+#include "Bag.h"
+#include "Chat.h"
 #pragma execution_character_set("UTF-8")
 
 
@@ -35,6 +37,300 @@ Transmogrification* Transmogrification::instance()
     return &instance;
 }
 
+namespace
+{
+bool IsCollectibleAppearance(uint32 entry)
+{
+    ItemTemplate const* proto = sObjectMgr->GetItemTemplate(entry);
+    if (!proto || !proto->DisplayInfoID ||
+        (proto->Class != ITEM_CLASS_ARMOR && proto->Class != ITEM_CLASS_WEAPON))
+        return false;
+    switch (proto->InventoryType)
+    {
+        case INVTYPE_NON_EQUIP: case INVTYPE_BAG: case INVTYPE_FINGER:
+        case INVTYPE_TRINKET: case INVTYPE_AMMO: case INVTYPE_QUIVER: case INVTYPE_RELIC:
+            return false;
+        default: return true;
+    }
+}
+}
+
+void Transmogrification::LoadCollection(uint32 account)
+{
+    if (collections.count(account))
+        return;
+    auto& entries = collections[account];
+    if (QueryResult saved = CharacterDatabase.PQuery(
+        "SELECT itemEntry FROM account_transmog_appearances WHERE accountId = %u", account))
+        do { entries.insert((*saved)[0].GetUInt32()); } while (saved->NextRow());
+
+    // Include offline characters on this account, but not mail, auctions or
+    // guild-bank contents that have not been taken into personal inventory.
+    QueryResult owned = CharacterDatabase.PQuery(
+        "SELECT i.itemEntry FROM character_inventory v JOIN characters c ON c.guid=v.guid "
+        "JOIN item_instance i ON i.guid=v.item WHERE c.account=%u "
+        "UNION SELECT v.itemEntry FROM character_void_storage v JOIN characters c ON c.guid=v.playerGuid WHERE c.account=%u "
+        "UNION SELECT t.FakeEntry FROM custom_transmogrification t JOIN characters c ON c.guid=t.Owner WHERE c.account=%u "
+        "UNION SELECT i.transmogrifyId FROM character_inventory v JOIN characters c ON c.guid=v.guid "
+        "JOIN item_instance i ON i.guid=v.item WHERE c.account=%u AND i.transmogrifyId<>0",
+        account, account, account, account);
+    if (!owned)
+        return;
+    CharacterDatabaseTransaction trans = CharacterDatabase.BeginTransaction();
+    do
+    {
+        uint32 entry = (*owned)[0].GetUInt32();
+        if (IsCollectibleAppearance(entry) && entries.insert(entry).second)
+            trans->PAppend("INSERT IGNORE INTO account_transmog_appearances (accountId,itemEntry) VALUES (%u,%u)", account, entry);
+    } while (owned->NextRow());
+    CharacterDatabase.CommitTransaction(trans);
+}
+
+void Transmogrification::LearnAppearance(Player* player, uint32 entry, bool notify)
+{
+    if (!player || !player->GetSession() || player->GetSession()->IsBot() ||
+        player->GetSession()->GetRemoteAddress().empty() || !IsCollectibleAppearance(entry))
+        return;
+    uint32 account = player->GetSession()->GetAccountId();
+    bool announce = notify && player->IsInWorld();
+    {
+        std::lock_guard<std::mutex> lock(collectionMutex);
+        LoadCollection(account);
+        auto& entries = collections[account];
+        if (entries.count(entry))
+            return;
+
+        // Different item entries can share an appearance. Save both for
+        // compatibility filtering, but only announce a newly collected look.
+        if (announce)
+            for (uint32 known : entries)
+                if (ItemTemplate const* proto = sObjectMgr->GetItemTemplate(known))
+                    if (proto->DisplayInfoID == sObjectMgr->GetItemTemplate(entry)->DisplayInfoID)
+                    {
+                        announce = false;
+                        break;
+                    }
+        entries.insert(entry);
+        CharacterDatabase.PExecute("INSERT IGNORE INTO account_transmog_appearances (accountId,itemEntry) VALUES (%u,%u)", account, entry);
+    }
+    if (announce)
+    {
+        std::string message = GetItemLink(entry, player->GetSession()) + " has been added to your appearance collection.";
+        ChatHandler(player->GetSession()).SendSysMessage(message.c_str());
+    }
+}
+
+std::vector<uint32> Transmogrification::GetCollection(Player* player)
+{
+    if (!player || !player->GetSession() || player->GetSession()->IsBot() || player->GetSession()->GetRemoteAddress().empty())
+        return {};
+    uint32 account = player->GetSession()->GetAccountId();
+    std::lock_guard<std::mutex> lock(collectionMutex);
+    LoadCollection(account);
+    auto const& entries = collections[account];
+    return {entries.begin(), entries.end()};
+}
+
+bool Transmogrification::HasAppearance(Player* player, uint32 entry)
+{
+    if (!player || !player->GetSession() || player->GetSession()->IsBot() || player->GetSession()->GetRemoteAddress().empty())
+        return false;
+    std::lock_guard<std::mutex> lock(collectionMutex);
+    uint32 account = player->GetSession()->GetAccountId();
+    LoadCollection(account);
+    return collections[account].count(entry) != 0;
+}
+
+void Transmogrification::CollectInventory(Player* player)
+{
+    if (!player || !player->GetSession() || player->GetSession()->IsBot() || player->GetSession()->GetRemoteAddress().empty()) return;
+    auto collect = [&](Item* item)
+    {
+        if (!item) return;
+        LearnAppearance(player, item->GetEntry(), false);
+        LearnAppearance(player, item->GetVisibleEntry(), false);
+    };
+    for (uint8 slot = EQUIPMENT_SLOT_START; slot < BANK_SLOT_BAG_END; ++slot)
+        collect(player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot));
+    for (uint8 slot = INVENTORY_SLOT_BAG_START; slot < BANK_SLOT_BAG_END; ++slot)
+        if (slot < INVENTORY_SLOT_BAG_END || slot >= BANK_SLOT_BAG_START)
+            if (Bag* bag = player->GetBagByPos(slot))
+                for (uint32 i = 0; i < bag->GetBagSize(); ++i)
+                    collect(player->GetItemByPos(slot, i));
+    for (uint8 slot = 0; slot < VOID_STORAGE_MAX_SLOT; ++slot)
+        if (VoidStorageItem* item = player->GetVoidStorageItem(slot))
+            LearnAppearance(player, item->ItemEntry, false);
+}
+
+TransmogTrinityStrings Transmogrification::TransmogrifyAppearance(Player* player, uint32 entry, uint8 slot)
+{
+    if (slot >= EQUIPMENT_SLOT_END) return LANG_ERR_TRANSMOG_INVALID_SLOT;
+    if (!HasAppearance(player, entry)) return LANG_ERR_TRANSMOG_MISSING_SRC_ITEM;
+    Item* target = player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
+    if (!target) return LANG_ERR_TRANSMOG_MISSING_DEST_ITEM;
+    if (!CanTransmogrifyItemWithItem(player, target->GetTemplate(), sObjectMgr->GetItemTemplate(entry), true))
+        return LANG_ERR_TRANSMOG_INVALID_ITEMS;
+    int64 cost = std::max<int64>(0, int64(GetSpecialPrice(target->GetTemplate()) * ScaledCostModifier) + CopperCost);
+    if (!player->HasEnoughMoney(cost)) return LANG_ERR_TRANSMOG_NOT_ENOUGH_MONEY;
+    if (RequireToken && !player->HasItemCount(TokenEntry, TokenAmount))
+        return LANG_ERR_TRANSMOG_NOT_ENOUGH_TOKENS;
+    if (RequireToken) player->DestroyItemCount(TokenEntry, TokenAmount, true);
+    player->ModifyMoney(-cost);
+    SetFakeEntry(player, entry, slot, target);
+    target->SetBinding(true);
+    target->UpdatePlayedTime(player);
+    target->SetNotRefundable(player);
+    target->ClearSoulboundTradeable(player);
+    target->SetState(ITEM_CHANGED, player);
+    return LANG_ERR_TRANSMOG_OK;
+}
+
+bool Transmogrification::HasPreview(Player* player)
+{
+    std::lock_guard<std::mutex> lock(previewMutex);
+    return previews.count(player->GetGUID()) != 0;
+}
+
+uint32 Transmogrification::GetVisibleEntryForSave(Player* player, uint8 slot)
+{
+    if (GetPreviewEntry(player, slot))
+    {
+        Item* item = player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
+        return item ? item->GetVisibleEntry() : 0;
+    }
+    return player->GetUInt32Value(PLAYER_FIELD_VISIBLE_ITEMS + slot * 2);
+}
+
+uint32 Transmogrification::GetPreviewEntry(Player* player, uint8 slot)
+{
+    std::lock_guard<std::mutex> lock(previewMutex);
+    auto session = previews.find(player->GetGUID());
+    if (session == previews.end())
+        return 0;
+    auto item = session->second.items.find(slot);
+    return item == session->second.items.end() ? 0 : item->second.entry;
+}
+
+void Transmogrification::CancelPreview(Player* player)
+{
+    PreviewSession preview;
+    {
+        std::lock_guard<std::mutex> lock(previewMutex);
+        auto found = previews.find(player->GetGUID());
+        if (found == previews.end())
+            return;
+        preview = found->second;
+        previews.erase(found);
+    }
+    // Restore the currently equipped items, not an old cached appearance:
+    // equipment or permanent transmogrification may have changed meanwhile.
+    for (auto const& pair : preview.items)
+        player->SetVisibleItemSlot(pair.first,
+            player->GetItemByPos(INVENTORY_SLOT_BAG_0, pair.first));
+}
+
+TransmogTrinityStrings Transmogrification::PreviewAppearance(Player* player,
+    Creature* npc, uint32 entry, uint8 slot)
+{
+    if (slot >= EQUIPMENT_SLOT_END)
+        return LANG_ERR_TRANSMOG_INVALID_SLOT;
+    if (!player->IsAlive() || player->IsInCombat() ||
+        !player->GetNPCIfCanInteractWith(npc->GetGUID(), UNIT_NPC_FLAG_GOSSIP))
+        return LANG_ERR_TRANSMOG_INVALID_ITEMS;
+    Item* item = player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
+    if (!item)
+        return LANG_ERR_TRANSMOG_MISSING_DEST_ITEM;
+    if (entry != item->GetEntry() && !HasAppearance(player, entry))
+        return LANG_ERR_TRANSMOG_MISSING_SRC_ITEM;
+    if (entry != item->GetEntry() && !CanTransmogrifyItemWithItem(player, item->GetTemplate(),
+        sObjectMgr->GetItemTemplate(entry), true))
+        return LANG_ERR_TRANSMOG_INVALID_ITEMS;
+
+    UpdatePreview(player, 0);
+    {
+        std::lock_guard<std::mutex> lock(previewMutex);
+        PreviewSession& preview = previews[player->GetGUID()];
+        preview.npc = npc->GetGUID();
+        preview.remaining = 300000;
+        if (entry == item->GetVisibleEntry())
+            preview.items.erase(slot);
+        else
+            preview.items[slot] = {item->GetGUID(), item->GetVisibleEntry(), entry};
+        if (preview.items.empty())
+            previews.erase(player->GetGUID());
+    }
+    // Cosmetic update only: no item modifiers, binding, payment or DB writes.
+    player->SetUInt32Value(PLAYER_FIELD_VISIBLE_ITEMS + slot * 2, entry);
+    return LANG_ERR_TRANSMOG_OK;
+}
+
+void Transmogrification::UpdatePreview(Player* player, uint32 diff)
+{
+    PreviewSession preview;
+    {
+        std::lock_guard<std::mutex> lock(previewMutex);
+        auto found = previews.find(player->GetGUID());
+        if (found == previews.end())
+            return;
+        found->second.remaining -= std::min(diff, found->second.remaining);
+        preview = found->second;
+    }
+    bool invalid = !preview.remaining || !player->IsAlive() || player->IsInCombat() ||
+        !player->GetNPCIfCanInteractWith(preview.npc, UNIT_NPC_FLAG_GOSSIP);
+    for (auto const& pair : preview.items)
+    {
+        Item* item = player->GetItemByPos(INVENTORY_SLOT_BAG_0, pair.first);
+        if (!item || item->GetGUID() != pair.second.item ||
+            item->GetVisibleEntry() != pair.second.originalEntry)
+            invalid = true;
+    }
+    if (invalid)
+        CancelPreview(player);
+}
+
+TransmogTrinityStrings Transmogrification::AcceptPreview(Player* player, Creature* npc)
+{
+    UpdatePreview(player, 0);
+    PreviewSession preview;
+    {
+        std::lock_guard<std::mutex> lock(previewMutex);
+        auto found = previews.find(player->GetGUID());
+        if (found == previews.end() || found->second.npc != npc->GetGUID())
+            return LANG_ERR_TRANSMOG_INVALID_ITEMS;
+        preview = found->second;
+    }
+    // Validate the complete outfit before applying any slot. This feature is
+    // free; refuse a paid configuration instead of partially charging/applying.
+    if (RequireToken)
+        return LANG_ERR_TRANSMOG_NOT_ENOUGH_TOKENS;
+    for (auto const& pair : preview.items)
+    {
+        Item* item = player->GetItemByPos(INVENTORY_SLOT_BAG_0, pair.first);
+        if (!item || item->GetGUID() != pair.second.item ||
+            (pair.second.entry != item->GetEntry() &&
+                (!HasAppearance(player, pair.second.entry) ||
+                !CanTransmogrifyItemWithItem(player, item->GetTemplate(),
+                    sObjectMgr->GetItemTemplate(pair.second.entry), true))))
+        {
+            CancelPreview(player);
+            return LANG_ERR_TRANSMOG_INVALID_ITEMS;
+        }
+        if (std::max<int64>(0, int64(GetSpecialPrice(item->GetTemplate()) *
+            ScaledCostModifier) + CopperCost) != 0)
+            return LANG_ERR_TRANSMOG_NOT_ENOUGH_MONEY;
+    }
+    CancelPreview(player);
+    for (auto const& pair : preview.items)
+    {
+        Item* item = player->GetItemByPos(INVENTORY_SLOT_BAG_0, pair.first);
+        if (pair.second.entry == item->GetEntry())
+            DeleteFakeEntry(player, pair.first, item);
+        else
+            TransmogrifyAppearance(player, pair.second.entry, pair.first);
+    }
+    return LANG_ERR_TRANSMOG_OK;
+}
+
 #ifdef PRESETS
 void Transmogrification::PresetTransmog(Player* player, Item* itemTransmogrified, uint32 fakeEntry, uint8 slot)
 {
@@ -46,7 +342,8 @@ void Transmogrification::PresetTransmog(Player* player, Item* itemTransmogrified
         return;
     if (slot >= EQUIPMENT_SLOT_END)
         return;
-    if (!CanTransmogrifyItemWithItem(player, itemTransmogrified->GetTemplate(), sObjectMgr->GetItemTemplate(fakeEntry)))
+    if (!HasAppearance(player, fakeEntry) ||
+        !CanTransmogrifyItemWithItem(player, itemTransmogrified->GetTemplate(), sObjectMgr->GetItemTemplate(fakeEntry), true))
         return;
 
     // [AZTH] Custom
@@ -149,20 +446,20 @@ const char* Transmogrification::GetSlotName(uint8 slot, WorldSession* /*session*
 
     switch (slot)
     {
-        case EQUIPMENT_SLOT_HEAD: return  "Head-Cabeza";// session->GetTrinityString(LANG_SLOT_NAME_HEAD);
-        case EQUIPMENT_SLOT_SHOULDERS: return  "Shoulders-Hombrera";// session->GetTrinityString(LANG_SLOT_NAME_SHOULDERS);
-        case EQUIPMENT_SLOT_BODY: return  "Shirt-Camisa";// session->GetTrinityString(LANG_SLOT_NAME_BODY);
-        case EQUIPMENT_SLOT_CHEST: return  "Chest-Pechera";// session->GetTrinityString(LANG_SLOT_NAME_CHEST);
-        case EQUIPMENT_SLOT_WAIST: return  "Waist-Cintura";// session->GetTrinityString(LANG_SLOT_NAME_WAIST);
-        case EQUIPMENT_SLOT_LEGS: return  "Legs-Piernas";// session->GetTrinityString(LANG_SLOT_NAME_LEGS);
-        case EQUIPMENT_SLOT_FEET: return  "Feet-Botas";// session->GetTrinityString(LANG_SLOT_NAME_FEET);
-        case EQUIPMENT_SLOT_WRISTS: return  "Wrists-Brazales";// session->GetTrinityString(LANG_SLOT_NAME_WRISTS);
-        case EQUIPMENT_SLOT_HANDS: return  "Hands-Manos";// session->GetTrinityString(LANG_SLOT_NAME_HANDS);
-        case EQUIPMENT_SLOT_BACK: return  "Back-Capa";// session->GetTrinityString(LANG_SLOT_NAME_BACK);
-        case EQUIPMENT_SLOT_MAINHAND: return  "Main hand-Arma Derecha";// session->GetTrinityString(LANG_SLOT_NAME_MAINHAND);
-        case EQUIPMENT_SLOT_OFFHAND: return  "Off hand-Arma Izquierda";// session->GetTrinityString(LANG_SLOT_NAME_OFFHAND);
-        case EQUIPMENT_SLOT_RANGED: return  "Ranged-Arma de Rango";// session->GetTrinityString(LANG_SLOT_NAME_RANGED);
-        case EQUIPMENT_SLOT_TABARD: return  "Tabard-Tabardo";// session->GetTrinityString(LANG_SLOT_NAME_TABARD);
+        case EQUIPMENT_SLOT_HEAD: return  "Head";// session->GetTrinityString(LANG_SLOT_NAME_HEAD);
+        case EQUIPMENT_SLOT_SHOULDERS: return  "Shoulders";// session->GetTrinityString(LANG_SLOT_NAME_SHOULDERS);
+        case EQUIPMENT_SLOT_BODY: return  "Shirt";// session->GetTrinityString(LANG_SLOT_NAME_BODY);
+        case EQUIPMENT_SLOT_CHEST: return  "Chest";// session->GetTrinityString(LANG_SLOT_NAME_CHEST);
+        case EQUIPMENT_SLOT_WAIST: return  "Waist";// session->GetTrinityString(LANG_SLOT_NAME_WAIST);
+        case EQUIPMENT_SLOT_LEGS: return  "Legs";// session->GetTrinityString(LANG_SLOT_NAME_LEGS);
+        case EQUIPMENT_SLOT_FEET: return  "Feet";// session->GetTrinityString(LANG_SLOT_NAME_FEET);
+        case EQUIPMENT_SLOT_WRISTS: return  "Wrists";// session->GetTrinityString(LANG_SLOT_NAME_WRISTS);
+        case EQUIPMENT_SLOT_HANDS: return  "Hands";// session->GetTrinityString(LANG_SLOT_NAME_HANDS);
+        case EQUIPMENT_SLOT_BACK: return  "Back";// session->GetTrinityString(LANG_SLOT_NAME_BACK);
+        case EQUIPMENT_SLOT_MAINHAND: return  "Main Hand";// session->GetTrinityString(LANG_SLOT_NAME_MAINHAND);
+        case EQUIPMENT_SLOT_OFFHAND: return  "Off Hand";// session->GetTrinityString(LANG_SLOT_NAME_OFFHAND);
+        case EQUIPMENT_SLOT_RANGED: return  "Ranged";// session->GetTrinityString(LANG_SLOT_NAME_RANGED);
+        case EQUIPMENT_SLOT_TABARD: return  "Tabard";// session->GetTrinityString(LANG_SLOT_NAME_TABARD);
         default: return NULL;
     }
 }
@@ -298,14 +595,13 @@ uint32 Transmogrification::GetFakeEntry(ObjectGuid itemGUID) const
     return itr3->second.GetCounter();
 }
 
-void Transmogrification::UpdateItem(Player* player, Item* item, uint32 newItemId) const
+void Transmogrification::UpdateItem(Player* player, Item* item, uint32 /*newItemId*/) const
 {
     TC_LOG_DEBUG("Transmogrification.log", "Transmogrification::UpdateItem");
 
     if (item->IsEquipped())
     {
-        Item* newItem = player->GetItemByEntry(newItemId);
-        player->SetVisibleItemSlot(item->GetSlot(), newItem ? newItem : item);
+        player->SetVisibleItemSlot(item->GetSlot(), item);
         if (player->IsInWorld())
             item->SendUpdateToPlayer(player);
     }
@@ -316,6 +612,8 @@ void Transmogrification::DeleteFakeEntry(Player* player, uint8 /*slot*/, Item* i
     //if (!GetFakeEntry(item))
     //    return false;
     DeleteFakeFromDB(itemTransmogrified->GetGUID(), trans);
+    itemTransmogrified->RemoveDynamicModifier(ITEM_MODIFIER_INDEX_TRANSMOGRIFICATION, player);
+    itemTransmogrified->SetState(ITEM_CHANGED, player);
     UpdateItem(player, itemTransmogrified, 0);
 }
 
@@ -324,6 +622,8 @@ void Transmogrification::SetFakeEntry(Player* player, uint32 newEntry, uint8 /*s
     ObjectGuid itemGUID = itemTransmogrified->GetGUID();
     entryMap[player->GetGUID()][itemGUID] = ObjectGuid(uint64(newEntry));
     dataMap[itemGUID] = player->GetGUID();
+    itemTransmogrified->SetDynamicModifier(ITEM_MODIFIER_INDEX_TRANSMOGRIFICATION, newEntry, player);
+    itemTransmogrified->SetState(ITEM_CHANGED, player);
     CharacterDatabase.PExecute("REPLACE INTO custom_transmogrification (GUID, FakeEntry, Owner) VALUES (%u, %u, %u)", itemGUID.GetCounter(), newEntry, player->GetGUID().GetCounter());
     CharacterDatabase.PExecute("UPDATE item_instance SET transmogrifyId = %u WHERE guid = %u", newEntry, itemGUID.GetCounter());
     UpdateItem(player, itemTransmogrified, newEntry);
@@ -419,7 +719,7 @@ TransmogTrinityStrings Transmogrification::Transmogrify(Player* player, ObjectGu
     return LANG_ERR_TRANSMOG_OK;
 }
 
-bool Transmogrification::CanTransmogrifyItemWithItem(Player* player, ItemTemplate const* target, ItemTemplate const* source) const
+bool Transmogrification::CanTransmogrifyItemWithItem(Player* player, ItemTemplate const* target, ItemTemplate const* source, bool collected) const
 {
     if (!target || !source)
         return false;
@@ -427,7 +727,7 @@ bool Transmogrification::CanTransmogrifyItemWithItem(Player* player, ItemTemplat
     if (source->ItemId == target->ItemId)
         return false;
 
-    if (!SuitableForTransmogrification(player, target) || !SuitableForTransmogrification(player, source)) // if (!transmogrified->CanTransmogrify() || !transmogrifier->CanBeTransmogrified())
+    if (!SuitableForTransmogrification(player, target, collected) || !SuitableForTransmogrification(player, source, collected))
         return false;
 
     if (source->InventoryType == INVTYPE_BAG ||
@@ -485,7 +785,7 @@ bool hasTransmogStats(ItemTemplate const* proto)
     return false;
 }
 
-bool Transmogrification::SuitableForTransmogrification(Player* player, ItemTemplate const* proto) const
+bool Transmogrification::SuitableForTransmogrification(Player* player, ItemTemplate const* proto, bool ignoreQuality) const
 {
     // ItemTemplate const* proto = item->GetTemplate();
     if (!player || !proto)
@@ -505,7 +805,7 @@ bool Transmogrification::SuitableForTransmogrification(Player* player, ItemTempl
     if (!AllowFishingPoles && proto->Class == ITEM_CLASS_WEAPON && proto->SubClass == ITEM_SUBCLASS_WEAPON_FISHING_POLE)
         return false;
 
-    if (!IsAllowedQuality(proto->Quality)) // (proto->Quality == ITEM_QUALITY_LEGENDARY)
+    if (!ignoreQuality && !IsAllowedQuality(proto->Quality))
         return false;
 
     if ((proto->Flags2 & ITEM_FLAGS_EXTRA_HORDE_ONLY) && player->GetTeamId() != TEAM_HORDE)

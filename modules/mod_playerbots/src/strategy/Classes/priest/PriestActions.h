@@ -96,6 +96,20 @@ SPELL_ACTION(CastShadowWordDeathAction, "shadow word: death");
 DEBUFF_CHECKISOWNER_ACTION(CastPowerWordPainAction, "shadow word: pain");
 DEBUFF_ENEMY_ACTION(CastPowerWordPainOnAttackerAction, "shadow word: pain");
 SPELL_ACTION(CastMindBlastAction, "mind blast");
+
+// Establish Shadow's own damage/threat before spending several globals on
+// DoT setup. This action is useful only for the first hit of a PvE pull.
+class CastShadowOpeningAction : public Action
+{
+public:
+    CastShadowOpeningAction(PlayerbotAI* ai) : Action(ai, "shadow opening") {}
+
+    bool isUseful() override;
+    bool Execute(Event event) override;
+    std::string const GetTargetName() override { return "current target"; }
+    ActionThreatType getThreatType() override { return ActionThreatType::Single; }
+};
+
 SPELL_ACTION(CastPsychicScreamAction, "psychic scream");
 DEBUFF_ACTION(CastMindSootheAction, "mind soothe");
 BUFF_ACTION_U(CastFadeAction, "fade", bot->GetGroup());

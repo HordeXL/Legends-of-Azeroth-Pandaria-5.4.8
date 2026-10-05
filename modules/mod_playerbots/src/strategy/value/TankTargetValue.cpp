@@ -1,3 +1,4 @@
+#include "AhnQirajStrategy.h"
 #include "TankTargetValue.h"
 
 #include "AttackersValue.h"
@@ -16,6 +17,14 @@ public:
     {
         if (!creature || !creature->IsAlive())
         {
+            return;
+        }
+        if (foundHighPriority)
+            return;
+        if (IsHighPriority(creature))
+        {
+            result = creature;
+            foundHighPriority = true;
             return;
         }
         Player* bot = botAI->GetBot();
@@ -61,6 +70,14 @@ public:
         }
         if (!attacker->IsAlive())
         {
+            return;
+        }
+        if (foundHighPriority)
+            return;
+        if (IsHighPriority(attacker))
+        {
+            result = attacker;
+            foundHighPriority = true;
             return;
         }
         if (!result || IsBetter(attacker, result))
@@ -118,6 +135,8 @@ public:
 
 Unit* TankTargetValue::Calculate()
 {
+    if (AhnQirajStrategy::IsActive(bot))
+        return AhnQirajStrategy::BuildPlan(bot).target;
     // FindTargetForTankStrategy strategy(botAI);
     FindTankTargetSmartStrategy strategy(botAI);
     return FindTarget(&strategy);

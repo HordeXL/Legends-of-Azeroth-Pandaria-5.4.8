@@ -500,6 +500,125 @@ public:
     }
 };
 
+namespace TwilightSkies
+{
+    enum Data : uint32
+    {
+        QUEST_TWILIGHT_SKIES         = 26388,
+        NPC_QUEST_TRACKER            = 42977,
+        NPC_ZEPPELIN_FORMATION_1     = 42241,
+        NPC_ZEPPELIN_FORMATION_2     = 42245,
+        NPC_ZEPPELIN_FORMATION_3     = 42246,
+        NPC_ZEPPELIN_FORMATION_4     = 42247,
+        NPC_DEATHWING_RIDE_VEHICLE   = 51033,
+        SPELL_TRANSPORT_PHASE        = 85287,
+        SPELL_PARACHUTE              = 79397,
+        SPELL_PARACHUTE_FLING        = 94154,
+        SPELL_ENGINE_OUT_OF_CONTROL  = 94268,
+        SPELL_EXPLOSION_SOUND        = 94274,
+    };
+
+    bool IsZeppelinVehicle(Unit const* vehicle)
+    {
+        if (!vehicle)
+            return false;
+
+        switch (vehicle->GetEntry())
+        {
+            case NPC_ZEPPELIN_FORMATION_1:
+            case NPC_ZEPPELIN_FORMATION_2:
+            case NPC_ZEPPELIN_FORMATION_3:
+            case NPC_ZEPPELIN_FORMATION_4:
+            case NPC_DEATHWING_RIDE_VEHICLE:
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    bool IsAtZeppelin(Player const* player)
+    {
+        if (IsZeppelinVehicle(player->GetVehicleBase()))
+            return true;
+
+        // The event zeppelin uses client-side formation vehicles, so a player
+        // standing on its deck does not always have a server-side vehicle base.
+        if (player->GetMapId() == 1 && player->GetAreaId() == 4828 &&
+            player->GetPositionZ() > 125.0f && player->GetDistance2d(2669.95f, -6176.68f) < 90.0f)
+            return true;
+
+        return player->GetMapId() == 0 && player->GetZoneId() == 4922 &&
+            player->GetPositionZ() > 80.0f && player->GetDistance2d(-3921.55f, -6781.33f) < 120.0f;
+    }
+
+    class CrashEvent final : public BasicEvent
+    {
+    public:
+        explicit CrashEvent(ObjectGuid playerGuid) : _playerGuid(playerGuid) { }
+
+        bool Execute(uint64 /*executionTime*/, uint32 /*diff*/) override
+        {
+            Player* player = ObjectAccessor::FindPlayer(_playerGuid);
+            if (!player || player->GetQuestStatus(QUEST_TWILIGHT_SKIES) != QUEST_STATUS_INCOMPLETE)
+                return true;
+
+            // Do not pull a player back if they left the flight before the failsafe fired.
+            if (!IsZeppelinVehicle(player->GetVehicleBase()) &&
+                !((player->GetMapId() == 1 && player->GetZoneId() == 16) ||
+                  (player->GetMapId() == 0 && player->GetZoneId() == 4922)))
+                return true;
+
+            player->CastSpell(player, SPELL_ENGINE_OUT_OF_CONTROL, true);
+            player->CastSpell(player, SPELL_EXPLOSION_SOUND, true);
+            player->ExitVehicle();
+            player->KilledMonsterCredit(NPC_QUEST_TRACKER);
+            player->RemoveAurasDueToSpell(SPELL_TRANSPORT_PHASE);
+            player->TeleportTo(0, -3915.0f, -6781.0f, 85.0f, 3.2f);
+
+            ObjectGuid playerGuid = player->GetGUID();
+            player->m_Events.Schedule(1000, [playerGuid]()
+            {
+                if (Player* passenger = ObjectAccessor::FindPlayer(playerGuid))
+                {
+                    passenger->CastSpell(passenger, SPELL_PARACHUTE_FLING, true);
+                    if (!passenger->HasAura(SPELL_PARACHUTE))
+                        passenger->CastSpell(passenger, SPELL_PARACHUTE, true);
+                }
+            });
+
+            return true;
+        }
+
+    private:
+        ObjectGuid _playerGuid;
+    };
+}
+
+class player_twilight_skies_crash : public PlayerScript
+{
+public:
+    player_twilight_skies_crash() : PlayerScript("player_twilight_skies_crash") { }
+
+    void OnUpdate(Player* player, uint32 /*diff*/) override
+    {
+        using namespace TwilightSkies;
+
+        if (player->GetQuestStatus(QUEST_TWILIGHT_SKIES) != QUEST_STATUS_INCOMPLETE || !IsAtZeppelin(player))
+            return;
+
+        if (player->m_Events.FindEvent([](BasicEvent const* event)
+            {
+                return dynamic_cast<CrashEvent const*>(event) != nullptr;
+            }))
+            return;
+
+        // The Eastern Kingdoms half is already at the crash site. Otherwise,
+        // allow the visible flight to play before replacing its broken loop.
+        uint32 delay = player->GetMapId() == 0 ? 5000 : 90000;
+        player->m_Events.Schedule(delay, new CrashEvent(player->GetGUID()));
+    }
+};
+
 void AddSC_azshara()
 {
     new creature_script<npc_azshara_awol_grunt>("npc_azshara_awol_grunt");
@@ -507,4 +626,5 @@ void AddSC_azshara()
     new npc_voljin_ancient_enemy();
     new npc_zarjira();
     new npc_fire_of_the_seas();
+    new player_twilight_skies_crash();
 }

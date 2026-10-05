@@ -93,7 +93,7 @@ public:
     /// <param name="size"></param>
     void Reserve(const uint32 size);
     void UpdateAIInternal(uint32 elapsed, bool minimal = false) override;
-
+    void UpdateAutoQueueObserver(uint32 elapsed);
 public:
     bool IsRandomBot(Player* bot);
     bool IsRandomBot(ObjectGuid::LowType bot);
@@ -143,7 +143,6 @@ private:
     uint32 AddRandomBots();
     bool ProcessBot(uint32 bot);
     void ScheduleRandomize(uint32 bot, uint32 time);
-    void UpdateAutoQueueObserver(uint32 elapsed);
     const farm_spot* GetFarmZoneForPlayer(Player* player);
     const city* GetCityForPlayer(Player* player);
     uint32 GetEventValue(uint32 bot, std::string const event);

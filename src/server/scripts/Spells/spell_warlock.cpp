@@ -26,6 +26,7 @@
 #include "SpellAuraEffects.h"
 #include "Pet.h"
 #include "SpellHistory.h"
+#include "SpellPowerVisuals.h"
 #include "Random.h"
 
 enum WarlockSpells
@@ -113,8 +114,6 @@ enum WarlockSpells
     SPELL_WARLOCK_METAMORPHOSIS                     = 103958,
     SPELL_WARLOCK_DEMONIC_FURY                      = 109145,
     SPELL_WARLOCK_DEMONIC_FURY_ENERGIZE             = 104314,
-    SPELL_WARLOCK_MAXIMUM_FURY                      = 131755,
-    SPELL_WARLOCK_MASTER_DEMONOLOGIST_VISUAL        = 122738,
     SPELL_WARLOCK_MASTERY_MASTER_DEMONOLOGIST       = 77219,
     SPELL_WARLOCK_MASTER_DEMONOLOGIST               = 115556,
     SPELL_WARLOCK_SOULSHARD                         = 87388,
@@ -167,17 +166,7 @@ enum WarlockSpells
     SPELL_WARLOCK_DEVOUR_MAGIC_HEAL_ENERGIZE        = 19658,
     SPELL_WARLOCK_GLYPH_OF_DEMON_TRAINING           = 56249,
     SPELL_WARLOCK_UNENDING_BREATH_WATERWALK         = 104242,
-    SPELL_WARLOCK_SOULSHARDS_1_3                    = 104756,
-    SPELL_WARLOCK_SOULSHARDS_2_3_4                  = 104759,
-    SPELL_WARLOCK_SOULSHARDS_4                      = 123171,
-    SPELL_WARLOCK_VERDANT_SHPERES_1_3               = 123728,
-    SPELL_WARLOCK_VERDANT_SHPERES_2_3_4             = 123730,
-    SPELL_WARLOCK_VERDANT_SHPERES_4                 = 123731,
     SPELL_WARLOCK_GLYPH_OF_VERDANT_SPHERES          = 56241,
-    SPELL_WARLOCK_SHARDS_VISUAL_TEST                = 117197,
-    SPELL_WARLOCK_SEARING_EMBERS_1                  = 116855,
-    SPELL_WARLOCK_SEARING_EMBERS_2                  = 116920,
-    SPELL_WARLOCK_EMBER_TEST                        = 116860,
     SPELL_WARLOCK_GLYPH_OF_EMBER_TAP                = 63304,
     SPELL_WARLOCK_THE_CODEX_OF_XERRATH              = 101508,
     SPELL_WARLOCK_CURSE_OF_EXHAUSTION               = 18223,
@@ -2036,38 +2025,6 @@ class spell_warl_demonic_fury_energize : public SpellScript
     void Register() override
     {
         OnEffectHit += SpellEffectFn(spell_warl_demonic_fury_energize::HandleEffect, EFFECT_0, SPELL_EFFECT_DUMMY);
-    }
-};
-
-// 122736 - Nonexistent spell
-class spell_warl_demonic_fury_visual_controller : public SpellScript
-{
-    PrepareSpellScript(spell_warl_demonic_fury_visual_controller);
-
-    void HandleCast()
-    {
-        // Demonic Fury visuals
-        int32 val = GetCaster()->GetPower(POWER_DEMONIC_FURY);
-        if (val >= 980)
-        {
-            if (!GetCaster()->HasAura(SPELL_WARLOCK_MAXIMUM_FURY))
-                GetCaster()->CastSpell(GetCaster(), SPELL_WARLOCK_MAXIMUM_FURY, true);
-        }
-        else if (val >= 500)
-        {
-            if (!GetCaster()->HasAura(SPELL_WARLOCK_MASTER_DEMONOLOGIST_VISUAL))
-                GetCaster()->CastSpell(GetCaster(), SPELL_WARLOCK_MASTER_DEMONOLOGIST_VISUAL, true);
-        }
-        else
-        {
-            GetCaster()->RemoveAurasDueToSpell(SPELL_WARLOCK_MAXIMUM_FURY);
-            GetCaster()->RemoveAurasDueToSpell(SPELL_WARLOCK_MASTER_DEMONOLOGIST_VISUAL);
-        }
-    }
-
-    void Register() override
-    {
-        OnCast += SpellCastFn(spell_warl_demonic_fury_visual_controller::HandleCast);
     }
 };
 
@@ -4406,78 +4363,8 @@ class spell_warl_unending_breath_soulburn : public SpellScript
     }
 };
 
-// 117197 nonexistent spell
-class spell_warl_soul_shards_visual_test : public SpellScript
-{
-    PrepareSpellScript(spell_warl_soul_shards_visual_test);
 
-    bool Load() override
-    {
-        return GetCaster()->GetTypeId() == TYPEID_PLAYER;
-    }
 
-    void HandleCast()
-    {
-        if (GetCaster()->ToPlayer()->GetSpecialization() == SPEC_WARLOCK_DEMONOLOGY)
-            return;
-
-        int32 shards;
-        if (GetCaster()->ToPlayer()->GetSpecialization() == SPEC_WARLOCK_AFFLICTION)
-            shards = int32(std::floor(GetCaster()->GetPower(POWER_SOUL_SHARDS) / 100));
-        else
-            shards = int32(std::floor(GetCaster()->GetPower(POWER_BURNING_EMBERS) / 10));
-
-        bool spheres = GetCaster()->HasAura(SPELL_WARLOCK_GLYPH_OF_VERDANT_SPHERES);
-
-        uint32 spell_1_3    = spheres ? SPELL_WARLOCK_VERDANT_SHPERES_1_3   : SPELL_WARLOCK_SOULSHARDS_1_3;
-        uint32 spell_2_3_4  = spheres ? SPELL_WARLOCK_VERDANT_SHPERES_2_3_4 : SPELL_WARLOCK_SOULSHARDS_2_3_4;
-        uint32 spell_4      = spheres ? SPELL_WARLOCK_VERDANT_SHPERES_4     : SPELL_WARLOCK_SOULSHARDS_4;
-        
-        switch (shards)
-        {
-            case 0:
-                GetCaster()->RemoveAurasDueToSpell(spell_1_3);
-                GetCaster()->RemoveAurasDueToSpell(spell_2_3_4);
-                GetCaster()->RemoveAurasDueToSpell(spell_4);
-                break;
-            case 1:
-                if (!GetCaster()->HasAura(spell_1_3))
-                    GetCaster()->CastSpell(GetCaster(), spell_1_3);
-
-                GetCaster()->RemoveAurasDueToSpell(spell_2_3_4);
-                GetCaster()->RemoveAurasDueToSpell(spell_4);
-                break;
-            case 2:
-                if (!GetCaster()->HasAura(spell_2_3_4))
-                    GetCaster()->CastSpell(GetCaster(), spell_2_3_4);
-
-                GetCaster()->RemoveAurasDueToSpell(spell_1_3);
-                GetCaster()->RemoveAurasDueToSpell(spell_4);
-                break;
-            case 3:
-                if (!GetCaster()->HasAura(spell_1_3))
-                    GetCaster()->CastSpell(GetCaster(), spell_1_3);
-                if (!GetCaster()->HasAura(spell_2_3_4))
-                    GetCaster()->CastSpell(GetCaster(), spell_2_3_4);
-
-                GetCaster()->RemoveAurasDueToSpell(spell_4);
-                break;
-            case 4:
-                if (!GetCaster()->HasAura(spell_2_3_4))
-                    GetCaster()->CastSpell(GetCaster(), spell_2_3_4);
-                if (!GetCaster()->HasAura(spell_4))
-                    GetCaster()->CastSpell(GetCaster(), spell_4);
-
-                GetCaster()->RemoveAurasDueToSpell(spell_1_3);
-                break;
-        }
-    }
-
-    void Register() override
-    {
-        OnCast += SpellCastFn(spell_warl_soul_shards_visual_test::HandleCast);
-    }
-};
 
 // 116860 - Ember Test
 class spell_warl_ember_test : public SpellScript
@@ -4486,29 +4373,7 @@ class spell_warl_ember_test : public SpellScript
 
     void HandleCast()
     {
-        if (GetCaster()->ToPlayer()->GetSpecialization() != SPEC_WARLOCK_DESTRUCTION)
-            return;
-
-        int32 embers = int32(std::floor(GetCaster()->GetPower(POWER_BURNING_EMBERS) / 10));
-        if (embers >= 3)
-        {
-            if (!GetCaster()->HasAura(SPELL_WARLOCK_SEARING_EMBERS_2))
-                GetCaster()->CastSpell(GetCaster(), SPELL_WARLOCK_SEARING_EMBERS_2, true);
-        }
-        else
-        {
-            if (embers >= 2)
-            {
-                if (!GetCaster()->HasAura(SPELL_WARLOCK_SEARING_EMBERS_1))
-                    GetCaster()->CastSpell(GetCaster(), SPELL_WARLOCK_SEARING_EMBERS_1, true);
-                GetCaster()->RemoveAurasDueToSpell(SPELL_WARLOCK_SEARING_EMBERS_2);
-            }
-            else
-            {
-                GetCaster()->RemoveAurasDueToSpell(SPELL_WARLOCK_SEARING_EMBERS_1);
-                GetCaster()->RemoveAurasDueToSpell(SPELL_WARLOCK_SEARING_EMBERS_2);
-            }
-        }
+        SpellPowerVisuals::UpdateWarlock(GetCaster()->ToPlayer());
     }
 
     void Register() override
@@ -4610,37 +4475,16 @@ class spell_warl_glyph_of_verdant_spheres : public AuraScript
         return GetUnitOwner()->GetTypeId() == TYPEID_PLAYER;
     }
 
-    void HandleApply(AuraEffect const*, AuraEffectHandleModes)
+    void HandleVisuals(AuraEffect const*, AuraEffectHandleModes)
     {
-        Unit* warlock = GetUnitOwner();
-        warlock->RemoveAurasDueToSpell(SPELL_WARLOCK_SOULSHARDS_1_3);
-        warlock->RemoveAurasDueToSpell(SPELL_WARLOCK_SOULSHARDS_2_3_4);
-        warlock->RemoveAurasDueToSpell(SPELL_WARLOCK_SOULSHARDS_4);
-        warlock->RemoveAurasDueToSpell(SPELL_WARLOCK_SEARING_EMBERS_1);
-        warlock->RemoveAurasDueToSpell(SPELL_WARLOCK_SEARING_EMBERS_2);
-
-        warlock->CastSpell(warlock, SPELL_WARLOCK_SHARDS_VISUAL_TEST, true);
-    }
-
-    void HandleRemove(AuraEffect const*, AuraEffectHandleModes)
-    {
-        Unit* warlock = GetUnitOwner();
-
-        warlock->RemoveAurasDueToSpell(SPELL_WARLOCK_VERDANT_SHPERES_1_3);
-        warlock->RemoveAurasDueToSpell(SPELL_WARLOCK_VERDANT_SHPERES_2_3_4);
-        warlock->RemoveAurasDueToSpell(SPELL_WARLOCK_VERDANT_SHPERES_4);
-
-        if (warlock->ToPlayer()->GetSpecialization() == SPEC_WARLOCK_AFFLICTION)
-            warlock->CastSpell(warlock, SPELL_WARLOCK_SHARDS_VISUAL_TEST, true);
-        else if (warlock->ToPlayer()->GetSpecialization() == SPEC_WARLOCK_DESTRUCTION)
-            warlock->CastSpell(warlock, SPELL_WARLOCK_EMBER_TEST, true);
+        SpellPowerVisuals::UpdateWarlock(GetUnitOwner()->ToPlayer());
     }
 
 
     void Register() override
     {
-        OnEffectApply  += AuraEffectApplyFn (spell_warl_glyph_of_verdant_spheres::HandleApply,  EFFECT_1, SPELL_AURA_TRIGGER_ON_POWER_LEVEL, AURA_EFFECT_HANDLE_REAL);
-        OnEffectRemove += AuraEffectRemoveFn(spell_warl_glyph_of_verdant_spheres::HandleRemove, EFFECT_1, SPELL_AURA_TRIGGER_ON_POWER_LEVEL, AURA_EFFECT_HANDLE_REAL);
+        AfterEffectApply += AuraEffectApplyFn(spell_warl_glyph_of_verdant_spheres::HandleVisuals, EFFECT_1, SPELL_AURA_TRIGGER_ON_POWER_LEVEL, AURA_EFFECT_HANDLE_REAL);
+        AfterEffectRemove += AuraEffectRemoveFn(spell_warl_glyph_of_verdant_spheres::HandleVisuals, EFFECT_1, SPELL_AURA_TRIGGER_ON_POWER_LEVEL, AURA_EFFECT_HANDLE_REAL);
     }
 };
 
@@ -4974,7 +4818,6 @@ void AddSC_warlock_spell_scripts()
     new spell_script<spell_warl_summon_doomguard>("spell_warl_summon_doomguard");
     new spell_script<spell_warl_doombolt>("spell_warl_doombolt");
     new spell_script<spell_warl_demonic_fury_energize>("spell_warl_demonic_fury_energize");
-    new spell_script<spell_warl_demonic_fury_visual_controller>("spell_warl_demonic_fury_visual_controller");
     new spell_script<spell_warl_hellfire>("spell_warl_hellfire");
     new aura_script<spell_warl_mastery_master_demonologist>("spell_warl_mastery_master_demonologist");
     new aura_script<spell_warl_master_demonologist>("spell_warl_master_demonologist");
@@ -5053,7 +4896,6 @@ void AddSC_warlock_spell_scripts()
     new spell_script<spell_warl_glyph_of_demon_trainig_firebolt>("spell_warl_glyph_of_demon_trainig_firebolt");
     new spell_script<spell_warl_glyph_of_carrion_swarm>("spell_warl_glyph_of_carrion_swarm");
     new spell_script<spell_warl_unending_breath_soulburn>("spell_warl_unending_breath_soulburn");
-    new spell_script<spell_warl_soul_shards_visual_test>("spell_warl_soul_shards_visual_test");
     new spell_script<spell_warl_ember_test>("spell_warl_ember_test");
     new spell_script<spell_warl_glyph_of_felguard>("spell_warl_glyph_of_felguard");
     new spell_script<spell_warl_glyph_of_felguard_loading>("spell_warl_glyph_of_felguard_loading");

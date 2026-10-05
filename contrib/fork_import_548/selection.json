@@ -1,0 +1,1394 @@
+{
+    "source_repository":  "https://github.com/davvvve1/Legends-of-Azeroth-Pandaria-5.4.8",
+    "source_commit":  "12040f36962b93d43ebdf04dbc35e2f4b0afda1e",
+    "comparison_base":  "ae500e5e5bbac6bcfa4cc0c5565f422b07a9c75b",
+    "local_base":  "c449c44934b932e885abcf38ae550aa8fb3d3ca6",
+    "method":  "Selective three-way source integration; source repository has unrelated history. Only new selected SQL migrations are applied to an existing database.",
+    "policy":  [
+                   "Preserve local configuration and prior Scarlet Halls, logout, class and logging fixes.",
+                   "Exclude level-one riding/flight, free heirlooms, progression bypasses, automatic quest-objective completion, global stat reductions, extra loot and drop/yield boosts.",
+                   "Keep boss mechanics and attunements; disable imported bot actions that directly alter combat state instead of using abilities.",
+                   "Optional new bot-account pool defaults to disabled; accounts use random passwords if explicitly enabled.",
+                   "Keep native quest auto-submit only where objectives still require normal completion.",
+                   "Keep normal Grand Commendation reputation bonuses, which require earning and purchasing the account unlock."
+               ],
+    "sql":  [
+                {
+                    "path":  "sql/updates/characters/2026_09_21_00_characters_transmog_collection.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/characters/2026_09_27_00_characters_shared_level_one_mount.sql",
+                    "include":  false,
+                    "reason":  "Excluded progression/economy shortcut or unverified balance change: shared_level_one_mount"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_18_00_world_jade_forest_quests.sql",
+                    "include":  false,
+                    "reason":  "Excluded progression/economy shortcut or unverified balance change: jade_forest_quests"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_18_01_world_dire_maul_pusillin.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_21_00_world_server_info_player.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_21_01_world_fix_ahnqiraj_andorgos_teleports.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_21_02_world_free_heirlooms.sql",
+                    "include":  false,
+                    "reason":  "Excluded progression/economy shortcut or unverified balance change: free_heirlooms"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_21_03_world_twin_emperors_health.sql",
+                    "include":  false,
+                    "reason":  "Excluded progression/economy shortcut or unverified balance change: twin_emperors_health"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_21_04_world_transmog_collection.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_22_00_world_aq40_repeatable_armaments.sql",
+                    "include":  false,
+                    "reason":  "Excluded progression/economy shortcut or unverified balance change: aq40_repeatable_armaments"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_22_01_world_arcatraz_destroyed_sentinel.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_22_02_world_kypari_zar.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_23_01_world_slave_pens_quest_loot.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_23_02_world_lost_in_action_quest_poi.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_24_00_world_pandaria_missing_flight.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_24_01_world_all_expansions_missing_flight.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_24_02_world_cataclysm_normal_levels.sql",
+                    "include":  false,
+                    "reason":  "Excluded progression/economy shortcut or unverified balance change: cataclysm_normal_levels"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_24_03_world_expansion_normal_levels.sql",
+                    "include":  false,
+                    "reason":  "Excluded progression/economy shortcut or unverified balance change: expansion_normal_levels"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_24_04_world_colossal_guardians_activation.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_24_05_world_colossal_guardians_landing.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_24_06_world_colossal_guardians_base_height.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_24_07_world_auchenai_quest_loot.sql",
+                    "include":  false,
+                    "reason":  "Excluded progression/economy shortcut or unverified balance change: auchenai_quest_loot"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_24_08_world_take_it_to_em.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_24_09_world_premature_explosionation.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_24_10_world_auchenai_raging_spirits.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_24_11_world_premature_explosionation_turnin.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_24_12_world_on_to_something.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_24_13_world_thrill_of_discovery.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_24_14_world_durnholde_quest_access.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_24_15_world_tipping_the_balance.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_24_16_world_do_the_honors.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_25_00_world_durnholde_barrel_quest_glitter.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_25_01_world_sethekk_lakka_quest.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_25_02_world_sethekk_cobalt_eye.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_25_03_world_steamrigger_irradiated_gear.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_25_04_world_vexallus_volatile_essence.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_25_05_world_survival_ring.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_25_06_world_coldbite_spawn.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_25_07_world_coldbite_damage.sql",
+                    "include":  false,
+                    "reason":  "Excluded progression/economy shortcut or unverified balance change: coldbite_damage"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_25_08_world_evie_stormstout.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_25_09_world_han_stormstout.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_25_10_world_han_chen_turnin.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_25_11_world_poisoned_mind.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_26_00_world_black_morass_access.sql",
+                    "include":  false,
+                    "reason":  "Excluded progression/economy shortcut or unverified balance change: black_morass_access"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_26_01_world_black_morass_quest.sql",
+                    "include":  false,
+                    "reason":  "Excluded attunement bypass or guaranteed loot"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_26_02_world_xaril_start.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_26_03_world_dark_skies_daily.sql",
+                    "include":  false,
+                    "reason":  "Excluded progression/economy shortcut or unverified balance change: dark_skies_daily"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_26_04_world_thunder_pvp_dailies.sql",
+                    "include":  false,
+                    "reason":  "Excluded progression/economy shortcut or unverified balance change: thunder_pvp_dailies"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_26_05_world_daily_relations.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_26_06_world_thunder_hold_cannons.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_26_07_world_dalaran_portals.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_26_08_world_nordrassil_summit.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_26_09_world_elemental_bonds_doubt.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_26_10_world_azjol_nerub_hadronox_duplicate_spawns.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_26_11_world_jade_forest_final_blow_barricades.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_26_12_world_wrath_dungeons_min_level_78.sql",
+                    "include":  false,
+                    "reason":  "Excluded progression/economy shortcut or unverified balance change: wrath_dungeons_min_level"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_26_13_world_wrath_random_from_level_68.sql",
+                    "include":  false,
+                    "reason":  "Excluded progression/economy shortcut or unverified balance change: wrath_random_from_level"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_26_14_world_gorrok_regroup_credit.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_26_15_world_strongarm_alive_quest_mobs.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_26_16_world_strongarm_airstrip_quest_audit.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_26_17_world_konk_seein_red_phase.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_27_00_world_doren_den_of_defiance_spawn.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_27_01_world_doren_verified_cave_floor.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_27_02_world_strongarm_horde_takeover.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_27_03_world_forensic_science_blossom_click.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_27_04_world_acid_rain_gyrocopter.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_27_05_world_acid_rain_autocomplete.sql",
+                    "include":  false,
+                    "reason":  "Excluded progression/economy shortcut or unverified balance change: acid_rain_autocomplete"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_27_06_world_young_and_vicious_delivery.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_27_07_world_echo_isles_spirit_healer.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_27_08_world_zarjira_shorter_fight.sql",
+                    "include":  false,
+                    "reason":  "Excluded progression/economy shortcut or unverified balance change: zarjira_shorter_fight"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_27_09_world_grookin_hill_services_and_reports.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_27_10_world_riko_questgiver_npc_protection.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_27_11_world_right_track_kiryn_report.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_27_12_world_playable_scouting_reports.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_27_13_world_bees_knees_tigerfly_loot.sql",
+                    "include":  false,
+                    "reason":  "Excluded progression/economy shortcut or unverified balance change: bees_knees_tigerfly_loot"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_27_14_world_riko_report_giver_protection.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_27_15_world_hostile_natives_bot_group_credit.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_27_16_world_magic_carpet_ride_gorge_credit.sql",
+                    "include":  false,
+                    "reason":  "Excluded progression/economy shortcut or unverified balance change: magic_carpet_ride_gorge_credit"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_27_17_world_into_the_mist_guaranteed_loot.sql",
+                    "include":  false,
+                    "reason":  "Excluded progression/economy shortcut or unverified balance change: into_the_mist_guaranteed_loot"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_27_18_world_horde_siege_tank_boarding.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_27_19_world_horde_tank_zone_boundary.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_27_20_world_horde_tank_battlegrounds.sql",
+                    "include":  false,
+                    "reason":  "Excluded progression/economy shortcut or unverified balance change: horde_tank_battlegrounds"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_27_21_world_orabus_shorter_summon.sql",
+                    "include":  false,
+                    "reason":  "Excluded progression/economy shortcut or unverified balance change: orabus_shorter_summon"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_27_22_world_warsong_jetty_horn_focus.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_27_23_world_plains_nasam_tank_mechanics.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_27_24_world_nasam_leader_identification.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_27_25_world_nasam_leader_client_objective.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_27_26_world_foolish_endeavors_turnin_marker.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_27_27_world_level_one_ground_mounts.sql",
+                    "include":  false,
+                    "reason":  "Excluded progression/economy shortcut or unverified balance change: level_one_ground_mounts"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_27_28_world_all_mounts_level_one.sql",
+                    "include":  false,
+                    "reason":  "Excluded progression/economy shortcut or unverified balance change: all_mounts_level_one"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_27_29_world_mount_and_riding_level_one.sql",
+                    "include":  false,
+                    "reason":  "Excluded progression/economy shortcut or unverified balance change: mount_and_riding_level_one"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_28_00_world_down_kitty_jade_guardian_health.sql",
+                    "include":  false,
+                    "reason":  "Excluded progression/economy shortcut or unverified balance change: down_kitty_jade_guardian_health"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_28_01_world_double_hozen_dare_cub_interaction.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_28_02_world_getting_permission_pandriarch_duels.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_28_03_world_finish_this_gong_da_level.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_28_04_world_farmhand_freedom_slave_protection.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_28_05_world_mogujia_event_phases.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_28_06_world_at_yak_wash_destination.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_28_07_world_staying_connected_mishi_flight.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_28_08_world_unbelievable_sentinel_guardian.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_28_09_world_celestial_experience_violence_pool.sql",
+                    "include":  false,
+                    "reason":  "Excluded progression/economy shortcut or unverified balance change: celestial_experience_violence_pool"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_28_10_world_monkey_king_third_riddle_phase.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_28_11_world_ordo_warbringer_fire_barrier.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_28_12_world_rescuing_evanor_prison.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_28_13_world_rescuing_evanor_turnin.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_28_14_world_nuts_for_berries_frostberry_activation.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_28_15_world_nuts_for_berries_spawn_density.sql",
+                    "include":  false,
+                    "reason":  "Excluded progression/economy shortcut or unverified balance change: nuts_for_berries_spawn_density"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_28_16_world_the_cell_prison_casing_loot.sql",
+                    "include":  false,
+                    "reason":  "Excluded progression/economy shortcut or unverified balance change: the_cell_prison_casing_loot"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_28_17_world_northrend_respawn_tuning.sql",
+                    "include":  false,
+                    "reason":  "Excluded progression/economy shortcut or unverified balance change: northrend_respawn_tuning"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_28_18_world_nexus_creature_damage.sql",
+                    "include":  false,
+                    "reason":  "Excluded progression/economy shortcut or unverified balance change: nexus_creature_damage"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_28_19_world_draktharon_quest_loot.sql",
+                    "include":  false,
+                    "reason":  "Excluded progression/economy shortcut or unverified balance change: draktharon_quest_loot"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_28_20_world_halls_of_stone_quests.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_28_21_world_drakuru_elixir_replacement.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_29_00_world_increase_ore_density.sql",
+                    "include":  false,
+                    "reason":  "Excluded progression/economy shortcut or unverified balance change: increase_ore_density"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_29_01_world_increase_ore_density_second_fifty_percent.sql",
+                    "include":  false,
+                    "reason":  "Excluded progression/economy shortcut or unverified balance change: increase_ore_density"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_29_02_world_we_strike_escort.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_29_03_world_winterfin_clam_quest_glow.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_29_04_world_draktharon_enduring_mojo_all_trash.sql",
+                    "include":  false,
+                    "reason":  "Excluded progression/economy shortcut or unverified balance change: draktharon_enduring_mojo_all_trash"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_29_05_world_kaganishu_fetish_loot.sql",
+                    "include":  false,
+                    "reason":  "Excluded progression/economy shortcut or unverified balance change: kaganishu_fetish_loot"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_29_06_world_load_er_up_jennys_whistle.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_29_07_world_spirit_of_harmony_stack_100.sql",
+                    "include":  false,
+                    "reason":  "Excluded progression/economy shortcut or unverified balance change: spirit_of_harmony_stack_100"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_30_00_world_defense_of_nahom_sergeant.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_30_01_world_salhet_the_tactician.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_30_02_world_corruption_in_maraudon_autosubmit.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_30_03_world_zenkiki_wildlife_credit.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_30_04_world_onward_lights_hope_arrival_credit.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_30_05_world_righteous_indignation_eye_counts.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_30_06_world_battle_of_darrowshire_joseph.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_30_07_world_weakness_to_lightning_credit.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_30_08_world_heart_of_elements_visibility.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_09_30_09_world_horn_elemental_fury_lower_half.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_10_01_00_world_into_the_flames_credit.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_10_01_01_world_righteous_indignation_and_caravan.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_10_01_02_world_northrend_mining_yields.sql",
+                    "include":  false,
+                    "reason":  "Excluded progression/economy shortcut or unverified balance change: northrend_mining_yields"
+                },
+                {
+                    "path":  "sql/updates/world/2026_10_01_03_world_unyielding_fists_trials.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_10_01_04_world_seeking_father_ku_yao.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_10_01_05_world_motives_of_the_mantid.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_10_01_06_world_ranger_rescue.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_10_01_07_world_what_lies_beneath.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_10_01_08_world_hatred_becomes_us.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_10_01_09_world_arconiss_thirsts_blood.sql",
+                    "include":  false,
+                    "reason":  "Excluded attunement bypass or guaranteed loot"
+                },
+                {
+                    "path":  "sql/updates/world/2026_10_01_10_world_arconiss_peat_mound.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_10_01_11_world_mists_opportunity.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_10_01_12_world_cutting_the_swarm.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_10_01_13_world_back_on_their_feet.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_10_01_14_world_corruption_runs_deep.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_10_01_15_world_reunited_kaztik_escort.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_10_01_16_world_grookin_hill_invisible_soldier.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_10_01_17_world_patching_up_hide_drop.sql",
+                    "include":  false,
+                    "reason":  "Excluded progression/economy shortcut or unverified balance change: patching_up_hide_drop"
+                },
+                {
+                    "path":  "sql/updates/world/2026_10_01_18_world_patching_up_marsh_caribou_spawns.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_10_01_19_world_sunsong_hostile_farmer_yoon.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_10_01_20_world_patching_up_steam_vent_focus.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_10_01_21_world_the_jade_witch_gossip.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_10_01_22_world_down_kitty_dawns_blossom_starter.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_10_01_23_world_patching_up_cure_hide_focus.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_10_01_24_world_patching_up_hide_item_script.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_10_01_25_world_blending_in_scout_triggers.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_10_01_26_world_reunited_kaztik_gossip_flag.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_10_01_27_world_head_games_blouse_scrap.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_10_01_28_world_blending_in_direct_credit.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_10_01_29_world_reunited_chain_integrity.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_10_01_30_world_feed_or_be_eaten_crash.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_10_03_00_world_feed_or_be_eaten_companion.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_10_03_01_world_words_of_power_poi.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_10_03_02_world_breaking_through_valanar_credit.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_10_03_03_world_apply_directly_to_forehead.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_10_03_04_world_across_transborea.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_10_03_05_world_cheer_up_yi_mo.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_10_03_06_world_zhus_despair_quintessence.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_10_03_07_world_unsafe_passage.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_10_03_08_world_gatewatchers_talisman_spawn.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_10_03_09_world_feed_or_be_eaten_drop.sql",
+                    "include":  false,
+                    "reason":  "Excluded progression/economy shortcut or unverified balance change: feed_or_be_eaten_drop"
+                },
+                {
+                    "path":  "sql/updates/world/2026_10_03_10_world_briny_muck_snappers.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_10_03_11_world_feed_or_be_eaten_kovok_ai.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_10_03_12_world_by_the_sea_nevermore_rocks.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_10_03_13_world_remove_misplaced_ashweb_weaver.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_10_03_14_world_anubarak_broken_husk_drop.sql",
+                    "include":  false,
+                    "reason":  "Excluded attunement bypass or guaranteed loot"
+                },
+                {
+                    "path":  "sql/updates/world/2026_10_03_15_world_klaxxi_seeds_of_fear_unlock.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_10_03_16_world_chains_of_the_anubar_key_fragments.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_10_03_17_world_chains_of_the_anubar_spawns.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_10_03_18_world_klaxxi_daily_unlock.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_10_03_19_world_banthok_icemist_spawn.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_10_03_20_world_return_of_the_high_chief.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_10_03_21_world_all_hail_roanauk.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_10_03_22_world_sarathstra_scourge_of_the_north.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_10_03_23_world_canyon_chase.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_10_03_24_world_in_search_of_the_ruby_lilac.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_10_04_00_world_wanted_gigantaur_patrol.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_10_04_01_world_ruby_sanctum_halion_duplicate_spawns.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_10_04_02_world_rocket_rescue_balloon.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_10_04_03_world_rocket_rescue_single_vehicle.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_10_04_04_world_rocket_rescue_throwing_station.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_10_04_05_world_rocket_rescue_controlled_balloon.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_10_04_06_world_rocket_rescue_life_rocket.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_10_04_07_world_guaranteed_classic_cloth.sql",
+                    "include":  false,
+                    "reason":  "Excluded progression/economy shortcut or unverified balance change: guaranteed_classic_cloth"
+                },
+                {
+                    "path":  "sql/updates/world/2026_10_04_08_world_hyjal_warden_pet_aggro.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_10_04_09_world_through_the_dream_alysra_phase.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_10_04_10_world_grand_commendation_klaxxi.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_10_04_11_world_grand_commendations_all.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_10_04_11_world_the_leader_hozen.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_10_04_12_world_where_are_my_reinforcements.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_10_04_13_world_unmasking_the_yaungol.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_10_04_14_world_ulduar_salvaged_vehicle_boarding.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_10_04_15_world_through_the_dream_followup.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_10_04_16_world_holed_up_survivors.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_10_04_17_world_battle_ring_trainee_damage.sql",
+                    "include":  false,
+                    "reason":  "Excluded progression/economy shortcut or unverified balance change: battle_ring_trainee_damage"
+                },
+                {
+                    "path":  "sql/updates/world/2026_10_04_18_world_savior_of_stoneplow_miss_fanny.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_10_04_19_world_yorik_sharpeye_loot.sql",
+                    "include":  false,
+                    "reason":  "Excluded loot chance increase and loot rebalance"
+                },
+                {
+                    "path":  "sql/updates/world/2026_10_04_20_world_missing_mop_quests.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_10_04_21_world_cataclysm_dungeon_damage.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_10_04_22_world_elementary_crucible_sequence.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_10_04_23_world_get_me_outta_here_exit_credit.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_10_04_24_world_neptulon_cache_spawn_masks.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                },
+                {
+                    "path":  "sql/updates/world/2026_10_05_00_world_fork_script_binding_cleanup.sql",
+                    "include":  true,
+                    "reason":  "Retained gameplay repair; mixed updates adapted to preserve progression"
+                }
+            ],
+    "excluded_raid_actions":  {
+                                  "value":  [
+                                                {
+                                                    "file":  "modules/mod_playerbots/src/strategy/raids/blackwinglair/RaidBwlActions.cpp",
+                                                    "action":  "BwlOnyxiaScaleCloakAuraCheckAction::Execute",
+                                                    "reason":  "Not imported: direct combat-state alteration or teleport shortcut; normal AI remains available"
+                                                },
+                                                {
+                                                    "file":  "modules/mod_playerbots/src/strategy/raids/icecrown/RaidIccActions.cpp",
+                                                    "action":  "IccLichKingAddsAction::HandleSpiritMarkingAndTargeting",
+                                                    "reason":  "Not imported: direct combat-state alteration or teleport shortcut; normal AI remains available"
+                                                },
+                                                {
+                                                    "file":  "modules/mod_playerbots/src/strategy/raids/icecrown/RaidIccActions.cpp",
+                                                    "action":  "IccLichKingAddsAction::HandleTeleportationFixes",
+                                                    "reason":  "Not imported: direct combat-state alteration or teleport shortcut; normal AI remains available"
+                                                },
+                                                {
+                                                    "file":  "modules/mod_playerbots/src/strategy/raids/icecrown/RaidIccActions.cpp",
+                                                    "action":  "IccLichKingAddsAction::Execute",
+                                                    "reason":  "Not imported: direct combat-state alteration or teleport shortcut; normal AI remains available"
+                                                },
+                                                {
+                                                    "file":  "modules/mod_playerbots/src/strategy/raids/icecrown/RaidIccActions.cpp",
+                                                    "action":  "IccLichKingWinterAction::HandlePositionCorrection",
+                                                    "reason":  "Not imported: direct combat-state alteration or teleport shortcut; normal AI remains available"
+                                                },
+                                                {
+                                                    "file":  "modules/mod_playerbots/src/strategy/raids/icecrown/RaidIccActions.cpp",
+                                                    "action":  "IccLichKingWinterAction::Execute",
+                                                    "reason":  "Not imported: direct combat-state alteration or teleport shortcut; normal AI remains available"
+                                                },
+                                                {
+                                                    "file":  "modules/mod_playerbots/src/strategy/raids/icecrown/RaidIccActions.cpp",
+                                                    "action":  "IccSindragosaBlisteringColdAction::Execute",
+                                                    "reason":  "Not imported: direct combat-state alteration or teleport shortcut; normal AI remains available"
+                                                },
+                                                {
+                                                    "file":  "modules/mod_playerbots/src/strategy/raids/icecrown/RaidIccActions.cpp",
+                                                    "action":  "IccSindragosaFrostBeaconAction::HandleBeaconedPlayer",
+                                                    "reason":  "Not imported: direct combat-state alteration or teleport shortcut; normal AI remains available"
+                                                },
+                                                {
+                                                    "file":  "modules/mod_playerbots/src/strategy/raids/icecrown/RaidIccActions.cpp",
+                                                    "action":  "IccValithriaDreamCloudAction::Execute",
+                                                    "reason":  "Not imported: direct combat-state alteration or teleport shortcut; normal AI remains available"
+                                                },
+                                                {
+                                                    "file":  "modules/mod_playerbots/src/strategy/raids/icecrown/RaidIccActions.cpp",
+                                                    "action":  "IccValithriaHealAction::Execute",
+                                                    "reason":  "Not imported: direct combat-state alteration or teleport shortcut; normal AI remains available"
+                                                },
+                                                {
+                                                    "file":  "modules/mod_playerbots/src/strategy/raids/icecrown/RaidIccActions.cpp",
+                                                    "action":  "IccBpcKineticBombAction::Execute",
+                                                    "reason":  "Not imported: direct combat-state alteration or teleport shortcut; normal AI remains available"
+                                                },
+                                                {
+                                                    "file":  "modules/mod_playerbots/src/strategy/raids/icecrown/RaidIccActions.cpp",
+                                                    "action":  "IccPutricideAvoidMalleableGooAction::HandleUnboundPlague",
+                                                    "reason":  "Not imported: direct combat-state alteration or teleport shortcut; normal AI remains available"
+                                                },
+                                                {
+                                                    "file":  "modules/mod_playerbots/src/strategy/raids/icecrown/RaidIccActions.cpp",
+                                                    "action":  "IccPutricideGasCloudAction::HandleGaseousBloatMovement",
+                                                    "reason":  "Not imported: direct combat-state alteration or teleport shortcut; normal AI remains available"
+                                                },
+                                                {
+                                                    "file":  "modules/mod_playerbots/src/strategy/raids/icecrown/RaidIccActions.cpp",
+                                                    "action":  "IccPutricideGasCloudAction::Execute",
+                                                    "reason":  "Not imported: direct combat-state alteration or teleport shortcut; normal AI remains available"
+                                                },
+                                                {
+                                                    "file":  "modules/mod_playerbots/src/strategy/raids/icecrown/RaidIccActions.cpp",
+                                                    "action":  "IccPutricideVolatileOozeAction::Execute",
+                                                    "reason":  "Not imported: direct combat-state alteration or teleport shortcut; normal AI remains available"
+                                                },
+                                                {
+                                                    "file":  "modules/mod_playerbots/src/strategy/raids/icecrown/RaidIccActions.cpp",
+                                                    "action":  "IccGunshipTeleportHordeAction::TeleportTo",
+                                                    "reason":  "Not imported: direct combat-state alteration or teleport shortcut; normal AI remains available"
+                                                },
+                                                {
+                                                    "file":  "modules/mod_playerbots/src/strategy/raids/icecrown/RaidIccActions.cpp",
+                                                    "action":  "IccGunshipTeleportAllyAction::TeleportTo",
+                                                    "reason":  "Not imported: direct combat-state alteration or teleport shortcut; normal AI remains available"
+                                                },
+                                                {
+                                                    "file":  "modules/mod_playerbots/src/strategy/raids/icecrown/RaidIccActions.cpp",
+                                                    "action":  "IccRottingFrostGiantTankPositionAction::Execute",
+                                                    "reason":  "Not imported: direct combat-state alteration or teleport shortcut; normal AI remains available"
+                                                },
+                                                {
+                                                    "file":  "modules/mod_playerbots/src/strategy/raids/icecrown/RaidIccActions.cpp",
+                                                    "action":  "IccAddsLadyDeathwhisperAction::Execute",
+                                                    "reason":  "Not imported: direct combat-state alteration or teleport shortcut; normal AI remains available"
+                                                },
+                                                {
+                                                    "file":  "modules/mod_playerbots/src/strategy/raids/icecrown/RaidIccTriggers.cpp",
+                                                    "action":  "IccSindragosaMainTankMysticBuffetTrigger::IsActive",
+                                                    "reason":  "Not imported: direct combat-state alteration or teleport shortcut; normal AI remains available"
+                                                },
+                                                {
+                                                    "file":  "modules/mod_playerbots/src/strategy/raids/icecrown/RaidIccTriggers.cpp",
+                                                    "action":  "IccValithriaGroupTrigger::IsActive",
+                                                    "reason":  "Not imported: direct combat-state alteration or teleport shortcut; normal AI remains available"
+                                                },
+                                                {
+                                                    "file":  "modules/mod_playerbots/src/strategy/raids/icecrown/RaidIccTriggers.cpp",
+                                                    "action":  "IccBqlGroupPositionTrigger::IsActive",
+                                                    "reason":  "Not imported: direct combat-state alteration or teleport shortcut; normal AI remains available"
+                                                },
+                                                {
+                                                    "file":  "modules/mod_playerbots/src/strategy/raids/icecrown/RaidIccTriggers.cpp",
+                                                    "action":  "IccBpcMainTankTrigger::IsActive",
+                                                    "reason":  "Not imported: direct combat-state alteration or teleport shortcut; normal AI remains available"
+                                                },
+                                                {
+                                                    "file":  "modules/mod_playerbots/src/strategy/raids/icecrown/RaidIccTriggers.cpp",
+                                                    "action":  "IccBpcKelesethTankTrigger::IsActive",
+                                                    "reason":  "Not imported: direct combat-state alteration or teleport shortcut; normal AI remains available"
+                                                },
+                                                {
+                                                    "file":  "modules/mod_playerbots/src/strategy/raids/icecrown/RaidIccTriggers.cpp",
+                                                    "action":  "IccRotfaceTankPositionTrigger::IsActive",
+                                                    "reason":  "Not imported: direct combat-state alteration or teleport shortcut; normal AI remains available"
+                                                },
+                                                {
+                                                    "file":  "modules/mod_playerbots/src/strategy/raids/icecrown/RaidIccTriggers.cpp",
+                                                    "action":  "IccFestergutGroupPositionTrigger::IsActive",
+                                                    "reason":  "Not imported: direct combat-state alteration or teleport shortcut; normal AI remains available"
+                                                },
+                                                {
+                                                    "file":  "modules/mod_playerbots/src/strategy/raids/icecrown/RaidIccTriggers.cpp",
+                                                    "action":  "IccDbsTrigger::IsActive",
+                                                    "reason":  "Not imported: direct combat-state alteration or teleport shortcut; normal AI remains available"
+                                                },
+                                                {
+                                                    "file":  "modules/mod_playerbots/src/strategy/raids/icecrown/RaidIccTriggers.cpp",
+                                                    "action":  "IccRottingFrostGiantTankPositionTrigger::IsActive",
+                                                    "reason":  "Not imported: direct combat-state alteration or teleport shortcut; normal AI remains available"
+                                                },
+                                                {
+                                                    "file":  "modules/mod_playerbots/src/strategy/raids/icecrown/RaidIccTriggers.cpp",
+                                                    "action":  "IccLadyDeathwhisperTrigger::IsActive",
+                                                    "reason":  "Not imported: direct combat-state alteration or teleport shortcut; normal AI remains available"
+                                                },
+                                                {
+                                                    "file":  "modules/mod_playerbots/src/strategy/raids/icecrown/RaidIccTriggers.cpp",
+                                                    "action":  "IccLmTrigger::IsActive",
+                                                    "reason":  "Not imported: direct combat-state alteration or teleport shortcut; normal AI remains available"
+                                                },
+                                                {
+                                                    "file":  "modules/mod_playerbots/src/strategy/raids/rubysanctum/Action/RSActions_BAL.cpp",
+                                                    "action":  "RsBaltharusTankPositionAction::Execute",
+                                                    "reason":  "Not imported: direct combat-state alteration or teleport shortcut; normal AI remains available"
+                                                },
+                                                {
+                                                    "file":  "modules/mod_playerbots/src/strategy/raids/rubysanctum/Action/RSActions_HAL.cpp",
+                                                    "action":  "RsHalionConsumptionAction::Execute",
+                                                    "reason":  "Not imported: direct combat-state alteration or teleport shortcut; normal AI remains available"
+                                                },
+                                                {
+                                                    "file":  "modules/mod_playerbots/src/strategy/raids/rubysanctum/Action/RSActions_HAL.cpp",
+                                                    "action":  "RsHalionEnterPortalAction::Execute",
+                                                    "reason":  "Not imported: direct combat-state alteration or teleport shortcut; normal AI remains available"
+                                                },
+                                                {
+                                                    "file":  "modules/mod_playerbots/src/strategy/raids/rubysanctum/Action/RSActions_HAL.cpp",
+                                                    "action":  "RsHalionCombustionAction::Execute",
+                                                    "reason":  "Not imported: direct combat-state alteration or teleport shortcut; normal AI remains available"
+                                                },
+                                                {
+                                                    "file":  "modules/mod_playerbots/src/strategy/raids/rubysanctum/Action/RSActions_HAL.cpp",
+                                                    "action":  "RsHalionTankPositionAction::Execute",
+                                                    "reason":  "Not imported: direct combat-state alteration or teleport shortcut; normal AI remains available"
+                                                },
+                                                {
+                                                    "file":  "modules/mod_playerbots/src/strategy/raids/ulduar/RaidUlduarActions.cpp",
+                                                    "action":  "YoggSaronPhase3PositioningAction::Execute",
+                                                    "reason":  "Not imported: direct combat-state alteration or teleport shortcut; normal AI remains available"
+                                                },
+                                                {
+                                                    "file":  "modules/mod_playerbots/src/strategy/raids/ulduar/RaidUlduarActions.cpp",
+                                                    "action":  "YoggSaronMoveToExitPortalAction::Execute",
+                                                    "reason":  "Not imported: direct combat-state alteration or teleport shortcut; normal AI remains available"
+                                                },
+                                                {
+                                                    "file":  "modules/mod_playerbots/src/strategy/raids/ulduar/RaidUlduarActions.cpp",
+                                                    "action":  "YoggSaronIllusionRoomAction::SetBrainRtiTarget",
+                                                    "reason":  "Not imported: direct combat-state alteration or teleport shortcut; normal AI remains available"
+                                                },
+                                                {
+                                                    "file":  "modules/mod_playerbots/src/strategy/raids/ulduar/RaidUlduarActions.cpp",
+                                                    "action":  "YoggSaronIllusionRoomAction::SetIllusionRtiTarget",
+                                                    "reason":  "Not imported: direct combat-state alteration or teleport shortcut; normal AI remains available"
+                                                },
+                                                {
+                                                    "file":  "modules/mod_playerbots/src/strategy/raids/ulduar/RaidUlduarActions.cpp",
+                                                    "action":  "YoggSaronBossRoomMovementCheatAction::Execute",
+                                                    "reason":  "Not imported: direct combat-state alteration or teleport shortcut; normal AI remains available"
+                                                },
+                                                {
+                                                    "file":  "modules/mod_playerbots/src/strategy/raids/ulduar/RaidUlduarActions.cpp",
+                                                    "action":  "YoggSaronFallFromFloorAction::Execute",
+                                                    "reason":  "Not imported: direct combat-state alteration or teleport shortcut; normal AI remains available"
+                                                },
+                                                {
+                                                    "file":  "modules/mod_playerbots/src/strategy/raids/ulduar/RaidUlduarActions.cpp",
+                                                    "action":  "YoggSaronMoveToEnterPortalAction::Execute",
+                                                    "reason":  "Not imported: direct combat-state alteration or teleport shortcut; normal AI remains available"
+                                                },
+                                                {
+                                                    "file":  "modules/mod_playerbots/src/strategy/raids/ulduar/RaidUlduarActions.cpp",
+                                                    "action":  "YoggSaronMarkTargetAction::Execute",
+                                                    "reason":  "Not imported: direct combat-state alteration or teleport shortcut; normal AI remains available"
+                                                },
+                                                {
+                                                    "file":  "modules/mod_playerbots/src/strategy/raids/ulduar/RaidUlduarActions.cpp",
+                                                    "action":  "YoggSaronOminousCloudCheatAction::Execute",
+                                                    "reason":  "Not imported: direct combat-state alteration or teleport shortcut; normal AI remains available"
+                                                },
+                                                {
+                                                    "file":  "modules/mod_playerbots/src/strategy/raids/ulduar/RaidUlduarActions.cpp",
+                                                    "action":  "VezaxCheatAction::Execute",
+                                                    "reason":  "Not imported: direct combat-state alteration or teleport shortcut; normal AI remains available"
+                                                },
+                                                {
+                                                    "file":  "modules/mod_playerbots/src/strategy/raids/ulduar/RaidUlduarActions.cpp",
+                                                    "action":  "MimironCheatAction::Execute",
+                                                    "reason":  "Not imported: direct combat-state alteration or teleport shortcut; normal AI remains available"
+                                                },
+                                                {
+                                                    "file":  "modules/mod_playerbots/src/strategy/raids/ulduar/RaidUlduarActions.cpp",
+                                                    "action":  "MimironRocketStrikeAction::Execute",
+                                                    "reason":  "Not imported: direct combat-state alteration or teleport shortcut; normal AI remains available"
+                                                },
+                                                {
+                                                    "file":  "modules/mod_playerbots/src/strategy/raids/ulduar/RaidUlduarActions.cpp",
+                                                    "action":  "MimironP3Wx2LaserBarrageAction::Execute",
+                                                    "reason":  "Not imported: direct combat-state alteration or teleport shortcut; normal AI remains available"
+                                                },
+                                                {
+                                                    "file":  "modules/mod_playerbots/src/strategy/raids/ulduar/RaidUlduarActions.cpp",
+                                                    "action":  "MimironShockBlastAction::Execute",
+                                                    "reason":  "Not imported: direct combat-state alteration or teleport shortcut; normal AI remains available"
+                                                },
+                                                {
+                                                    "file":  "modules/mod_playerbots/src/strategy/raids/ulduar/RaidUlduarActions.cpp",
+                                                    "action":  "ThorimFallFromFloorAction::Execute",
+                                                    "reason":  "Not imported: direct combat-state alteration or teleport shortcut; normal AI remains available"
+                                                },
+                                                {
+                                                    "file":  "modules/mod_playerbots/src/strategy/raids/ulduar/RaidUlduarActions.cpp",
+                                                    "action":  "ThorimUnbalancingStrikeAction::Execute",
+                                                    "reason":  "Not imported: direct combat-state alteration or teleport shortcut; normal AI remains available"
+                                                },
+                                                {
+                                                    "file":  "modules/mod_playerbots/src/strategy/raids/ulduar/RaidUlduarActions.cpp",
+                                                    "action":  "HodirBitingColdJumpAction::Execute",
+                                                    "reason":  "Not imported: direct combat-state alteration or teleport shortcut; normal AI remains available"
+                                                },
+                                                {
+                                                    "file":  "modules/mod_playerbots/src/strategy/raids/ulduar/RaidUlduarActions.cpp",
+                                                    "action":  "AuriayaFallFromFloorAction::Execute",
+                                                    "reason":  "Not imported: direct combat-state alteration or teleport shortcut; normal AI remains available"
+                                                },
+                                                {
+                                                    "file":  "modules/mod_playerbots/src/strategy/raids/ulduar/RaidUlduarActions.cpp",
+                                                    "action":  "KologarnCrunchArmorAction::Execute",
+                                                    "reason":  "Not imported: direct combat-state alteration or teleport shortcut; normal AI remains available"
+                                                },
+                                                {
+                                                    "file":  "modules/mod_playerbots/src/strategy/raids/ulduar/RaidUlduarActions.cpp",
+                                                    "action":  "KologarnEyebeamAction::Execute",
+                                                    "reason":  "Not imported: direct combat-state alteration or teleport shortcut; normal AI remains available"
+                                                },
+                                                {
+                                                    "file":  "modules/mod_playerbots/src/strategy/raids/ulduar/RaidUlduarActions.cpp",
+                                                    "action":  "KologarnFallFromFloorAction::Execute",
+                                                    "reason":  "Not imported: direct combat-state alteration or teleport shortcut; normal AI remains available"
+                                                },
+                                                {
+                                                    "file":  "modules/mod_playerbots/src/strategy/raids/vaultofarchavon/RaidVoAActions.cpp",
+                                                    "action":  "EmalonFallFromFloorAction::Execute",
+                                                    "reason":  "Not imported: direct combat-state alteration or teleport shortcut; normal AI remains available"
+                                                }
+                                            ],
+                                  "Count":  57
+                              },
+    "preserved_files":  [
+                            "src/server/game/DataStores/DBCStores.cpp",
+                            "src/server/game/Globals/ObjectMgr.cpp",
+                            "src/server/game/Handlers/CharacterHandler.cpp",
+                            "src/server/game/Handlers/MiscHandler.cpp",
+                            "src/server/game/Handlers/ItemHandler.cpp",
+                            "src/server/game/DungeonFinding/LFGMgr.cpp",
+                            "src/server/game/Loot/LootMgr.cpp",
+                            "src/server/game/Loot/LootMgr.h",
+                            "src/server/game/AuctionHouseBot/AuctionHouseBotSeller.cpp",
+                            "src/server/scripts/Kalimdor/TempleOfAhnQiraj/boss_cthun.cpp",
+                            "src/server/scripts/Kalimdor/TempleOfAhnQiraj/boss_twinemperors.cpp",
+                            "src/server/scripts/EasternKingdoms/SunwellPlateau/boss_kalecgos.cpp",
+                            "src/server/scripts/ScriptLoader/ScriptLoader.cpp",
+                            "src/server/worldserver/worldserver.conf.dist"
+                        ],
+    "validation_limit":  "Compilation, startup and focused regression checks do not replace playing through every imported encounter and quest."
+}

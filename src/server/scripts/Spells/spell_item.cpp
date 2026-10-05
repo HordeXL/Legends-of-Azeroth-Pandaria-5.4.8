@@ -22,6 +22,7 @@
  */
 
 #include "Player.h"
+#include "ReputationMgr.h"
 #include "ScriptMgr.h"
 #include "ScriptedCreature.h"
 #include "SpellScript.h"
@@ -4516,6 +4517,32 @@ class spell_item_loot_a_rang : public SpellScript
     }
 };
 
+// Grand Commendations of the Pandaria factions. These are dummy spells that
+// permanently unlock the faction-specific reputation bonus for the account.
+class spell_item_grand_commendation : public SpellScript
+{
+    PrepareSpellScript(spell_item_grand_commendation);
+
+    void HandleDummy(SpellEffIndex /*effIndex*/)
+    {
+        if (Player* player = GetCaster()->ToPlayer())
+        {
+            // SpellInfo::IsAccountWide stores this unlock in account_spell, so
+            // every character on the account receives it on login.
+            if (!player->HasSpell(GetSpellInfo()->Id))
+                player->LearnSpell(GetSpellInfo()->Id, false);
+
+            // Refresh the client-side bonus marker immediately as well.
+            player->GetReputationMgr().SendInitialReputations();
+        }
+    }
+
+    void Register() override
+    {
+        OnEffectHitTarget += SpellEffectFn(spell_item_grand_commendation::HandleDummy, EFFECT_0, SPELL_EFFECT_DUMMY);
+    }
+};
+
 void AddSC_item_spell_scripts()
 {
     // 23074 Arcanite Dragonling
@@ -4643,4 +4670,5 @@ void AddSC_item_spell_scripts()
     new spell_script<spell_item_echoes_of_light>("spell_item_echoes_of_light");
     new aura_script<spell_item_fate_rune_of_unsurpassed_vigor>("spell_item_fate_rune_of_unsurpassed_vigor");
     new spell_script<spell_item_loot_a_rang>("spell_item_loot_a_rang");
+    new spell_script<spell_item_grand_commendation>("spell_item_grand_commendation");
 }

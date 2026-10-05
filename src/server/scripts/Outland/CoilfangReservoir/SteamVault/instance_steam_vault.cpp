@@ -91,12 +91,17 @@ class instance_steam_vault : public InstanceMapScript
                 {
                     case GO_MAIN_CHAMBERS_DOOR:
                         MainChambersDoorGUID = go->GetGUID();
+                        HandleGameObject(MainChambersDoorGUID,
+                            GetBossState(DATA_HYDROMANCER_THESPIA) == SPECIAL &&
+                            GetBossState(DATA_MEKGINEER_STEAMRIGGER) == SPECIAL, go);
                         break;
                     case GO_ACCESS_PANEL_HYDRO:
                         HydroDoor = go->GetGUID();
+                        UpdateAccessPanel(go, DATA_HYDROMANCER_THESPIA);
                         break;
                     case GO_ACCESS_PANEL_MEK:
                         MekDoor = go->GetGUID();
+                        UpdateAccessPanel(go, DATA_MEKGINEER_STEAMRIGGER);
                         break;
                 }
             }
@@ -132,33 +137,45 @@ class instance_steam_vault : public InstanceMapScript
                 return 0;
             }
 
+            void UpdateAccessPanel(GameObject* panel, uint32 boss)
+            {
+                EncounterState state = GetBossState(boss);
+                if (state == DONE || state == SPECIAL)
+                    panel->RemoveFlag(GAMEOBJECT_FIELD_FLAGS, GO_FLAG_NOT_SELECTABLE);
+                else
+                    panel->SetFlag(GAMEOBJECT_FIELD_FLAGS, GO_FLAG_NOT_SELECTABLE);
+
+                // Highlight unlocked panels until the group has activated them.
+                if (state == DONE)
+                    panel->SetFlag(OBJECT_FIELD_DYNAMIC_FLAGS, GO_DYNFLAG_LO_ACTIVATE | GO_DYNFLAG_LO_SPARKLE);
+                else
+                    panel->RemoveFlag(OBJECT_FIELD_DYNAMIC_FLAGS, GO_DYNFLAG_LO_ACTIVATE | GO_DYNFLAG_LO_SPARKLE);
+
+                panel->SetGoState(state == SPECIAL ? GO_STATE_ACTIVE : GO_STATE_READY);
+            }
+
             bool SetBossState(uint32 type, EncounterState state) override
             {
+                // Creature initialization/reset must not erase a saved kill or panel use.
+                EncounterState previous = GetBossState(type);
+                if ((previous == DONE || previous == SPECIAL) &&
+                    state != DONE && state != SPECIAL)
+                    return false;
+                if (previous == SPECIAL && state == DONE)
+                    return false;
+
                 if (!InstanceScript::SetBossState(type, state))
                     return false;
 
-                switch (type)
+                if (type == DATA_HYDROMANCER_THESPIA || type == DATA_MEKGINEER_STEAMRIGGER)
                 {
-                    case DATA_HYDROMANCER_THESPIA:
-                        if (state == SPECIAL)
-                        {
-                            if (GetBossState(DATA_MEKGINEER_STEAMRIGGER) == SPECIAL)
-                                HandleGameObject(MainChambersDoorGUID, true);
+                    ObjectGuid panelGuid = type == DATA_HYDROMANCER_THESPIA ? HydroDoor : MekDoor;
+                    if (GameObject* panel = instance->GetGameObject(panelGuid))
+                        UpdateAccessPanel(panel, type);
 
-                            TC_LOG_DEBUG("scripts", "Instance Steamvault: Access panel used.");
-                        }
-                        break;
-                    case DATA_MEKGINEER_STEAMRIGGER:
-                        if (state == SPECIAL)
-                        {
-                            if (GetBossState(DATA_HYDROMANCER_THESPIA) == SPECIAL)
-                                HandleGameObject(MainChambersDoorGUID, true);
-
-                            TC_LOG_DEBUG("scripts", "Instance Steamvault: Access panel used.");
-                        }
-                        break;
-                    default:
-                        break;
+                    HandleGameObject(MainChambersDoorGUID,
+                        GetBossState(DATA_HYDROMANCER_THESPIA) == SPECIAL &&
+                        GetBossState(DATA_MEKGINEER_STEAMRIGGER) == SPECIAL);
                 }
 
                 return true;

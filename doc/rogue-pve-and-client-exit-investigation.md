@@ -174,3 +174,104 @@ the packet defect with the dungeon-specific reproduction. Repeat the failing
 dungeon/leave/logout/exit sequence with the installed build. If it persists,
 capture the world packet sequence and isolate dungeon travel from bot-group
 cleanup before changing another packet or graphics setting.
+
+## Post-fix dungeon reproduction (2026-10-03 18:16)
+
+The user entered a dungeon, left it, then logged out and reproduced the crash.
+`2026-10-03 18.16.51 Crash - 17964.txt` again reports RVA `0x7CA3CB` with the same
+exit cleanup stack; this time the invalid read address is `0x6DD735D0`. The
+installed worldserver SHA-256 matches the staged logout-response build
+(`856E199992F4C41A1C7A87FE5E141817DD528DDE73A0F20B79293B77AAF28F82`).
+The client still selects D3D9. Thus the packet-format repair did **not** resolve
+the reported crash.
+
+The server log again records map 1004 and four managed LFG bots, all of which
+completed cleanup before normal server shutdown. It lacks a detailed packet
+timeline, so it cannot establish whether group removal, teleport, an object
+update, or another operation is responsible. Crash dump/text and logs are
+preserved in `Build/scarlet-halls-audit/client-exit-20261003-181651`.
+
+With worldserver stopped, only `PacketLogFile` in the local active config was
+temporarily changed to `client-exit-diagnostic-20261003.pkt`; the original config
+is backed up in `Build/client-exit-trace-20261003/worldserver.before.conf`.
+The next server run will capture actual client/server packets in PKT 3.1 format.
+The capture and backup stay local. The local `read_trace.ps1` summarizes the
+relevant opcodes and timing; its header/payload/timestamp reader was checked with
+a synthetic logout-response record. `disable_trace.ps1` restores just that
+setting, preserving unrelated configuration edits. After the reproduction,
+archive the capture before another server start (the logger opens it with `wb`)
+and disable capture. No further speculative protocol or executable patch has
+been made during this investigation step.
+
+## Captured stale quest-object updates after LFG leave (2026-10-05)
+
+The 14:31:41 crash (PID 1160) is again the same graphics teardown fault at RVA
+`0x7CA3CB`. The server remained running. Its live packet capture, crash text/dump,
+and logs were archived under `Build/client-exit-trace-20261005-143141` before
+further server restarts. The user also tested direct solo travel into Scarlet
+Halls with `.go xyz`, `.recall`, logout, and game exit: **no crash** without the
+LFG group. This supports investigating the group-leave path rather than dungeon
+loading alone.
+
+The captured packet sequence exposes a concrete defect:
+
+- Record 2485: `CMSG_GROUP_DISBAND`, 117.339 seconds into the capture.
+- Record 2513: `SMSG_NEW_WORLD` moves the client from map 1001 to map 870.
+- Record 2516: `SMSG_UPDATE_OBJECT` still names map 1001 and contains eight
+  values-update blocks, after the client has been told to leave that map.
+- Records 2528-2535: eight `CMSG_OBJECT_UPDATE_FAILED` messages for exactly those
+  eight GUIDs. The same GUIDs recur at records 2766-2773. Five are Bucket of Meaty
+  Dog Food creatures (entry 65379); three are gameobjects. The complete 598-byte
+  stale packet decodes into those eight blocks without trailing bytes.
+- At 141.231 seconds the client requests logout. The response is the corrected
+  `00 00 00 00 80`, followed by an empty `SMSG_LOGOUT_COMPLETE`. The client then
+  requests the character list and disconnects. The earlier packet repair is
+  active, but did not resolve this dungeon reproduction.
+
+The six captured group-list packets were also consumed exactly using the
+[WPP 5.4.8 group parser](https://github.com/TrinityCore/WowPacketParser/blob/master/WowPacketParserModule.V5_4_8_18291/Parsers/GroupHandler.cs)
+with a local byte-reader adapter; no length mismatch was found there.
+
+`LFGGroupScript::OnRemoveMember` teleports the leaving player before
+`Group::RemoveMember` calls `Player::UpdateForQuestWorldObjects`. During this
+interval the player is out of the world but still has its old map/visibility
+cache, which is reset on destination-map entry. The quest refresh previously
+walked that cache and sent old-map values after `SMSG_NEW_WORLD`. It now returns
+when `!IsInWorld()`, matching the protection already used by
+`UpdateTriggerVisibility`. Normal in-world quest refresh remains enabled.
+
+`contrib/logout_protocol_548/test_quest_visibility.ps1` compiles the production
+function body with narrow engine doubles. It checks transfer-time suppression,
+ordinary refresh of three gameobjects/five spell-click creatures, and empty
+visibility. All pass; a negative control with the old guard fails by accessing
+the old map. The x64 game build and worldserver link succeeded. After the user
+stopped worldserver, the executable/PDB were installed with backup in
+`Build/server-before-logout-response-20261005-144159`. The isolated startup took
+24 seconds, with an empty DB error log, and was shut down normally.
+
+The stale-packet defect is established; eliminating the exit crash still needs
+the same LFG reproduction on this build. A separate next-run capture is enabled
+locally as `Logs/client-exit-quest-visibility-20261005.pkt` to verify both the
+absence of old-map values/failed-object responses and the gameplay outcome.
+Disable `PacketLogFile` again after preserving that test capture.
+
+## Successful post-fix LFG exit verification (2026-10-05 14:46)
+
+The user repeated LFG dungeon entry, group leave, logout, and game exit after
+installing `181070e8` and confirmed that the client no longer crashed.
+The corresponding capture was preserved in
+`Build/client-exit-verified-20261005-144719`, alongside the server log and decoded
+packet timeline. This successful run entered map 1004, left the group at
+56.272 seconds, transferred back to map 870 at 56.288 seconds, and completed
+logout at 65.384 seconds before the client disconnect at 65.860 seconds.
+
+The capture contains **zero `CMSG_OBJECT_UPDATE_FAILED` messages**, versus 16
+in the failing October 5 run. The latest client error report remains the
+14:31:41 pre-fix crash; no new report appeared for this test. Together with the
+user's gameplay result, this verifies the fix for the tested LFG exit sequence.
+It is not a claim that all possible causes of client error 132 are resolved.
+
+The active config's `PacketLogFile` was reset to an empty string after archiving
+the evidence. This disables capture on the next server start; an already-open
+logger in a running process remains open until that process stops. No server
+restart was forced for diagnostic cleanup.

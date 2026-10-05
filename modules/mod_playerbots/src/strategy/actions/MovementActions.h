@@ -18,6 +18,9 @@ enum class MovementPriority
     MOVEMENT_IDLE,
     MOVEMENT_NORMAL,
     MOVEMENT_COMBAT,
+    // May interrupt follow, formation and rotation movement, while explicit
+    // encounter mechanics using MOVEMENT_FORCED still take precedence.
+    MOVEMENT_HAZARD,
     MOVEMENT_FORCED
 };
 
@@ -42,15 +45,22 @@ protected:
     void WaitForReach(float distance);
     float MoveDelay(float distance, bool backwards = false);
     bool MoveTo(uint32 mapId, float x, float y, float z, bool idle = false, bool react = false, bool normal_only = false, bool exact_waypoint = false, MovementPriority priority = MovementPriority::MOVEMENT_NORMAL, bool lessDelay = false, bool backwards = false);
+    bool JumpTo(uint32 mapId, float x, float y, float z,
+        MovementPriority priority = MovementPriority::MOVEMENT_NORMAL);
+    void SetNextMovementDelay(float delayMillis);
     bool MoveTo(WorldObject* target, float distance = 0.0f, MovementPriority priority = MovementPriority::MOVEMENT_NORMAL);
     bool MoveNear(uint32 mapId, float x, float y, float z, float distance = sPlayerbotAIConfig->contactDistance, MovementPriority priority = MovementPriority::MOVEMENT_NORMAL);
     bool MoveNear(WorldObject* target, float distance = sPlayerbotAIConfig->contactDistance, MovementPriority priority = MovementPriority::MOVEMENT_NORMAL);
+    bool MoveInside(uint32 mapId, float x, float y, float z,
+        float distance = sPlayerbotAIConfig->followDistance,
+        MovementPriority priority = MovementPriority::MOVEMENT_NORMAL);
     bool MoveAway(Unit* target, float distance = sPlayerbotAIConfig->fleeDistance, bool backwards = false);
     bool MoveFromGroup(float distance,
         MovementPriority priority = MovementPriority::MOVEMENT_NORMAL);
     bool Move(float angle, float distance);
     bool Flee(Unit* target);
-    bool FleePosition(Position pos, float radius, uint32 minInterval = 1000);
+    bool FleePosition(Position pos, float radius, uint32 minInterval = 1000,
+        MovementPriority priority = MovementPriority::MOVEMENT_COMBAT);
     bool CheckLastFlee(float curAngle, std::list<FleeInfo>& infoList);
     Position BestPositionForMeleeToFlee(Position pos, float radius);
     Position BestPositionForRangedToFlee(Position pos, float radius);
@@ -83,6 +93,43 @@ public:
     bool Execute(Event event) override;
     bool isUseful() override;
     bool isPossible() override;
+};
+
+class MoveInsideAction : public MovementAction
+{
+public:
+    MoveInsideAction(PlayerbotAI* ai, float x, float y, float distance = 5.0f)
+        : MovementAction(ai, "move inside"), x(x), y(y), distance(distance) { }
+    bool Execute(Event event) override;
+
+protected:
+    float x, y, distance;
+};
+
+class RotateAroundTheCenterPointAction : public MovementAction
+{
+public:
+    RotateAroundTheCenterPointAction(PlayerbotAI* ai, std::string name, float centerX, float centerY,
+        float radius = 40.0f, uint32 intervals = 16, bool clockwise = true, float startAngle = 0.0f)
+        : MovementAction(ai, name), center_x(centerX), center_y(centerY), radius(radius),
+          intervals(intervals), call_counters(0), clockwise(clockwise)
+    {
+        for (uint32 i = 0; i < intervals; ++i)
+        {
+            float angle = startAngle + 2.0f * float(M_PI) * i / intervals;
+            waypoints.emplace_back(centerX + std::cos(angle) * radius, centerY + std::sin(angle) * radius);
+        }
+    }
+
+    bool Execute(Event event) override;
+
+protected:
+    virtual uint32 GetCurrWaypoint() { return 0; }
+    uint32 FindNearestWaypoint();
+    float center_x, center_y, radius;
+    uint32 intervals, call_counters;
+    bool clockwise;
+    std::vector<std::pair<float, float>> waypoints;
 };
 
 class CombatFormationMoveAction : public MovementAction
@@ -169,6 +216,14 @@ public:
 
 private:
     bool FindNearestHazard(Position& position, float& radius) const;
+};
+
+class AhnQirajEncounterAction : public MovementAction
+{
+public:
+    explicit AhnQirajEncounterAction(PlayerbotAI* ai) : MovementAction(ai, "aq40 encounter") {}
+    bool Execute(Event event) override;
+    bool isUseful() override;
 };
 
 // Source-backed encounter reactions which cannot be inferred from a generic
@@ -321,4 +376,35 @@ private:
     bool MoveToOrUse(GameObject* object, float interactDistance = 5.0f);
     bool TryBattlegroundMount();
     time_t nextMountAttempt = 0;
+};
+
+class MoveAwayFromCreatureAction : public MovementAction
+{
+public:
+    MoveAwayFromCreatureAction(PlayerbotAI* botAI, std::string const name,
+        uint32 creatureId, float range, bool alive = true)
+        : MovementAction(botAI, name), creatureId(creatureId), range(range), alive(alive) { }
+
+    bool Execute(Event event) override;
+    bool isPossible() override;
+
+private:
+    uint32 creatureId;
+    float range;
+    bool alive;
+};
+
+class MoveAwayFromPlayerWithDebuffAction : public MovementAction
+{
+public:
+    MoveAwayFromPlayerWithDebuffAction(PlayerbotAI* botAI, std::string const name,
+        uint32 spellId, float range)
+        : MovementAction(botAI, name), spellId(spellId), range(range) { }
+
+    bool Execute(Event event) override;
+    bool isPossible() override;
+
+private:
+    uint32 spellId;
+    float range;
 };

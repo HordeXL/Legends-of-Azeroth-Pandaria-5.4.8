@@ -138,6 +138,8 @@ class npc_verdisa_beglaristrasz_eternos : public CreatureScript
 
             bool OnGossipSelect(Player* player, uint32 menuId, uint32 action) override
             {
+                bool handled = false;
+
                 switch (menuId)
                 {
                     case GOSSIP_MENU_VERDISA:
@@ -149,9 +151,9 @@ class npc_verdisa_beglaristrasz_eternos : public CreatureScript
                                 RemoveEssence(player, ITEM_RUBY_ESSENCE);
 
                             StoreEssence(player, ITEM_EMERALD_ESSENCE);
-                            break;
+                            handled = true;
                         }
-                        return true;
+                        break;
                     case GOSSIP_MENU_ETERNOS:
                         if (action >= 1 && action <= 3)
                         {
@@ -161,9 +163,9 @@ class npc_verdisa_beglaristrasz_eternos : public CreatureScript
                                 RemoveEssence(player, ITEM_RUBY_ESSENCE);
 
                             StoreEssence(player, ITEM_AMBER_ESSENCE);
-                            break;
+                            handled = true;
                         }
-                        return true;
+                        break;
                     case GOSSIP_MENU_BELGARISTRASZ:
                         if (action <= 2)
                         {
@@ -173,14 +175,20 @@ class npc_verdisa_beglaristrasz_eternos : public CreatureScript
                                 RemoveEssence(player, ITEM_EMERALD_ESSENCE);
 
                             StoreEssence(player, ITEM_RUBY_ESSENCE);
-                            break;
+                            handled = true;
                         }
-                        return true;
+                        break;
                     default:
-                        return true;
+                        break;
                 }
-                player->PlayerTalkClass->SendCloseGossip();
-                return true;
+
+                // Returning true suppresses the database gossip action.  Only
+                // consume actual essence choices here; information entries and
+                // Belgaristrasz's 9708 -> 9575 submenu must reach the core.
+                if (handled)
+                    player->PlayerTalkClass->SendCloseGossip();
+
+                return handled;
             }
 
             void MovementInform(uint32 /*type*/, uint32 pointId) override
@@ -294,6 +302,8 @@ class npc_ruby_emerald_amber_drake : public CreatureScript
             {
                 me->SetFacingToObject(summoner);
 
+                ObjectGuid const summonerGuid = summoner->GetGUID();
+
                 if (summoner->ToPlayer())
                     summoner->ToPlayer()->UnsummonPetTemporaryIfAny();
 
@@ -317,6 +327,16 @@ class npc_ruby_emerald_amber_drake : public CreatureScript
 
                 me->SetFlying(true);
                 me->GetMotionMaster()->MoveLand(POINT_LAND, summoner->GetPosition());
+
+                // MovementInform is not guaranteed when the landing spline is
+                // interrupted.  Do not strand the owner beside an unusable
+                // drake if that happens.
+                me->m_Events.Schedule(2 * IN_MILLISECONDS, [this, summonerGuid]
+                {
+                    if (Unit* creator = ObjectAccessor::GetUnit(*me, summonerGuid))
+                        if (!creator->GetVehicle() && creator->IsAlive())
+                            creator->EnterVehicle(me, 0);
+                });
             }
 
             void JustDied(Unit* /*killer*/) override
@@ -328,7 +348,17 @@ class npc_ruby_emerald_amber_drake : public CreatureScript
             void MovementInform(uint32 type, uint32 pointId) override
             {
                 if (type == EFFECT_MOTION_TYPE && pointId == POINT_LAND)
+                {
                     me->SetFlying(false); // Needed this for proper animation after spawn, the summon in air fall to ground bug leave no other option for now, if this isn't used the drake will only walk on move.
+
+                    // The old periodic saddle aura is unreliable on the MoP
+                    // client and can expire without ever boarding its owner.
+                    // Keep the retail-like aura, but guarantee the controlling
+                    // seat as soon as the summoned drake reaches the player.
+                    if (Unit* creator = ObjectAccessor::GetUnit(*me, me->GetCreatorGUID()))
+                        if (!creator->GetVehicle() && creator->IsAlive())
+                            creator->EnterVehicle(me, 0);
+                }
             }
 
             void PassengerBoarded(Unit* passenger, int8 /*seatId*/, bool apply) override

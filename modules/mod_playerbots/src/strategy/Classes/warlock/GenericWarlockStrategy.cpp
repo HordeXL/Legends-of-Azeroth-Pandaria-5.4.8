@@ -92,7 +92,10 @@ void GenericWarlockStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 {
     RangedCombatStrategy::InitTriggers(triggers);
 
-    triggers.push_back(new TriggerNode("curse of the elements", NextAction::array(0, new NextAction("curse of the elements", ACTION_HIGH + 5), nullptr)));
+    // Do not spend the opening global cooldown on a zero-damage curse. The
+    // specialization's first damaging action should establish combat first.
+    triggers.push_back(new TriggerNode("curse of the elements", NextAction::array(0,
+        new NextAction("curse of the elements", ACTION_DEFAULT + 0.1f), nullptr)));
 
     triggers.push_back(new TriggerNode("warlock pet medium health", NextAction::array(0, new NextAction("health funnel", 40.0f), nullptr)));
     triggers.push_back(new TriggerNode("warlock pet low health", NextAction::array(0, new NextAction("dark regeneration", 60.0f), new NextAction("health funnel", 60.0f), nullptr)));

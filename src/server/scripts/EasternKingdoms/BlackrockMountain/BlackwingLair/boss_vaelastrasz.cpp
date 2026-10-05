@@ -215,9 +215,9 @@ public:
             DoMeleeAttackIfReady();
         }
 
-        bool OnGossipSelect(Player* player, uint32 sender, uint32 action) override
+        bool OnGossipSelect(Player* player, uint32 /*sender*/, uint32 action) override
         {
-            if (sender == GOSSIP_ID && action == 0)
+            if (action == 0)
             {
                 player->CLOSE_GOSSIP_MENU();
                 BeginSpeech(player);

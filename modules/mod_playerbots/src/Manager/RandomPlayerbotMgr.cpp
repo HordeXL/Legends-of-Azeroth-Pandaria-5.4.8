@@ -110,16 +110,28 @@ namespace
     std::map<uint32, uint32> LfgAutoQueueIneligibleBots;
     std::set<uint32> LfgAutoQueueOrphanCleanupChecked;
 
+    std::string GetPlayerbotPoolAccountSqlList()
+    {
+        std::ostringstream accounts;
+        for (size_t i = 0; i < sPlayerbotAIConfig->playerbotPoolAccounts.size(); ++i)
+        {
+            if (i)
+                accounts << ",";
+            accounts << sPlayerbotAIConfig->playerbotPoolAccounts[i];
+        }
+        return accounts.str();
+    }
+
     void CleanupOrphanedLfgBotGroups(uint32 requesterGuid)
     {
         if (!requesterGuid ||
-            sPlayerbotAIConfig->randomBotAccounts.empty())
+            sPlayerbotAIConfig->playerbotPoolAccounts.empty())
             return;
 
-        uint32 const minAccount =
-            sPlayerbotAIConfig->randomBotAccounts.front();
-        uint32 const maxAccount =
-            sPlayerbotAIConfig->randomBotAccounts.back();
+        std::string const poolAccounts = GetPlayerbotPoolAccountSqlList();
+        if (poolAccounts.empty())
+            return;
+
         QueryResult result = CharacterDatabase.PQuery(
             "SELECT g.guid FROM `groups` g "
             "WHERE g.leaderGuid=%u AND (g.groupType & %u)<>0 "
@@ -129,8 +141,8 @@ namespace
             "WHERE any_member.guid=g.guid) "
             "AND NOT EXISTS (SELECT 1 FROM group_member gm "
             "JOIN characters c ON c.guid=gm.memberGuid "
-            "WHERE gm.guid=g.guid AND (c.account<%u OR c.account>%u))",
-            requesterGuid, uint32(GROUPTYPE_LFG), minAccount, maxAccount);
+            "WHERE gm.guid=g.guid AND c.account NOT IN (%s))",
+            requesterGuid, uint32(GROUPTYPE_LFG), poolAccounts.c_str());
         if (!result)
             return;
 
@@ -172,6 +184,69 @@ namespace
                 groupId, requesterGuid, group->GetMembersCount());
             group->Disband();
         }
+    }
+
+    bool IsLfgRaidAllowedForLevel(Player* player, lfg::LFGDungeonData const* dungeon)
+    {
+        if (!player || !dungeon)
+            return false;
+
+        // Only apply this special progression rule to Raid Finder.
+        if (dungeon->difficulty != RAID_DIFFICULTY_25MAN_LFR)
+            return true;
+
+        uint8 level = player->GetLevel();
+
+        // Raid Finder starts at level 60.
+        if (level < 60)
+            return false;
+
+        // Level 90 is the transmog exception: allow every older LFR raid.
+        if (level >= 90)
+            return true;
+
+        // Expansion unlock levels:
+        // Classic 60, TBC 70, WotLK 80, Cataclysm 85.
+        uint8 requiredLevel = 60;
+        switch (dungeon->expansion)
+        {
+            case EXPANSION_CLASSIC:
+                requiredLevel = 60;
+                break;
+            case EXPANSION_THE_BURNING_CRUSADE:
+                requiredLevel = 70;
+                break;
+            case EXPANSION_WRATH_OF_THE_LICH_KING:
+                requiredLevel = 80;
+                break;
+            case EXPANSION_CATACLYSM:
+                requiredLevel = 85;
+                break;
+            default:
+                // Mists and any future expansion use the normal LFG
+                // min/max-level checks rather than this legacy-raid rule.
+                return true;
+        }
+
+        return level >= requiredLevel;
+    }
+
+    bool IsLfgRaidSetAllowedForLevel(Player* player, lfg::LfgDungeonSet const& dungeons)
+    {
+        if (!player)
+            return false;
+
+        for (uint32 dungeonId : dungeons)
+        {
+            lfg::LFGDungeonData const* dungeon = sLFGMgr->GetLFGDungeon(dungeonId);
+            if (!dungeon)
+                dungeon = sLFGMgr->GetLFGDungeon(dungeonId & 0x00FFFFFF);
+
+            if (dungeon && !IsLfgRaidAllowedForLevel(player, dungeon))
+                return false;
+        }
+
+        return true;
     }
 
     uint32 GetLfgMinimumItemLevel(lfg::LfgDungeonSet const& dungeons)
@@ -306,6 +381,7 @@ namespace
         TeamId Team = TEAM_NEUTRAL;
         uint32 RequesterGuid = 0;
         bool Healer = false;
+        uint8 SpecializationTab = 0;
     };
 
     std::map<uint32, BgAutoQueueManagedBot> BgAutoQueueManagedBots;
@@ -423,8 +499,6 @@ void RandomPlayerbotMgr::UpdateAIInternal(uint32 elapsed, bool /*minimal*/)
 
     totalPmo = sPerformanceMonitor->start(PERF_MON_TOTAL, "RandomPlayerbotMgr::FullTick");
 
-    UpdateAutoQueueObserver(elapsed);
-
     if (!sPlayerbotAIConfig->randomBotAutologin || !sPlayerbotAIConfig->enabled)
         return;
 
@@ -515,16 +589,20 @@ void RandomPlayerbotMgr::UpdateAIInternal(uint32 elapsed, bool /*minimal*/)
         pmo->finish();
 }
 
-void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
+void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 /*elapsed*/)
 {
     if (!sPlayerbotAIConfig->autoQueueEnabled)
         return;
 
-    _autoQueueElapsed += elapsed;
-    if (_autoQueueElapsed < sPlayerbotAIConfig->autoQueueCheckInterval)
+    static uint32 lastAutoQueueUpdate = 0;
+    uint32 const autoQueueNow = getMSTime();
+
+    if (lastAutoQueueUpdate &&
+        getMSTimeDiff(lastAutoQueueUpdate, autoQueueNow) <
+            sPlayerbotAIConfig->autoQueueCheckInterval)
         return;
 
-    _autoQueueElapsed = 0;
+    lastAutoQueueUpdate = autoQueueNow;
 
     // Let a rejected character be reconsidered after one minute. The normal
     // eligibility and managed-loadout validation still run in full on every
@@ -595,6 +673,11 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
 
                         if (requesterGuid)
                         {
+                            Player* requester = ObjectAccessor::FindConnectedPlayer(
+                                ObjectGuid::Create<HighGuid::Player>(requesterGuid));
+                            if (!requester)
+                                continue;
+
                             uint32 dungeonId = *queuePair.second.Dungeons.begin();
                             lfg::DungeonQueue const& dungeonQueue =
                                 managerPair.second.GetQueue(dungeonId);
@@ -610,6 +693,13 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
                                 demand.Team = managerPair.first;
                                 demand.RequesterGuid = requesterGuid;
                                 demand.Dungeons = queuePair.second.Dungeons;
+
+                                // Legacy Raid Finder progression:
+                                // 60 Classic, 70 TBC, 80 WotLK, 85 Cataclysm.
+                                // Level 90 can use all older LFR raids for transmog.
+                                if (!IsLfgRaidSetAllowedForLevel(requester, demand.Dungeons))
+                                    continue;
+
                                 demand.RandomDungeon = sLFGMgr->GetRandomDungeon(
                                     ObjectGuid::Create<HighGuid::Player>(requesterGuid),
                                     queuePair.second.QueueId);
@@ -728,6 +818,11 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
     for (auto const& managedPair : LfgAutoQueueManagedBots)
     {
         LfgAutoQueueManagedBot const& managed = managedPair.second;
+        // A kicked filler is being returned and logged out. It no longer
+        // reserves its former role while the replacement queue is active.
+        if (managed.CleanupRequested)
+            continue;
+
         auto demandItr = lfgDemands.find(managed.RequesterGuid);
         if (demandItr == lfgDemands.end())
             continue;
@@ -809,6 +904,23 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
             // coordinator's world-thread containers.
             if (PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot))
                 botAI->SetLfgAutoQueueControl(true, staged.RequesterGuid);
+
+            // Offline PvE pool characters are stored at their natural creation
+            // level. Scale the temporary filler to the real requester's level
+            // before specialization, role and managed PvE loadout validation.
+            if (sPlayerbotAIConfig->IsInPlayerbotPoolAccountList(
+                    bot->GetSession()->GetAccountId()) &&
+                bot->GetLevel() != requester->GetLevel())
+            {
+                uint32 oldLevel = bot->GetLevel();
+                BotFactory levelFactory(bot, requester->GetLevel());
+                levelFactory.PrepareManagedLevel();
+
+                TC_LOG_INFO("server",
+                    "AutoQueue LFG scaled poolbot name=%s guid=%u level=%u->%u requester=%u",
+                    bot->GetName().c_str(), botGuid, oldLevel,
+                    uint32(bot->GetLevel()), staged.RequesterGuid);
+            }
 
             // The queue may select an inactive saved specialization, or a
             // class-compatible fallback specialization when the offline pool
@@ -1226,15 +1338,11 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
             Group* botGroup = bot ? bot->GetGroup(GroupSlot::Instance) : nullptr;
             if (bot && !botGroup)
                 botGroup = bot->GetGroup();
-            Group* requesterGroup = requester ?
-                requester->GetGroup(GroupSlot::Instance) : nullptr;
-            if (requester && !requesterGroup)
-                requesterGroup = requester->GetGroup();
-            bool requesterSharesGroup = botGroup &&
-                requesterGroup == botGroup;
-            bool dungeonFinished = botGroup &&
-                sLFGMgr->GetActiveState(botGroup->GetGUID()) ==
-                    lfg::LFG_STATE_FINISHED_DUNGEON;
+            // Membership survives disconnects and map/teleport transitions.
+            // A completed dungeon is still the requester's party until they
+            // actually leave it, including while looting or queuing again.
+            bool requesterSharesGroup = botGroup && botGroup->IsMember(
+                ObjectGuid::Create<HighGuid::Player>(itr->second.RequesterGuid));
             bool requesterActive = requester &&
                 (requester->IsUsingLfg() || requester->GetGroup() ||
                  requester->IsBeingTeleported() ||
@@ -1253,24 +1361,39 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
                 continue;
             }
 
-            // Leaving an LFG instance removes only the real requester from the
+            // On logout, pause without disbanding a still-owned party. Resume
+            // only after the requester is back and the map-thread grace period
+            // has elapsed; strategy initialization remains on the bot's map.
+            if (!itr->second.CleanupRequested && requesterSharesGroup &&
+                bot->IsPlayerbotCleanupPending() && requester &&
+                requester->IsInWorld() && requester->GetSession() &&
+                !requester->GetSession()->isLogingOut() &&
+                getMSTimeDiff(itr->second.CleanupPauseStarted, getMSTime()) >= 2000)
+            {
+                if (PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot))
+                    botAI->SetLfgAutoQueueControl(false,
+                        itr->second.RequesterGuid, true);
+                bot->EndPlayerbotCleanup();
+                itr->second.CleanupPauseStarted = 0;
+            }
+
+            // Leaving the LFG group removes only the real requester from the
             // native group. The four headless fillers would otherwise remain
             // in the dungeon indefinitely and receive a continue offer which
             // they cannot answer. Once an entered filler no longer shares the
             // requester's group, unwind that filler through the native LFG
             // leave path, wait for its return teleport, then log it out.
             if (itr->second.EnteredDungeon &&
-                (!requesterSharesGroup || dungeonFinished) &&
+                !requesterSharesGroup &&
                 !itr->second.CleanupRequested)
             {
                 itr->second.CleanupRequested = true;
                 itr->second.CleanupPauseStarted = getMSTime();
                 bot->BeginPlayerbotCleanup();
                 TC_LOG_INFO("server",
-                    "AutoQueue LFG cleanup requested bot=%s guid=%u requester=%u requester-online=%u dungeon-finished=%u",
+                    "AutoQueue LFG cleanup requested bot=%s guid=%u requester=%u requester-online=%u",
                     bot->GetName().c_str(), itr->first,
-                    itr->second.RequesterGuid, requester ? 1u : 0u,
-                    dungeonFinished ? 1u : 0u);
+                    itr->second.RequesterGuid, requester ? 1u : 0u);
             }
 
             if (itr->second.CleanupRequested)
@@ -1428,7 +1551,11 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
                 ObjectAccessor::FindConnectedPlayer(
                     ObjectGuid::Create<HighGuid::Player>(demand.RequesterGuid)) : nullptr;
             if (!requester || !requester->IsUsingLfg() ||
-                sPlayerbotAIConfig->randomBotAccounts.empty())
+                sPlayerbotAIConfig->playerbotPoolAccounts.empty())
+                continue;
+
+            std::string const poolAccounts = GetPlayerbotPoolAccountSqlList();
+            if (poolAccounts.empty())
                 continue;
 
             auto stageRole = [&](lfg::LfgRoles role, uint32& needed)
@@ -1436,17 +1563,15 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
                 while (needed && lfgBotsStaged <
                     sPlayerbotAIConfig->autoQueueMaxBotsPerCycle)
                 {
-                    uint32 minAccount = sPlayerbotAIConfig->randomBotAccounts.front();
-                    uint32 maxAccount = sPlayerbotAIConfig->randomBotAccounts.back();
                     QueryResult candidates = CharacterDatabase.PQuery(
                         "SELECT guid,name,race,class,talentTree,activespec "
-                        "FROM characters WHERE account >= %u AND account <= %u "
-                        "AND level=%u AND online=0 "
+                        "FROM characters WHERE account IN (%s) "
+                        "AND online=0 "
                         "AND guid NOT IN (SELECT guid FROM guild_member) "
                         "AND guid NOT IN (SELECT memberGuid FROM group_member) "
                         "AND guid NOT IN (SELECT owner_guid FROM solo_arena_loadout_backup) "
                         "ORDER BY RAND()",
-                        minAccount, maxAccount, requester->GetLevel());
+                        poolAccounts.c_str());
                     if (!candidates)
                         break;
 
@@ -1765,6 +1890,32 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
                 continue;
             }
 
+            if (requester && bot->GetLevel() != requester->GetLevel())
+            {
+                BotFactory levelFactory(bot, requester->GetLevel());
+                levelFactory.PrepareManagedLevel();
+            }
+
+            if (staged.SpecializationTab < MAX_TALENT_TABS)
+            {
+                dbc::TalentTabs classSpecializations =
+                    dbc::GetClassSpecializations(bot->GetClass());
+                if (staged.SpecializationTab < classSpecializations.size() &&
+                    bot->GetSpecialization() !=
+                        Specializations(classSpecializations[
+                            staged.SpecializationTab]))
+                {
+                    bot->ResetTalents(true, true, true);
+                    WorldPacket specialization(CMSG_SET_PRIMARY_TALENT_TREE);
+                    specialization << uint32(staged.SpecializationTab);
+                    bot->GetSession()->HandeSetTalentSpecialization(
+                        specialization);
+                    bot->ActivateSpec(0);
+                    BotFactory specializationFactory(bot, bot->GetLevel());
+                    specializationFactory.InitTalentsTree(false);
+                }
+            }
+
             std::string rejectionReason;
             if (!CanAutoQueueBgBot(bot, staged.Team, staged.MapId,
                 staged.Bracket, &rejectionReason))
@@ -1944,6 +2095,9 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
                     "AutoQueue BG removed bot name=%s guid=%u because requester=%u left type=%u",
                     bot->GetName().c_str(), botGuid, managed.RequesterGuid,
                     uint32(managed.Type));
+                if (sPlayerbotAIConfig->IsInPlayerbotPoolAccountList(
+                        bot->GetSession()->GetAccountId()))
+                    LogoutPlayerBot(bot->GetGUID());
                 itr = BgAutoQueueManagedBots.erase(itr);
                 continue;
             }
@@ -1976,6 +2130,9 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
                     managed.Entered ? 1 : 0);
                 if (PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot))
                     botAI->ResetStrategies();
+                if (sPlayerbotAIConfig->IsInPlayerbotPoolAccountList(
+                        bot->GetSession()->GetAccountId()))
+                    LogoutPlayerBot(bot->GetGUID());
                 itr = BgAutoQueueManagedBots.erase(itr);
                 continue;
             }
@@ -2062,7 +2219,7 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
                         // offline character from the configured random-bot
                         // accounts and stage its login. The next observer tick
                         // applies the protected loadout and queues it.
-                        if (sPlayerbotAIConfig->randomBotAccounts.empty())
+                        if (sPlayerbotAIConfig->playerbotPoolAccounts.empty())
                             break;
 
                         Player* requester = requesterGuid ?
@@ -2071,17 +2228,20 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
                         if (!requester)
                             break;
 
-                        uint32 minAccount = sPlayerbotAIConfig->randomBotAccounts.front();
-                        uint32 maxAccount = sPlayerbotAIConfig->randomBotAccounts.back();
+                        std::string const poolAccounts =
+                            GetPlayerbotPoolAccountSqlList();
+                        if (poolAccounts.empty())
+                            break;
+
                         QueryResult candidates = CharacterDatabase.PQuery(
                             "SELECT guid,name,race,class,talentTree,activespec "
-                            "FROM characters WHERE account >= %u AND account <= %u "
-                            "AND level=%u AND online=0 AND instance_id=0 "
+                            "FROM characters WHERE account IN (%s) "
+                            "AND online=0 AND instance_id=0 "
                             "AND guid NOT IN (SELECT guid FROM guild_member) "
                             "AND guid NOT IN (SELECT memberGuid FROM group_member) "
                             "AND guid NOT IN (SELECT owner_guid FROM solo_arena_loadout_backup) "
                             "ORDER BY RAND()",
-                            minAccount, maxAccount, requester->GetLevel());
+                            poolAccounts.c_str());
                         if (!candidates)
                             break;
 
@@ -2089,10 +2249,12 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
                         std::string selectedName;
                         bool selectedHealer = false;
                         uint8 selectedPriority = 0;
+                        uint8 selectedSpecializationTab = 0;
                         uint32 fallbackGuid = 0;
                         std::string fallbackName;
                         bool fallbackHealer = false;
                         uint8 fallbackPriority = 0;
+                        uint8 fallbackSpecializationTab = 0;
                         do
                         {
                             Field* fields = candidates->Fetch();
@@ -2117,12 +2279,54 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
                             uint8 activeSpec = fields[5].GetUInt8();
                             if (activeSpec >= MAX_TALENT_SPECS)
                                 activeSpec = 0;
-                            Specializations specialization =
-                                Specializations(specs[activeSpec]);
-                            bool healer = IsBgHealerSpecialization(
-                                specialization);
-                            if (!HasAutomatedPvpBotLoadout(specialization))
+
+                            uint8 candidateClass = fields[3].GetUInt8();
+                            dbc::TalentTabs classSpecializations =
+                                dbc::GetClassSpecializations(candidateClass);
+                            uint8 candidateSpecializationTab = MAX_TALENT_TABS;
+                            Specializations specialization = SPEC_NONE;
+                            uint32 bestScore = 0;
+                            for (uint8 tab = 0;
+                                 tab < classSpecializations.size() &&
+                                 tab < MAX_TALENT_TABS; ++tab)
+                            {
+                                Specializations candidateSpecialization =
+                                    Specializations(classSpecializations[tab]);
+                                if (!HasAutomatedPvpBotLoadout(
+                                        candidateSpecialization))
+                                    continue;
+
+                                uint32 score = uint32(
+                                    GetAutomatedBotSpecializationPriority(
+                                        candidateSpecialization, true)) * 4;
+                                if (Specializations(specs[activeSpec]) ==
+                                    candidateSpecialization)
+                                    score += 2;
+                                else
+                                    for (uint8 specSlot = 0;
+                                         specSlot < MAX_TALENT_SPECS; ++specSlot)
+                                        if (Specializations(specs[specSlot]) ==
+                                            candidateSpecialization)
+                                        {
+                                            ++score;
+                                            break;
+                                        }
+
+                                if (candidateSpecializationTab >=
+                                        MAX_TALENT_TABS ||
+                                    score > bestScore)
+                                {
+                                    candidateSpecializationTab = tab;
+                                    specialization = candidateSpecialization;
+                                    bestScore = score;
+                                }
+                            }
+
+                            if (candidateSpecializationTab >= MAX_TALENT_TABS)
                                 continue;
+
+                            bool healer =
+                                IsBgHealerSpecialization(specialization);
                             uint8 priority =
                                 GetAutomatedBotSpecializationPriority(
                                     specialization, true);
@@ -2135,6 +2339,8 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
                                     fallbackName = fields[1].GetString();
                                     fallbackHealer = false;
                                     fallbackPriority = priority;
+                                    fallbackSpecializationTab =
+                                        candidateSpecializationTab;
                                 }
                                 continue;
                             }
@@ -2145,6 +2351,8 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
                                 selectedName = fields[1].GetString();
                                 selectedHealer = healer;
                                 selectedPriority = priority;
+                                selectedSpecializationTab =
+                                    candidateSpecializationTab;
                             }
                         }
                         while (candidates->NextRow());
@@ -2156,6 +2364,8 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
                             selectedGuid = fallbackGuid;
                             selectedName = fallbackName;
                             selectedHealer = fallbackHealer;
+                            selectedSpecializationTab =
+                                fallbackSpecializationTab;
                         }
                         if (!selectedGuid)
                             break;
@@ -2164,7 +2374,8 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
                             ObjectGuid::Create<HighGuid::Player>(selectedGuid);
                         BgAutoQueueStagedLogins[selectedGuid] =
                             { demandPair.first.first, demand.Type, demand.MapId,
-                              demand.Bracket, team, requesterGuid, selectedHealer };
+                              demand.Bracket, team, requesterGuid, selectedHealer,
+                              selectedSpecializationTab };
                         AddPlayerBot(selectedObjectGuid, 0);
                         ++demand.BotPlayers[team];
                         if (selectedHealer)
@@ -2256,20 +2467,6 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 elapsed)
         realBg || botBg || bgBotsStaged || bgBotsJoined || bgInvitesAccepted ||
         !bgDemands.empty() || !BgAutoQueueStagedLogins.empty() ||
         !BgAutoQueueManagedBots.empty() || realArena || botArena;
-    if (hasQueueActivity)
-    {
-        TC_LOG_INFO("server",
-            "AutoQueue observer (dry-run=%u, max-bots=%u, bg-max-bots=%u): LFG real/bot=%u/%u staged=%u joined=%u accepted=%u demands=%u pending=%u managed=%u, BG real/bot=%u/%u staged=%u joined=%u accepted=%u demands=%u pending=%u managed=%u, Arena real/bot=%u/%u",
-            sPlayerbotAIConfig->autoQueueDryRun ? 1 : 0, sPlayerbotAIConfig->autoQueueMaxBotsPerCycle,
-            sPlayerbotAIConfig->autoQueueBattlegroundMaxBotsPerCycle,
-            realLfg, botLfg, lfgBotsStaged, lfgBotsJoined, lfgProposalsAccepted,
-            uint32(lfgDemands.size()), uint32(LfgAutoQueueStagedLogins.size()),
-            uint32(LfgAutoQueueManagedBots.size()),
-            realBg, botBg, bgBotsStaged, bgBotsJoined, bgInvitesAccepted,
-            uint32(bgDemands.size()), uint32(BgAutoQueueStagedLogins.size()),
-            uint32(BgAutoQueueManagedBots.size()),
-            realArena, botArena);
-    }
 }
 
 uint32 RandomPlayerbotMgr::AddRandomBots()
@@ -2895,48 +3092,30 @@ void RandomPlayerbotMgr::OnPlayerLogout(Player* player)
 
     DisablePlayerBot(player->GetGUID());
 
-    // Native LFG keeps an offline member in its group and elects another
-    // member as leader. Server-controlled fillers have no client which can
-    // leave that abandoned group. Mark every filler owned by this real
-    // requester for the observer's safe, delayed group/teleport/logout path.
-    // Marking the Player before the next map update also prevents a map worker
-    // from entering bot AI while its master is being deleted.
+    // Keep fillers in the party while the requester remains a member,
+    // including across logout. Pause AI before its master is destroyed;
+    // the observer resumes it on reconnect or cleans up after group departure.
     uint32 const requesterGuid = player->GetGUID().GetCounter();
     uint32 const cleanupStarted = getMSTime();
-    Group* requesterGroup = player->GetGroup(GroupSlot::Instance);
-    if (!requesterGroup)
-        requesterGroup = player->GetGroup();
-
-    // Do not pull a real player out of a normal or mixed-human party.
-    // Check member slots, including offline members, against actual managed
-    // ownership rather than assuming every other group member is a bot.
-    bool requesterHasBotTeam = false;
-    if (!player->GetSession()->IsBot() && requesterGroup && requesterGroup->isLFGGroup() &&
-        player->GetMap() && player->GetMap()->IsDungeon())
-    {
-        bool onlyOwnedBots = true;
-        for (auto const& member : requesterGroup->GetMemberSlots())
-        {
-            if (member.guid == player->GetGUID())
-                continue;
-            auto managed = LfgAutoQueueManagedBots.find(member.guid.GetCounter());
-            if (managed == LfgAutoQueueManagedBots.end() || managed->second.RequesterGuid != requesterGuid)
-            {
-                onlyOwnedBots = false;
-                break;
-            }
-            requesterHasBotTeam = true;
-        }
-        requesterHasBotTeam = requesterHasBotTeam && onlyOwnedBots;
-    }
-    if (requesterHasBotTeam)
-        player->GetSession()->ScheduleBotLfgReturnOnLogout();
 
     for (auto& managedPair : LfgAutoQueueManagedBots)
     {
         LfgAutoQueueManagedBot& managed = managedPair.second;
         if (managed.RequesterGuid != requesterGuid)
             continue;
+
+        ObjectGuid botGuid = ObjectGuid::Create<HighGuid::Player>(
+            managedPair.first);
+        Player* managedBot = GetPlayerBot(botGuid);
+        Group* group = managedBot ? managedBot->GetGroup(GroupSlot::Instance) : nullptr;
+        if (managedBot && !group)
+            group = managedBot->GetGroup();
+        if (!managed.CleanupRequested && group && group->IsMember(player->GetGUID()))
+        {
+            managed.CleanupPauseStarted = cleanupStarted;
+            managedBot->BeginPlayerbotCleanup();
+            continue;
+        }
 
         if (!managed.CleanupRequested)
         {
@@ -2947,9 +3126,7 @@ void RandomPlayerbotMgr::OnPlayerLogout(Player* player)
                 managedPair.first, requesterGuid);
         }
 
-        ObjectGuid botGuid = ObjectGuid::Create<HighGuid::Player>(
-            managedPair.first);
-        if (Player* managedBot = GetPlayerBot(botGuid))
+        if (managedBot)
             managedBot->BeginPlayerbotCleanup();
     }
 

@@ -16,6 +16,8 @@
 GuidVector AttackersValue::Calculate()
 {
     std::unordered_set<Unit*> targets;
+    Unit* skullTarget = nullptr;
+    Unit* crossTarget = nullptr;
 
     GuidVector result;
     if (!botAI->AllowActivity(ALL_ACTIVITY))
@@ -41,16 +43,29 @@ GuidVector AttackersValue::Calculate()
     if (Group* group = bot->GetGroup())
     {
         ObjectGuid skullGuid = group->GetTargetIcon(7);
-        Unit* skullTarget = botAI->GetUnit(skullGuid);
+        skullTarget = botAI->GetUnit(skullGuid);
         if (skullTarget && IsValidTarget(skullTarget, bot))
-        {
             targets.insert(skullTarget);
-        }
+
+        ObjectGuid crossGuid = group->GetTargetIcon(6);
+        crossTarget = botAI->GetUnit(crossGuid);
+        if (crossTarget && IsValidTarget(crossTarget, bot))
+            targets.insert(crossTarget);
     }
 
-    // Zone combat, a skull marker or a saved priority target does not by
-    // itself authorize a managed filler to pull. Filter before target
-    // selection can schedule movement, not only when Attack/Spell executes.
+    // Zone combat or a saved priority target does not by itself authorize a
+    // managed filler to pull. Skull and cross are handled as an explicit group
+    // kill order by CanLfgAutoQueueEngage. Put them first so every target
+    // strategy sees skull before cross, then filter the remaining targets
+    // before target selection can schedule movement.
+    auto appendMarkedTarget = [&](Unit* unit)
+    {
+        if (unit && targets.erase(unit) && botAI->CanLfgAutoQueueEngage(unit))
+            result.push_back(unit->GetGUID());
+    };
+    appendMarkedTarget(skullTarget);
+    appendMarkedTarget(crossTarget);
+
     for (Unit* unit : targets)
         if (botAI->CanLfgAutoQueueEngage(unit))
             result.push_back(unit->GetGUID());

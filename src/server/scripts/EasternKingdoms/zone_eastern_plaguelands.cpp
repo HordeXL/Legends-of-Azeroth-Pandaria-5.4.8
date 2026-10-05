@@ -132,6 +132,34 @@ public:
     };
 };
 
+enum BattleOfDarrowshire
+{
+    QUEST_BATTLE_OF_DARROWSHIRE_CLASSIC = 5721,
+    QUEST_BATTLE_OF_DARROWSHIRE_MOP     = 27390,
+    NPC_JOSEPH_REDPATH                  = 10936,
+};
+
+// Joseph Redpath - 10936
+class npc_joseph_redpath : public CreatureScript
+{
+public:
+    npc_joseph_redpath() : CreatureScript("npc_joseph_redpath") { }
+
+    bool OnGossipHello(Player* player, Creature* creature) override
+    {
+        player->SEND_GOSSIP_MENU(player->GetGossipTextId(creature), creature->GetGUID());
+
+        if (player->GetQuestStatus(QUEST_BATTLE_OF_DARROWSHIRE_CLASSIC) == QUEST_STATUS_INCOMPLETE ||
+            player->GetQuestStatus(QUEST_BATTLE_OF_DARROWSHIRE_MOP) == QUEST_STATUS_INCOMPLETE)
+        {
+            player->KilledMonsterCredit(NPC_JOSEPH_REDPATH, creature->GetGUID());
+            creature->HandleEmoteCommand(EMOTE_ONESHOT_BEG);
+        }
+
+        return true;
+    }
+};
+
 /*######
 ## npc_tirion_fordring
 ######*/
@@ -275,6 +303,7 @@ void AddSC_eastern_plaguelands()
     new npc_ghoul_flayer();
     new npc_augustus_the_touched();
     new npc_darrowshire_spirit();
+    new npc_joseph_redpath();
     new npc_tirion_fordring();
     new creature_script<npc_scourge_siege_engineer>("npc_scourge_siege_engineer");
 }

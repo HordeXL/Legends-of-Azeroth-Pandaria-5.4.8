@@ -570,6 +570,289 @@ class npc_despondent_warden_of_zhu : public CreatureScript
         }
 };
 
+enum UnsafePassageData
+{
+    QUEST_UNSAFE_PASSAGE                   = 30269,
+    NPC_UNSAFE_PASSAGE_CREDIT              = 58946,
+    NPC_RIVERBLADE_BLOODLETTER             = 58981,
+    GOSSIP_MENU_KORO_MISTWALKER            = 13468
+};
+
+// Koro Mistwalker 58547 - Unsafe Passage
+class npc_koro_mistwalker_unsafe_passage : public CreatureScript
+{
+    public:
+        npc_koro_mistwalker_unsafe_passage() : CreatureScript("npc_koro_mistwalker_unsafe_passage") { }
+
+        bool OnGossipHello(Player* player, Creature* creature) override
+        {
+            player->PrepareGossipMenu(creature, GOSSIP_MENU_KORO_MISTWALKER, true);
+            player->SendPreparedGossip(creature);
+            return true;
+        }
+
+        bool OnGossipSelect(Player* player, Creature* creature, uint32 /*sender*/, uint32 /*action*/) override
+        {
+            player->PlayerTalkClass->ClearMenus();
+            player->CLOSE_GOSSIP_MENU();
+
+            if (player->GetQuestStatus(QUEST_UNSAFE_PASSAGE) != QUEST_STATUS_INCOMPLETE)
+                return true;
+
+            if (npc_koro_mistwalker_unsafe_passageAI* escortAI = CAST_AI(npc_koro_mistwalker_unsafe_passageAI, creature->AI()))
+                if (!escortAI->HasEscortState(STATE_ESCORT_ESCORTING))
+                {
+                    creature->RemoveFlag(UNIT_FIELD_NPC_FLAGS, UNIT_NPC_FLAG_GOSSIP | UNIT_NPC_FLAG_QUESTGIVER);
+                    escortAI->Start(true, true, player->GetGUID());
+                }
+
+            return true;
+        }
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return new npc_koro_mistwalker_unsafe_passageAI(creature);
+        }
+
+        struct npc_koro_mistwalker_unsafe_passageAI : public npc_escortAI
+        {
+            npc_koro_mistwalker_unsafe_passageAI(Creature* creature) : npc_escortAI(creature) { }
+
+            uint8 bloodlettersAlive = 0;
+
+            void Reset() override
+            {
+                bloodlettersAlive = 0;
+            }
+
+            void SummonBloodletterWave()
+            {
+                SetEscortPaused(true);
+                bloodlettersAlive = 0;
+
+                Player* player = GetPlayerForEscort();
+                for (float angle : { -1.2f, 1.2f })
+                {
+                    Position position = me->GetNearPosition(7.0f, angle);
+                    if (Creature* bloodletter = me->SummonCreature(NPC_RIVERBLADE_BLOODLETTER, position,
+                        TEMPSUMMON_CORPSE_TIMED_DESPAWN, 5 * IN_MILLISECONDS))
+                    {
+                        ++bloodlettersAlive;
+                        bloodletter->AI()->AttackStart(player ? static_cast<Unit*>(player) : me);
+                    }
+                }
+
+                if (!bloodlettersAlive)
+                    SetEscortPaused(false);
+            }
+
+            void WaypointReached(uint32 waypointId) override
+            {
+                switch (waypointId)
+                {
+                    case 3:
+                    case 5:
+                        SummonBloodletterWave();
+                        break;
+                    case 6:
+                        if (Player* player = GetPlayerForEscort())
+                            if (player->GetQuestStatus(QUEST_UNSAFE_PASSAGE) == QUEST_STATUS_INCOMPLETE)
+                                player->KilledMonsterCredit(NPC_UNSAFE_PASSAGE_CREDIT);
+                        break;
+                    default:
+                        break;
+                }
+            }
+
+            void SummonedCreatureDies(Creature* summon, Unit* /*killer*/) override
+            {
+                if (summon->GetEntry() != NPC_RIVERBLADE_BLOODLETTER || !bloodlettersAlive)
+                    return;
+
+                if (!--bloodlettersAlive)
+                    SetEscortPaused(false);
+            }
+
+            void JustSummoned(Creature* summon) override
+            {
+                if (summon->GetEntry() == NPC_RIVERBLADE_BLOODLETTER)
+                    if (Player* player = GetPlayerForEscort())
+                        summon->AI()->AttackStart(player);
+            }
+
+            void JustDied(Unit* /*killer*/) override
+            {
+                if (Player* player = GetPlayerForEscort())
+                    player->FailQuest(QUEST_UNSAFE_PASSAGE);
+            }
+        };
+};
+
+enum CheerUpYiMoData
+{
+    QUEST_CHEER_UP_YI_MO                 = 30082,
+    NPC_YI_MO_ROLLING                    = 57310,
+    NPC_YI_MO_THUNDERBIRD                = 58111,
+    SPELL_CHEER_UP_YI_MO_PUSH            = 108175,
+    SPELL_CHEER_UP_YI_MO_ROLL_TRIGGER    = 108178,
+    SPELL_CHEER_UP_YI_MO_COMPLETION      = 109332
+};
+
+Position const cheerUpYiMoStops[5] =
+{
+    { -330.0f, -810.0f, 125.0f, 0.0f },
+    { -340.0f, -757.0f, 129.0f, 0.0f },
+    { -342.0f, -714.5f, 131.6f, 0.0f },
+    { -354.0f, -668.0f, 124.0f, 0.0f },
+    { -353.8f, -614.4f, 119.0f, 0.0f }
+};
+
+// Yi-Mo Longbrow 58376 - starts the personal rolling event.
+class npc_cheer_up_yi_mo_starter : public CreatureScript
+{
+    public:
+        npc_cheer_up_yi_mo_starter() : CreatureScript("npc_cheer_up_yi_mo_starter") { }
+
+        static void StartEvent(Player* player, Creature* creature)
+        {
+            std::list<TempSummon*> oldYiMos;
+            player->GetSummons(oldYiMos, NPC_YI_MO_ROLLING);
+            for (TempSummon* oldYiMo : oldYiMos)
+                oldYiMo->UnSummon();
+
+            player->SummonCreature(NPC_YI_MO_ROLLING, creature->GetPosition(), TEMPSUMMON_TIMED_DESPAWN,
+                10 * MINUTE * IN_MILLISECONDS, 0, player->GetGUID());
+        }
+
+        bool OnGossipHello(Player* player, Creature* creature) override
+        {
+            player->PrepareGossipMenu(creature, 13354, true);
+            player->SendPreparedGossip(creature);
+            return true;
+        }
+
+        bool OnGossipSelect(Player* player, Creature* creature, uint32 /*sender*/, uint32 action) override
+        {
+            player->PlayerTalkClass->ClearMenus();
+            player->CLOSE_GOSSIP_MENU();
+
+            if (action != GOSSIP_OPTION_GOSSIP || player->GetQuestStatus(QUEST_CHEER_UP_YI_MO) != QUEST_STATUS_INCOMPLETE)
+                return true;
+
+            StartEvent(player, creature);
+            return true;
+        }
+
+        bool OnQuestAccept(Player* player, Creature* creature, Quest const* quest) override
+        {
+            if (quest->GetQuestId() == QUEST_CHEER_UP_YI_MO)
+                StartEvent(player, creature);
+
+            return true;
+        }
+};
+
+// Rolling Yi-Mo 57310 - each click advances one leg; the next click is locked
+// until the attacking thunderbird from the preceding leg has been killed.
+struct npc_cheer_up_yi_mo_rolling : public ScriptedAI
+{
+    npc_cheer_up_yi_mo_rolling(Creature* creature) : ScriptedAI(creature) { }
+
+    ObjectGuid playerGuid;
+    ObjectGuid birdGuid;
+    uint8 currentStop = 0;
+    bool moving = false;
+
+    void IsSummonedBy(Unit* summoner) override
+    {
+        Player* player = summoner->ToPlayer();
+        if (!player || player->GetQuestStatus(QUEST_CHEER_UP_YI_MO) != QUEST_STATUS_INCOMPLETE)
+        {
+            me->DespawnOrUnsummon();
+            return;
+        }
+
+        playerGuid = player->GetGUID();
+        me->ToTempSummon()->SetPrivateObjectOwner(playerGuid);
+        me->SetFaction(player->GetFaction());
+        me->SetReactState(REACT_PASSIVE);
+        me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_IMMUNE_TO_PC | UNIT_FLAG_IMMUNE_TO_NPC);
+        me->SetFlag(UNIT_FIELD_NPC_FLAGS, UNIT_NPC_FLAG_SPELLCLICK);
+        me->SetSpeed(MOVE_RUN, 1.35f);
+    }
+
+    void OnSpellClick(Unit* clicker, bool& /*result*/) override
+    {
+        Player* player = clicker->ToPlayer();
+        if (!player || player->GetGUID() != playerGuid || moving || birdGuid || currentStop >= 5)
+            return;
+
+        if (player->GetQuestStatus(QUEST_CHEER_UP_YI_MO) != QUEST_STATUS_INCOMPLETE)
+        {
+            me->DespawnOrUnsummon();
+            return;
+        }
+
+        moving = true;
+        me->RemoveFlag(UNIT_FIELD_NPC_FLAGS, UNIT_NPC_FLAG_SPELLCLICK);
+        me->CastSpell(me, SPELL_CHEER_UP_YI_MO_ROLL_TRIGGER, true);
+        me->GetMotionMaster()->MovePoint(currentStop + 1, cheerUpYiMoStops[currentStop]);
+    }
+
+    void MovementInform(uint32 type, uint32 pointId) override
+    {
+        if (type != POINT_MOTION_TYPE || pointId != currentStop + 1 || currentStop >= 5)
+            return;
+
+        moving = false;
+        ++currentStop;
+
+        Player* player = ObjectAccessor::GetPlayer(*me, playerGuid);
+        if (!player || player->GetQuestStatus(QUEST_CHEER_UP_YI_MO) != QUEST_STATUS_INCOMPLETE)
+        {
+            me->DespawnOrUnsummon();
+            return;
+        }
+
+        if (currentStop == 5)
+        {
+            me->CastSpell(player, SPELL_CHEER_UP_YI_MO_COMPLETION, true);
+            player->KilledMonsterCredit(NPC_YI_MO_ROLLING);
+            me->DespawnOrUnsummon(4000);
+            return;
+        }
+
+        Position birdPosition = me->GetNearPosition(8.0f, frand(-1.0f, 1.0f));
+        if (Creature* bird = me->SummonCreature(NPC_YI_MO_THUNDERBIRD, birdPosition, TEMPSUMMON_TIMED_OR_DEAD_DESPAWN,
+            90 * IN_MILLISECONDS, 0, playerGuid))
+        {
+            birdGuid = bird->GetGUID();
+            bird->SetFaction(14);
+            bird->AI()->AttackStart(player);
+        }
+        else
+            me->SetFlag(UNIT_FIELD_NPC_FLAGS, UNIT_NPC_FLAG_SPELLCLICK);
+    }
+
+    void SummonedCreatureDies(Creature* summon, Unit* /*killer*/) override
+    {
+        if (summon->GetGUID() != birdGuid)
+            return;
+
+        birdGuid.Clear();
+        me->SetFlag(UNIT_FIELD_NPC_FLAGS, UNIT_NPC_FLAG_SPELLCLICK);
+    }
+
+    void SummonedCreatureDespawn(Creature* summon) override
+    {
+        if (summon->GetGUID() != birdGuid)
+            return;
+
+        birdGuid.Clear();
+        me->SetFlag(UNIT_FIELD_NPC_FLAGS, UNIT_NPC_FLAG_SPELLCLICK);
+    }
+};
+
 class npc_zhus_watch_courier : public CreatureScript
 {
     public:
@@ -3104,12 +3387,18 @@ struct npc_lorekeeper_vaeldrin : public ScriptedAI
     }
 };
 
+void AddSC_daily_quest_repairs();
+
 void AddSC_krasarang_wilds()
 {
+    AddSC_daily_quest_repairs();
     new npc_arness_the_scale();
     new npc_torik_ethis();
     new npc_go_kan();
     new npc_despondent_warden_of_zhu();
+    new npc_koro_mistwalker_unsafe_passage();
+    new npc_cheer_up_yi_mo_starter();
+    new creature_script<npc_cheer_up_yi_mo_rolling>("npc_cheer_up_yi_mo_rolling");
     new npc_zhus_watch_courier();
     new creature_script<npc_shieldwall_footman>("npc_shieldwall_footman");
     new creature_script<npc_krasari_tormentor>("npc_krasari_tormentor");
