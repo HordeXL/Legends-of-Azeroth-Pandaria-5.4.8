@@ -55,6 +55,9 @@ struct Creature : Unit
 {
     uint32 entry, guid, faction = 16, react = REACT_AGGRESSIVE, flags = 0, stand = UNIT_STAND_STATE_STAND;
     uint32 melee = 0, casts = 0;
+    uint32 sleepVisualCasts = 0;
+    bool sleepVisual = false;
+    bool sleepZzz = false;
     bool alive = true, combat = false, threat = false;
     Unit* victim = nullptr;
     ::AI* ai = nullptr;
@@ -82,7 +85,18 @@ struct Creature : Unit
     void CombatStop(bool) { combat = false; victim = nullptr; }
     void DeleteThreatList() { threat = false; }
     bool HasUnitState(uint32) const { return false; }
-    void CastSpell(Unit*, uint32, bool) { ++casts; motion.kind = Motion::Jump; }
+    void CastSpell(Unit*, uint32 spell, bool)
+    {
+        ++casts;
+        if (spell == 113114) { sleepVisual = true; ++sleepVisualCasts; }
+        else if (spell == 55474) sleepZzz = true;
+        else motion.kind = Motion::Jump;
+    }
+    void RemoveAurasDueToSpell(uint32 spell)
+    {
+        if (spell == 113114) sleepVisual = false;
+        if (spell == 55474) sleepZzz = false;
+    }
     void StopMoving() { }
     void AddAura(uint32, Creature*) { }
 };
@@ -151,6 +165,7 @@ int main()
     ai.UpdateAI(100);
     assert(ai.fed && !dog.combat && !dog.threat && dog.victim == nullptr && dog.faction == 35);
     assert(dog.motion.kind == Motion::Point && dog.stand == UNIT_STAND_STATE_STAND);
+    assert(!dog.sleepVisual && !dog.sleepZzz); // No sleeping visuals while still walking back.
     assert(dog.motion.destination.x == 10 && dog.motion.destination.y == 20 && dog.motion.destination.z == 30);
     assert(dog.flags & UNIT_FLAG_PACIFIED);
     ai.SetGUID(otherWatchman.guid, GUID_DOG_FOOD_TARGET);
@@ -159,14 +174,20 @@ int main()
     ai.MovementInform(EFFECT_MOTION_TYPE, dog.motion.pointId); // Late leap callback must not put it to sleep.
     ai.MovementInform(POINT_MOTION_TYPE, dog.motion.pointId + 1);
     assert(dog.stand == UNIT_STAND_STATE_STAND);
+    assert(!dog.sleepVisual && !dog.sleepZzz);
     dog.position = dog.motion.destination;
     ai.MovementInform(POINT_MOTION_TYPE, dog.motion.pointId);
     assert(dog.stand == UNIT_STAND_STATE_SLEEP && !ai.returningAfterFeeding);
     assert(dog.position.orientation == 1.5f && dog.faction == 35);
+    assert(dog.sleepVisual && dog.sleepZzz && dog.sleepVisualCasts == 1);
+    ai.MovementInform(POINT_MOTION_TYPE, dog.motion.pointId);
+    ai.UpdateAI(100);
+    assert(dog.sleepVisualCasts == 1); // Arrival repeats cannot recast the cosmetic.
     std::cout << "PASS bucket hit -> selected watchman attack -> friendly return to patrol position -> sleep on arrival\n";
 
     ai.Reset();
     assert(!ai.fed && !ai.foodTargetGUID && dog.faction == 16 && !(dog.flags & UNIT_FLAG_PACIFIED));
+    assert(!dog.sleepVisual && !dog.sleepZzz && dog.stand == UNIT_STAND_STATE_STAND);
     ai.SetGUID(dog.guid, GUID_DOG_FOOD_TARGET);
     ai.SetGUID(watchman.guid, GUID_DOG_FOOD_TARGET); // Dead target.
     ai.SetGUID(999, GUID_DOG_FOOD_TARGET);

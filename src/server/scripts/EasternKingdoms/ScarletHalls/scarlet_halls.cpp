@@ -57,6 +57,8 @@ enum Spells
     SPELL_EXPLODING_GROUND    = 114861,
     SPELL_DOG_LEAP            = 122929,
     SPELL_EATEN               = 122916,
+    SPELL_SLEEPING_DOG        = 113114,
+    SPELL_SLEEP_ZZZ           = 55474,
     SPELL_PLAYER_VEHICLE_AURA = 113399,
 };
 
@@ -125,6 +127,8 @@ class npc_starving_hound : public CreatureScript
                 foodTargetGUID = ObjectGuid::Empty;
                 fed = false;
                 returningAfterFeeding = false;
+                me->RemoveAurasDueToSpell(SPELL_SLEEPING_DOG);
+                me->RemoveAurasDueToSpell(SPELL_SLEEP_ZZZ);
                 me->RestoreFaction();
                 me->SetReactState(REACT_AGGRESSIVE);
                 me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PACIFIED);
@@ -163,6 +167,10 @@ class npc_starving_hound : public CreatureScript
                     returningAfterFeeding = false;
                     me->SetFacingTo(feedingReturnPosition.GetOrientation());
                     me->SetStandState(UNIT_STAND_STATE_SLEEP);
+                    // Sleeping Dog supplies the animation kit; the separate
+                    // cosmetic supplies Sleep_State_Head (the Zzz effect).
+                    me->CastSpell(me, SPELL_SLEEPING_DOG, true);
+                    me->CastSpell(me, SPELL_SLEEP_ZZZ, true);
                     return;
                 }
 

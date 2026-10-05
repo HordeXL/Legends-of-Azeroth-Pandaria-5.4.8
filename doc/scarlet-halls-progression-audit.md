@@ -185,3 +185,29 @@ The x64 scripts/server build was installed with backup
 requires a retest with a fresh group of unfed hounds.
 The isolated smoke run in `Build/hound-return-smoke` initialized in 23 seconds,
 kept DBErrors.log empty and shut down cleanly.
+
+## Sleeping pose and Zzz visual (2026-10-05)
+
+The user's Wowhead screenshot shows prone hounds with green Zzz effects.
+Stand state alone did not request a cosmetic spell visual. On return-point
+arrival the AI now keeps `UNIT_STAND_STATE_SLEEP`, casts Sleeping Dog (113114)
+for the dog animation and Cosmetic - Sleep Zzz (55474) for the head effect.
+Reset removes both auras before restoring the standing/hostile state.
+
+The installed 5.4.8 data distinguishes these effects: spell 113114 uses visual
+23098, persistent kit 23126 and animation kit 1974, with no head effect; spell
+55474 uses visual 12147, persistent kit 11223 and head effect 4742, whose model
+is `Spells\Sleep_State_Head.mdx`. Both spells are self-targeted dummy auras with
+unlimited duration. Field interpretation follows the 5.0.1–5.4.8 layout in
+[WoWDBDefs SpellVisualKit](https://github.com/wowdev/WoWDBDefs/blob/master/definitions/SpellVisualKit.dbd).
+
+The production-AI regression verifies that neither cosmetic is applied during
+return movement, both appear on arrival, duplicate arrival notifications do
+not repeat the animation cast, and reset removes both. The screenshot does not
+establish original patrol coordinates, so the previously requested per-hound
+return position is retained. Actual rendering still needs client verification.
+
+The x64 build was installed with backup
+`Build/server-before-logout-response-20261005-152621`.
+Its isolated smoke run in `Build/hound-sleep-visual-smoke` initialized in
+23 seconds, produced an empty DBErrors.log and shut down normally.
