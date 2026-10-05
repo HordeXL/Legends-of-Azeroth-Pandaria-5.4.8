@@ -3033,7 +3033,12 @@ class spell_sha_maelstrom_weapon_visual : public AuraScript
     void HandleApply(AuraEffect const*, AuraEffectHandleModes)
     {
         if (GetAura()->GetStackAmount() == GetAura()->GetMaxStackAmount())
-            GetUnitOwner()->CastSpell(GetUnitOwner(), SPELL_SHA_MAELSTROM_WEAPON_FULL_STACKS, true);
+        {
+            if (!GetUnitOwner()->HasAura(SPELL_SHA_MAELSTROM_WEAPON_FULL_STACKS))
+                GetUnitOwner()->CastSpell(GetUnitOwner(), SPELL_SHA_MAELSTROM_WEAPON_FULL_STACKS, true);
+        }
+        else
+            GetUnitOwner()->RemoveAurasDueToSpell(SPELL_SHA_MAELSTROM_WEAPON_FULL_STACKS);
     }
 
     void HandleRemove(AuraEffect const*, AuraEffectHandleModes)
@@ -3043,7 +3048,7 @@ class spell_sha_maelstrom_weapon_visual : public AuraScript
 
     void Register() override
     {
-        OnEffectApply += AuraEffectApplyFn(spell_sha_maelstrom_weapon_visual::HandleApply, EFFECT_0, SPELL_AURA_ADD_PCT_MODIFIER, AURA_EFFECT_HANDLE_REAPPLY);
+        OnEffectApply += AuraEffectApplyFn(spell_sha_maelstrom_weapon_visual::HandleApply, EFFECT_0, SPELL_AURA_ADD_PCT_MODIFIER, AURA_EFFECT_HANDLE_REAL_OR_REAPPLY_MASK);
         OnEffectRemove += AuraEffectRemoveFn(spell_sha_maelstrom_weapon_visual::HandleRemove, EFFECT_0, SPELL_AURA_ADD_PCT_MODIFIER, AURA_EFFECT_HANDLE_REAL);
     }
 };

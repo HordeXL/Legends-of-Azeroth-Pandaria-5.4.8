@@ -16,6 +16,7 @@
 */
 
 #include "Player.h"
+#include "SpellPowerVisuals.h"
 #include "CustomTransmogrification.h"
 #include "AccountMgr.h"
 #include "AchievementMgr.h"
@@ -8818,16 +8819,15 @@ void Player::_ApplyWeaponDependentAuraMods(Item* item, WeaponAttackType attackTy
     if (AuraEffect* driver = GetAuraEffect(108562, EFFECT_0))
         driver->RecalculateAmount();
 
-    // Glyph of Bladed Judgment
-    if (AuraEffect* driver = GetAuraEffect(203782, EFFECT_0))
-        driver->RecalculateAmount();
-
     // We CAN'T do it right now, it causes bugs.
     m_Events.Schedule(1, [=]
     {
         for (auto&& type : AuraEffect::WeaponDependingEffects())
             for (auto&& it : GetAuraEffectsByType(type))
                 it->RecalculateAmount();
+        // Equipment is committed by this tick; do not inspect the outgoing
+        // main-hand item while its bonuses are still being removed.
+        SpellPowerVisuals::UpdatePaladin(this);
     });
 }
 
@@ -25447,6 +25447,13 @@ void Player::SendInitialPacketsAfterAddToMap()
     if (HasAuraType(SPELL_AURA_MOD_ROOT))
         SetRooted(true, true);
 
+    // The client already knows the player object here. Restore cosmetic
+    // state after login/map transfer before sending the complete aura snapshot.
+    SpellPowerVisuals::UpdateWarlock(this);
+    SpellPowerVisuals::UpdatePaladin(this);
+    if (GetClass() == CLASS_PRIEST && IsAlive() && GetMaxPower(POWER_SHADOW_ORBS) > 0)
+        SetPower(POWER_SHADOW_ORBS, GetPower(POWER_SHADOW_ORBS));
+
     SendAurasForTarget(this);
     SendEnchantmentDurations();                             // must be after add to map
     SendItemDurations();                                    // must be after add to map
@@ -26000,7 +26007,7 @@ void Player::SendAurasForTarget(Unit* target)
 
         // send stack amount for aura which could be stacked (never 0 - causes incorrect display) or charges
         // stack amount has priority over charges (checked on retail with spell 50262)
-        data << uint8(aura->GetSpellInfo()->StackAmount ? aura->GetStackAmount() : aura->GetCharges());
+        data << uint8(aura->GetSpellInfo()->StackAmount > 1 ? aura->GetStackAmount() : aura->GetCharges());
         data << uint32(auraApp->GetEffectMask());
 
         if (flags & AFLAG_ANY_EFFECT_AMOUNT_SENT)
@@ -27481,12 +27488,42 @@ void Player::SetGlyph(uint8 slot, uint32 glyph)
         ApplyGlyph(slot, glyph);
 }
 
+void SpellPowerVisuals::UpdatePaladin(Player* player)
+{
+    if (!player || player->GetClass() != CLASS_PALADIN || !player->IsInWorld())
+        return;
+
+    uint32 visual = 0;
+    // Glyph 989 teaches 115934. The old script required custom spell 203782,
+    // which is absent from the stock client and never created its driver aura.
+    if (player->IsAlive() && player->HasSpell(115934))
+        if (Item* weapon = player->GetWeaponForAttack(BASE_ATTACK))
+            switch (weapon->GetTemplate()->SubClass)
+            {
+                case ITEM_SUBCLASS_WEAPON_SWORD:
+                case ITEM_SUBCLASS_WEAPON_SWORD2: visual = 127755; break;
+                case ITEM_SUBCLASS_WEAPON_AXE:
+                case ITEM_SUBCLASS_WEAPON_AXE2: visual = 127756; break;
+                default: break;
+            }
+
+    for (uint32 spell : {127755u, 127756u})
+        if (spell == visual)
+        {
+            if (!player->HasAura(spell))
+                player->CastSpell(player, spell, true);
+        }
+        else if (player->HasAura(spell))
+            player->RemoveAurasDueToSpell(spell);
+}
+
 void Player::ApplyGlyph(uint8 slot, uint32 glyph)
 {
     if (GlyphPropertiesEntry const* gp = sGlyphPropertiesStore.LookupEntry(glyph))
     {
         LearnSpell(gp->SpellId, true);
         SetUInt32Value(PLAYER_FIELD_GLYPHS + slot, glyph);
+        SpellPowerVisuals::UpdatePaladin(this);
     }
 }
 
@@ -27496,6 +27533,7 @@ void Player::UnapplyGlyph(uint8 slot)
     if (GlyphPropertiesEntry const* gp = sGlyphPropertiesStore.LookupEntry(old))
         RemoveSpell(gp->SpellId);
     SetUInt32Value(PLAYER_FIELD_GLYPHS + slot, 0);
+    SpellPowerVisuals::UpdatePaladin(this);
 }
 
 bool Player::isTotalImmune()
@@ -29016,6 +29054,8 @@ void Player::ActivateSpec(uint8 spec)
 
     // Needs for some trinkets which depends on spec
     ReapplyItemsBonuses();
+
+    SpellPowerVisuals::UpdateWarlock(this);
 
 }
 
