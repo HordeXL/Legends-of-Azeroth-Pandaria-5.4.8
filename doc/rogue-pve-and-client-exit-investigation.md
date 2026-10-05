@@ -254,3 +254,24 @@ the same LFG reproduction on this build. A separate next-run capture is enabled
 locally as `Logs/client-exit-quest-visibility-20261005.pkt` to verify both the
 absence of old-map values/failed-object responses and the gameplay outcome.
 Disable `PacketLogFile` again after preserving that test capture.
+
+## Successful post-fix LFG exit verification (2026-10-05 14:46)
+
+The user repeated LFG dungeon entry, group leave, logout, and game exit after
+installing `181070e8` and confirmed that the client no longer crashed.
+The corresponding capture was preserved in
+`Build/client-exit-verified-20261005-144719`, alongside the server log and decoded
+packet timeline. This successful run entered map 1004, left the group at
+56.272 seconds, transferred back to map 870 at 56.288 seconds, and completed
+logout at 65.384 seconds before the client disconnect at 65.860 seconds.
+
+The capture contains **zero `CMSG_OBJECT_UPDATE_FAILED` messages**, versus 16
+in the failing October 5 run. The latest client error report remains the
+14:31:41 pre-fix crash; no new report appeared for this test. Together with the
+user's gameplay result, this verifies the fix for the tested LFG exit sequence.
+It is not a claim that all possible causes of client error 132 are resolved.
+
+The active config's `PacketLogFile` was reset to an empty string after archiving
+the evidence. This disables capture on the next server start; an already-open
+logger in a running process remains open until that process stops. No server
+restart was forced for diagnostic cleanup.
