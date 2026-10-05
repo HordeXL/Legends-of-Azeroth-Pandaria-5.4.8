@@ -240,6 +240,30 @@ void WorldSession::HandlePetStopAttack(WorldPacket &recvData)
 
 void WorldSession::HandlePetActionHelper(Unit* pet, ObjectGuid guid1, uint32 spellid, uint16 flag, ObjectGuid guid2, float x, float y, float z)
 {
+    // 5.4.8 client sends vehicle action bar button clicks as CMSG_PET_ACTION with type 8.
+    // Vehicles never receive a CharmInfo (SetCharmedBy skips InitCharmInfo for CHARM_TYPE_VEHICLE),
+    // so vehicle spell casts must be handled before the CharmInfo gate below.
+    if (flag == ACT_VEHICLE_SPELL && pet->GetVehicleKit() && _player->IsOnVehicle(pet))
+    {
+        // do not cast unknown, passive or unlearned spells
+        SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellid);
+        if (!spellInfo || spellInfo->IsPassive() || !pet->HasSpell(spellid))
+            return;
+
+        Unit* unit_target = guid2 ? ObjectAccessor::GetUnit(*_player, guid2) : nullptr;
+        Spell* spell = new Spell(pet, spellInfo, TRIGGERED_NONE);
+        spell->m_cast_count = 0;
+        SpellCastResult result = spell->CheckPetCast(unit_target);
+        if (result == SPELL_CAST_OK)
+            spell->prepare(&(spell->m_targets));
+        else
+        {
+            spell->finish(false);
+            delete spell;
+        }
+        return;
+    }
+
     CharmInfo* charmInfo = pet->GetCharmInfo();
     if (!charmInfo)
     {
