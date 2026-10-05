@@ -112,3 +112,49 @@ its predecessor is in `Build/server-before-scarlet-halls-20261003-120108`.
 The installed build's separate startup check reached `World initialized` in
 23 seconds with zero `DBErrors.log` bytes and shut down normally. Logs are in
 `Build/scarlet-halls-dog-food-smoke`.
+
+## LFG druid stuck at entrance (2026-10-05)
+
+The observed party assigned Finarie (499) Guardian/tank and Baldro (411)
+Balance/damage. Baldro's saved aura included Bear Form (5487); the staging log
+confirmed his switch to specialization 102. He repeatedly attempted Moonkin
+Form without following the requester. A short debug trace captured repeated
+`Baldro cast: moonkin form` without the corresponding spell preparation.
+
+The shipped spell 24858 has attributes 0x50010, including
+`SPELL_ATTR0_NOT_SHAPESHIFT`. The combat strategy supplies a caster-form
+prerequisite, but direct LFG preparation and the non-combat action do not.
+Moonkin's action now removes the prior shapeshift aura before casting, without
+depending on the old specialization's learned spell list or a mana threshold.
+Playerbot casting also preserves `prepare()`'s strict failure result: a later
+`CheckCast(false)` previously skipped the form check and falsely reported
+success, allowing the same high-priority failed action to starve following.
+
+`contrib/playerbot_auto_queue_548/test_druid_form.ps1` executes the production
+action and cast-result block with narrow doubles. It covers Bear/Cat/caster
+transitions, insufficient mana, preserving an existing Moonkin form, and strict
+cast failure propagation. The previous inherited action fails the negative
+control. A rate-limited LFG form diagnostic records unresolved mismatches
+without enabling global debug logging. Live group retesting remains pending.
+
+During diagnosis, `server set loglevel l root 2` exposed a separate server
+crash at 15:05:32: `Condition::ToString` streamed a null source name for terrain
+swap source type 29. The source-name table stopped at 26; sparse condition
+names were also unguarded. The table now includes source types 27–30, and both
+lookups guard missing names and invalid indexes. This was a worldserver crash,
+distinct from the previously resolved client exit crash. Evidence is preserved
+in `Build/condition-log-crash-20261005`.
+
+`contrib/condition_logging_548/test.ps1` runs the actual production tables,
+enums and formatter across every source/condition index, including sparse
+custom conditions and invalid indexes. The original source fails on a missing
+name. The fixed game target and staged x64 server build passed; the first
+installed build initialized in 23 seconds, produced an empty DBErrors log,
+and shut down cleanly.
+
+The final build, including the druid changes, was installed with backup
+`Build/server-before-logout-response-20261005-151547`. Its isolated smoke run
+in `Build/druid-form-smoke` enabled only the `condition` debug logger. It
+initialized in 23 seconds, logged more than 30,000 terrain-swap source-29
+descriptions (including the original entry 1066) without crashing, and kept
+DBErrors.log empty. Normal configuration retains `Logger.root=5`.

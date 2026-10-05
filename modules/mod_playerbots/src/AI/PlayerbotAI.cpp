@@ -3843,7 +3843,12 @@ bool PlayerbotAI::CastSpell(uint32 spellId, Unit* target, Item* itemTarget)
     }
 
     spell->prepare(&targets);
-    SpellCastResult result = spell->CheckCast(false);
+    // prepare() performs strict form checks. A second, non-strict check can
+    // report success after preparation already rejected the cast, starving
+    // lower-priority actions such as following the dungeon group.
+    SpellCastResult result = spell->GetCastResult();
+    if (result == SPELL_CAST_OK)
+        result = spell->CheckCast(false);
     if (result != SPELL_CAST_OK)
     {
         // if (!sPlayerbotAIConfig->logInGroupOnly || (bot->GetGroup() && HasRealPlayerMaster())) {

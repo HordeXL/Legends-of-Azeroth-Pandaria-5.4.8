@@ -7023,8 +7023,31 @@ bool CastAutomatedRoleMode(Player* bot)
 {
     PlayerbotAI* botAI = bot ? GET_PLAYERBOT_AI(bot) : nullptr;
     char const* action = GetAutomaticRoleModeAction(bot);
-    return botAI && !botAI->IsRealPlayer() && action &&
-        botAI->DoSpecificAction(action, Event(), true);
+    if (!botAI || botAI->IsRealPlayer() || !action)
+        return false;
+
+    bool const cast = botAI->DoSpecificAction(action, Event(), true);
+    // Narrow LFG diagnostics: a stale druid form can prevent a filler from
+    // leaving the entrance. This runs only on the existing preparation request
+    // (at most once per 15 seconds), without enabling global debug logging.
+    if (botAI->IsLfgAutoQueueControlled() && bot->GetClass() == CLASS_DRUID)
+    {
+        uint32 const expectedForm = bot->GetSpecialization() == SPEC_DRUID_BALANCE ? FORM_MOONKIN :
+            (bot->GetSpecialization() == SPEC_DRUID_FERAL ? FORM_CAT :
+                (bot->GetSpecialization() == SPEC_DRUID_GUARDIAN ? FORM_BEAR : FORM_NONE));
+        if (bot->GetShapeshiftForm() != expectedForm)
+        {
+            uint32 const spellId = botAI->GetAiObjectContext()->GetValue<uint32>("spell id", action)->Get();
+            TC_LOG_INFO("server",
+                "AutoQueue LFG druid form pending bot=%s guid=%u spec=%u form=%u expected=%u action=%s spell=%u result=%u flying=%u in-flight=%u moving=%u mana=%u/%u reserved=%u",
+                bot->GetName().c_str(), bot->GetGUID().GetCounter(), uint32(bot->GetSpecialization()),
+                uint32(bot->GetShapeshiftForm()), expectedForm, action, spellId, cast ? 1u : 0u,
+                bot->IsFlying() ? 1u : 0u, bot->HasUnitState(UNIT_STATE_IN_FLIGHT) ? 1u : 0u,
+                bot->isMoving() ? 1u : 0u, bot->GetPower(POWER_MANA), bot->GetMaxPower(POWER_MANA),
+                botAI->IsLfgAutoQueueReserved() ? 1u : 0u);
+        }
+    }
+    return cast;
 }
 
 void UpdateAutomatedPvpLoadoutRecovery(uint32 diff)

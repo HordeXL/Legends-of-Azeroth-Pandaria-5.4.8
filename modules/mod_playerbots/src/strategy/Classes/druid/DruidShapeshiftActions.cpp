@@ -17,6 +17,17 @@ bool CastBearFormAction::isUseful()
     return CastBuffSpellAction::isUseful() && !botAI->HasAura("dire bear form", GetTarget());
 }
 
+bool CastMoonkinFormAction::Execute(Event event)
+{
+    // Moonkin Form has SPELL_ATTR0_NOT_SHAPESHIFT in 5.4.8. Direct LFG
+    // preparation and the non-combat engine do not run the combat strategy's
+    // "caster form" prerequisite. Cancel the old form here, including a saved
+    // Bear Form whose spell is no longer in the active specialization.
+    if (bot->GetShapeshiftForm() != FORM_MOONKIN)
+        bot->RemoveAurasByType(SPELL_AURA_MOD_SHAPESHIFT);
+    return CastBuffSpellAction::Execute(event);
+}
+
 NextAction** CastDireBearFormAction::getAlternatives()
 {
     return NextAction::merge(NextAction::array(0, new NextAction("bear form"), nullptr),
