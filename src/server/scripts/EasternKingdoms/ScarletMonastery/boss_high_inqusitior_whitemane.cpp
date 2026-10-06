@@ -416,7 +416,6 @@ class boss_high_inqusitior_whitemane : public CreatureScript
                     DoCast(me, SPELL_SUMMON_UNQUENCHABLE);
                     DoCast(me, SPELL_SUMMON_HAND_OF_PROVIDENCE);
                     DoCast(me, SPELL_SUMMON_SOUL_MISSILE);
-                    DoCastAOE(SPELL_WHITEMANE_KILL_CREDIT); // wrong spell
 
                     // Quest Ender
                     if (Creature* HoodedCrusader = ObjectAccessor::GetCreature(*me, instance->GetGuidData(NPC_HOODED_CRUSADER_OUTRO)))
@@ -424,25 +423,8 @@ class boss_high_inqusitior_whitemane : public CreatureScript
                         HoodedCrusader->AI()->DoAction(ACTION_QUEST_EVENT);
                     } 
 
-                    // Hackfix for quest 31514 and 31516
-                    float radius = 50.0f;
-                    std::list<Player*> players;
-                    Trinity::AnyPlayerInObjectRangeCheck checker(me, radius);
-                    Trinity::PlayerListSearcher<Trinity::AnyPlayerInObjectRangeCheck> searcher(me, players, checker);
-                    me->VisitNearbyWorldObject(radius, searcher);
-
-                    for (std::list<Player*>::const_iterator itr = players.begin(); itr != players.end(); ++itr)
-                    {
-                        if (!IsHeroic() && (*itr)->GetQuestStatus(31514) == QUEST_STATUS_INCOMPLETE)
-                        {
-                            (*itr)->KilledMonsterCredit(NPC_Q31514_KILL_CREDIT, ObjectGuid::Empty);
-                        }
-                        if (IsHeroic() && (*itr)->GetQuestStatus(31516) == QUEST_STATUS_INCOMPLETE)
-                        {
-                            (*itr)->KilledMonsterCredit(NPC_Q31516_KILL_CREDIT, ObjectGuid::Empty);
-                        }                        
-                    }
-
+                    // Quest credit is awarded by the blades' DBC send-events
+                    // (33000/33001), after the player uses the provided item.
                 }
             }
 
@@ -673,7 +655,8 @@ struct npc_hooded_crusader_c64842 : public ScriptedAI
 
     void Reset() override
     {
-        me->SetVisible(false);
+        // A completed instance can be revisited after using the blades.
+        me->SetVisible(instance && instance->GetBossState(BOSS_WHITEMANE) == DONE);
         _events.Reset();
     }
 
