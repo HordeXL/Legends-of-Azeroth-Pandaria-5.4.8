@@ -38,7 +38,7 @@ bool CastShamanOpeningAction::isUseful()
         return false;
 
     bool const hasOwnFlameShock = botAI->HasAura("flame shock", target, true);
-    bool const hasOwnThreat = target->GetThreatManager().getThreat(bot) > 0.0f;
+    bool const hasOwnThreat = target->GetThreatManager().GetThreat(bot) > 0.0f;
     return !hasOwnFlameShock && !hasOwnThreat;
 }
 

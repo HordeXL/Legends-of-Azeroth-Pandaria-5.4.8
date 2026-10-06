@@ -229,8 +229,8 @@ bool RsHalionP2TankPositionAction::Execute(Event )
     {
         ThreatManager& mgr = boss->GetThreatManager();
         if (boss->GetVictim() != bot)
-            mgr.addThreat(bot, 1000000.0f);
-        mgr.tauntApply(bot);
+            mgr.AddThreat(bot, 1000000.0f);
+        mgr.TauntUpdate();
     }
 
     context->GetValue<std::string>("rti")->Set("cross");

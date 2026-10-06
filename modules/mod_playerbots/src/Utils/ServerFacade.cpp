@@ -7,6 +7,7 @@
 
 #include "Playerbots.h"
 #include "ChaseMovementGenerator.h"
+#include "FollowMovementGenerator.h"
 
 float ServerFacade::GetDistance2d(Unit* unit, WorldObject* wo)
 {
@@ -66,9 +67,9 @@ Unit* ServerFacade::GetFollowTarget(Unit* target)
     if (!movement || movement->GetMovementGeneratorType() != FOLLOW_MOTION_TYPE)
         return nullptr;
 
-    if (target->GetTypeId() == TYPEID_PLAYER)
-        return static_cast<FollowMovementGenerator<Player> const*>(movement)->GetTarget();
-    return static_cast<FollowMovementGenerator<Creature> const*>(movement)->GetTarget();
+    // FollowMovementGenerator is no longer a template; GetTarget() comes from
+    // its AbstractFollower base and is valid for player and creature targets.
+    return static_cast<FollowMovementGenerator const*>(movement)->GetTarget();
 }
 
 void ServerFacade::SendPacket(Player *player, WorldPacket *packet)

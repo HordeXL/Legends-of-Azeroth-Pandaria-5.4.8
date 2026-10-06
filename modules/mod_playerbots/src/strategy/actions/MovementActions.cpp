@@ -2734,7 +2734,7 @@ bool MovementAction::WaitForTankPull(WorldObject* object)
         target->IsInCombat() &&
         (master->GetVictim() == target ||
             (master->GetSelectedUnit() == target && target->CanHaveThreatList() &&
-                target->GetThreatManager().getThreat(master) > 0.0f));
+                target->GetThreatManager().GetThreat(master) > 0.0f));
     if (masterAttacking)
         return false;
 

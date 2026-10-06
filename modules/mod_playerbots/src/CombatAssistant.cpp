@@ -1601,7 +1601,7 @@ bool RunAfflictionBotRotation(PlayerbotAI* botAI, Unit* target, AfflictionRotati
         target->HasAura(AfflictionAssistant::CorruptionAura, player->GetGUID()) ||
         target->HasAura(AfflictionAssistant::UnstableAffliction, player->GetGUID());
     bool const hasOwnThreat = target->CanHaveThreatList() &&
-        target->GetThreatManager().getThreat(player) > 0.0f;
+        target->GetThreatManager().GetThreat(player) > 0.0f;
     if (!hasOwnDot && !hasOwnThreat)
     {
         bool started = false;

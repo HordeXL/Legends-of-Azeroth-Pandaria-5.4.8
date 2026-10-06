@@ -46,8 +46,8 @@ inline void RsForceThreat(Unit* target, Player* bot)
         return;
 
     ThreatManager& mgr = target->GetThreatManager();
-    mgr.addThreat(bot, 1000000.0f);
-    mgr.tauntApply(bot);
+    mgr.AddThreat(bot, 1000000.0f);
+    mgr.TauntUpdate();
 }
 
 inline bool RsReleaseIfFollowing(Player* bot)

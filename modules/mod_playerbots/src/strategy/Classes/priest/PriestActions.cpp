@@ -28,7 +28,7 @@ bool CastShadowOpeningAction::isUseful()
 
     bool const hasOwnDot = botAI->HasAura("shadow word: pain", target, true) ||
         botAI->HasAura("vampiric touch", target, true);
-    bool const hasOwnThreat = target->GetThreatManager().getThreat(bot) > 0.0f;
+    bool const hasOwnThreat = target->GetThreatManager().GetThreat(bot) > 0.0f;
     return !hasOwnDot && !hasOwnThreat;
 }
 

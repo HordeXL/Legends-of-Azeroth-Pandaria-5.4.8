@@ -140,8 +140,8 @@ Plan Twins(Player* bot)
             local->GetVictim() == owner;
         bool const threatSafe = !magicSide || owner == bot ||
             (ready &&
-             local->GetThreatManager().getThreat(bot) <
-                local->GetThreatManager().getThreat(owner) * 0.8f);
+             local->GetThreatManager().GetThreat(bot) <
+                local->GetThreatManager().GetThreat(owner) * 0.8f);
         if (owner == bot || (ready && threatSafe)) plan.target = local;
     }
 

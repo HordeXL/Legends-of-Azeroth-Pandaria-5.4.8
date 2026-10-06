@@ -2971,7 +2971,8 @@ void PrepareLegacyRaidBotForSummon(Player* bot)
         bot->RemoveCharmAuras();
 
     bot->CombatStop();
-    bot->getHostileRefManager().deleteReferences();
+    bot->GetThreatManager().RemoveMeFromThreatLists();
+    bot->GetThreatManager().ClearAllThreat();
 
     if (!bot->IsAlive())
     {
