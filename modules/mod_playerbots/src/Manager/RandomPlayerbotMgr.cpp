@@ -110,25 +110,31 @@ namespace
     std::map<uint32, uint32> LfgAutoQueueIneligibleBots;
     std::set<uint32> LfgAutoQueueOrphanCleanupChecked;
 
-    std::string GetPlayerbotPoolAccountSqlList()
+    std::string GetAutoQueueAccountSqlList()
     {
+        // The dedicated pool is optional. Without it, request-driven queues
+        // must still use the existing random-bot accounts, even when ambient
+        // RandomBotAutologin is disabled. Keep explicit IDs (not an ID range)
+        // so unrelated player accounts can never become filler candidates.
+        auto const& accountIds = sPlayerbotAIConfig->playerbotPoolEnabled ?
+            sPlayerbotAIConfig->playerbotPoolAccounts :
+            sPlayerbotAIConfig->randomBotAccounts;
         std::ostringstream accounts;
-        for (size_t i = 0; i < sPlayerbotAIConfig->playerbotPoolAccounts.size(); ++i)
+        for (size_t i = 0; i < accountIds.size(); ++i)
         {
             if (i)
                 accounts << ",";
-            accounts << sPlayerbotAIConfig->playerbotPoolAccounts[i];
+            accounts << accountIds[i];
         }
         return accounts.str();
     }
 
     void CleanupOrphanedLfgBotGroups(uint32 requesterGuid)
     {
-        if (!requesterGuid ||
-            sPlayerbotAIConfig->playerbotPoolAccounts.empty())
+        if (!requesterGuid)
             return;
 
-        std::string const poolAccounts = GetPlayerbotPoolAccountSqlList();
+        std::string const poolAccounts = GetAutoQueueAccountSqlList();
         if (poolAccounts.empty())
             return;
 
@@ -1550,11 +1556,10 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 /*elapsed*/)
             Player* requester = demand.RequesterGuid ?
                 ObjectAccessor::FindConnectedPlayer(
                     ObjectGuid::Create<HighGuid::Player>(demand.RequesterGuid)) : nullptr;
-            if (!requester || !requester->IsUsingLfg() ||
-                sPlayerbotAIConfig->playerbotPoolAccounts.empty())
+            if (!requester || !requester->IsUsingLfg())
                 continue;
 
-            std::string const poolAccounts = GetPlayerbotPoolAccountSqlList();
+            std::string const poolAccounts = GetAutoQueueAccountSqlList();
             if (poolAccounts.empty())
                 continue;
 
@@ -1566,12 +1571,17 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 /*elapsed*/)
                     QueryResult candidates = CharacterDatabase.PQuery(
                         "SELECT guid,name,race,class,talentTree,activespec "
                         "FROM characters WHERE account IN (%s) "
+                        // Only dedicated pool characters are level-scaled.
+                        // Existing random bots must already match the player.
+                        "AND (%u=1 OR level=%u) "
                         "AND online=0 "
                         "AND guid NOT IN (SELECT guid FROM guild_member) "
                         "AND guid NOT IN (SELECT memberGuid FROM group_member) "
                         "AND guid NOT IN (SELECT owner_guid FROM solo_arena_loadout_backup) "
                         "ORDER BY RAND()",
-                        poolAccounts.c_str());
+                        poolAccounts.c_str(),
+                        uint32(sPlayerbotAIConfig->playerbotPoolEnabled),
+                        uint32(requester->GetLevel()));
                     if (!candidates)
                         break;
 
@@ -2216,12 +2226,9 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 /*elapsed*/)
                     if (!selectedBot)
                     {
                         // No suitable random bot is online. Select an unused
-                        // offline character from the configured random-bot
+                        // offline character from the configured filler
                         // accounts and stage its login. The next observer tick
                         // applies the protected loadout and queues it.
-                        if (sPlayerbotAIConfig->playerbotPoolAccounts.empty())
-                            break;
-
                         Player* requester = requesterGuid ?
                             ObjectAccessor::FindConnectedPlayer(
                                 ObjectGuid::Create<HighGuid::Player>(requesterGuid)) : nullptr;
@@ -2229,19 +2236,22 @@ void RandomPlayerbotMgr::UpdateAutoQueueObserver(uint32 /*elapsed*/)
                             break;
 
                         std::string const poolAccounts =
-                            GetPlayerbotPoolAccountSqlList();
+                            GetAutoQueueAccountSqlList();
                         if (poolAccounts.empty())
                             break;
 
                         QueryResult candidates = CharacterDatabase.PQuery(
                             "SELECT guid,name,race,class,talentTree,activespec "
                             "FROM characters WHERE account IN (%s) "
+                            "AND (%u=1 OR level=%u) "
                             "AND online=0 AND instance_id=0 "
                             "AND guid NOT IN (SELECT guid FROM guild_member) "
                             "AND guid NOT IN (SELECT memberGuid FROM group_member) "
                             "AND guid NOT IN (SELECT owner_guid FROM solo_arena_loadout_backup) "
                             "ORDER BY RAND()",
-                            poolAccounts.c_str());
+                            poolAccounts.c_str(),
+                            uint32(sPlayerbotAIConfig->playerbotPoolEnabled),
+                            uint32(requester->GetLevel()));
                         if (!candidates)
                             break;
 

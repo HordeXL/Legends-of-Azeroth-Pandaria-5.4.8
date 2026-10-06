@@ -1279,3 +1279,32 @@ level/spec/unique-equipment validation, rare fallback, bag reuse, repeat calls,
 full bags, failed creation, bot durability and human durability. Also run
 `python3 contrib/playerbot_auto_queue_548/run_level_equipment_test.py` for the
 existing level limits and over-level equipment cleanup.
+
+### Optional account pool and automatic LFG/BG fillers
+
+The fork import switched offline candidate selection to `playerbotPoolAccounts`
+while leaving `AiPlayerbot.PlayerbotPool.Enabled = 0`. With ambient
+`RandomBotAutologin = 0`, no fillers logged in despite the existing random-bot
+accounts being loaded. Queue observation itself still runs from the world update.
+
+Automatic LFG/BG selection and orphaned LFG group cleanup now use the dedicated
+accounts only when that pool is enabled; otherwise they use `randomBotAccounts`.
+Both paths use explicit account IDs so gaps cannot include human accounts.
+Random-bot candidates must match the requester's level. The dedicated pool keeps
+its existing level preparation. Guild, group, online and pending Arena loadout
+exclusions, specialization/role selection and native LFG validation still apply.
+Startup reports the selected source and account count, or an error if that source
+is empty. Enabling an empty dedicated pool does not silently switch account sets.
+
+Validation (2026-10-06): Win64 RelWithDebInfo modules and staged worldserver link;
+seven account-selection regression cases; eight production SQL queries evaluated
+against read-only derived fixtures on MySQL. The latter cover random/dedicated
+sources, high/low levels, an unrelated account between bot IDs, occupied bots and
+the distinct LFG/BG handling of a character saved in an instance. These are not a
+full client matchmaking test; verify queue entry and the completed party in game
+after installing the executable.
+
+Run `test_account_pool.ps1` from an x64 Visual Studio Developer PowerShell.
+Run `test_account_pool_sql.ps1` with `-Config` and `-MySql` when paths differ from
+the local defaults. It uses the configured database connection but only evaluates
+literal fixtures; it does not read or write real character rows.
