@@ -34,6 +34,8 @@ $hound = $braun.Substring($braun.IndexOf('struct npc_obediend_houndAI'))
 ) | Set-Content (Join-Path $output 'hound_outro.inc')
 $trash = Get-Content (Join-Path $sourceDir 'scarlet_halls.cpp') -Raw
 (Read-Function $trash 'struct npc_reinforced_archery_targetAI') + ';' | Set-Content (Join-Path $output 'archery_target.inc')
+$archeryAura = $trash.Substring($trash.IndexOf('class spell_scarlet_halls_archery_target_vehicle_override :'))
+(Read-Function $archeryAura 'void OnPeriodic(') | Set-Content (Join-Path $output 'archery_proximity.inc')
 $player = Get-Content (Join-Path $root 'src/server/game/Entities/Player/Player.cpp') -Raw
 (Read-Function $player 'bool Player::CanSeeSpellClickOn(') | Set-Content (Join-Path $output 'spellclick_visibility.inc')
 @(

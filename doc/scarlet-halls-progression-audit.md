@@ -271,3 +271,139 @@ twice to verify idempotence. Pre-change DB rows are saved in
 `Build/server-before-logout-response-20261005-155316`.
 Actual carrying visuals and arrow interception still require an in-game test.
 The isolated smoke run in `Build/archery-target-smoke` initialized in 23 seconds, kept DBErrors.log empty and shut down cleanly (exit 0).
+
+## Archery target remains unclickable after approaching (2026-10-06)
+
+The follow-up client report exposed a missing update after the spellclick row
+was installed. The live database still contains the expected 113436 binding,
+cast flags 6 and both aura conditions. At initial creature visibility, the
+player is normally outside the 113399 proximity aura, so
+`Unit::BuildValuesUpdate` strips SPELLCLICK using `Player::CanSeeSpellClickOn`.
+Receiving that aura later only changes the player; it does not dirty the target's
+`UNIT_FIELD_NPC_FLAGS`. Consequently the client keeps its original non-clickable
+value while the cosmetic sparkle remains visible.
+
+The target's 500 ms proximity callback now marks its NPC flags for a values
+update after casting 113399. The existing serialization re-evaluates both aura
+conditions for each recipient. It also handles expiry, approaching again and
+players already carrying another target, without restoring the flag on a
+consumed target. The callback prevents the default periodic action because it
+already casts the configured trigger itself; it now casts once per tick.
+No spellclick conditions, spell validation or diagnostics are removed.
+
+The regression executes the production periodic callback and visibility
+predicate with engine doubles, including cached client visibility outside and
+inside the radius. Substituting the previous production callback fails at
+`player.vehicleAura && player.clientCanClick`; the fixed callback passes.
+The complete Scarlet Halls progression, dog-food and archery suite passes,
+as does the Win64 RelWithDebInfo scripts build and staged worldserver link.
+Actual client attachment, carrying movement and arrow interception still need
+an in-game check after installing the new executable.
+
+## Rank and File kill credit (2026-10-06)
+
+Both quest versions, 31490 and 31495, require 50 monster credits for proxy
+64964. The installed Scarlet Halls combat templates had both KillCredit fields
+empty, and no instance hook, SmartAI action or client credit spell awarded the
+proxy. Killing crusaders therefore left the objective at zero.
+
+Migration `2026_10_06_00_world_scarlet_halls_rank_and_file.sql` fills the empty
+primary credit for 19 hostile crusader templates, including the three bosses,
+Vigilant Watchmen, Master Archers, summoned Scarlet Cannoneers and Harlan's
+summoned defenders. Dogs, cannon triggers, friendly unused defender templates,
+archery targets and the Hooded Crusader are excluded. These combatants share
+their base templates between Normal and Heroic; the installed spawn masks
+include 87 eligible static spawns in each difficulty, plus the summoned types.
+
+The existing `KillRewarder::RewardKillCredit` -> `Player::KilledMonster` path
+awards the proxy through normal solo/group reward rules. `KilledMonsterCredit`
+matches either active quest's objective and caps progress at its required 50.
+No player quest counters, completed kills, objectives or automatic completion
+rules are changed. Progress starts with eligible kills after the template reload.
+
+Deployment validation compared every field of all 19 templates before/after:
+only `KillCredit1` changed, from 0 to 64964. Applying the migration a second time
+changed zero rows. The complete template snapshots and a guarded rollback are
+saved in `Build/rank-and-file-fix-20261006`. Existing servers can activate it
+without a binary replacement by running:
+
+```text
+reload creature_template 58632 58676 58683 58684 58685 58756 58898 58998 59150 59175 59191 59240 59241 59293 59299 59302 59303 59372 59373
+```
+
+Prefix the command with a dot when entering it in the game chat. Verify an
+eligible crusader increments the active quest, a hound does not, and progress
+stops at 50 before turning the quest in to the Hooded Crusader.
+
+## Remaining accepted quests and instance eligibility (2026-10-06)
+
+Grotroz (2215) has all four Scarlet Halls quests active and incomplete: 31490,
+31493, 31495 and 31497. Their four saved objective counters are zero. The two
+Rank and File versions share the corrected 64964 kill credit. The two Just for
+Safekeeping, Of Course versions require different items:
+
+| Quest | Objective | Source after correction |
+| --- | --- | --- |
+| 31493, level 31 | Codex of the Crusade 87267, quantity 1 | Koegler, Normal or Heroic |
+| 31497, level 90 Heroic | Codex of the Crusade 87268, quantity 1 | Koegler, Heroic |
+
+The normal Codex was restricted to Normal, preventing completion of the accepted
+lower-level quest during a Heroic run. Normal dungeon quests can also be
+completed on Heroic, as documented in the
+[Scarlet Halls quest guide](https://www.wowhead.com/mop-classic/guide/dungeon/scarlet-halls-heroic-boss-strategy-loot#quests-in-scarlet-halls).
+Migration `2026_10_06_01_world_scarlet_halls_codex_quest.sql` adds Heroic only to
+item 87267's existing loot row. Item 87268 retains its Heroic restriction.
+
+Both rows retain -100 quest-only chance, quantity 1 and group 0. Both item
+templates exist, have PARTY_LOOT set and no custom quest-status bypass. The
+native loot eligibility check requires an outstanding objective for the item,
+and another group member looting it does not consume the player's copy. All
+four quest starter/ender relations point to questgiver 64738. The entrance
+spawn is visible immediately; the library spawn is shown after Koegler's DONE
+state, including when its grid loads late. Existing progression regressions
+cover these visibility transitions. Quest reward texts and both item-request
+texts exist; none of these four templates references a missing item reward.
+
+Deployment comparison of every Koegler loot field confirmed that only the
+normal Codex's mode changed. A second application changed zero rows. Snapshots
+and rollback are in `Build/scarlet-halls-quest-audit-20261006`. No character
+quest progress or inventory was edited. Actual quest turn-in still requires
+the player's dungeon run and looting Koegler.
+
+At the same check, WorldServer was stopped and Grotroz was offline on map 870
+with instance_id 0. There were zero personal Scarlet Halls binds, zero matching
+group binds, zero saved map-1001 instances and zero active hourly instance
+entries on the account. No lockout deletion was needed. Starting the server
+loads the updated loot data and allows a fresh Scarlet Halls run.
+
+## Completed Heroic run audit (2026-10-06)
+
+After the player's run, all four quests (31490, 31493, 31495, 31497) are in
+`character_queststatus_rewarded`, with no remaining active objective rows.
+Achievements 7413 (Scarlet Halls) and 6760 (Heroic: Scarlet Halls) were earned
+at 16:02:27 local server time. The Heroic instance save contains
+`S H 3 3 3 3`: all three bosses and Commander Lindon are DONE. The current
+server log records successful recruitment and cleanup of all four LFG bots.
+DBErrors.log is empty and the current Server.log contains no recorded errors.
+These records confirm quest turn-in and completion rewards, but do not record
+every combat mechanic, client visual or individual equipment loot result.
+
+The separate completed-encounter mask was only 1. The installed
+DungeonEncounter.dbc assigns bit 2 to Braun (1422), bit 1 to Harlan (1421) and
+bit 0 to Koegler (1420), so all three kills should produce 7. Both Normal and
+Heroic lacked the Braun and Harlan rows in `instance_encounters`; only Koegler
+was registered. `KillRewarder::Reward` calls `UpdateEncounterState`, which
+matches these rows independently of the script's boss DONE states.
+
+Migration `2026_10_06_02_world_scarlet_halls_encounter_credit.sql` supplies the
+four missing kill-credit rows. Koegler remains the only final encounter, with
+LFG dungeon IDs 163 (Normal) and 473 (Heroic). Verification compares the rows
+against the installed DBC and creature templates, checks mask 7 and one final
+encounter per difficulty, and reapplies the migration to check idempotence.
+The full table snapshots and guarded rollback are stored in
+`Build/scarlet-halls-run-audit-20261006`.
+
+Encounter definitions load at server startup and have no reload command in
+this core. The database fix therefore takes effect for subsequent kills after
+the next WorldServer restart. The currently running instance's saved mask is
+left intact; the migration does not rewrite historical character progress.

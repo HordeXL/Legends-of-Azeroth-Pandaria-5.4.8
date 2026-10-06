@@ -1557,8 +1557,20 @@ class spell_scarlet_halls_archery_target_vehicle_override : public AuraScript
 
     void OnPeriodic(AuraEffect const* /*aurEff*/)
     {
-        if (Unit* owner = GetOwner()->ToUnit()) // not triggering by default for unk reason...
+        // This hook supplies the proximity aura itself; do not trigger it twice.
+        PreventDefaultAction();
+        if (Unit* owner = GetOwner()->ToUnit())
+        {
             owner->CastSpell(owner, SPELL_PLAYER_VEHICLE_AURA, true);
+
+            // Spellclick conditions depend on the nearby player's 113399 aura.
+            // The initial create packet normally arrives outside its radius,
+            // so CanSeeSpellClickOn removes SPELLCLICK for that player. Aura
+            // changes on the player do not dirty this creature's NPC flags.
+            // Re-evaluate them after the proximity cast, including aura expiry
+            // and players who have already picked up another shield.
+            owner->ForceValuesUpdateAtIndex(UNIT_FIELD_NPC_FLAGS);
+        }
     }
 
     void Register() override

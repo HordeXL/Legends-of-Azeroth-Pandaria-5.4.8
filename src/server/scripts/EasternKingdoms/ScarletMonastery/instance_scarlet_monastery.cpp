@@ -100,7 +100,7 @@ class instance_scarlet_monastery : public InstanceMapScript
                         break;
                     case NPC_HOODED_CRUSADER_OUTRO:
                         HoodedGUID = creature->GetGUID();
-                        creature->SetVisible(false);
+                        creature->SetVisible(GetBossState(BOSS_WHITEMANE) == DONE);
                         break;
                     case NPC_SCARLET_JUDICATOR:
                         if (!creature->HasAura(128800)) // drunked at holl must be neutral [set like default]

@@ -257,6 +257,22 @@ bool PlayerbotAIConfig::Initialize()
         return true;
     }
 
+    if (autoQueueEnabled && ((autoQueueLfg && autoQueueLfgAutomatic) ||
+        (autoQueueBattleground && autoQueueBattlegroundAutomatic)))
+    {
+        auto const& fillerAccounts = playerbotPoolEnabled ?
+            playerbotPoolAccounts : randomBotAccounts;
+        char const* source = playerbotPoolEnabled ? "PlayerbotPool" : "RandomBot";
+        if (fillerAccounts.empty())
+            TC_LOG_ERROR("server.loading",
+                "AutoQueue LFG/BG cannot load offline fillers: configured %s account pool is empty",
+                source);
+        else
+            TC_LOG_INFO("server.loading",
+                "AutoQueue LFG/BG offline fillers: %u %s accounts (RandomBotAutologin is not required)",
+                uint32(fillerAccounts.size()), source);
+    }
+
     sRandomPlayerbotMgr->PrepareAddclassCache();
     sRandomPlayerbotMgr->PrepareTeleportCache();
 
