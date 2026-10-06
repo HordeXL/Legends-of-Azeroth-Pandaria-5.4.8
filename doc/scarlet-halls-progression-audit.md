@@ -299,3 +299,38 @@ The complete Scarlet Halls progression, dog-food and archery suite passes,
 as does the Win64 RelWithDebInfo scripts build and staged worldserver link.
 Actual client attachment, carrying movement and arrow interception still need
 an in-game check after installing the new executable.
+
+## Rank and File kill credit (2026-10-06)
+
+Both quest versions, 31490 and 31495, require 50 monster credits for proxy
+64964. The installed Scarlet Halls combat templates had both KillCredit fields
+empty, and no instance hook, SmartAI action or client credit spell awarded the
+proxy. Killing crusaders therefore left the objective at zero.
+
+Migration `2026_10_06_00_world_scarlet_halls_rank_and_file.sql` fills the empty
+primary credit for 19 hostile crusader templates, including the three bosses,
+Vigilant Watchmen, Master Archers, summoned Scarlet Cannoneers and Harlan's
+summoned defenders. Dogs, cannon triggers, friendly unused defender templates,
+archery targets and the Hooded Crusader are excluded. These combatants share
+their base templates between Normal and Heroic; the installed spawn masks
+include 87 eligible static spawns in each difficulty, plus the summoned types.
+
+The existing `KillRewarder::RewardKillCredit` -> `Player::KilledMonster` path
+awards the proxy through normal solo/group reward rules. `KilledMonsterCredit`
+matches either active quest's objective and caps progress at its required 50.
+No player quest counters, completed kills, objectives or automatic completion
+rules are changed. Progress starts with eligible kills after the template reload.
+
+Deployment validation compared every field of all 19 templates before/after:
+only `KillCredit1` changed, from 0 to 64964. Applying the migration a second time
+changed zero rows. The complete template snapshots and a guarded rollback are
+saved in `Build/rank-and-file-fix-20261006`. Existing servers can activate it
+without a binary replacement by running:
+
+```text
+reload creature_template 58632 58676 58683 58684 58685 58756 58898 58998 59150 59175 59191 59240 59241 59293 59299 59302 59303 59372 59373
+```
+
+Prefix the command with a dot when entering it in the game chat. Verify an
+eligible crusader increments the active quest, a hound does not, and progress
+stops at 50 before turning the quest in to the Hooded Crusader.
