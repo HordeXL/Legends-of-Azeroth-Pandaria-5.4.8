@@ -334,3 +334,44 @@ reload creature_template 58632 58676 58683 58684 58685 58756 58898 58998 59150 5
 Prefix the command with a dot when entering it in the game chat. Verify an
 eligible crusader increments the active quest, a hound does not, and progress
 stops at 50 before turning the quest in to the Hooded Crusader.
+
+## Remaining accepted quests and instance eligibility (2026-10-06)
+
+Grotroz (2215) has all four Scarlet Halls quests active and incomplete: 31490,
+31493, 31495 and 31497. Their four saved objective counters are zero. The two
+Rank and File versions share the corrected 64964 kill credit. The two Just for
+Safekeeping, Of Course versions require different items:
+
+| Quest | Objective | Source after correction |
+| --- | --- | --- |
+| 31493, level 31 | Codex of the Crusade 87267, quantity 1 | Koegler, Normal or Heroic |
+| 31497, level 90 Heroic | Codex of the Crusade 87268, quantity 1 | Koegler, Heroic |
+
+The normal Codex was restricted to Normal, preventing completion of the accepted
+lower-level quest during a Heroic run. Normal dungeon quests can also be
+completed on Heroic, as documented in the
+[Scarlet Halls quest guide](https://www.wowhead.com/mop-classic/guide/dungeon/scarlet-halls-heroic-boss-strategy-loot#quests-in-scarlet-halls).
+Migration `2026_10_06_01_world_scarlet_halls_codex_quest.sql` adds Heroic only to
+item 87267's existing loot row. Item 87268 retains its Heroic restriction.
+
+Both rows retain -100 quest-only chance, quantity 1 and group 0. Both item
+templates exist, have PARTY_LOOT set and no custom quest-status bypass. The
+native loot eligibility check requires an outstanding objective for the item,
+and another group member looting it does not consume the player's copy. All
+four quest starter/ender relations point to questgiver 64738. The entrance
+spawn is visible immediately; the library spawn is shown after Koegler's DONE
+state, including when its grid loads late. Existing progression regressions
+cover these visibility transitions. Quest reward texts and both item-request
+texts exist; none of these four templates references a missing item reward.
+
+Deployment comparison of every Koegler loot field confirmed that only the
+normal Codex's mode changed. A second application changed zero rows. Snapshots
+and rollback are in `Build/scarlet-halls-quest-audit-20261006`. No character
+quest progress or inventory was edited. Actual quest turn-in still requires
+the player's dungeon run and looting Koegler.
+
+At the same check, WorldServer was stopped and Grotroz was offline on map 870
+with instance_id 0. There were zero personal Scarlet Halls binds, zero matching
+group binds, zero saved map-1001 instances and zero active hourly instance
+entries on the account. No lockout deletion was needed. Starting the server
+loads the updated loot data and allows a fresh Scarlet Halls run.
