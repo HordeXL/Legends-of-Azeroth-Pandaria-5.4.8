@@ -1738,7 +1738,7 @@ struct npc_crazed_shado_pan_ranger : public ScriptedAI
 
             Position position = me->GetRandomNearPosition(3.0f);
             if (Creature* hatred = player->SummonCreature(NPC_HATRED_BECOMES_US_SHA, position,
-                TEMPSUMMON_TIMED_OR_DEAD_DESPAWN, 120000, 0, player->GetGUID()))
+                TEMPSUMMON_TIMED_OR_DEAD_DESPAWN, 120000ms, 0, player->GetGUID()))
             {
                 _hatredGuid = hatred->GetGUID();
                 hatred->AI()->SetGUID(me->GetGUID());
@@ -1870,7 +1870,7 @@ struct npc_hatred_becomes_us_sha : public ScriptedAI
             _creditBefore = player->GetQuestObjectiveCounter(OBJECTIVE_CRAZED_RANGERS_PURIFIED);
             me->SetLootRecipient(player);
             me->SetReactState(REACT_AGGRESSIVE);
-            me->AddThreat(player, 1.0f);
+            me->GetThreatManager().AddThreat(player, 1.0f);
             AttackStart(player);
         }
     }
