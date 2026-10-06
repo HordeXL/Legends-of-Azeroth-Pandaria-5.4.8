@@ -271,3 +271,31 @@ twice to verify idempotence. Pre-change DB rows are saved in
 `Build/server-before-logout-response-20261005-155316`.
 Actual carrying visuals and arrow interception still require an in-game test.
 The isolated smoke run in `Build/archery-target-smoke` initialized in 23 seconds, kept DBErrors.log empty and shut down cleanly (exit 0).
+
+## Archery target remains unclickable after approaching (2026-10-06)
+
+The follow-up client report exposed a missing update after the spellclick row
+was installed. The live database still contains the expected 113436 binding,
+cast flags 6 and both aura conditions. At initial creature visibility, the
+player is normally outside the 113399 proximity aura, so
+`Unit::BuildValuesUpdate` strips SPELLCLICK using `Player::CanSeeSpellClickOn`.
+Receiving that aura later only changes the player; it does not dirty the target's
+`UNIT_FIELD_NPC_FLAGS`. Consequently the client keeps its original non-clickable
+value while the cosmetic sparkle remains visible.
+
+The target's 500 ms proximity callback now marks its NPC flags for a values
+update after casting 113399. The existing serialization re-evaluates both aura
+conditions for each recipient. It also handles expiry, approaching again and
+players already carrying another target, without restoring the flag on a
+consumed target. The callback prevents the default periodic action because it
+already casts the configured trigger itself; it now casts once per tick.
+No spellclick conditions, spell validation or diagnostics are removed.
+
+The regression executes the production periodic callback and visibility
+predicate with engine doubles, including cached client visibility outside and
+inside the radius. Substituting the previous production callback fails at
+`player.vehicleAura && player.clientCanClick`; the fixed callback passes.
+The complete Scarlet Halls progression, dog-food and archery suite passes,
+as does the Win64 RelWithDebInfo scripts build and staged worldserver link.
+Actual client attachment, carrying movement and arrow interception still need
+an in-game check after installing the new executable.
