@@ -375,3 +375,35 @@ with instance_id 0. There were zero personal Scarlet Halls binds, zero matching
 group binds, zero saved map-1001 instances and zero active hourly instance
 entries on the account. No lockout deletion was needed. Starting the server
 loads the updated loot data and allows a fresh Scarlet Halls run.
+
+## Completed Heroic run audit (2026-10-06)
+
+After the player's run, all four quests (31490, 31493, 31495, 31497) are in
+`character_queststatus_rewarded`, with no remaining active objective rows.
+Achievements 7413 (Scarlet Halls) and 6760 (Heroic: Scarlet Halls) were earned
+at 16:02:27 local server time. The Heroic instance save contains
+`S H 3 3 3 3`: all three bosses and Commander Lindon are DONE. The current
+server log records successful recruitment and cleanup of all four LFG bots.
+DBErrors.log is empty and the current Server.log contains no recorded errors.
+These records confirm quest turn-in and completion rewards, but do not record
+every combat mechanic, client visual or individual equipment loot result.
+
+The separate completed-encounter mask was only 1. The installed
+DungeonEncounter.dbc assigns bit 2 to Braun (1422), bit 1 to Harlan (1421) and
+bit 0 to Koegler (1420), so all three kills should produce 7. Both Normal and
+Heroic lacked the Braun and Harlan rows in `instance_encounters`; only Koegler
+was registered. `KillRewarder::Reward` calls `UpdateEncounterState`, which
+matches these rows independently of the script's boss DONE states.
+
+Migration `2026_10_06_02_world_scarlet_halls_encounter_credit.sql` supplies the
+four missing kill-credit rows. Koegler remains the only final encounter, with
+LFG dungeon IDs 163 (Normal) and 473 (Heroic). Verification compares the rows
+against the installed DBC and creature templates, checks mask 7 and one final
+encounter per difficulty, and reapplies the migration to check idempotence.
+The full table snapshots and guarded rollback are stored in
+`Build/scarlet-halls-run-audit-20261006`.
+
+Encounter definitions load at server startup and have no reload command in
+this core. The database fix therefore takes effect for subsequent kills after
+the next WorldServer restart. The currently running instance's saved mask is
+left intact; the migration does not rewrite historical character progress.
