@@ -322,6 +322,10 @@ class boss_high_inqusitior_whitemane : public CreatureScript
                 me->SetPower(POWER_MANA, me->GetMaxPower(POWER_MANA));
                 _switch = false;
                 InRessurection = false;
+
+                // InitializeAI replaces the base hook: retain its living-spawn
+                // Reset so Durand activates a passive boss, even on the first pull.
+                BossAI::InitializeAI();
             }
 
             void DoAction(int32 actionId) override
