@@ -18,11 +18,13 @@
 #include "ScriptMgr.h"
 #include "ScriptedCreature.h"
 #include "ScriptedEscortAI.h"
+#include "ScriptedGossip.h"
 #include "PassiveAI.h"
 #include "Vehicle.h"
 #include "GameObjectAI.h"
 #include "TaskScheduler.h"
 #include "ObjectAccessor.h"
+#include "CreatureTextMgr.h"
 
 enum Gilneas
 {
@@ -2414,6 +2416,513 @@ public:
     }
 };
 
+// ===== Battle for Gilneas City (quest 24904) — official phased battle flow =====
+
+enum BattleForGilneasCity
+{
+    QUEST_BATTLE_FOR_GILNEAS_CITY   = 24904,
+
+    // Every `phase_definitions` row of zone 4714 (Gilneas City) applies unconditionally
+    // (no conditions rows), so players in this zone always have phasemask 0x7E540E.
+    // Use its union with PHASEMASK_NORMAL for any creature that must be player-visible;
+    // plain phaseMask 1 makes creatures invisible to EVERYONE here.
+    BATTLE_PHASEMASK_VISIBLE        = 0x7E540F,
+
+    NPC_BATTLE_LIAM                 = 38218,
+    NPC_BATTLE_KRENNAN              = 38144,
+    NPC_BATTLE_DARIUS               = 38149,
+    NPC_BATTLE_GENN                 = 38470,
+    NPC_BATTLE_SYLVANAS             = 38469,
+    NPC_SOULTETHERED_BANSHEE        = 38473,
+    NPC_GOREROT                     = 38331,
+    NPC_FORSAKEN_CROSSBOWMAN        = 38210,
+    NPC_FORSAKEN_INFANTRY           = 38616,
+    NPC_VILE_ABOMINATION            = 38420,
+    NPC_DARK_RANGER_ELITE           = 38464,
+
+    SPELL_BATTLE_HEAL               = 72350, // official massive heal used by battle NPCs
+    SPELL_WAIL_STUN                 = 20549, // AoE stun used as Banshee Queen's Wail visual
+    SPELL_SYLVANAS_SHOOT            = 67593, // cosmetic lethal shot (worgen intro)
+
+    POINT_MERCHANT                  = 1,
+    POINT_MILITARY                  = 2,
+    POINT_JAIL                      = 3,
+    POINT_SQUARE                    = 4,
+
+    EVENT_SPEECH_1                  = 1,
+    EVENT_SPEECH_2                  = 2,
+    EVENT_SPEECH_3                  = 3,
+    EVENT_SPEECH_4                  = 4,
+    EVENT_SPEECH_5                  = 5,
+    EVENT_SPEECH_6                  = 6,
+    EVENT_SPEECH_7                  = 7,
+    EVENT_ATTACK_YELL               = 8,
+    EVENT_STAGE_CHECK               = 9,
+    EVENT_FIGHT_TIMEOUT             = 10,
+    EVENT_YELL_ABOMINATIONS         = 11,
+    EVENT_YELL_CANNONS              = 12,
+    EVENT_JAIL_GOREROT_YELL         = 13,
+    EVENT_JAIL_DARIUS_YELL          = 14,
+    EVENT_JAIL_DARIUS_CHEER         = 15,
+    EVENT_SQUARE_GENN_YELL_1        = 16,
+    EVENT_SQUARE_GENN_YELL_2        = 17,
+    EVENT_WATCH_SYLVANAS            = 18,
+    EVENT_WAIL_YELL_1               = 19,
+    EVENT_WAIL_YELL_2               = 20,
+    EVENT_WAIL_STOMP                = 21,
+    EVENT_WAIL_SHOOT                = 22,
+    EVENT_GENN_MOURNS               = 23,
+    EVENT_SYLVANAS_FADE             = 24,
+    EVENT_SYLVANAS_DESPAWN          = 25,
+    EVENT_LIAM_DESPAWN              = 26,
+    EVENT_SELF_HEAL                 = 27,
+    EVENT_MARCH_MILITARY            = 28,
+    EVENT_MARCH_JAIL                = 29,
+    EVENT_MARCH_SQUARE              = 30,
+    EVENT_MARCH_WATCHDOG            = 31
+};
+
+Position const BattleMerchantPoint(-1465.0f, 1540.0f, 25.0f);
+Position const BattleMilitaryPoint(-1645.0f, 1300.0f, 18.0f);
+Position const BattleJailPoint(-1700.0f, 1415.0f, 21.7f);
+Position const BattleSquarePoint(-1678.0f, 1615.0f, 20.6f);
+Position const BattleDariusSummon(-1695.0f, 1402.0f, 21.7f, 3.5f);
+Position const BattleSylvanasFlee(-1990.0f, 1500.0f, 20.0f);
+
+struct npc_battle_liam_gilneasAI : public ScriptedAI
+{
+public:
+    npc_battle_liam_gilneasAI(Creature* creature) : ScriptedAI(creature) { }
+
+    enum BattleStage
+    {
+        STAGE_IDLE = 0,
+        STAGE_SPEECH,
+        STAGE_MARCH_MERCHANT,
+        STAGE_FIGHT_MERCHANT,
+        STAGE_MARCH_MILITARY,
+        STAGE_FIGHT_MILITARY,
+        STAGE_MARCH_JAIL,
+        STAGE_FIGHT_JAIL,
+        STAGE_MARCH_SQUARE,
+        STAGE_FIGHT_SQUARE
+    };
+
+    void Reset() override
+    {
+        // Called on spawn and respawn: always (re)start from a clean IDLE state.
+        ResetBattle();
+    }
+
+    void EnterEvadeMode(EvadeReason why = EVADE_REASON_OTHER) override
+    {
+        // Liam gets into combat with escort mobs constantly. The default evade path
+        // calls Reset() and would abort a running battle - keep the state machine
+        // alive instead: drop combat, walk home, the march watchdog re-issues orders.
+        if (stage == STAGE_IDLE)
+        {
+            ScriptedAI::EnterEvadeMode(why);
+            return;
+        }
+
+        if (!_EnterEvadeMode(why))
+            return;
+
+        if (!me->GetVehicle())
+        {
+            me->AddUnitState(UNIT_STATE_EVADE);
+            me->GetMotionMaster()->MoveTargetedHome();
+        }
+    }
+
+    void StartBattle()
+    {
+        if (stage != STAGE_IDLE || !me->IsAlive())
+            return;
+
+        stage = STAGE_SPEECH;
+        for (uint8 i = 0; i < 7; ++i)
+            events.ScheduleEvent(EVENT_SPEECH_1 + i, 1500 + i * 3500);
+        events.ScheduleEvent(EVENT_ATTACK_YELL, 1500 + 7 * 3500);
+        events.ScheduleEvent(EVENT_SELF_HEAL, 10000);
+    }
+
+    void UpdateAI(uint32 diff) override
+    {
+        events.Update(diff);
+
+        while (uint32 eventId = events.ExecuteEvent())
+        {
+            switch (eventId)
+            {
+                case EVENT_SPEECH_1:
+                case EVENT_SPEECH_2:
+                case EVENT_SPEECH_3:
+                case EVENT_SPEECH_4:
+                case EVENT_SPEECH_5:
+                case EVENT_SPEECH_6:
+                    Talk(eventId - EVENT_SPEECH_1); // speech groups 0..5
+                    break;
+                case EVENT_SPEECH_7:
+                    Talk(6); // FOR GILNEAS!!!
+                    break;
+                case EVENT_ATTACK_YELL:
+                    Talk(7); // Attack!
+                    stage = STAGE_MARCH_MERCHANT;
+                    me->SetWalk(false);
+                    me->GetMotionMaster()->MovePoint(POINT_MERCHANT, BattleMerchantPoint);
+                    break;
+                case EVENT_STAGE_CHECK:
+                    HandleStageCheck();
+                    break;
+                case EVENT_FIGHT_TIMEOUT:
+                    if (stage == STAGE_FIGHT_MERCHANT)
+                        ClearMerchant();
+                    else if (stage == STAGE_FIGHT_MILITARY)
+                        ClearMilitary();
+                    else if (stage == STAGE_FIGHT_JAIL)
+                        ClearJail();
+                    break;
+                case EVENT_YELL_CANNONS:
+                    Talk(10); // You're a sight for sore eyes, Lorna...
+                    break;
+                case EVENT_MARCH_MILITARY:
+                    BeginMarch(BattleMilitaryPoint, POINT_MILITARY, STAGE_MARCH_MILITARY);
+                    break;
+                case EVENT_JAIL_GOREROT_YELL:
+                    if (Creature* gorerot = me->FindNearestCreature(NPC_GOREROT, 80.0f))
+                        sCreatureTextMgr->SendChat(gorerot, 0); // Gorerot crush puny worgen!!
+                    break;
+                case EVENT_JAIL_DARIUS_YELL:
+                    SendText(NPC_BATTLE_DARIUS, 0); // He's too strong! Use the catapults!
+                    break;
+                case EVENT_JAIL_DARIUS_CHEER:
+                    SendText(NPC_BATTLE_DARIUS, 1); // Let us join your father's force...
+                    break;
+                case EVENT_MARCH_JAIL:
+                    BeginMarch(BattleJailPoint, POINT_JAIL, STAGE_MARCH_JAIL);
+                    break;
+                case EVENT_SQUARE_GENN_YELL_1:
+                    SendText(NPC_BATTLE_GENN, 0); // Block their retreat, Liam!
+                    break;
+                case EVENT_SQUARE_GENN_YELL_2:
+                    SendText(NPC_BATTLE_GENN, 1); // SYLVANAS!!
+                    break;
+                case EVENT_WATCH_SYLVANAS:
+                    HandleSylvanasWatch();
+                    break;
+                case EVENT_WAIL_YELL_1:
+                    SendText(NPC_BATTLE_SYLVANAS, 0); // Enough!
+                    events.ScheduleEvent(EVENT_WAIL_YELL_2, 2500);
+                    break;
+                case EVENT_WAIL_YELL_2:
+                    SendText(NPC_BATTLE_SYLVANAS, 1); // Let's see how brave Gilneas gets...
+                    events.ScheduleEvent(EVENT_WAIL_STOMP, 1500);
+                    break;
+                case EVENT_WAIL_STOMP:
+                    if (Creature* sylvanas = me->FindNearestCreature(NPC_BATTLE_SYLVANAS, 90.0f))
+                        sylvanas->CastSpell(sylvanas, SPELL_WAIL_STUN, true);
+                    events.ScheduleEvent(EVENT_WAIL_SHOOT, 2000);
+                    break;
+                case EVENT_WAIL_SHOOT:
+                    if (Creature* sylvanas = me->FindNearestCreature(NPC_BATTLE_SYLVANAS, 90.0f))
+                        sylvanas->CastSpell(me, SPELL_SYLVANAS_SHOOT, true);
+                    // Liam "dies" shielding his father (story death, despawned below)
+                    me->CombatStop();
+                    me->SetStandState(UNIT_STAND_STATE_DEAD);
+                    me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE);
+                    events.ScheduleEvent(EVENT_GENN_MOURNS, 1800);
+                    break;
+                case EVENT_GENN_MOURNS:
+                    SendText(NPC_BATTLE_GENN, 2); // LIAM!! NO!!!
+                    events.ScheduleEvent(EVENT_SYLVANAS_FADE, 2500);
+                    break;
+                case EVENT_SYLVANAS_FADE:
+                    if (Creature* sylvanas = me->FindNearestCreature(NPC_BATTLE_SYLVANAS, 120.0f))
+                    {
+                        sylvanas->CombatStop();
+                        sylvanas->SetReactState(REACT_PASSIVE);
+                        float z = me->GetMap()->GetHeight(sylvanas->GetPhaseMask(), BattleSylvanasFlee.GetPositionX(), BattleSylvanasFlee.GetPositionY(), me->GetPositionZ() + 20.0f);
+                        sylvanas->NearTeleportTo(BattleSylvanasFlee.GetPositionX(), BattleSylvanasFlee.GetPositionY(), z + 0.2f, 4.6f);
+                    }
+                    events.ScheduleEvent(EVENT_SYLVANAS_DESPAWN, 2000);
+                    break;
+                case EVENT_SYLVANAS_DESPAWN:
+                    if (Creature* sylvanas = me->FindNearestCreature(NPC_BATTLE_SYLVANAS, 150.0f))
+                        sylvanas->ForcedDespawn(300 * IN_MILLISECONDS);
+                    events.ScheduleEvent(EVENT_LIAM_DESPAWN, 1500);
+                    break;
+                case EVENT_LIAM_DESPAWN:
+                    // Respawn (300s) brings Liam back in IDLE state for the next run.
+                    me->ForcedDespawn(300 * IN_MILLISECONDS);
+                    break;
+                case EVENT_MARCH_WATCHDOG:
+                    // Evade walked Liam home (or the point was lost): re-issue the order.
+                    ResumeMarch();
+                    break;
+                case EVENT_SELF_HEAL:
+                    if (stage != STAGE_IDLE && me->IsAlive() && me->HealthBelowPct(65))
+                        me->CastSpell(me, SPELL_BATTLE_HEAL, true);
+                    events.ScheduleEvent(EVENT_SELF_HEAL, 10000);
+                    break;
+                default:
+                    break;
+            }
+        }
+
+        if (UpdateVictim())
+            DoMeleeAttackIfReady();
+    }
+
+    void MovementInform(uint32 type, uint32 id) override
+    {
+        if (type != POINT_MOTION_TYPE || !me->IsAlive())
+            return;
+
+        events.CancelEvent(EVENT_MARCH_WATCHDOG);
+
+        switch (id)
+        {
+            case POINT_MERCHANT:
+                stage = STAGE_FIGHT_MERCHANT;
+                Talk(8); // Push them back!
+                BeginFight();
+                break;
+            case POINT_MILITARY:
+                stage = STAGE_FIGHT_MILITARY;
+                Talk(9);  // Abominations are blocking the way...
+                events.ScheduleEvent(EVENT_YELL_CANNONS, 5000);
+                BeginFight();
+                break;
+            case POINT_JAIL:
+                stage = STAGE_FIGHT_JAIL;
+                DoJailArrival();
+                break;
+            case POINT_SQUARE:
+                stage = STAGE_FIGHT_SQUARE;
+                DoSquareArrival();
+                break;
+            default:
+                break;
+        }
+    }
+
+private:
+    EventMap events;
+    uint8 stage = STAGE_IDLE;
+    bool wailDone = false;
+
+    void ResetBattle()
+    {
+        events.Reset();
+        stage = STAGE_IDLE;
+        wailDone = false;
+        if (me->IsAlive())
+        {
+            me->SetStandState(UNIT_STAND_STATE_STAND);
+            me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE);
+        }
+        me->SetWalk(true);
+        me->SetReactState(REACT_DEFENSIVE);
+    }
+
+    void BeginMarch(Position const& dest, uint32 pointId, BattleStage nextStage)
+    {
+        stage = nextStage;
+        me->SetWalk(false);
+        me->GetMotionMaster()->MovePoint(pointId, dest);
+        events.CancelEvent(EVENT_MARCH_WATCHDOG);
+        events.ScheduleEvent(EVENT_MARCH_WATCHDOG, 10 * IN_MILLISECONDS);
+    }
+
+    void ResumeMarch()
+    {
+        Position const* dest = nullptr;
+        uint32 pointId = 0;
+
+        switch (stage)
+        {
+            case STAGE_MARCH_MERCHANT: dest = &BattleMerchantPoint; pointId = POINT_MERCHANT; break;
+            case STAGE_MARCH_MILITARY: dest = &BattleMilitaryPoint; pointId = POINT_MILITARY; break;
+            case STAGE_MARCH_JAIL:     dest = &BattleJailPoint;     pointId = POINT_JAIL;     break;
+            case STAGE_MARCH_SQUARE:   dest = &BattleSquarePoint;   pointId = POINT_SQUARE;   break;
+            default:
+                return;
+        }
+
+        me->ClearUnitState(UNIT_STATE_EVADE);
+        me->GetMotionMaster()->MovePoint(pointId, *dest);
+        events.ScheduleEvent(EVENT_MARCH_WATCHDOG, 10 * IN_MILLISECONDS);
+    }
+
+    void BeginFight()
+    {
+        events.ScheduleEvent(EVENT_STAGE_CHECK, 2500);
+        events.ScheduleEvent(EVENT_FIGHT_TIMEOUT, 180 * IN_MILLISECONDS);
+    }
+
+    bool StageCleared(std::initializer_list<uint32> entries, float radius)
+    {
+        for (uint32 entry : entries)
+            if (me->FindNearestCreature(entry, radius))
+                return false;
+        return true;
+    }
+
+    void SendText(uint32 entry, uint8 group)
+    {
+        if (Creature* talker = me->FindNearestCreature(entry, 120.0f))
+            sCreatureTextMgr->SendChat(talker, group);
+    }
+
+    void HandleStageCheck()
+    {
+        switch (stage)
+        {
+            case STAGE_FIGHT_MERCHANT:
+                if (StageCleared({ NPC_FORSAKEN_CROSSBOWMAN, NPC_FORSAKEN_INFANTRY }, 55.0f))
+                    ClearMerchant();
+                else
+                    events.ScheduleEvent(EVENT_STAGE_CHECK, 2500);
+                break;
+            case STAGE_FIGHT_MILITARY:
+                if (StageCleared({ NPC_VILE_ABOMINATION, NPC_DARK_RANGER_ELITE }, 55.0f))
+                    ClearMilitary();
+                else
+                    events.ScheduleEvent(EVENT_STAGE_CHECK, 2500);
+                break;
+            case STAGE_FIGHT_JAIL:
+                if (StageCleared({ NPC_GOREROT }, 55.0f))
+                    ClearJail();
+                else
+                    events.ScheduleEvent(EVENT_STAGE_CHECK, 2500);
+                break;
+            default:
+                break;
+        }
+    }
+
+    void ClearMerchant()
+    {
+        events.CancelEvent(EVENT_STAGE_CHECK);
+        events.CancelEvent(EVENT_FIGHT_TIMEOUT);
+        events.ScheduleEvent(EVENT_MARCH_MILITARY, 2500);
+    }
+
+    void ClearMilitary()
+    {
+        events.CancelEvent(EVENT_STAGE_CHECK);
+        events.CancelEvent(EVENT_FIGHT_TIMEOUT);
+        Talk(11); // Crowley's troops are up ahead! Press on!
+        events.ScheduleEvent(EVENT_MARCH_JAIL, 3500);
+    }
+
+    void ClearJail()
+    {
+        events.CancelEvent(EVENT_STAGE_CHECK);
+        events.CancelEvent(EVENT_FIGHT_TIMEOUT);
+        events.ScheduleEvent(EVENT_JAIL_DARIUS_CHEER, 2500);
+        events.ScheduleEvent(EVENT_MARCH_SQUARE, 6000);
+    }
+
+    void DoJailArrival()
+    {
+        if (!me->FindNearestCreature(NPC_BATTLE_DARIUS, 60.0f))
+            me->SummonCreature(NPC_BATTLE_DARIUS, BattleDariusSummon, TEMPSUMMON_TIMED_DESPAWN, Milliseconds(300000));
+
+        if (Creature* gorerot = me->FindNearestCreature(NPC_GOREROT, 80.0f))
+        {
+            // Official data parks him on the jail rooftop; bring the fight to the courtyard floor.
+            if (gorerot->GetPositionZ() - me->GetPositionZ() > 5.0f)
+            {
+                float z = me->GetMap()->GetHeight(gorerot->GetPhaseMask(), gorerot->GetPositionX(), gorerot->GetPositionY(), me->GetPositionZ() + 25.0f);
+                gorerot->NearTeleportTo(gorerot->GetPositionX(), gorerot->GetPositionY(), z + 0.2f, gorerot->GetOrientation());
+            }
+            events.ScheduleEvent(EVENT_JAIL_GOREROT_YELL, 1000);
+        }
+        events.ScheduleEvent(EVENT_JAIL_DARIUS_YELL, 3500);
+        BeginFight();
+    }
+
+    void DoSquareArrival()
+    {
+        // Reveal the finale actors (shipped phased out so they don't grief the staging area).
+        std::list<Creature*> actors;
+        for (uint32 entry : { NPC_BATTLE_SYLVANAS, NPC_BATTLE_GENN, NPC_SOULTETHERED_BANSHEE })
+        {
+            actors.clear();
+            me->GetCreatureListWithEntryInGrid(actors, entry, 90.0f);
+            for (Creature* actor : actors)
+                actor->SetPhaseMask(BATTLE_PHASEMASK_VISIBLE, true);
+        }
+        events.ScheduleEvent(EVENT_SQUARE_GENN_YELL_1, 2500);
+        events.ScheduleEvent(EVENT_SQUARE_GENN_YELL_2, 5500);
+        events.ScheduleEvent(EVENT_WATCH_SYLVANAS, 6000);
+    }
+
+    void HandleSylvanasWatch()
+    {
+        if (stage != STAGE_FIGHT_SQUARE || wailDone)
+            return;
+
+        if (Creature* sylvanas = me->FindNearestCreature(NPC_BATTLE_SYLVANAS, 90.0f))
+        {
+            if (!sylvanas->IsAlive())
+                return; // killed outright: quest was already credited at Gorerot
+
+            if (sylvanas->HealthBelowPct(25))
+            {
+                wailDone = true;
+                events.ScheduleEvent(EVENT_WAIL_YELL_1, 500);
+                return;
+            }
+        }
+        events.ScheduleEvent(EVENT_WATCH_SYLVANAS, 1000);
+    }
+};
+
+class npc_battle_krennan_gilneas : public CreatureScript
+{
+public:
+    npc_battle_krennan_gilneas() : CreatureScript("npc_battle_krennan_gilneas") { }
+
+    bool OnGossipHello(Player* player, Creature* creature) override
+    {
+        if (player->GetQuestStatus(QUEST_BATTLE_FOR_GILNEAS_CITY) == QUEST_STATUS_INCOMPLETE)
+        {
+            // "参与吉尔尼斯城保卫战" (UTF-8 escaped: MSVC source is not /utf-8)
+            AddGossipItemFor(player, GOSSIP_ICON_BATTLE,
+                "\xe5\x8f\x82\xe4\xb8\x8e\xe5\x90\x89\xe5\xb0\x94\xe5\xb0\xbc\xe6\x96\xaf\xe5\x9f\x8e\xe4\xbf\x9d\xe5\x8d\xab\xe6\x88\x98",
+                GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
+            SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature);
+        }
+        return true;
+    }
+
+    bool OnGossipSelect(Player* player, Creature* creature, uint32 /*sender*/, uint32 action) override
+    {
+        CloseGossipMenuFor(player);
+        if (action != GOSSIP_ACTION_INFO_DEF + 1)
+            return true;
+
+        sCreatureTextMgr->SendChat(creature, 0); // It's time to join the fray!
+        if (Creature* liam = creature->FindNearestCreature(NPC_BATTLE_LIAM, 100.0f))
+            if (npc_battle_liam_gilneasAI* liamAI = dynamic_cast<npc_battle_liam_gilneasAI*>(liam->AI()))
+                liamAI->StartBattle();
+        return true;
+    }
+
+    CreatureAI* GetAI(Creature* creature) const override
+    {
+        return new npc_battle_krennan_gilneasAI(creature);
+    }
+
+    struct npc_battle_krennan_gilneasAI : public ScriptedAI
+    {
+        npc_battle_krennan_gilneasAI(Creature* creature) : ScriptedAI(creature) { }
+    };
+};
+
 void AddSC_gilneas()
 {
     new creature_script<npc_gilneas_crow>("npc_gilneas_crow");
@@ -2444,4 +2953,6 @@ void AddSC_gilneas()
     new npc_stagecoach_harness("npc_stagecoach_harness");
     new creature_script<npc_koroth_the_hillbreaker>("npc_koroth_the_hillbreaker");
     new go_koroth_banner("go_koroth_banner");
+    new creature_script<npc_battle_liam_gilneasAI>("npc_battle_liam_gilneas");
+    new npc_battle_krennan_gilneas();
 }
