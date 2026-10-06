@@ -1041,7 +1041,7 @@ public:
 
         Position spawnPosition = { 1793.68f, 2978.13f, 291.937f, 4.53491f };
         if (Creature* arconiss = player->SummonCreature(NPC_ARCONISS, spawnPosition,
-            TEMPSUMMON_TIMED_DESPAWN, 60000, 0, player->GetGUID()))
+            TEMPSUMMON_TIMED_DESPAWN, 60000ms, 0, player->GetGUID()))
         {
             arconiss->SetReactState(REACT_PASSIVE);
             arconiss->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_IMMUNE_TO_NPC);
@@ -1363,7 +1363,7 @@ public:
 
                     if (!hasOwnSha)
                         player->SummonCreature(NPC_RITUAL_SEETHING_HATRED, WhatLiesBeneathShaPosition,
-                            TEMPSUMMON_TIMED_OR_DEAD_DESPAWN, 120000, 0, player->GetGUID());
+                            TEMPSUMMON_TIMED_OR_DEAD_DESPAWN, 120000ms, 0, player->GetGUID());
                 }
                 break;
             default:
@@ -1614,9 +1614,9 @@ private:
         }
 
         me->SummonCreature(NPC_GOLGOSS_MISTS_EVENT, MistsOpportunityGolgossPosition,
-            TEMPSUMMON_CORPSE_TIMED_DESPAWN, 30000);
+            TEMPSUMMON_CORPSE_TIMED_DESPAWN, 30000ms);
         me->SummonCreature(NPC_ARCONISS_MISTS_EVENT, MistsOpportunityArconissPosition,
-            TEMPSUMMON_CORPSE_TIMED_DESPAWN, 30000);
+            TEMPSUMMON_CORPSE_TIMED_DESPAWN, 30000ms);
     }
 
     void StartBastionPhase()
@@ -1900,11 +1900,12 @@ struct npc_hatred_becomes_us_sha : public ScriptedAI
             ranger->AI()->DoAction(ACTION_RANGER_PURIFIED);
     }
 
-    void EnterEvadeMode() override
+    void EnterEvadeMode(EvadeReason why = EVADE_REASON_OTHER) override
     {
         if (Creature* ranger = ObjectAccessor::GetCreature(*me, _rangerGuid))
             ranger->AI()->DoAction(ACTION_EXORCISM_FAILED);
         me->DespawnOrUnsummon();
+        ScriptedAI::EnterEvadeMode(why);
     }
 
     void UpdateAI(uint32 diff) override
@@ -2107,7 +2108,7 @@ class npc_lin_silentstrike : public CreatureScript
 
                 Position spawnPosition = { 2659.59f, 3268.618f, 425.33f, 5.56f };
                 player->SummonCreature(NPC_SUNA_SILENTSTRIKE, spawnPosition,
-                    TEMPSUMMON_TIMED_DESPAWN, 34000, 0, player->GetGUID());
+                    TEMPSUMMON_TIMED_DESPAWN, 34000ms, 0, player->GetGUID());
 
                 // Reveal what Lin is clutching while Suna runs toward him.
                 player->SEND_GOSSIP_MENU(19747, creature->GetGUID());
@@ -2121,7 +2122,6 @@ class npc_lin_silentstrike : public CreatureScript
         struct npc_lin_silentstrikeAI : public ScriptedAI
         {
             npc_lin_silentstrikeAI(Creature* creature) : ScriptedAI(creature) { }
-        };
         };
 
         CreatureAI* GetAI(Creature* creature) const override

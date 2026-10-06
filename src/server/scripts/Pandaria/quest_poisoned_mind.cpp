@@ -167,7 +167,7 @@ struct npc_poisoned_mind_flyer : public ScriptedAI
                     return false;
                 center.m_positionZ = std::max(center.GetPositionZ(), z + 25.0f);
                 Creature* target = me->SummonCreature(i == 80 ? PoisonedMind::Kunchong : PoisonedMind::Mantid,
-                    Position{x, y, z, 0.0f}, TEMPSUMMON_MANUAL_DESPAWN, 0, 0, owner);
+                    Position{x, y, z, 0.0f}, TEMPSUMMON_MANUAL_DESPAWN, 0ms, 0, owner);
                 if (!target)
                     return false;
                 target->SetLootRecipient(player);
@@ -326,7 +326,7 @@ public:
                 if (summon->GetSummonerGUID() == player->GetGUID())
                     return true;
         if (Creature* flyer = player->SummonCreature(PoisonedMind::Flyer, player->GetPosition(),
-            TEMPSUMMON_MANUAL_DESPAWN, 0, 156, player->GetGUID()))
+            TEMPSUMMON_MANUAL_DESPAWN, 0ms, 156, player->GetGUID()))
             player->EnterVehicle(flyer, 0);
         return true;
     }

@@ -635,7 +635,7 @@ class npc_koro_mistwalker_unsafe_passage : public CreatureScript
                 {
                     Position position = me->GetNearPosition(7.0f, angle);
                     if (Creature* bloodletter = me->SummonCreature(NPC_RIVERBLADE_BLOODLETTER, position,
-                        TEMPSUMMON_CORPSE_TIMED_DESPAWN, 5 * IN_MILLISECONDS))
+                        TEMPSUMMON_CORPSE_TIMED_DESPAWN, 5ms))
                     {
                         ++bloodlettersAlive;
                         bloodletter->AI()->AttackStart(player ? static_cast<Unit*>(player) : me);
@@ -721,7 +721,7 @@ class npc_cheer_up_yi_mo_starter : public CreatureScript
                 oldYiMo->UnSummon();
 
             player->SummonCreature(NPC_YI_MO_ROLLING, creature->GetPosition(), TEMPSUMMON_TIMED_DESPAWN,
-                10 * MINUTE * IN_MILLISECONDS, 0, player->GetGUID());
+                600000ms, 0, player->GetGUID());
         }
 
         bool OnGossipHello(Player* player, Creature* creature) override
@@ -824,7 +824,7 @@ struct npc_cheer_up_yi_mo_rolling : public ScriptedAI
 
         Position birdPosition = me->GetNearPosition(8.0f, frand(-1.0f, 1.0f));
         if (Creature* bird = me->SummonCreature(NPC_YI_MO_THUNDERBIRD, birdPosition, TEMPSUMMON_TIMED_OR_DEAD_DESPAWN,
-            90 * IN_MILLISECONDS, 0, playerGuid))
+            90ms, 0, playerGuid))
         {
             birdGuid = bird->GetGUID();
             bird->SetFaction(14);

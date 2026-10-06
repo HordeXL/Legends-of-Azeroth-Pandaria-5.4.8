@@ -383,7 +383,7 @@ class npc_rokhan_sarathstra : public CreatureScript
             if (!sarathstra)
                 sarathstra = creature->SummonCreature(NPC_SARATHSTRA,
                     SarathstraCombatPosition, TEMPSUMMON_TIMED_OR_DEAD_DESPAWN,
-                    10 * MINUTE * IN_MILLISECONDS);
+                    600000ms);
 
             if (!sarathstra || sarathstra->IsInCombat())
                 return true;
@@ -504,7 +504,7 @@ class npc_canyon_chase_questgiver : public CreatureScript
                 Position const spawnPosition = creature->GetNearPosition(distance, angle);
 
                 if (Creature* forager = player->SummonCreature(foragerEntry,
-                    spawnPosition, TEMPSUMMON_TIMED_DESPAWN, 3 * MINUTE * IN_MILLISECONDS))
+                    spawnPosition, TEMPSUMMON_TIMED_DESPAWN, 180000ms))
                 {
                     forager->SetFaction(35);
                     forager->SetReactState(REACT_PASSIVE);

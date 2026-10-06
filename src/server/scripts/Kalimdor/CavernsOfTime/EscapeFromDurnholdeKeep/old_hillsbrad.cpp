@@ -339,7 +339,7 @@ public:
                     Talk(SAY_TH_SKARLOC_MEET);
                     // This boss gates the escort's next dialogue. Do not remove
                     // him alive if combat drops or the party needs time to pull.
-                    me->SummonCreature(ENTRY_SCARLOC, 2036.48f, 271.22f, 63.43f, 5.27f, TEMPSUMMON_CORPSE_TIMED_DESPAWN, 300000);
+                    me->SummonCreature(ENTRY_SCARLOC, 2036.48f, 271.22f, 63.43f, 5.27f, TEMPSUMMON_CORPSE_TIMED_DESPAWN, 300000ms);
                     //temporary, skarloc should rather be triggered to walk up to thrall
                     break;
                 case 30:

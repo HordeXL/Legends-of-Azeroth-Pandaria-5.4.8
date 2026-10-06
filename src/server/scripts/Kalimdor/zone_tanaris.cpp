@@ -622,7 +622,7 @@ public:
             {
                 if (Creature* balloon = player->SummonCreature(NPC_STEAMWHEEDLE_BALLOON,
                     creature->GetPositionX(), creature->GetPositionY(), creature->GetPositionZ(),
-                    creature->GetOrientation(), TEMPSUMMON_MANUAL_DESPAWN, 600000))
+                    creature->GetOrientation(), TEMPSUMMON_MANUAL_DESPAWN, 600000ms))
                 {
                     // Vehicle 752 provides the controllable casting seat on
                     // the balloon itself.  A nested throwing-station vehicle

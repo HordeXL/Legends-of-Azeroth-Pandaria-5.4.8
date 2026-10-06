@@ -97,7 +97,7 @@ namespace ScoutingReports
             player->NearTeleportTo(home.GetPositionX(), home.GetPositionY(), home.GetPositionZ(), home.GetOrientation());
         };
         if (TempSummon* actor = player->SummonCreature(report->actor, player->GetPosition(),
-            TEMPSUMMON_TIMED_DESPAWN, 15 * MINUTE * IN_MILLISECONDS, 238, guid))
+            TEMPSUMMON_TIMED_DESPAWN, 900000ms, 238, guid))
         {
             actor->AI()->SetData(OriginalPhaseData, originalPhaseMask);
             player->UpdateVisibilityOf(actor);
@@ -333,7 +333,7 @@ struct npc_jade_forest_scouting_actor : public ScriptedAI
         if (!pilot)
             return nullptr;
         Creature* summon = me->SummonCreature(entry, pos, TEMPSUMMON_TIMED_DESPAWN,
-            20 * MINUTE * IN_MILLISECONDS, 0, pilot->GetGUID());
+            1200000ms, 0, pilot->GetGUID());
         if (!summon)
         {
             spawnFailed = true;

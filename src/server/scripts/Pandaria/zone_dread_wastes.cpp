@@ -2666,7 +2666,7 @@ class npc_hisek_the_swarmkeeper_summon : public CreatureScript
                             if (Player* player = ObjectAccessor::GetPlayer(*me, playerGUID))
                             {
                                 traitor->CombatStart(player, true);
-                                traitor->AddThreat(player, 1.0f);
+                                traitor->GetThreatManager().AddThreat(player, 1.0f);
                                 traitor->AI()->AttackStart(player);
                             }
 
@@ -3331,7 +3331,7 @@ class AreaTrigger_q31087 : public AreaTriggerScript
 
             for (uint32 i = 0; i < 3; i++)
                 if (Creature* wingblade = player->SummonCreature(65486, eventPos[i],
-                    TEMPSUMMON_TIMED_DESPAWN_OUT_OF_COMBAT, 60000))
+                    TEMPSUMMON_TIMED_DESPAWN_OUT_OF_COMBAT, 60000ms))
                     wingblade->SetExplicitSeerGuid(player->GetGUID());
 
             player->m_Events.Schedule(10000, [=]()
@@ -3340,12 +3340,12 @@ class AreaTrigger_q31087 : public AreaTriggerScript
                     player->GetQuestStatus(31679) != QUEST_STATUS_INCOMPLETE)
                     return;
 
-                if (Creature* korik = player->SummonCreature(65475, eventPos[3], TEMPSUMMON_TIMED_DESPAWN_OUT_OF_COMBAT, 66000))
+                if (Creature* korik = player->SummonCreature(65475, eventPos[3], TEMPSUMMON_TIMED_DESPAWN_OUT_OF_COMBAT, 66000ms))
                 {
                     korik->SetExplicitSeerGuid(player->GetGUID());
                     korik->HandleEmoteStateCommand(EMOTE_STATE_STRANGULATE);
                 }
-                if (Creature* adjunct = player->SummonCreature(65478, eventPos[4], TEMPSUMMON_TIMED_DESPAWN_OUT_OF_COMBAT, 66000))
+                if (Creature* adjunct = player->SummonCreature(65478, eventPos[4], TEMPSUMMON_TIMED_DESPAWN_OUT_OF_COMBAT, 66000ms))
                 {
                     adjunct->SetExplicitSeerGuid(player->GetGUID());
                     adjunct->AI()->Talk(0);
@@ -3495,7 +3495,7 @@ struct npc_kaztik_reunited_escort : public ScriptedAI
             Position spawn = me->GetRandomNearPosition(8.0f);
             uint32 entry = Reunited::Attackers[(waypoint + i) % 4];
             if (Creature* enemy = me->SummonCreature(entry, spawn,
-                TEMPSUMMON_TIMED_OR_DEAD_DESPAWN, 60000))
+                TEMPSUMMON_TIMED_OR_DEAD_DESPAWN, 60000ms))
             {
                 summons.Summon(enemy);
                 attackers.insert(enemy->GetGUID());
@@ -3512,7 +3512,7 @@ struct npc_kaztik_reunited_escort : public ScriptedAI
                 if (player)
                 {
                     enemy->CombatStart(player, true);
-                    enemy->AddThreat(player, 1.0f);
+                    enemy->GetThreatManager().AddThreat(player, 1.0f);
                     enemy->AI()->AttackStart(player);
                 }
                 else
@@ -3541,11 +3541,13 @@ struct npc_kaztik_reunited_escort : public ScriptedAI
             SummonedCreatureDies(summon, nullptr);
     }
 
-    void EnterEvadeMode() override
+    void EnterEvadeMode(EvadeReason why = EVADE_REASON_OTHER) override
     {
-        me->DeleteThreatList();
+        me->GetThreatManager().RemoveMeFromThreatLists();
+        me->GetThreatManager().ClearAllThreat();
         me->CombatStop(true);
         me->ClearUnitState(UNIT_STATE_EVADE);
+        ScriptedAI::EnterEvadeMode(why);
     }
 
     void JustDied(Unit* /*killer*/) override
@@ -3581,7 +3583,7 @@ struct npc_kaztik_reunited_escort : public ScriptedAI
         {
             Position kovokPosition = me->GetNearPosition(4.0f, 0.0f);
             kovok = me->SummonCreature(Reunited::NpcKovokCredit,
-                kovokPosition, TEMPSUMMON_TIMED_DESPAWN, 10000);
+                kovokPosition, TEMPSUMMON_TIMED_DESPAWN, 10000ms);
         }
 
         if (kovok)
@@ -4118,13 +4120,15 @@ public:
 
         void JustDied(Unit* /*killer*/) override { Finish(false); }
 
-        void EnterEvadeMode() override
+        void EnterEvadeMode(EvadeReason why = EVADE_REASON_OTHER) override
         {
             // This stationary defense controller must keep updating between
             // waves, not enter a home-movement state with movement disabled.
-            me->DeleteThreatList();
+            me->GetThreatManager().RemoveMeFromThreatLists();
+            me->GetThreatManager().ClearAllThreat();
             me->CombatStop(true);
             me->ClearUnitState(UNIT_STATE_EVADE);
+            ScriptedAI::EnterEvadeMode(why);
         }
 
         void JustSummoned(Creature* summon) override
@@ -4206,7 +4210,7 @@ public:
             {
                 Position pos = me->GetFirstCollisionPosition(12.0f, float(i) * 2.0f);
                 Creature* attacker = me->SummonCreature(KypariZar::Towerguard, pos,
-                    TEMPSUMMON_TIMED_OR_DEAD_DESPAWN, 120000, 0, playerGUID);
+                    TEMPSUMMON_TIMED_OR_DEAD_DESPAWN, 120000ms, 0, playerGUID);
                 if (!attacker)
                 {
                     Finish(false);
@@ -4242,7 +4246,7 @@ public:
 
         // Keep the private defense NPC clear of the static Korven by the tower.
         Position pos = go->GetFirstCollisionPosition(8.0f, float(M_PI));
-        player->SummonCreature(KypariZar::Korven, pos, TEMPSUMMON_MANUAL_DESPAWN, 0, 0, player->GetGUID());
+        player->SummonCreature(KypariZar::Korven, pos, TEMPSUMMON_MANUAL_DESPAWN, 0ms, 0, player->GetGUID());
         // Consume the click ourselves; the default goober path locks the shared tower
         // and casts the unimplemented dummy spell instead of starting the defense.
         return true;

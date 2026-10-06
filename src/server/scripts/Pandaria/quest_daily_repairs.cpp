@@ -58,7 +58,8 @@ struct npc_daily_repair_targetAI : public ScriptedAI
         releaseTimer = 120000;
         me->SetHealth(std::max(1u, me->CountPctFromMaxHealth(20)));
         me->CombatStop(true);
-        me->DeleteThreatList();
+        me->GetThreatManager().RemoveMeFromThreatLists();
+        me->GetThreatManager().ClearAllThreat();
         me->SetFaction(35);
         me->SetReactState(REACT_PASSIVE);
         me->SetStandState(UNIT_STAND_STATE_SIT);

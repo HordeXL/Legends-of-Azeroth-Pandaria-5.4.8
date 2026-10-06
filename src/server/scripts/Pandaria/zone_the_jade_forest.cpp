@@ -4972,7 +4972,7 @@ namespace RightTrack
             return;
         }
         if (TempSummon* kiryn = player->SummonCreature(Kiryn, player->GetPosition(),
-            TEMPSUMMON_TIMED_DESPAWN, 15 * MINUTE * IN_MILLISECONDS, 238, player->GetGUID()))
+            TEMPSUMMON_TIMED_DESPAWN, 900000ms, 238, player->GetGUID()))
         {
             kiryn->AI()->SetData(OriginalPhaseData, originalPhaseMask);
             if (!kiryn->GetVehicleKit())
@@ -5099,7 +5099,7 @@ struct npc_jade_forest_right_track_kiryn : public ScriptedAI
     Creature* Spawn(uint32 entry, Position const& position, Player* player)
     {
         Creature* summon = me->SummonCreature(entry, position, TEMPSUMMON_TIMED_DESPAWN,
-            15 * MINUTE * IN_MILLISECONDS, 0, player->GetGUID());
+            900000ms, 0, player->GetGUID());
         if (summon && entry == RightTrack::Tiger)
             summon->SetReactState(REACT_PASSIVE);
         return summon;
@@ -5260,7 +5260,7 @@ public:
             !player->IsWithinDistInMap(creature, INTERACTION_DISTANCE))
             return false;
 
-        if (TempSummon* flight = player->SummonCreature(55676, AcidRain::Landing, TEMPSUMMON_TIMED_DESPAWN, 10 * MINUTE * IN_MILLISECONDS))
+        if (TempSummon* flight = player->SummonCreature(55676, AcidRain::Landing, TEMPSUMMON_TIMED_DESPAWN, 600000ms))
         {
             if (!flight->GetVehicleKit())
             {

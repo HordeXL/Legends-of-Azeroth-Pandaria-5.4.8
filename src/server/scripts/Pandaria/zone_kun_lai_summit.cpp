@@ -1562,7 +1562,8 @@ public:
 
             triggered = true;
             kobai->CombatStop(true);
-            kobai->getHostileRefManager().deleteReferences();
+            kobai->GetThreatManager().RemoveMeFromThreatLists();
+            kobai->GetThreatManager().ClearAllThreat();
             kobai->SetReactState(REACT_PASSIVE);
             kobai->SetControlled(true, UNIT_STATE_STUNNED);
             me->CastSpell(kobai, SPELL_BLINDING_RAGE);
@@ -1622,7 +1623,7 @@ class spell_unmasking_yaungol_steal_mask : public SpellScript
         Position spawnPosition = kobai->GetPosition();
         if (Creature* fury = player->SummonCreature(NPC_MALEVOLENT_FURY,
             spawnPosition, TEMPSUMMON_TIMED_OR_DEAD_DESPAWN,
-            5 * MINUTE * IN_MILLISECONDS, 0, player->GetGUID()))
+            300000ms, 0, player->GetGUID()))
         {
             fury->SetFaction(14);
             fury->SetReactState(REACT_AGGRESSIVE);
@@ -1850,7 +1851,7 @@ class npc_mishi_staying_connected : public CreatureScript
             if (action != GOSSIP_ACTION_INFO_DEF + 1 || player->GetQuestStatus(QUEST_STAYING_CONNECTED) != QUEST_STATUS_INCOMPLETE || player->GetVehicle())
                 return true;
 
-            Creature* mishi = creature->SummonCreature(NPC_MISHI_FLIGHT_VEHICLE, *creature, TEMPSUMMON_TIMED_DESPAWN, 90 * IN_MILLISECONDS);
+            Creature* mishi = creature->SummonCreature(NPC_MISHI_FLIGHT_VEHICLE, *creature, TEMPSUMMON_TIMED_DESPAWN, 90ms);
             if (!mishi)
                 return true;
 
@@ -3380,7 +3381,7 @@ namespace HoledUp
             return;
 
         if (TempSummon* follower = player->SummonCreature(followerEntry, survivor->GetPosition(),
-            TEMPSUMMON_TIMED_DESPAWN, 10 * MINUTE * IN_MILLISECONDS))
+            TEMPSUMMON_TIMED_DESPAWN, 600000ms))
         {
             follower->SetReactState(REACT_PASSIVE);
             follower->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_IMMUNE_TO_NPC);

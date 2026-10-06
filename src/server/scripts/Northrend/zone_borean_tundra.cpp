@@ -439,7 +439,7 @@ class spell_jennys_whistle : public SpellScript
 
         Position position = player->GetNearPosition(2.0f, 0.0f);
         if (TempSummon* jenny = player->SummonCreature(NPC_JENNY, position,
-            TEMPSUMMON_TIMED_OR_DEAD_DESPAWN, 10 * MINUTE * IN_MILLISECONDS))
+            TEMPSUMMON_TIMED_OR_DEAD_DESPAWN, 600000ms))
             jenny->SetOwnerGUID(player->GetGUID());
     }
 
