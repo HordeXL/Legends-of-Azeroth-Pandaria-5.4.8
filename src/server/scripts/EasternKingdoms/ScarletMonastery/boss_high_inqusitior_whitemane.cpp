@@ -637,6 +637,51 @@ class spell_sc_mass_ressurection : public SpellScript
     }
 };
 
+// Blades of the Anointed (87388/87390): validate before the cast item is consumed.
+class spell_sc_blades_of_the_anointed : public SpellScript
+{
+    PrepareSpellScript(spell_sc_blades_of_the_anointed);
+
+    SpellCastResult CheckCast()
+    {
+        Player* player = GetCaster()->ToPlayer();
+        if (!player || player->GetMapId() != 1004)
+            return SPELL_FAILED_BAD_TARGETS;
+
+        bool heroic = GetSpellInfo()->Id == 126843;
+        if (player->GetMap()->GetDifficulty() != (heroic ? DUNGEON_DIFFICULTY_HEROIC : DUNGEON_DIFFICULTY_NORMAL) ||
+            player->GetQuestStatus(heroic ? 31516 : 31514) != QUEST_STATUS_INCOMPLETE)
+            return SPELL_FAILED_CANT_DO_THAT_RIGHT_NOW;
+
+        InstanceScript* instance = player->GetInstanceScript();
+        if (!instance || instance->GetBossState(BOSS_WHITEMANE) != DONE)
+            return SPELL_FAILED_BAD_TARGETS;
+
+        Creature* corpse = ObjectAccessor::GetCreature(*player, instance->GetGuidData(BOSS_WHITEMANE));
+        if (!corpse || corpse->GetEntry() != NPC_HIGH_INQUISITOR_WHITEMANE || !corpse->isDead())
+            return SPELL_FAILED_BAD_TARGETS;
+
+        // These DBC spells use a nearby target and can discard the explicit
+        // unit target. Also check the player's selection: Durand's corpse must
+        // not consume the blades merely because Whitemane's focus is nearby.
+        ObjectGuid target = GetExplTargetUnit() ? GetExplTargetUnit()->GetGUID() : player->GetTarget();
+        if (!target.IsEmpty() && target != corpse->GetGUID())
+            return SPELL_FAILED_BAD_TARGETS;
+
+        if (!player->IsWithinDistInMap(corpse, 10.0f))
+            return SPELL_FAILED_OUT_OF_RANGE;
+
+        // The core additionally requires corpse spell focus 1780. The existing
+        // SEND_EVENT handler awards this user's quest credit after a valid cast.
+        return SPELL_CAST_OK;
+    }
+
+    void Register() override
+    {
+        OnCheckCast += SpellCheckCastFn(spell_sc_blades_of_the_anointed::CheckCast);
+    }
+};
+
 // Quest ender for 31514 and 31516
 // RP event https://wowpedia.fandom.com/wiki/Unto_Dust_Thou_Shalt_Return
 // Hooded Crusader says: It is done. You did it, <name>!
@@ -750,5 +795,6 @@ void AddSC_boss_whitemane_and_durand()
     new boss_high_inqusitior_whitemane();
     new spell_script<spell_sc_scarlet_ressurection>("spell_sc_scarlet_ressurection");
     new spell_script<spell_sc_mass_ressurection>("spell_sc_mass_ressurection");
+    new spell_script<spell_sc_blades_of_the_anointed>("spell_sc_blades_of_the_anointed");
     RegisterCreatureAI(npc_hooded_crusader_c64842);
 }
