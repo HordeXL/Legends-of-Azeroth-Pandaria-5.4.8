@@ -184,12 +184,16 @@ void Vehicle::Install()
 
 void Vehicle::InstallAllAccessories(bool evading)
 {
-    if (GetBase()->GetTypeId() == TYPEID_PLAYER || !evading)
-        RemoveAllPassengers();   // We might have aura's saved in the DB with now invalid casters - remove
-
     VehicleAccessoryList const* accessories = sObjectMgr->GetVehicleAccessoryList(this);
     if (!accessories)
         return;
+
+    // Only clear passengers when there are DB accessories to reinstall - the old
+    // unconditional RemoveAllPassengers() here ejected players who boarded a
+    // spell-summoned vehicle in the same tick (summon + auto-ride spells), because
+    // Creature::Update calls Vehicle::Reset() on the tick right after the summon.
+    if (GetBase()->GetTypeId() == TYPEID_PLAYER || !evading)
+        RemoveAllPassengers();   // We might have aura's saved in the DB with now invalid casters - remove
 
     for (VehicleAccessoryList::const_iterator itr = accessories->begin(); itr != accessories->end(); ++itr)
         if (!evading || itr->IsMinion)  // only install minions on evade mode

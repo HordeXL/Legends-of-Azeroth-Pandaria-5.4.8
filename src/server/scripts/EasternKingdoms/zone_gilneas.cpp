@@ -2886,6 +2886,9 @@ class npc_battle_krennan_gilneas : public CreatureScript
 public:
     npc_battle_krennan_gilneas() : CreatureScript("npc_battle_krennan_gilneas") { }
 
+    // Only intercept while the battle gossip is relevant. Returning true
+    // unconditionally suppressed the engine's PrepareQuestMenu, so Krennan's
+    // quest turn-ins (24678/24602/24679) never showed up at the tunnel exit.
     bool OnGossipHello(Player* player, Creature* creature) override
     {
         if (player->GetQuestStatus(QUEST_BATTLE_FOR_GILNEAS_CITY) == QUEST_STATUS_INCOMPLETE)
@@ -2895,15 +2898,16 @@ public:
                 "\xe5\x8f\x82\xe4\xb8\x8e\xe5\x90\x89\xe5\xb0\x94\xe5\xb0\xbc\xe6\x96\xaf\xe5\x9f\x8e\xe4\xbf\x9d\xe5\x8d\xab\xe6\x88\x98",
                 GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
             SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature);
+            return true;
         }
-        return true;
+        return false; // engine default: questgiver menu (turn-in 24678 etc.)
     }
 
     bool OnGossipSelect(Player* player, Creature* creature, uint32 /*sender*/, uint32 action) override
     {
         CloseGossipMenuFor(player);
         if (action != GOSSIP_ACTION_INFO_DEF + 1)
-            return true;
+            return false;
 
         sCreatureTextMgr->SendChat(creature, 0); // It's time to join the fray!
         if (Creature* liam = creature->FindNearestCreature(NPC_BATTLE_LIAM, 100.0f))
@@ -2921,6 +2925,38 @@ public:
     {
         npc_battle_krennan_gilneasAI(Creature* creature) : ScriptedAI(creature) { }
     };
+};
+
+// Quest 24920 "Slowing the Inevitable": the Iron Bomb cast (72246, vehicle spell
+// of the flying bat 38540) triggers its impact spell (72247) instantly at the
+// caster's position - this core has no missile travel system, so the bomb
+// "exploded" ~25-60 yards up in the air and never touched the ground targets.
+// Redirect the explosion to the ground directly below the bat; the triggered
+// impact spell (72247, enemy-only 32yd AoE) inherits this dest, so bombs land
+// on the Forsaken lines. Damage values and targeting are untouched.
+class spell_q24920_iron_bomb : public SpellScript
+{
+    PrepareSpellScript(spell_q24920_iron_bomb);
+
+    void SelectGroundImpact(SpellDestination& dest)
+    {
+        Unit* caster = GetCaster();
+        if (!caster)
+            return;
+
+        float x = caster->GetPositionX();
+        float y = caster->GetPositionY();
+        float z = caster->GetMapHeight(x, y, caster->GetPositionZ());
+        if (z <= INVALID_HEIGHT)
+            z = caster->GetPositionZ() - 30.0f;
+
+        dest.Relocate(Position(x, y, z, caster->GetOrientation()));
+    }
+
+    void Register() override
+    {
+        OnDestinationTargetSelect += SpellDestinationTargetSelectFn(spell_q24920_iron_bomb::SelectGroundImpact, EFFECT_0, TARGET_DEST_CASTER);
+    }
 };
 
 void AddSC_gilneas()
@@ -2949,6 +2985,7 @@ void AddSC_gilneas()
     new npc_mountain_horse("npc_mountain_horse");
     new creature_script<npc_mountain_horse_summoned>("npc_mountain_horse_summoned");
     new spell_script<spell_gilneas_test_telescope>("spell_gilneas_test_telescope");
+    new spell_script<spell_q24920_iron_bomb>("spell_q24920_iron_bomb");
     new npc_stagecoach_carriage_exodus("npc_stagecoach_carriage_exodus");
     new npc_stagecoach_harness("npc_stagecoach_harness");
     new creature_script<npc_koroth_the_hillbreaker>("npc_koroth_the_hillbreaker");
