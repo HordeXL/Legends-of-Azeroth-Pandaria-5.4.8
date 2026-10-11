@@ -7424,7 +7424,7 @@ bool Player::RewardHonor(Unit* victim, uint32 groupsize, int32 honor, bool pvpto
             int32 count = sWorld->getIntConfig(CONFIG_PVP_TOKEN_COUNT);
 
             if (AddItem(itemId, count))
-                ChatHandler(GetSession()).PSendSysMessage("You have been awarded a token for slaying another player.");
+                ChatHandler(GetSession()).PSendSysMessage("\xe4\xbd\xa0\xe5\x9b\xa0\xe5\x87\xbb\xe6\x9d\x80\xe6\x95\x8c\xe6\x96\xb9\xe7\x8e\xa9\xe5\xae\xb6\xe8\x8e\xb7\xe5\xbe\x97\xe4\xba\x86\xe4\xb8\x80\xe6\x9e\x9a\xe4\xbb\xa3\xe5\xb8\x81\xe3\x80\x82");
         }
     }
 
@@ -29397,7 +29397,7 @@ bool Player::AddItem(uint32 itemId, uint32 count)
     if (count == 0 || dest.empty())
     {
         /// @todo Send to mailbox if no space
-        ChatHandler(GetSession()).PSendSysMessage("You don't have any space in your bags.");
+        ChatHandler(GetSession()).PSendSysMessage("\xe4\xbd\xa0\xe7\x9a\x84\xe8\x83\x8c\xe5\x8c\x85\xe5\xb7\xb2\xe6\xb2\xa1\xe6\x9c\x89\xe7\xa9\xba\xe4\xbd\x8d\xe3\x80\x82");
         return false;
     }
 

@@ -1856,7 +1856,7 @@ namespace LuaPlayer
         if (itemCount == 0 || dest.empty())
         {
             /// @todo Send to mailbox if no space
-            ChatHandler(player->GetSession()).PSendSysMessage("You don't have any space in your bags.");
+            ChatHandler(player->GetSession()).PSendSysMessage("\xe4\xbd\xa0\xe7\x9a\x84\xe8\x83\x8c\xe5\x8c\x85\xe5\xb7\xb2\xe6\xb2\xa1\xe6\x9c\x89\xe7\xa9\xba\xe4\xbd\x8d\xe3\x80\x82");
             return 0;
         }
 

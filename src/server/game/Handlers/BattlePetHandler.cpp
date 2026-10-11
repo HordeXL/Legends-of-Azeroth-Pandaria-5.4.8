@@ -676,7 +676,7 @@ void WorldSession::HandlePetBattleRequestWild(WorldPacket& recvData)
 {
     if (!sWorld->getBoolConfig(CONFIG_PET_BATTLES_ENABLED))
     {
-        ChatHandler(this).SendSysMessage("Pet battles are disabled");
+        ChatHandler(this).SendSysMessage("\xe5\xae\xa0\xe7\x89\xa9\xe5\xaf\xb9\xe6\x88\x98\xe5\xb7\xb2\xe7\xa6\x81\xe7\x94\xa8");
         recvData.rfinish();
         return;
     }

@@ -105,10 +105,10 @@ namespace
     void ShowMainMenu(Player* player, Creature* creature)
     {
         ClearGossipMenuFor(player);
-        AddGossipItemFor(player, GOSSIP_ICON_VENDOR, "Browse free mount goods.", GOSSIP_SENDER_MAIN, ACTION_VENDOR);
-        AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Riding and flying.", GOSSIP_SENDER_MAIN, ACTION_MENU_RIDING);
-        AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Weapon and armor skills.", GOSSIP_SENDER_MAIN, ACTION_MENU_WEAPONS);
-        AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Professions.", GOSSIP_SENDER_MAIN, ACTION_MENU_PROFESSIONS);
+        AddGossipItemFor(player, GOSSIP_ICON_VENDOR, "\xe6\xb5\x8f\xe8\xa7\x88\xe5\x85\x8d\xe8\xb4\xb9\xe5\x9d\x90\xe9\xaa\x91\xe5\x95\x86\xe5\x93\x81\xe3\x80\x82", GOSSIP_SENDER_MAIN, ACTION_VENDOR);
+        AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "\xe9\xaa\x91\xe6\x9c\xaf\xe4\xb8\x8e\xe9\xa3\x9e\xe8\xa1\x8c\xe3\x80\x82", GOSSIP_SENDER_MAIN, ACTION_MENU_RIDING);
+        AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "\xe6\xad\xa6\xe5\x99\xa8\xe4\xb8\x8e\xe6\x8a\xa4\xe7\x94\xb2\xe6\x8a\x80\xe8\x83\xbd\xe3\x80\x82", GOSSIP_SENDER_MAIN, ACTION_MENU_WEAPONS);
+        AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "\xe4\xb8\x93\xe4\xb8\x9a\xe6\x8a\x80\xe8\x83\xbd\xe3\x80\x82", GOSSIP_SENDER_MAIN, ACTION_MENU_PROFESSIONS);
         SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
     }
 
@@ -116,7 +116,7 @@ namespace
     {
         ClearGossipMenuFor(player);
         AddGossipItemFor(player, GOSSIP_ICON_TRAINER, RidingGroup.Name, GOSSIP_SENDER_MAIN, ACTION_LEARN_RIDING);
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Back.", GOSSIP_SENDER_MAIN, ACTION_BACK);
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "\xe8\xbf\x94\xe5\x9b\x9e\xe3\x80\x82", GOSSIP_SENDER_MAIN, ACTION_BACK);
         SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
     }
 
@@ -125,19 +125,19 @@ namespace
         ClearGossipMenuFor(player);
         AddGossipItemFor(player, GOSSIP_ICON_TRAINER, WeaponGroup.Name, GOSSIP_SENDER_MAIN, ACTION_LEARN_WEAPONS);
         AddGossipItemFor(player, GOSSIP_ICON_TRAINER, ArmorGroup.Name, GOSSIP_SENDER_MAIN, ACTION_LEARN_ARMOR);
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Back.", GOSSIP_SENDER_MAIN, ACTION_BACK);
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "\xe8\xbf\x94\xe5\x9b\x9e\xe3\x80\x82", GOSSIP_SENDER_MAIN, ACTION_BACK);
         SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
     }
 
     void ShowProfessionMenu(Player* player, Creature* creature)
     {
         ClearGossipMenuFor(player);
-        AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Learn all professions.", GOSSIP_SENDER_MAIN, ACTION_PROF_ALL);
+        AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "\xe5\xad\xa6\xe4\xb9\xa0\xe5\x85\xa8\xe9\x83\xa8\xe4\xb8\x93\xe4\xb8\x9a\xe6\x8a\x80\xe8\x83\xbd\xe3\x80\x82", GOSSIP_SENDER_MAIN, ACTION_PROF_ALL);
 
         for (VipSpellGroup const& group : ProfessionGroups)
             AddGossipItemFor(player, GOSSIP_ICON_TRAINER, group.Name, GOSSIP_SENDER_MAIN, group.Action);
 
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Back.", GOSSIP_SENDER_MAIN, ACTION_BACK);
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "\xe8\xbf\x94\xe5\x9b\x9e\xe3\x80\x82", GOSSIP_SENDER_MAIN, ACTION_BACK);
         SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
     }
 

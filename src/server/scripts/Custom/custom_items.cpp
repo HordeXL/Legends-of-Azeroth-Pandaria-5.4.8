@@ -29,7 +29,7 @@ public:
         else if(player->HasItemCount(item->GetEntry(), 1, true)) //verify that the characters have the item
         {
             player->ModifyCurrency(392, 1000 * CURRENCY_PRECISION); // add 1000 honor points
-            ChatHandler(player->GetSession()).SendSysMessage("Thanks for helping the WoW project, you just received 1000 honor points.");
+            ChatHandler(player->GetSession()).SendSysMessage("\xe6\x84\x9f\xe8\xb0\xa2\xe4\xbd\xa0\xe5\xaf\xb9\x20\x57\x6f\x57\x20\xe9\xa1\xb9\xe7\x9b\xae\xe7\x9a\x84\xe6\x94\xaf\xe6\x8c\x81\xef\xbc\x8c\xe4\xbd\xa0\xe8\x8e\xb7\xe5\xbe\x97\xe4\xba\x86\x20\x31\x30\x30\x30\x20\xe7\x82\xb9\xe8\x8d\xa3\xe8\xaa\x89\xe7\x82\xb9\xe6\x95\xb0\xe3\x80\x82");
 
             //Item is destroyed on useage.
             player->DestroyItemCount(item->GetEntry(), 1, true);
@@ -39,7 +39,7 @@ public:
         }
         else
         {
-            ChatHandler(player->GetSession()).SendSysMessage("You do not have the necessary token.");
+            ChatHandler(player->GetSession()).SendSysMessage("\xe4\xbd\xa0\xe6\xb2\xa1\xe6\x9c\x89\xe6\x89\x80\xe9\x9c\x80\xe7\x9a\x84\xe4\xbb\xa3\xe5\xb8\x81\xe3\x80\x82");
         }
         return true;
     }
@@ -59,7 +59,7 @@ public:
         else if(player->HasItemCount(item->GetEntry(), 1, true)) //verify that the characters have the item
         {
             player->ModifyCurrency(CURRENCY_TYPE_JUSTICE_POINTS, 1000 * CURRENCY_PRECISION, true, true, true); // add 1000 justice points
-            ChatHandler(player->GetSession()).SendSysMessage("Thanks for helping the WoW project, you just received 1000 justice points.");
+            ChatHandler(player->GetSession()).SendSysMessage("\xe6\x84\x9f\xe8\xb0\xa2\xe4\xbd\xa0\xe5\xaf\xb9\x20\x57\x6f\x57\x20\xe9\xa1\xb9\xe7\x9b\xae\xe7\x9a\x84\xe6\x94\xaf\xe6\x8c\x81\xef\xbc\x8c\xe4\xbd\xa0\xe8\x8e\xb7\xe5\xbe\x97\xe4\xba\x86\x20\x31\x30\x30\x30\x20\xe7\x82\xb9\xe6\xad\xa3\xe4\xb9\x89\xe7\x82\xb9\xe6\x95\xb0\xe3\x80\x82");
 
             //Item is destroyed on useage.
             player->DestroyItemCount(item->GetEntry(), 1, true);
@@ -69,7 +69,7 @@ public:
         }
         else
         {
-            ChatHandler(player->GetSession()).SendSysMessage("You do not have the necessary token.");
+            ChatHandler(player->GetSession()).SendSysMessage("\xe4\xbd\xa0\xe6\xb2\xa1\xe6\x9c\x89\xe6\x89\x80\xe9\x9c\x80\xe7\x9a\x84\xe4\xbb\xa3\xe5\xb8\x81\xe3\x80\x82");
         }
         return true;
     }
@@ -89,7 +89,7 @@ public:
         else if(player->HasItemCount(item->GetEntry(), 1, true)) //verify that the characters have the item
         {
             player->ModifyCurrency(CURRENCY_TYPE_VALOR_POINTS, 1000 * CURRENCY_PRECISION, true, true, true); // add 1000 valor points
-            ChatHandler(player->GetSession()).SendSysMessage("Thanks for helping the WoW project, you just received 1000 valor points.");
+            ChatHandler(player->GetSession()).SendSysMessage("\xe6\x84\x9f\xe8\xb0\xa2\xe4\xbd\xa0\xe5\xaf\xb9\x20\x57\x6f\x57\x20\xe9\xa1\xb9\xe7\x9b\xae\xe7\x9a\x84\xe6\x94\xaf\xe6\x8c\x81\xef\xbc\x8c\xe4\xbd\xa0\xe8\x8e\xb7\xe5\xbe\x97\xe4\xba\x86\x20\x31\x30\x30\x30\x20\xe7\x82\xb9\xe5\x8b\x87\xe6\xb0\x94\xe7\x82\xb9\xe6\x95\xb0\xe3\x80\x82");
 
             //Item is destroyed on useage.
             player->DestroyItemCount(item->GetEntry(), 1, true);
@@ -99,7 +99,7 @@ public:
         }
         else
         {
-            ChatHandler(player->GetSession()).SendSysMessage("You do not have the necessary token.");
+            ChatHandler(player->GetSession()).SendSysMessage("\xe4\xbd\xa0\xe6\xb2\xa1\xe6\x9c\x89\xe6\x89\x80\xe9\x9c\x80\xe7\x9a\x84\xe4\xbb\xa3\xe5\xb8\x81\xe3\x80\x82");
         }
         return true;
     }
@@ -119,7 +119,7 @@ public:
         else if(player->HasItemCount(item->GetEntry(), 1, true)) //verify that the characters have the item
         {
             player->ModifyCurrency(390, 1000 * CURRENCY_PRECISION); // add 1000 conquest points
-            ChatHandler(player->GetSession()).SendSysMessage("Thanks for helping the WoW project, you just received 1000 conquest points.");
+            ChatHandler(player->GetSession()).SendSysMessage("\xe6\x84\x9f\xe8\xb0\xa2\xe4\xbd\xa0\xe5\xaf\xb9\x20\x57\x6f\x57\x20\xe9\xa1\xb9\xe7\x9b\xae\xe7\x9a\x84\xe6\x94\xaf\xe6\x8c\x81\xef\xbc\x8c\xe4\xbd\xa0\xe8\x8e\xb7\xe5\xbe\x97\xe4\xba\x86\x20\x31\x30\x30\x30\x20\xe7\x82\xb9\xe5\xbe\x81\xe6\x9c\x8d\xe7\x82\xb9\xe6\x95\xb0\xe3\x80\x82");
 
             //Item is destroyed on useage.
             player->DestroyItemCount(item->GetEntry(), 1, true);
@@ -129,7 +129,7 @@ public:
         }
         else
         {
-            ChatHandler(player->GetSession()).SendSysMessage("You do not have the necessary token.");
+            ChatHandler(player->GetSession()).SendSysMessage("\xe4\xbd\xa0\xe6\xb2\xa1\xe6\x9c\x89\xe6\x89\x80\xe9\x9c\x80\xe7\x9a\x84\xe4\xbb\xa3\xe5\xb8\x81\xe3\x80\x82");
         }
         return true;
     }
@@ -149,7 +149,7 @@ public:
         }
         else if (player->GetMoney() > MAX_MONEY_AMOUNT - uint64(Gold))
         {
-            ChatHandler(player->GetSession()).SendSysMessage("Maximum allowed gold limit exceeded.");
+            ChatHandler(player->GetSession()).SendSysMessage("\xe5\xb7\xb2\xe8\xb6\x85\xe8\xbf\x87\xe5\x85\x81\xe8\xae\xb8\xe7\x9a\x84\xe9\x87\x91\xe5\xb8\x81\xe4\xb8\x8a\xe9\x99\x90\xe3\x80\x82");
         }
         else
         {
@@ -180,13 +180,13 @@ public:
         }
         else if (Level <= player->GetLevel())
         {
-            ChatHandler(player->GetSession()).SendSysMessage("Your current character level is too high.");
+            ChatHandler(player->GetSession()).SendSysMessage("\xe4\xbd\xa0\xe5\xbd\x93\xe5\x89\x8d\xe7\x9a\x84\xe8\xa7\x92\xe8\x89\xb2\xe7\xad\x89\xe7\xba\xa7\xe8\xbf\x87\xe9\xab\x98\xe3\x80\x82");
         }
         else
         {
             player->GiveLevel(Level);
             player->DestroyItemCount(item->GetEntry(), 1, true);
-            ChatHandler(player->GetSession()).SendSysMessage("Thanks for helping the Pandaria 5.4.8 project, you just leveled up your character to level 90.");
+            ChatHandler(player->GetSession()).SendSysMessage("\xe6\x84\x9f\xe8\xb0\xa2\xe4\xbd\xa0\xe5\xaf\xb9\x20\x50\x61\x6e\x64\x61\x72\x69\x61\x20\x35\x2e\x34\x2e\x38\x20\xe9\xa1\xb9\xe7\x9b\xae\xe7\x9a\x84\xe6\x94\xaf\xe6\x8c\x81\xef\xbc\x8c\xe4\xbd\xa0\xe7\x9a\x84\xe8\xa7\x92\xe8\x89\xb2\xe5\xb7\xb2\xe6\x8f\x90\xe5\x8d\x87\xe8\x87\xb3\x20\x39\x30\x20\xe7\xba\xa7\xe3\x80\x82");
             player->SaveToDB();
         }
 
@@ -208,13 +208,13 @@ public:
         }
         else if (player->HasAtLoginFlag(AtLoginFlags(0xFFFFFFFF)))
         {
-            ChatHandler(player->GetSession()).SendSysMessage("You have already activated a character service.");
+            ChatHandler(player->GetSession()).SendSysMessage("\xe4\xbd\xa0\xe5\xb7\xb2\xe7\xbb\x8f\xe6\xbf\x80\xe6\xb4\xbb\xe8\xbf\x87\xe8\xa7\x92\xe8\x89\xb2\xe6\x9c\x8d\xe5\x8a\xa1\xe4\xba\x86\xe3\x80\x82");
         }
         else
         {
             player->SetAtLoginFlag(FlagAtLogin);
             player->DestroyItemCount(item->GetEntry(), 1, true);
-            ChatHandler(player->GetSession()).SendSysMessage("The character service has been activated. Please log out and enter this character again.");
+            ChatHandler(player->GetSession()).SendSysMessage("\xe8\xa7\x92\xe8\x89\xb2\xe6\x9c\x8d\xe5\x8a\xa1\xe5\xb7\xb2\xe6\xbf\x80\xe6\xb4\xbb\xe3\x80\x82\xe8\xaf\xb7\xe7\x99\xbb\xe5\x87\xba\xe5\x90\x8e\xe9\x87\x8d\xe6\x96\xb0\xe8\xbf\x9b\xe5\x85\xa5\xe8\xaf\xa5\xe8\xa7\x92\xe8\x89\xb2\xe3\x80\x82");
             player->SaveToDB();
         }
 

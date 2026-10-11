@@ -15,7 +15,7 @@ public:
             timeInterval -= player->ptr_Interval;
             if (player->IsInWorld() && sWorld->getBoolConfig(CONFIG_BONUS_TIME_REWARD))
             {
-                ChatHandler(player->GetSession()).PSendSysMessage("Bonus for played time.");
+                ChatHandler(player->GetSession()).PSendSysMessage("\xe6\xb8\xb8\xe6\x88\x8f\xe6\x97\xb6\xe9\x95\xbf\xe5\xa5\x96\xe5\x8a\xb1\xe3\x80\x82");
 
                 LoginDatabasePreparedStatement* stmt = LoginDatabase.GetPreparedStatement(LOGIN_UPD_BATTLEPAY_VP_COINS);
                 stmt->setUInt32(0, sConfigMgr->GetIntDefault("PlayedTimeReward.vp", 0));

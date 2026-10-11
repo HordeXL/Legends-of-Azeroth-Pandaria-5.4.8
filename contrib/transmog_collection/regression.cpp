@@ -254,7 +254,7 @@ int main() {
     for(uint32 entry=700;entry<=704;++entry)objectMgr.items[entry]={entry,ITEM_CLASS_ARMOR,INVTYPE_CHEST};
     objectMgr.items[701].DisplayInfoID=700;
     restarted.LearnAppearance(&looter,700);
-    assert(looter.session.messages==std::vector<std::string>{"700 has been added to your appearance collection."});
+    assert(looter.session.messages==std::vector<std::string>{"700 \xe5\xb7\xb2\xe5\x8a\xa0\xe5\x85\xa5\xe4\xbd\xa0\xe7\x9a\x84\xe5\xa4\x96\xe8\xa7\x82\xe6\x94\xb6\xe8\x97\x8f\xe3\x80\x82"});
     restarted.LearnAppearance(&looter,700);
     restarted.LearnAppearance(&looter,701); // same appearance on another item
     restarted.LearnAppearance(&looter,702,false); // silent inventory import

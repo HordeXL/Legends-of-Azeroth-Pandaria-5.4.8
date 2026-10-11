@@ -209,7 +209,7 @@ public:
             if(player->HasSkill(action) && player->GetSkillValue(action) < maxvalueprof)
                 player->SetSkill(action, player->GetSkillStep(action), maxvalueprof, maxvalueprof);
             
-            ChatHandler(player->GetSession()).PSendSysMessage("Thanks for supporting the project!");
+            ChatHandler(player->GetSession()).PSendSysMessage("\xe6\x84\x9f\xe8\xb0\xa2\xe4\xbd\xa0\xe5\xaf\xb9\xe9\xa1\xb9\xe7\x9b\xae\xe7\x9a\x84\xe6\x94\xaf\xe6\x8c\x81\xef\xbc\x81");
             player->DestroyItemCount(item->GetEntry(), 1, true); //Item is destroyed on useage.
 
             std::ostringstream infoSkill;
@@ -221,7 +221,7 @@ public:
         {
             player->SetSkill(action, player->GetSkillStep(action), 600, 600);
             
-            ChatHandler(player->GetSession()).PSendSysMessage("Thanks for supporting the project!");
+            ChatHandler(player->GetSession()).PSendSysMessage("\xe6\x84\x9f\xe8\xb0\xa2\xe4\xbd\xa0\xe5\xaf\xb9\xe9\xa1\xb9\xe7\x9b\xae\xe7\x9a\x84\xe6\x94\xaf\xe6\x8c\x81\xef\xbc\x81");
             player->DestroyItemCount(item->GetEntry(), 1, true); //Item is destroyed on useage.
 
             std::ostringstream infoSkill;
@@ -231,7 +231,7 @@ public:
         }
         else
         {
-            ChatHandler(player->GetSession()).PSendSysMessage("You don't have that profession");
+            ChatHandler(player->GetSession()).PSendSysMessage("\xe4\xbd\xa0\xe6\xb2\xa1\xe6\x9c\x89\xe8\xaf\xa5\xe4\xb8\x93\xe4\xb8\x9a\xe6\x8a\x80\xe8\x83\xbd");
         }
         player->SaveToDB();
     }
@@ -294,7 +294,7 @@ public:
             if(player->HasSkill(action) && player->GetSkillValue(action) < maxvalueprof)
                 player->SetSkill(action, player->GetSkillStep(action), maxvalueprof, maxvalueprof);
             
-            ChatHandler(player->GetSession()).PSendSysMessage("Thanks for supporting the project!");
+            ChatHandler(player->GetSession()).PSendSysMessage("\xe6\x84\x9f\xe8\xb0\xa2\xe4\xbd\xa0\xe5\xaf\xb9\xe9\xa1\xb9\xe7\x9b\xae\xe7\x9a\x84\xe6\x94\xaf\xe6\x8c\x81\xef\xbc\x81");
             player->DestroyItemCount(item->GetEntry(), 1, true); //Item is destroyed on useage.
 
             std::ostringstream infoSkill;
@@ -304,7 +304,7 @@ public:
         }
         else
         {
-            ChatHandler(player->GetSession()).PSendSysMessage("You don't have that profession");
+            ChatHandler(player->GetSession()).PSendSysMessage("\xe4\xbd\xa0\xe6\xb2\xa1\xe6\x9c\x89\xe8\xaf\xa5\xe4\xb8\x93\xe4\xb8\x9a\xe6\x8a\x80\xe8\x83\xbd");
         }
         
         player->CLOSE_GOSSIP_MENU();

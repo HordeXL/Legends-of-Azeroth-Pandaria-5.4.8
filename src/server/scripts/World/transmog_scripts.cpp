@@ -50,9 +50,9 @@ public:
         WorldSession* session = player->GetSession();
         //if (player->GetQuestStatus(40328) == QUEST_STATUS_REWARDED || player->GetQuestStatus(40329) == QUEST_STATUS_REWARDED)
         {
-            player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "Press C to preview. Accept saves all changes.", EQUIPMENT_SLOT_END + 1, 0);
+            player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "\xe6\x8c\x89\x20\x43\x20\xe9\x94\xae\xe9\xa2\x84\xe8\xa7\x88\xe3\x80\x82\xe7\x82\xb9\xe5\x87\xbb\xe2\x80\x9c\xe6\x8e\xa5\xe5\x8f\x97\xe2\x80\x9d\xe4\xbf\x9d\xe5\xad\x98\xe5\x85\xa8\xe9\x83\xa8\xe6\x9b\xb4\xe6\x94\xb9\xe3\x80\x82", EQUIPMENT_SLOT_END + 1, 0);
             if (sT->GetEnableTransmogInfo())
-                player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "How does transmogrification work?", EQUIPMENT_SLOT_END + 9, 0);
+                player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "\xe5\xb9\xbb\xe5\x8c\x96\xe6\x98\xaf\xe6\x80\x8e\xe4\xb9\x88\xe7\x8e\xa9\xe7\x9a\x84\xef\xbc\x9f", EQUIPMENT_SLOT_END + 9, 0);
 
             for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
             {
@@ -62,28 +62,28 @@ public:
                     uint32 entry = newItem ? sT->GetFakeEntry(newItem->GetGUID()) : 0;
                     std::string label = slotName;
                     if (!newItem)
-                        label += " (Empty)";
+                        label += "\xef\xbc\x88\xe7\xa9\xba\xef\xbc\x89";
                     else if (sT->GetPreviewEntry(player, slot))
-                        label += " (Preview)";
+                        label += "\xef\xbc\x88\xe9\xa2\x84\xe8\xa7\x88\xe4\xb8\xad\xef\xbc\x89";
                     else if (entry)
-                        label += " (Transmogrified)";
+                        label += "\xef\xbc\x88\xe5\xb7\xb2\xe5\xb9\xbb\xe5\x8c\x96\xef\xbc\x89";
                     player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, label, EQUIPMENT_SLOT_END, slot);
                 }
             }
 
         #ifdef PRESETS
             if (sT->GetEnableSets())
-                player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "Saved outfits", EQUIPMENT_SLOT_END + 4, 0);
+                player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "\xe5\xb7\xb2\xe4\xbf\x9d\xe5\xad\x98\xe7\x9a\x84\xe5\xa5\x97\xe8\xa3\x85", EQUIPMENT_SLOT_END + 4, 0);
         #endif
             if (sT->HasPreview(player))
             {
-                player->ADD_GOSSIP_ITEM_EXTENDED(GOSSIP_ICON_CHAT, "Accept all changes", EQUIPMENT_SLOT_END + 11, 0,
-                    "Apply all previewed appearances for free? Changed items will become soulbound, non-refundable and non-tradeable.", 0, false);
-                player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "Cancel all changes", EQUIPMENT_SLOT_END + 12, 0);
+                player->ADD_GOSSIP_ITEM_EXTENDED(GOSSIP_ICON_CHAT, "\xe6\x8e\xa5\xe5\x8f\x97\xe5\x85\xa8\xe9\x83\xa8\xe6\x9b\xb4\xe6\x94\xb9", EQUIPMENT_SLOT_END + 11, 0,
+                    "\xe5\x85\x8d\xe8\xb4\xb9\xe5\xba\x94\xe7\x94\xa8\xe5\x85\xa8\xe9\x83\xa8\xe9\xa2\x84\xe8\xa7\x88\xe5\xa4\x96\xe8\xa7\x82\xef\xbc\x9f\xe6\x9b\xb4\xe6\x94\xb9\xe5\x90\x8e\xe7\x9a\x84\xe7\x89\xa9\xe5\x93\x81\xe5\xb0\x86\xe5\x8f\x98\xe4\xb8\xba\xe6\x8b\xbe\xe5\x8f\x96\xe7\xbb\x91\xe5\xae\x9a\xe3\x80\x81\xe4\xb8\x8d\xe5\x8f\xaf\xe9\x80\x80\xe6\x8d\xa2\xe3\x80\x81\xe4\xb8\x8d\xe5\x8f\xaf\xe4\xba\xa4\xe6\x98\x93\xe3\x80\x82", 0, false);
+                player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "\xe5\x8f\x96\xe6\xb6\x88\xe5\x85\xa8\xe9\x83\xa8\xe6\x9b\xb4\xe6\x94\xb9", EQUIPMENT_SLOT_END + 12, 0);
             }
-            player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "Refresh", EQUIPMENT_SLOT_END + 1, 0);
-            player->ADD_GOSSIP_ITEM_EXTENDED(GOSSIP_ICON_CHAT, "Restore all original appearances", EQUIPMENT_SLOT_END + 2, 0,
-                "Preview the original appearance of all equipped items? Choose Accept to save.", 0, false);
+            player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "\xe5\x88\xb7\xe6\x96\xb0", EQUIPMENT_SLOT_END + 1, 0);
+            player->ADD_GOSSIP_ITEM_EXTENDED(GOSSIP_ICON_CHAT, "\xe6\x81\xa2\xe5\xa4\x8d\xe5\x85\xa8\xe9\x83\xa8\xe5\x8e\x9f\xe5\xa7\x8b\xe5\xa4\x96\xe8\xa7\x82", EQUIPMENT_SLOT_END + 2, 0,
+                "\xe9\xa2\x84\xe8\xa7\x88\xe5\x85\xa8\xe9\x83\xa8\xe5\xb7\xb2\xe8\xa3\x85\xe5\xa4\x87\xe7\x89\xa9\xe5\x93\x81\xe7\x9a\x84\xe5\x8e\x9f\xe5\xa7\x8b\xe5\xa4\x96\xe8\xa7\x82\xef\xbc\x9f\xe9\x80\x89\xe6\x8b\xa9\xe2\x80\x9c\xe6\x8e\xa5\xe5\x8f\x97\xe2\x80\x9d\xe4\xbf\x9d\xe5\xad\x98\xe3\x80\x82", 0, false);
         }
         player->SEND_GOSSIP_MENU(DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
         return true;
@@ -104,7 +104,7 @@ public:
             {
                 TransmogTrinityStrings result = sT->AcceptPreview(player, creature);
                 if (result != LANG_ERR_TRANSMOG_OK)
-                    session->SendNotification("The preview could not be applied. Check your equipment and try again.");
+                    session->SendNotification("\xe9\xa2\x84\xe8\xa7\x88\xe6\x97\xa0\xe6\xb3\x95\xe5\xba\x94\xe7\x94\xa8\xef\xbc\x8c\xe8\xaf\xb7\xe6\xa3\x80\xe6\x9f\xa5\xe8\xa3\x85\xe5\xa4\x87\xe5\x90\x8e\xe9\x87\x8d\xe8\xaf\x95\xe3\x80\x82");
                 OnGossipHello(player, creature);
                 break;
             }
@@ -144,13 +144,13 @@ public:
                     return true;
                 }
                 if (sT->GetEnableSetInfo())
-                    player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "How do outfits work?", EQUIPMENT_SLOT_END + 10, 0);
+                    player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "\xe5\xa5\x97\xe8\xa3\x85\xe6\x98\xaf\xe6\x80\x8e\xe4\xb9\x88\xe7\x8e\xa9\xe7\x9a\x84\xef\xbc\x9f", EQUIPMENT_SLOT_END + 10, 0);
                 for (Transmogrification::presetIdMap::const_iterator it = sT->presetByName[player->GetGUID()].begin(); it != sT->presetByName[player->GetGUID()].end(); ++it)
                     player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "" + it->second, EQUIPMENT_SLOT_END + 6, it->first);
 
                 if (sT->presetByName[player->GetGUID()].size() < sT->GetMaxSets())
-                    player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "Save outfit", EQUIPMENT_SLOT_END + 8, 0);
-                player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "Back", EQUIPMENT_SLOT_END + 1, 0);
+                    player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "\xe4\xbf\x9d\xe5\xad\x98\xe5\xa5\x97\xe8\xa3\x85", EQUIPMENT_SLOT_END + 8, 0);
+                player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "\xe8\xbf\x94\xe5\x9b\x9e", EQUIPMENT_SLOT_END + 1, 0);
                 player->SEND_GOSSIP_MENU(DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
             } break;
             case EQUIPMENT_SLOT_END + 5: // Use preset
@@ -180,9 +180,9 @@ public:
                 for (Transmogrification::slotMap::const_iterator it = sT->presetById[player->GetGUID()][action].begin(); it != sT->presetById[player->GetGUID()][action].end(); ++it)
                     player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, sT->GetItemLink(it->second, session), sender, action);
 
-                player->ADD_GOSSIP_ITEM_EXTENDED(GOSSIP_ICON_CHAT, "Apply outfit", EQUIPMENT_SLOT_END + 5, action, "Apply this outfit for free? Modified items will become soulbound, non-refundable and non-tradeable.\n\n" + sT->presetByName[player->GetGUID()][action], 0, false);
-                player->ADD_GOSSIP_ITEM_EXTENDED(GOSSIP_ICON_CHAT, "Delete outfit", EQUIPMENT_SLOT_END + 7, action, "Delete this saved outfit: " + sT->presetByName[player->GetGUID()][action] + "?", 0, false);
-                player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "Back", EQUIPMENT_SLOT_END + 4, 0);
+                player->ADD_GOSSIP_ITEM_EXTENDED(GOSSIP_ICON_CHAT, "\xe5\xba\x94\xe7\x94\xa8\xe5\xa5\x97\xe8\xa3\x85", EQUIPMENT_SLOT_END + 5, action, "\xe5\x85\x8d\xe8\xb4\xb9\xe5\xba\x94\xe7\x94\xa8\xe8\xaf\xa5\xe5\xa5\x97\xe8\xa3\x85\xef\xbc\x9f\xe6\x9b\xb4\xe6\x94\xb9\xe5\x90\x8e\xe7\x9a\x84\xe7\x89\xa9\xe5\x93\x81\xe5\xb0\x86\xe5\x8f\x98\xe4\xb8\xba\xe6\x8b\xbe\xe5\x8f\x96\xe7\xbb\x91\xe5\xae\x9a\xe3\x80\x81\xe4\xb8\x8d\xe5\x8f\xaf\xe9\x80\x80\xe6\x8d\xa2\xe3\x80\x81\xe4\xb8\x8d\xe5\x8f\xaf\xe4\xba\xa4\xe6\x98\x93\xe3\x80\x82\x5c\x6e\x5c\x6e" + sT->presetByName[player->GetGUID()][action], 0, false);
+                player->ADD_GOSSIP_ITEM_EXTENDED(GOSSIP_ICON_CHAT, "\xe5\x88\xa0\xe9\x99\xa4\xe5\xa5\x97\xe8\xa3\x85", EQUIPMENT_SLOT_END + 7, action, "\xe5\x88\xa0\xe9\x99\xa4\xe5\xb7\xb2\xe4\xbf\x9d\xe5\xad\x98\xe7\x9a\x84\xe5\xa5\x97\xe8\xa3\x85\xef\xbc\x9a" + sT->presetByName[player->GetGUID()][action] + "?", 0, false);
+                player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "\xe8\xbf\x94\xe5\x9b\x9e", EQUIPMENT_SLOT_END + 4, 0);
                 player->SEND_GOSSIP_MENU(DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
             } break;
             case EQUIPMENT_SLOT_END + 7: // Delete preset
@@ -204,7 +204,7 @@ public:
             {
                 if (sT->HasPreview(player))
                 {
-                    session->SendNotification("Accept your preview before saving an outfit.");
+                    session->SendNotification("\xe4\xbf\x9d\xe5\xad\x98\xe5\xa5\x97\xe8\xa3\x85\xe5\x89\x8d\xe8\xaf\xb7\xe5\x85\x88\xe6\x8e\xa5\xe5\x8f\x97\xe9\xa2\x84\xe8\xa7\x88\xe3\x80\x82");
                     OnGossipHello(player, creature);
                     return true;
                 }
@@ -235,25 +235,25 @@ public:
                     }
                 }
                 if (canSave)
-                    player->ADD_GOSSIP_ITEM_EXTENDED(GOSSIP_ICON_CHAT, "Save outfit", 0, 0, "Enter an outfit name", cost*sT->GetSetCostModifier() + sT->GetSetCopperCost(), true);
-                player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "Refresh", sender, action);
-                player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "Back", EQUIPMENT_SLOT_END + 4, 0);
+                    player->ADD_GOSSIP_ITEM_EXTENDED(GOSSIP_ICON_CHAT, "\xe4\xbf\x9d\xe5\xad\x98\xe5\xa5\x97\xe8\xa3\x85", 0, 0, "\xe8\xbe\x93\xe5\x85\xa5\xe5\xa5\x97\xe8\xa3\x85\xe5\x90\x8d\xe7\xa7\xb0", cost*sT->GetSetCostModifier() + sT->GetSetCopperCost(), true);
+                player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "\xe5\x88\xb7\xe6\x96\xb0", sender, action);
+                player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "\xe8\xbf\x94\xe5\x9b\x9e", EQUIPMENT_SLOT_END + 4, 0);
                 player->SEND_GOSSIP_MENU(DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
             } break;
             case EQUIPMENT_SLOT_END + 10: // Set info
             {
-                player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "Save your current transmogrified appearances as a named outfit.", EQUIPMENT_SLOT_END + 10, 0);
-                player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "Select a saved outfit to apply its compatible appearances for free.", EQUIPMENT_SLOT_END + 10, 0);
-                player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "Back", EQUIPMENT_SLOT_END + 4, 0);
+                player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "\xe5\xb0\x86\xe5\xbd\x93\xe5\x89\x8d\xe5\xb7\xb2\xe5\xb9\xbb\xe5\x8c\x96\xe7\x9a\x84\xe5\xa4\x96\xe8\xa7\x82\xe4\xbf\x9d\xe5\xad\x98\xe4\xb8\xba\xe4\xb8\x80\xe4\xb8\xaa\xe5\x91\xbd\xe5\x90\x8d\xe5\xa5\x97\xe8\xa3\x85\xe3\x80\x82", EQUIPMENT_SLOT_END + 10, 0);
+                player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "\xe9\x80\x89\xe6\x8b\xa9\xe4\xb8\x80\xe4\xb8\xaa\xe5\xb7\xb2\xe4\xbf\x9d\xe5\xad\x98\xe7\x9a\x84\xe5\xa5\x97\xe8\xa3\x85\xef\xbc\x8c\xe5\x85\x8d\xe8\xb4\xb9\xe5\xba\x94\xe7\x94\xa8\xe5\x85\xb6\xe4\xb8\xad\xe5\x85\xbc\xe5\xae\xb9\xe7\x9a\x84\xe5\xa4\x96\xe8\xa7\x82\xe3\x80\x82", EQUIPMENT_SLOT_END + 10, 0);
+                player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "\xe8\xbf\x94\xe5\x9b\x9e", EQUIPMENT_SLOT_END + 4, 0);
                 player->SEND_GOSSIP_MENU(DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
             } break;
     #endif
             case EQUIPMENT_SLOT_END + 9: // Transmog info
             {
-                player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "Collected appearances are permanent and shared by characters on your account.", EQUIPMENT_SLOT_END + 9, 0);
-                player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "You can sell the source item and keep its appearance. Transmogrification is free.", EQUIPMENT_SLOT_END + 9, 0);
-                player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "Press C, then select appearances for any slots. Accept saves all changes; Cancel restores your previous look.", EQUIPMENT_SLOT_END + 9, 0);
-                player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "Back", EQUIPMENT_SLOT_END + 1, 0);
+                player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "\xe5\xb7\xb2\xe6\x94\xb6\xe8\x97\x8f\xe7\x9a\x84\xe5\xa4\x96\xe8\xa7\x82\xe6\xb0\xb8\xe4\xb9\x85\xe6\x9c\x89\xe6\x95\x88\xef\xbc\x8c\xe4\xb8\x94\xe5\x90\x8c\xe8\xb4\xa6\xe5\x8f\xb7\xe4\xb8\x8b\xe6\x89\x80\xe6\x9c\x89\xe8\xa7\x92\xe8\x89\xb2\xe5\x85\xb1\xe4\xba\xab\xe3\x80\x82", EQUIPMENT_SLOT_END + 9, 0);
+                player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "\xe4\xbd\xa0\xe5\x8f\xaf\xe4\xbb\xa5\xe5\x8d\x96\xe6\x8e\x89\xe5\xa4\x96\xe8\xa7\x82\xe6\x9d\xa5\xe6\xba\x90\xe7\x89\xa9\xe5\x93\x81\xef\xbc\x8c\xe5\xa4\x96\xe8\xa7\x82\xe4\xbb\x8d\xe4\xbc\x9a\xe4\xbf\x9d\xe7\x95\x99\xe3\x80\x82\xe5\xb9\xbb\xe5\x8c\x96\xe5\xae\x8c\xe5\x85\xa8\xe5\x85\x8d\xe8\xb4\xb9\xe3\x80\x82", EQUIPMENT_SLOT_END + 9, 0);
+                player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "\xe6\x8c\x89\x20\x43\x20\xe9\x94\xae\xef\xbc\x8c\xe7\x84\xb6\xe5\x90\x8e\xe4\xb8\xba\xe4\xbb\xbb\xe6\x84\x8f\xe9\x83\xa8\xe4\xbd\x8d\xe9\x80\x89\xe6\x8b\xa9\xe5\xa4\x96\xe8\xa7\x82\xe3\x80\x82\xe2\x80\x9c\xe6\x8e\xa5\xe5\x8f\x97\xe2\x80\x9d\xe4\xbf\x9d\xe5\xad\x98\xe5\x85\xa8\xe9\x83\xa8\xe6\x9b\xb4\xe6\x94\xb9\xef\xbc\x9b\xe2\x80\x9c\xe5\x8f\x96\xe6\xb6\x88\xe2\x80\x9d\xe6\x81\xa2\xe5\xa4\x8d\xe4\xb9\x8b\xe5\x89\x8d\xe7\x9a\x84\xe6\xa0\xb7\xe5\xad\x90\xe3\x80\x82", EQUIPMENT_SLOT_END + 9, 0);
+                player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "\xe8\xbf\x94\xe5\x9b\x9e", EQUIPMENT_SLOT_END + 1, 0);
                 player->SEND_GOSSIP_MENU(DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
             } break;
             default: // Transmogrify
@@ -375,8 +375,8 @@ public:
         }
         page = std::min(page, lastPage);
         const char* slotName = sT->GetSlotName(slot, session);
-        std::string heading = std::string(slotName ? slotName : "Appearances") +
-            " - Page " + std::to_string(page + 1) + "/" + std::to_string(lastPage + 1);
+        std::string heading = std::string(slotName ? slotName : "\xe5\xa4\x96\xe8\xa7\x82") +
+            "\x20\x2d\x20\xe7\xac\xac\x20" + std::to_string(page + 1) + "/" + std::to_string(lastPage + 1) + "\x20\xe9\xa1\xb5";
         uint32 const pageSender = 100 + slot;
         player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, heading, pageSender, page);
         uint32 previewEntry = sT->GetPreviewEntry(player, slot);
@@ -389,28 +389,28 @@ public:
             ItemTemplate const* appearance = sObjectMgr->GetItemTemplate(entry);
             bool active = activeAppearance && appearance && activeAppearance->DisplayInfoID == appearance->DisplayInfoID;
             if (entry == previewEntry)
-                label += "  [Preview]";
+                label += "\x20\x20\x5b\xe9\xa2\x84\xe8\xa7\x88\x5d";
             else if (active)
-                label += "  [Current]";
+                label += "\x20\x20\x5b\xe5\xbd\x93\xe5\x89\x8d\x5d";
             player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, label, slot, entry);
         }
         if (appearances.empty())
-            player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, item ? "No compatible appearances collected for this slot."
-                : "Equip an item in this slot to choose an appearance.", EQUIPMENT_SLOT_END, slot);
+            player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, item ? "\xe8\xaf\xa5\xe9\x83\xa8\xe4\xbd\x8d\xe5\xb0\x9a\xe6\x9c\xaa\xe6\x94\xb6\xe8\x97\x8f\xe5\x85\xbc\xe5\xae\xb9\xe7\x9a\x84\xe5\xa4\x96\xe8\xa7\x82\xe3\x80\x82"
+                : "\xe5\x9c\xa8\xe8\xaf\xa5\xe9\x83\xa8\xe4\xbd\x8d\xe7\xa9\xbf\xe4\xb8\x8a\xe7\x89\xa9\xe5\x93\x81\xe6\x89\x8d\xe8\x83\xbd\xe9\x80\x89\xe6\x8b\xa9\xe5\xa4\x96\xe8\xa7\x82\xe3\x80\x82", EQUIPMENT_SLOT_END, slot);
         if (page > 0)
-            player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "Previous page", pageSender, page - 1);
+            player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "\xe4\xb8\x8a\xe4\xb8\x80\xe9\xa1\xb5", pageSender, page - 1);
         if (page < lastPage)
-            player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "Next page", pageSender, page + 1);
+            player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "\xe4\xb8\x8b\xe4\xb8\x80\xe9\xa1\xb5", pageSender, page + 1);
         if (sT->HasPreview(player))
         {
-            player->ADD_GOSSIP_ITEM_EXTENDED(GOSSIP_ICON_CHAT, "Accept all changes", EQUIPMENT_SLOT_END + 11, 0,
-                "Apply all previewed appearances for free? Changed items will become soulbound, non-refundable and non-tradeable.", 0, false);
-            player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "Cancel all changes", EQUIPMENT_SLOT_END + 12, 0);
+            player->ADD_GOSSIP_ITEM_EXTENDED(GOSSIP_ICON_CHAT, "\xe6\x8e\xa5\xe5\x8f\x97\xe5\x85\xa8\xe9\x83\xa8\xe6\x9b\xb4\xe6\x94\xb9", EQUIPMENT_SLOT_END + 11, 0,
+                "\xe5\x85\x8d\xe8\xb4\xb9\xe5\xba\x94\xe7\x94\xa8\xe5\x85\xa8\xe9\x83\xa8\xe9\xa2\x84\xe8\xa7\x88\xe5\xa4\x96\xe8\xa7\x82\xef\xbc\x9f\xe6\x9b\xb4\xe6\x94\xb9\xe5\x90\x8e\xe7\x9a\x84\xe7\x89\xa9\xe5\x93\x81\xe5\xb0\x86\xe5\x8f\x98\xe4\xb8\xba\xe6\x8b\xbe\xe5\x8f\x96\xe7\xbb\x91\xe5\xae\x9a\xe3\x80\x81\xe4\xb8\x8d\xe5\x8f\xaf\xe9\x80\x80\xe6\x8d\xa2\xe3\x80\x81\xe4\xb8\x8d\xe5\x8f\xaf\xe4\xba\xa4\xe6\x98\x93\xe3\x80\x82", 0, false);
+            player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "\xe5\x8f\x96\xe6\xb6\x88\xe5\x85\xa8\xe9\x83\xa8\xe6\x9b\xb4\xe6\x94\xb9", EQUIPMENT_SLOT_END + 12, 0);
         }
         if (activeEntry || previewEntry)
-            player->ADD_GOSSIP_ITEM_EXTENDED(GOSSIP_ICON_CHAT, "Restore original appearance", EQUIPMENT_SLOT_END + 3, slot,
-                "Preview the original appearance of this item? Choose Accept to save.", 0, false);
-        player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "Back", EQUIPMENT_SLOT_END + 1, 0);
+            player->ADD_GOSSIP_ITEM_EXTENDED(GOSSIP_ICON_CHAT, "\xe6\x81\xa2\xe5\xa4\x8d\xe5\x8e\x9f\xe5\xa7\x8b\xe5\xa4\x96\xe8\xa7\x82", EQUIPMENT_SLOT_END + 3, slot,
+                "\xe9\xa2\x84\xe8\xa7\x88\xe8\xaf\xa5\xe7\x89\xa9\xe5\x93\x81\xe7\x9a\x84\xe5\x8e\x9f\xe5\xa7\x8b\xe5\xa4\x96\xe8\xa7\x82\xef\xbc\x9f\xe9\x80\x89\xe6\x8b\xa9\xe2\x80\x9c\xe6\x8e\xa5\xe5\x8f\x97\xe2\x80\x9d\xe4\xbf\x9d\xe5\xad\x98\xe3\x80\x82", 0, false);
+        player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "\xe8\xbf\x94\xe5\x9b\x9e", EQUIPMENT_SLOT_END + 1, 0);
         player->SEND_GOSSIP_MENU(DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
     }
 

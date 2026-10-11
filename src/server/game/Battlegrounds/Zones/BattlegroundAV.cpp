@@ -519,13 +519,13 @@ void BattlegroundAV::HandleAreaTrigger(Player* player, uint32 trigger, bool ente
         case 95:
         case 2608:
             if (player->GetBGTeam() != ALLIANCE)
-                ChatHandler(player->GetSession()).PSendSysMessage("Only The Alliance can use that portal");
+                ChatHandler(player->GetSession()).PSendSysMessage("\xe5\x8f\xaa\xe6\x9c\x89\xe8\x81\x94\xe7\x9b\x9f\xe6\x89\x8d\xe8\x83\xbd\xe4\xbd\xbf\xe7\x94\xa8\xe9\x82\xa3\xe4\xb8\xaa\xe4\xbc\xa0\xe9\x80\x81\xe9\x97\xa8");
             else
                 player->LeaveBattleground();
             break;
         case 2606:
             if (player->GetBGTeam() != HORDE)
-                ChatHandler(player->GetSession()).PSendSysMessage("Only The Horde can use that portal");
+                ChatHandler(player->GetSession()).PSendSysMessage("\xe5\x8f\xaa\xe6\x9c\x89\xe9\x83\xa8\xe8\x90\xbd\xe6\x89\x8d\xe8\x83\xbd\xe4\xbd\xbf\xe7\x94\xa8\xe9\x82\xa3\xe4\xb8\xaa\xe4\xbc\xa0\xe9\x80\x81\xe9\x97\xa8");
             else
                 player->LeaveBattleground();
             break;
