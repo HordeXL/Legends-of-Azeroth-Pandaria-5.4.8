@@ -27,7 +27,10 @@
 -- 已应用 world 库；生效：重启 worldserver（AIName 变更）。
 
 -- ===== PART 1: 探索丽丽 56549 =====
-UPDATE `creature_template` SET `AIName` = 'SmartAI', `unit_flags` = `unit_flags` | 33554432 WHERE `entry` = 56549;
+-- 0x300 = IMMUNE_TO_PC(0x100)|IMMUNE_TO_NPC(0x200)：不可被攻击但可选中互动（实测教训：
+--   初版误用 0x02000000=UNIT_FLAG_NOT_SELECTABLE，导致丽丽不可选中/无名字/无 tooltip，
+--   与 24920 入侵者同款症状。官方丽丽不参战但显示名字。）
+UPDATE `creature_template` SET `AIName` = 'SmartAI', `unit_flags` = `unit_flags` | 0x300 WHERE `entry` = 56549;
 
 DELETE FROM `smart_scripts` WHERE `source_type` = 0 AND `entryorguid` = 56549;
 INSERT INTO `smart_scripts` (`entryorguid`, `source_type`, `id`, `link`, `event_type`, `event_phase_mask`, `event_chance`, `event_flags`, `event_param1`, `event_param2`, `event_param3`, `event_param4`, `event_param5`, `action_type`, `action_param1`, `action_param2`, `action_param3`, `action_param4`, `action_param5`, `action_param6`, `target_type`, `target_param1`, `target_param2`, `target_param3`, `target_param4`, `target_x`, `target_y`, `target_z`, `target_o`, `comment`) VALUES
