@@ -20,3 +20,5 @@ vmap4extractor.exe
 /bin
 /.workbuddy/
 /build_addon.log
+/.workbuddy-ai
+/%SystemDrive%
