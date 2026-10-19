@@ -1200,13 +1200,6 @@ namespace LuaPlayer
         return 1;
     }
 
-    int SetCustomPhase(lua_State* L, Player* player)
-    {
-        uint32 phaseMask = luaL_checkunsigned(L, 1);
-        player->GetPhaseMgr().SetCustomPhase(phaseMask);
-        return 0;
-    }
-
     int SummonPet(lua_State* L, Player* player)
     {
         uint32 entry = luaL_checkunsigned(L, 1);
