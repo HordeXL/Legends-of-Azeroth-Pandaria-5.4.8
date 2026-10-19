@@ -411,6 +411,7 @@ ElunaRegister<Player> PlayerMethods[] =
     {"AdvanceAllSkills", &LuaPlayer::AdvanceAllSkills},     // :AdvanceAllSkills(value) - Advances all current skills to your input(value)
     {"AddLifetimeKills", &LuaPlayer::AddLifetimeKills},     // :AddLifetimeKills(val) - Adds lifetime (honorable) kills to your current lifetime kills
     {"SetCoinage", &LuaPlayer::SetCoinage},                 // :SetCoinage(amount) - sets plr's coinage to this
+    {"SetCustomPhase", &LuaPlayer::SetCustomPhase},         // :SetCustomPhase(mask) - overrides the player's phase mask, 0 restores automatic calculation
     {"SetKnownTitle", &LuaPlayer::SetKnownTitle},           // :SetKnownTitle(id)
     {"UnsetKnownTitle", &LuaPlayer::UnsetKnownTitle},       // :UnsetKnownTitle(id)
     {"SetBindPoint", &LuaPlayer::SetBindPoint},             // :SetBindPoint(x, y, z, map, areaid) - sets home for hearthstone

@@ -1,0 +1,7 @@
+## Interface: 50400
+## Title: |cffd6b26a位面切换|r
+## Notes: 查看并切换当前区域的位面。需服务端 lua_scripts/phase_switch.lua (Eluna)
+## Author: Legends of Azeroth
+## Version: 1.0
+PhaseSwitch.lua
+UI.lua

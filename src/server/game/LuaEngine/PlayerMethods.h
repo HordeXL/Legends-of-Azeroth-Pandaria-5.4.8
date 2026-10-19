@@ -304,6 +304,8 @@ namespace LuaPlayer
 
     int GetPhaseMaskForSpawn(lua_State* L, Player* player);
 
+    int SetCustomPhase(lua_State* L, Player* player);
+
     int SummonPet(lua_State* L, Player* player);
 
     int RemovePet(lua_State* L, Player* player);
