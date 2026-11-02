@@ -47,8 +47,8 @@ bool ReleaseSpiritAction::Execute(Event event)
     TC_LOG_INFO("playerbots", "Bot {} {}:{} <{}> released", bot->GetGUID().ToString().c_str(),
              bot->GetTeamId() == TEAM_ALLIANCE ? "A" : "H", bot->GetLevel(), bot->GetName().c_str());
 
-    WorldPacket packet(CMSG_REPOP_REQUEST);
-    packet << uint8(0);
+    WorldPacket raw(CMSG_REPOP_REQUEST);
+    WorldPackets::Combat::RepopRequest packet(std::move(raw));
     bot->GetSession()->HandleRepopRequestOpcode(packet);
 
     // // add waiting for ress aura
@@ -95,8 +95,8 @@ bool AutoReleaseSpiritAction::Execute(Event event)
     TC_LOG_DEBUG("playerbots", "Bot {} {}:{} <{}> auto released", bot->GetGUID().ToString().c_str(),
               bot->GetTeamId() == TEAM_ALLIANCE ? "A" : "H", bot->GetLevel(), bot->GetName().c_str());
 
-    WorldPacket packet(CMSG_REPOP_REQUEST);
-    packet << uint8(0);
+    WorldPacket raw(CMSG_REPOP_REQUEST);
+    WorldPackets::Combat::RepopRequest packet(std::move(raw));
     bot->GetSession()->HandleRepopRequestOpcode(packet);
 
     TC_LOG_DEBUG("playerbots", "Bot {} {}:{} <{}> releases spirit", bot->GetGUID().ToString().c_str(),

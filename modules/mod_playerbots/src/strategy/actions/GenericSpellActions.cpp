@@ -356,19 +356,27 @@ bool UseTrinketAction::UseTrinket(Item* item)
     }
     if (!spellId)
         return false;
-    WorldPacket packet(CMSG_USE_ITEM);
-    packet << bagIndex << slot << cast_count << spellId << item_guid << glyphIndex << castFlags;
+    WorldPacket raw(CMSG_USE_ITEM);
+    WorldPackets::Spells::UseItem packet(std::move(raw));
+    packet.BagIndex = bagIndex;
+    packet.Slot = slot;
+    packet.CastCount = cast_count;
+    packet.SpellId = spellId;
+    packet.ItemGuid = item_guid;
+    packet.GlyphIndex = glyphIndex;
+    packet.CastFlags = castFlags;
 
     Unit* target = AI_VALUE(Unit*, "current target");
     if (target)
     {
         targetFlag = TARGET_FLAG_UNIT;
-        packet << targetFlag << target->GetGUID().WriteAsPacked();
+        packet.TargetMask = targetFlag;
+        packet.TargetGuid = target->GetGUID();
     }
     else
     {
         targetFlag = TARGET_FLAG_NONE;
-        packet << targetFlag << bot->GetPackGUID();
+        packet.TargetMask = targetFlag;
     }
     bot->GetSession()->HandleUseItemOpcode(packet);
     return true;

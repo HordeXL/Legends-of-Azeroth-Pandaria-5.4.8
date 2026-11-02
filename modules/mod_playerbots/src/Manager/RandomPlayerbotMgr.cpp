@@ -818,8 +818,9 @@ void RandomPlayerbotMgr::OnBotLoginInternal(Player* const bot)
             static const uint32 JOIN_THE_ALLIANCE = 1;
             static const uint32 JOIN_THE_HORDE = 0;
 
-            WorldPacket packet(CMSG_SELECT_FACTION);
-            packet << (std::rand() % 2 ? JOIN_THE_HORDE : JOIN_THE_ALLIANCE);
+            WorldPacket raw(CMSG_SELECT_FACTION);
+            WorldPackets::Misc::SelectFaction packet(std::move(raw));
+            packet.Choice = (std::rand() % 2 ? JOIN_THE_HORDE : JOIN_THE_ALLIANCE);
 
             WorldSession* session = bot->GetSession();
             session->HandleSelectFactionOpcode(packet);

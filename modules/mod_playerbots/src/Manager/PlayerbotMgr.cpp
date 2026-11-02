@@ -1,4 +1,4 @@
-﻿/*
+/*
 * This file is part of the Legends of Azeroth Pandaria Project. See THANKS file for Copyright information
 *
 * This program is free software; you can redistribute it and/or modify it
@@ -584,10 +584,11 @@ void PlayerbotHolder::OnBotLogin(Player* const bot)
     {
         // TODO make action/config
         // Make the bot join the world channel for chat
-        WorldPacket pkt(CMSG_JOIN_CHANNEL);
-        pkt << uint32(0) << uint8(0) << uint8(0);
-        pkt << std::string("World");
-        pkt << "";  // Pass
+        WorldPacket raw(CMSG_JOIN_CHANNEL);
+        WorldPackets::Channel::JoinChannel pkt(std::move(raw));
+        pkt.ChannelId = 0;
+        pkt.ChannelName = "World";
+        pkt.Password = "";
         bot->GetSession()->HandleJoinChannel(pkt);
     }
 
@@ -722,13 +723,14 @@ std::vector<std::string> PlayerbotHolder::HandlePlayerbotCommand(char const* arg
     {
         uint32 tab = std::atoi(charname);
         WorldPacket p(CMSG_SET_PRIMARY_TALENT_TREE);
-        p << tab;
+        WorldPackets::Talent::SetPrimaryTalentTree specPacket(std::move(p));
+        specPacket.TabIndex = tab;
 
         auto bot = ObjectAccessor::FindConnectedPlayer(master->GetTarget());
         if (bot)
         {
             bot->ResetTalents(true, true, true);
-            bot->GetSession()->HandeSetTalentSpecialization(p);
+            bot->GetSession()->HandeSetTalentSpecialization(specPacket);
             bot->ActivateSpec(0);
             BotFactory factory(bot, bot->GetLevel());
             factory.InitTalentsTree(false);

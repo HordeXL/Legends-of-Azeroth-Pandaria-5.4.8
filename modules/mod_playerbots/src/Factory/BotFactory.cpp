@@ -352,13 +352,13 @@ void BotFactory::InitTalentsTree(bool reset)
         {
             uint32 tab = std::rand() % 3;
             WorldPacket p(CMSG_SET_PRIMARY_TALENT_TREE);
-            p << tab;
-            bot->GetSession()->HandeSetTalentSpecialization(p);
+            WorldPackets::Talent::SetPrimaryTalentTree specPacket(std::move(p));
+            specPacket.TabIndex = tab;
+            bot->GetSession()->HandeSetTalentSpecialization(specPacket);
             bot->ActivateSpec(0);
         }
     }
 
-    WorldPacket p(CMSG_LEARN_TALENT);
     uint32 alreadyUsedPoints = bot->GetUsedTalentCount();
     uint8 spec_tab = PlayerBotSpec::GetSpectab(bot);
     uint32 availablepoints = bot->CalculateTalentsPoints() - bot->GetUsedTalentCount();
@@ -383,10 +383,10 @@ void BotFactory::InitTalentsTree(bool reset)
     }
     if (learnCount > 0)
     {
-        p.WriteBits(learnCount, 23);
-        for (const auto& c : talent_to_learn)
-            p << c;
-        bot->GetSession()->HandleLearnTalentOpcode(p);
+        WorldPacket p(CMSG_LEARN_TALENT);
+        WorldPackets::Talent::LearnTalent packet(std::move(p));
+        packet.Talents = talent_to_learn;
+        bot->GetSession()->HandleLearnTalentOpcode(packet);
     }
 }
 

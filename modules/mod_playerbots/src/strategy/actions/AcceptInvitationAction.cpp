@@ -42,13 +42,11 @@ bool AcceptInvitationAction::Execute(Event event)
         return false;
     }*/
 
-    WorldPacket p;
-    uint8 unk = 0;
-    p << unk;
-    p.WriteBit(true);
-    p.WriteBit(true);
-    p.FlushBits();
-    bot->GetSession()->HandleGroupInviteResponseOpcode(p);
+    WorldPacket p(CMSG_GROUP_INVITE_RESPONSE);
+    WorldPackets::Party::GroupInviteResponse resp(std::move(p));
+    resp.Unknown = true;
+    resp.Accept = true;
+    bot->GetSession()->HandleGroupInviteResponseOpcode(resp);
 
     if (sRandomPlayerbotMgr->IsRandomBot(bot))
         botAI->SetMaster(inviter);

@@ -1,4 +1,4 @@
-﻿/*
+/*
 * This file is part of the Legends of Azeroth Pandaria Project. See THANKS file for Copyright information
 *
 * This program is free software; you can redistribute it and/or modify it
@@ -1109,11 +1109,12 @@ void PlayerbotAI::HandleBotOutgoingPacket(WorldPacket const& packet)
         uint32 counter;
         p >> counter;
         uint32 clientTicks = time(NULL);
-        WorldPacket packet(CMSG_TIME_SYNC_RESP);
-        packet.rpos(0);
-        packet << counter << clientTicks;
+        WorldPacket raw(CMSG_TIME_SYNC_RESP);
+        WorldPackets::Misc::TimeSyncResponse syncPacket(std::move(raw));
+        syncPacket.Counter = counter;
+        syncPacket.ClientTicks = clientTicks;
 
-        bot->GetSession()->HandleTimeSyncResp(packet);
+        bot->GetSession()->HandleTimeSyncResp(syncPacket);
         break;
     }
     default:
