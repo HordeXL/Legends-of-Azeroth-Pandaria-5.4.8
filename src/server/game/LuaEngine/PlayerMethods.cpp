@@ -146,9 +146,10 @@ namespace LuaPlayer
         GameObject* object = sEluna->CHECK_GAMEOBJECT(L, 1);
         if (!object)
             return 0;
-        WorldPacket data(SMSG_SHOW_MAILBOX, 8);
-        data << uint64(object->GetGUID().GetCounter());
-        player->GetSession()->HandleGetMailList(data);
+        WorldPacket data(CMSG_MAIL_GET_LIST);
+        WorldPackets::Mail::MailGetList recvData(std::move(data));
+        recvData.Mailbox = object->GetGUID();
+        player->GetSession()->HandleGetMailList(recvData);
         return 0;
     }
 
